@@ -1,0 +1,14 @@
+task: B1301
+deviations:
+  - what: A credential_source.executable entry is refused with an error naming vertex_credentials. No command runs and no HTTP listener starts.
+    why: The no-subprocess rule forbids Google's pluggable executable source; local credential files remain supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L181-L185
+  - what: A service_account vertex_credentials signs its own access token and sends no token request to its token_uri.
+    why: LiteLLM builds a google.oauth2.service_account.Credentials, and its refresh posts a jwt-bearer grant to token_uri; google-cloud-auth's service-account provider signs the token itself, so a user sees a different fetched URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L268-L276
+  - what: Application default credentials never run `gcloud config get project`. The gcloud project comes from CLOUDSDK_CORE_PROJECT, then the [core] project in configurations/config_<CLOUDSDK_ACTIVE_CONFIG_NAME or default> read through the injected file reader. A configuration activated only through gcloud's active_config file is not followed.
+    why: google-auth spawns the gcloud CLI to read that project, and the no-subprocess rule forbids it; the same values are read from the variables and INI file gcloud itself uses.
+    link: https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/_cloud_sdk.py
+  - what: An external_account application default credential does not ask Cloud Resource Manager for the workload identity pool's project.
+    why: google-auth's default() calls get_project_id, an authenticated Cloud Resource Manager request; betterlite resolves the project from the configured value, GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or the credential file's project_id instead.
+    link: https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/_default.py

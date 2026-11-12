@@ -37,7 +37,10 @@ impl TokenSource for FakeSource {
     {
         Box::pin(async move {
             if self.fail {
-                return Err(CredentialSourceError::ExecutableSource);
+                return Err(CredentialSourceError::Read {
+                    path: PathBuf::from("refresh"),
+                    source: io::Error::from(io::ErrorKind::TimedOut),
+                });
             }
             Ok(SecretString::from(TOKEN.to_owned()))
         })
@@ -65,6 +68,11 @@ impl RecordingBuilders {
             fail: self.fail_refresh,
         })
     }
+
+    fn recorded_source(&self, call: String) -> Arc<dyn TokenSource> {
+        self.record(call);
+        self.source()
+    }
 }
 
 impl CredentialBuilders for RecordingBuilders {
@@ -73,8 +81,7 @@ impl CredentialBuilders for RecordingBuilders {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("service_account {document} {scopes:?}"));
-        Ok(self.source())
+        Ok(self.recorded_source(format!("service_account {document} {scopes:?}")))
     }
 
     fn authorized_user(
@@ -82,8 +89,7 @@ impl CredentialBuilders for RecordingBuilders {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("authorized_user {document} {scopes:?}"));
-        Ok(self.source())
+        Ok(self.recorded_source(format!("authorized_user {document} {scopes:?}")))
     }
 
     fn identity_pool(
@@ -91,8 +97,7 @@ impl CredentialBuilders for RecordingBuilders {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("identity_pool {document} {scopes:?}"));
-        Ok(self.source())
+        Ok(self.recorded_source(format!("identity_pool {document} {scopes:?}")))
     }
 
     fn identity_pool_with_aws(
@@ -100,17 +105,7 @@ impl CredentialBuilders for RecordingBuilders {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("identity_pool_with_aws {document} {scopes:?}"));
-        Ok(self.source())
-    }
-
-    fn pluggable(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("pluggable {document} {scopes:?}"));
-        Ok(self.source())
+        Ok(self.recorded_source(format!("identity_pool_with_aws {document} {scopes:?}")))
     }
 
     fn metadata(
@@ -118,8 +113,7 @@ impl CredentialBuilders for RecordingBuilders {
         endpoint: Option<&str>,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.record(format!("metadata {endpoint:?} {scopes:?}"));
-        Ok(self.source())
+        Ok(self.recorded_source(format!("metadata {endpoint:?} {scopes:?}")))
     }
 
     fn aws_federation(
@@ -189,7 +183,9 @@ pub(crate) struct FixedClock;
 
 impl CredentialClock for FixedClock {
     fn now(&self) -> SystemTime {
-        UNIX_EPOCH + Duration::from_secs(1_767_225_600)
+        UNIX_EPOCH
+            .checked_add(Duration::from_hours(490_896))
+            .unwrap()
     }
 }
 
@@ -236,5 +232,5 @@ impl Fixture {
 }
 
 pub(crate) fn text(document: &str) -> ConfiguredCredentials {
-    ConfiguredCredentials::Text(document.to_owned())
+    ConfiguredCredentials::Text(SecretString::from(document))
 }

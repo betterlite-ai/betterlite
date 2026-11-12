@@ -5,3 +5,4 @@ mod builders;
 mod fixtures;
 mod getters;
 mod handles;
+mod seams;

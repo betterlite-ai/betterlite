@@ -69,7 +69,10 @@ async fn reads_the_gcloud_configuration_project() {
     let mut fixture = Fixture::new();
     fixture.files = FakeFiles::default()
         .with(GCLOUD_CREDENTIALS, AUTHORIZED_USER.as_bytes())
-        .with(GCLOUD_CONFIGURATION, b"core:\n  project: file-project\n");
+        .with(
+            GCLOUD_CONFIGURATION,
+            b"[compute]\nproject = compute-project\n[core]\naccount = me@example.com\nproject = file-project\n",
+        );
     fixture.environment.gcloud_credentials = Some(PathBuf::from(GCLOUD_CREDENTIALS));
     fixture.environment.gcloud_configuration = Some(PathBuf::from(GCLOUD_CONFIGURATION));
     let loaded = fixture.load(None, None).await.unwrap();
@@ -83,7 +86,7 @@ async fn an_application_credentials_path_equal_to_the_gcloud_file_uses_the_gclou
         .with(GCLOUD_CREDENTIALS, AUTHORIZED_USER.as_bytes())
         .with(
             GCLOUD_CONFIGURATION,
-            b"core:\n  project: configuration-project\n",
+            b"[core]\nproject = configuration-project\n",
         );
     fixture.environment.application_credentials = Some(PathBuf::from(GCLOUD_CREDENTIALS));
     fixture.environment.gcloud_credentials = Some(PathBuf::from(GCLOUD_CREDENTIALS));

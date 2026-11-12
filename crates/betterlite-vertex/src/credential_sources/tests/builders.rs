@@ -19,7 +19,7 @@ use super::fixtures::FixedClock;
 use crate::aws_federation::AwsCredentialsResolver;
 use crate::aws_federation::FederationInput;
 use crate::credential_sources::error::CredentialSourceError;
-use crate::credential_sources::sdk::{CredentialBuilders, GoogleAuth, HttpPolicy};
+use crate::credential_sources::sdk::{CredentialBuilders as _, GoogleAuth, HttpPolicy};
 
 // a throwaway test key, never a real service account
 const SERVICE_ACCOUNT_KEY: &str = "-----BEGIN PRIVATE KEY-----
@@ -121,24 +121,20 @@ async fn upstream(status: u16, body: &'static str) -> Upstream {
 }
 
 fn aws_document(host: &str, region: Option<&str>) -> String {
-    let region = region.map_or_else(String::new, |region| {
-        format!(r#","aws_region_name":"{region}""#)
+    let region_key = region.map_or_else(String::new, |name| {
+        format!(r#","aws_region_name":"{name}""#)
     });
     format!(
-        r#"{{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","token_url":"http://{host}/v1/token","credential_source":{{"environment_id":"aws1"}},"aws_access_key_id":"AKIAEXAMPLE","aws_secret_access_key":"aws-secret"{region}}}"#
+        r#"{{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","token_url":"http://{host}/v1/token","credential_source":{{"environment_id":"aws1"}},"aws_access_key_id":"AKIAEXAMPLE","aws_secret_access_key":"aws-secret"{region_key}}}"#
     )
 }
 
 #[tokio::test]
 async fn builds_a_service_account_credential() {
-    let document = serde_json::json!({
-        "type": "service_account",
-        "project_id": "project",
-        "private_key_id": "key-id",
-        "private_key": SERVICE_ACCOUNT_KEY,
-        "client_email": "sa@example.iam.gserviceaccount.com",
-    })
-    .to_string();
+    let key = SERVICE_ACCOUNT_KEY.replace('\n', "\\n");
+    let document = format!(
+        r#"{{"type":"service_account","project_id":"project","private_key_id":"key-id","private_key":"{key}","client_email":"sa@example.iam.gserviceaccount.com"}}"#
+    );
     let source = google_auth().service_account(&document, &scopes()).unwrap();
     let token = source.access_token().await.unwrap();
     assert!(token.expose_secret().starts_with("ey"));
@@ -146,51 +142,22 @@ async fn builds_a_service_account_credential() {
 
 #[tokio::test]
 async fn builds_an_authorized_user_credential() {
-    let document = serde_json::json!({
-        "type": "authorized_user",
-        "client_id": "client",
-        "client_secret": "client-secret",
-        "refresh_token": "refresh-token",
-    })
-    .to_string();
-    assert!(google_auth().authorized_user(&document, &scopes()).is_ok());
+    let document = r#"{"type":"authorized_user","client_id":"client","client_secret":"client-secret","refresh_token":"refresh-token"}"#;
+    google_auth().authorized_user(document, &scopes()).unwrap();
 }
 
 #[tokio::test]
 async fn builds_an_identity_pool_credential() {
-    let document = serde_json::json!({
-        "type": "external_account",
-        "audience": "audience",
-        "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
-        "credential_source": {"file": "/run/token"},
-    })
-    .to_string();
-    assert!(google_auth().identity_pool(&document, &scopes()).is_ok());
+    let document = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"file":"/run/token"}}"#;
+    google_auth().identity_pool(document, &scopes()).unwrap();
 }
 
 #[tokio::test]
 async fn builds_an_identity_pool_with_aws_credential() {
-    let document = serde_json::json!({
-        "type": "external_account",
-        "audience": "audience",
-        "subject_token_type": "urn:ietf:params:oauth:token-type:aws4_request",
-        "credential_source": {"environment_id": "aws1"},
-    })
-    .to_string();
-    assert!(
-        google_auth()
-            .identity_pool_with_aws(&document, &scopes())
-            .is_ok()
-    );
-}
-
-#[tokio::test]
-async fn refuses_the_pluggable_source() {
-    let error = google_auth()
-        .pluggable("{}", &scopes())
-        .err()
-        .expect("the pluggable source is refused");
-    assert!(matches!(error, CredentialSourceError::ExecutableSource));
+    let document = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","credential_source":{"environment_id":"aws1"}}"#;
+    google_auth()
+        .identity_pool_with_aws(document, &scopes())
+        .unwrap();
 }
 
 #[tokio::test]

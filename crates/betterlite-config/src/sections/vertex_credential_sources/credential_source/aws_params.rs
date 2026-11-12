@@ -1,91 +1,52 @@
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::Secret;
 
 // the ten LiteLLM aws_* keys a workload identity pool may carry instead of using the metadata service
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct AwsParams {
-    #[serde(
-        rename = "aws_access_key_id",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub access_key_id: Option<Secret>,
-    #[serde(
-        rename = "aws_secret_access_key",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub secret_access_key: Option<Secret>,
-    #[serde(
-        rename = "aws_session_token",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub session_token: Option<Secret>,
-    #[serde(
-        rename = "aws_region_name",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub region_name: Option<String>,
-    #[serde(
-        rename = "aws_session_name",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub session_name: Option<String>,
-    #[serde(
-        rename = "aws_profile_name",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub profile_name: Option<String>,
-    #[serde(
-        rename = "aws_role_name",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub role_name: Option<String>,
-    #[serde(
-        rename = "aws_web_identity_token",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub web_identity_token: Option<Secret>,
-    #[serde(
-        rename = "aws_sts_endpoint",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub sts_endpoint: Option<String>,
-    #[serde(
-        rename = "aws_external_id",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub external_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_access_key_id: Option<Secret>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_secret_access_key: Option<Secret>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_session_token: Option<Secret>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_region_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_session_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_profile_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_role_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_web_identity_token: Option<Secret>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_sts_endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aws_external_id: Option<String>,
 }
 
 impl AwsParams {
     #[must_use]
     pub const fn any(&self) -> bool {
-        self.access_key_id.is_some()
-            || self.secret_access_key.is_some()
-            || self.session_token.is_some()
-            || self.region_name.is_some()
-            || self.session_name.is_some()
-            || self.profile_name.is_some()
-            || self.role_name.is_some()
-            || self.web_identity_token.is_some()
-            || self.sts_endpoint.is_some()
-            || self.external_id.is_some()
+        self.aws_access_key_id.is_some()
+            || self.aws_secret_access_key.is_some()
+            || self.aws_session_token.is_some()
+            || self.aws_region_name.is_some()
+            || self.aws_session_name.is_some()
+            || self.aws_profile_name.is_some()
+            || self.aws_role_name.is_some()
+            || self.aws_web_identity_token.is_some()
+            || self.aws_sts_endpoint.is_some()
+            || self.aws_external_id.is_some()
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CredentialSourceFormat {
     #[serde(rename = "type")]
     pub format_type: String,
@@ -93,7 +54,7 @@ pub struct CredentialSourceFormat {
     pub subject_token_field_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ExternalCredentialSource {
     Aws {
@@ -124,7 +85,7 @@ pub enum ExternalCredentialSource {
     },
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExecutableConfig {
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

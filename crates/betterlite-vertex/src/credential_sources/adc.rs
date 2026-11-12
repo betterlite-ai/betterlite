@@ -1,12 +1,12 @@
-use std::io::ErrorKind;
+use std::io::{self, ErrorKind};
 use std::path::Path;
+use std::str::from_utf8;
 use std::sync::Arc;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     CredentialSource, decode_vertex_credentials,
 };
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
-use serde::Deserialize;
 
 use super::error::CredentialSourceError;
 use super::files::FileReader;
@@ -28,28 +28,41 @@ pub async fn credentials_from_default_auth(
     if let Some(path) = environment.application_credentials.as_deref()
         && Some(path) != gcloud
     {
-        let source = read_source(path, deps.files)?;
+        let source =
+            read_optional_source(path, deps.files)?.ok_or_else(|| CredentialSourceError::Read {
+                path: path.to_path_buf(),
+                source: io::Error::new(
+                    ErrorKind::NotFound,
+                    "the vertex credentials file is absent",
+                ),
+            })?;
         let handle = build_adc_source(&source, scopes, deps.http)?;
-        return Ok((handle, environment.project.clone()));
+        let project = environment
+            .project
+            .clone()
+            .or_else(|| source.project_id().map(str::to_owned));
+        return Ok((handle, project));
     }
-    if let Some(path) = gcloud {
-        match read_optional_source(path, deps.files) {
-            Ok(Some(source)) => {
-                let handle = build_adc_source(&source, scopes, deps.http)?;
-                let project = environment
-                    .project
-                    .clone()
-                    .or_else(|| source.project_id().map(str::to_owned))
-                    .or_else(|| environment.gcloud_project.clone())
-                    .or_else(|| {
-                        gcloud_project(deps.files, environment.gcloud_configuration.as_deref())
-                    });
-                return Ok((handle, project));
-            }
-            Ok(None) => {}
-            Err(error) => return Err(error),
-        }
+    if let Some(path) = gcloud
+        && let Some(source) = read_optional_source(path, deps.files)?
+    {
+        let handle = build_adc_source(&source, scopes, deps.http)?;
+        let project = environment
+            .project
+            .clone()
+            .or_else(|| source.project_id().map(str::to_owned))
+            .or_else(|| environment.gcloud_project.clone())
+            .or_else(|| gcloud_project(deps.files, environment.gcloud_configuration.as_deref()));
+        return Ok((handle, project));
     }
+    metadata_credentials(scopes, deps).await
+}
+
+async fn metadata_credentials(
+    scopes: &[String],
+    deps: &AdcDeps<'_>,
+) -> Result<(Arc<dyn TokenSource>, Option<String>), CredentialSourceError> {
+    let environment = deps.environment;
     let handle = deps
         .http
         .metadata(environment.metadata_host.as_deref(), scopes)?;
@@ -69,37 +82,18 @@ fn build_adc_source(
     scopes: &[String],
     builders: &dyn CredentialBuilders,
 ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
+    let document = source.document();
     match source {
-        CredentialSource::ServiceAccount(account) => {
-            builders.service_account(&account.document(), scopes)
-        }
-        CredentialSource::AuthorizedUser(user) => {
-            builders.authorized_user(&user.document(), scopes)
-        }
+        CredentialSource::ServiceAccount(_) => builders.service_account(&document, scopes),
+        CredentialSource::AuthorizedUser(_) => builders.authorized_user(&document, scopes),
         CredentialSource::ExternalAccount(account) => {
-            let document = account.document();
             if account.aws_environment().is_some() {
                 builders.identity_pool_with_aws(&document, scopes)
-            } else if account.is_executable() {
-                builders.pluggable(&document, scopes)
             } else {
                 builders.identity_pool(&document, scopes)
             }
         }
     }
-}
-
-fn read_source(
-    path: &Path,
-    files: &dyn FileReader,
-) -> Result<CredentialSource, CredentialSourceError> {
-    let bytes = files
-        .read(path)
-        .map_err(|source| CredentialSourceError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    decode_vertex_credentials(&bytes).map_err(CredentialSourceError::Decode)
 }
 
 // the well-known gcloud ADC file only exists after gcloud auth application-default login
@@ -119,24 +113,17 @@ fn read_optional_source(
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct GcloudConfiguration {
-    #[serde(default)]
-    core: GcloudCore,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct GcloudCore {
-    project: Option<String>,
-}
-
-// `gcloud config get project` runs a subprocess in google-auth; the same value is read from its file
+// google-auth runs `gcloud config get project`; gcloud keeps that value under [core] in its INI file
 fn gcloud_project(files: &dyn FileReader, path: Option<&Path>) -> Option<String> {
     let bytes = files.read(path?).ok()?;
-    let text = std::str::from_utf8(&bytes).ok()?;
-    let configuration: GcloudConfiguration = serde_saphyr::from_str(text).ok()?;
-    configuration
-        .core
-        .project
+    let core = from_utf8(&bytes)
+        .ok()?
+        .split("\n[")
+        .find_map(|section| section.trim_start_matches('[').strip_prefix("core]"))?;
+    core.lines()
+        .find_map(|line| {
+            let (key, value) = line.split_once(['=', ':'])?;
+            (key.trim() == "project").then(|| value.trim().to_owned())
+        })
         .filter(|project| !project.is_empty())
 }

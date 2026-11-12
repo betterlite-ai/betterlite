@@ -190,6 +190,21 @@ fn resolves_the_gcloud_adc_file_paths() {
         configured.gcloud_configuration,
         Some(PathBuf::from("/sdk/configurations/config_default"))
     );
+
+    let active = load(
+        "",
+        &[
+            ("CLOUDSDK_CONFIG", "/sdk"),
+            ("CLOUDSDK_ACTIVE_CONFIG_NAME", "work"),
+        ],
+        None,
+    )
+    .unwrap()
+    .adc;
+    assert_eq!(
+        active.gcloud_configuration,
+        Some(PathBuf::from("/sdk/configurations/config_work"))
+    );
 }
 
 #[test]

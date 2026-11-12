@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+use betterlite_config::sections::vertex_credential_sources::credential_source::{
+    ConfiguredCredentials, decode_vertex_credentials,
+};
+
 use super::fixtures::{FakeFiles, Fixture, text};
 use crate::credential_sources::error::CredentialSourceError;
 use crate::credential_sources::handles::CLOUD_PLATFORM_SCOPE;
@@ -151,14 +155,14 @@ async fn refreshes_before_the_missing_project_error() {
         .load(Some(&text(AUTHORIZED_USER_WITHOUT_PROJECT)), None)
         .await
         .unwrap_err();
-    assert!(matches!(error, CredentialSourceError::ExecutableSource));
+    assert!(matches!(error, CredentialSourceError::Read { .. }));
 
-    let fixture = Fixture::new();
-    let error = fixture
+    let healthy = Fixture::new();
+    let missing = healthy
         .load(Some(&text(AUTHORIZED_USER_WITHOUT_PROJECT)), None)
         .await
         .unwrap_err();
-    assert!(matches!(error, CredentialSourceError::MissingProject));
+    assert!(matches!(missing, CredentialSourceError::MissingProject));
 }
 
 #[tokio::test]
@@ -217,15 +221,9 @@ async fn refuses_an_executable_credentials_file() {
 #[tokio::test]
 async fn accepts_a_decoded_credential_source() {
     let fixture = Fixture::new();
-    let source = betterlite_config::sections::vertex_credential_sources::credential_source::decode_vertex_credentials(
-        SERVICE_ACCOUNT.as_bytes(),
-    )
-    .unwrap();
+    let source = decode_vertex_credentials(SERVICE_ACCOUNT.as_bytes()).unwrap();
     let loaded = fixture
-        .load(
-            Some(&betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials::Source(source)),
-            None,
-        )
+        .load(Some(&ConfiguredCredentials::Source(source)), None)
         .await
         .unwrap();
     assert_eq!(loaded.project, "key-project");
@@ -245,4 +243,16 @@ async fn errors_never_show_the_credential_material() {
             .contains("Unable to load vertex credentials from environment"),
         "{error}"
     );
+}
+
+#[tokio::test]
+async fn the_loaded_auth_debug_shows_only_the_project() {
+    let fixture = Fixture::new();
+    let loaded = fixture
+        .load(Some(&text(SERVICE_ACCOUNT)), None)
+        .await
+        .unwrap();
+    let debug = format!("{loaded:?}");
+    assert!(debug.contains("key-project"), "{debug}");
+    assert!(!debug.contains("KEYMATERIAL"), "{debug}");
 }

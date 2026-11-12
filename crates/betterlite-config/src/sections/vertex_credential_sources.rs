@@ -39,88 +39,66 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            project: configured_project(self.litellm_settings.vertex_project, lookup)?,
-            location: configured_location(self.litellm_settings.vertex_location, lookup)?,
-            credentials: configured_credentials(lookup)?,
+            project: resolve_setting(
+                self.litellm_settings.vertex_project,
+                "litellm_settings.vertex_project",
+                &["VERTEXAI_PROJECT"],
+                lookup,
+            )?,
+            location: resolve_setting(
+                self.litellm_settings.vertex_location,
+                "litellm_settings.vertex_location",
+                &["VERTEXAI_LOCATION", "VERTEX_LOCATION"],
+                lookup,
+            )?,
+            credentials: parse_credentials(
+                lookup
+                    .lookup("VERTEXAI_CREDENTIALS")
+                    .filter(|text| !text.is_empty()),
+            )?,
             adc: adc_environment(lookup),
         })
     }
 }
 
-fn configured_project<L>(
+fn resolve_setting<L>(
     configured: Option<String>,
+    path: &str,
+    environment: &[&str],
     lookup: &L,
 ) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    match configured {
-        Some(text) => Ok(Some(resolve_string(
-            text,
-            "litellm_settings.vertex_project",
-            lookup,
-        )?)),
-        None => Ok(lookup
-            .lookup("VERTEXAI_PROJECT")
-            .filter(|text| !text.is_empty())),
+    if let Some(text) = configured {
+        return resolve_string(text, path, lookup).map(Some);
     }
-}
-
-fn configured_location<L>(
-    configured: Option<String>,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match configured {
-        Some(text) => Ok(Some(resolve_string(
-            text,
-            "litellm_settings.vertex_location",
-            lookup,
-        )?)),
-        None => Ok(lookup
-            .lookup("VERTEXAI_LOCATION")
-            .filter(|text| !text.is_empty())
-            .or_else(|| {
-                lookup
-                    .lookup("VERTEX_LOCATION")
-                    .filter(|text| !text.is_empty())
-            })),
-    }
+    Ok(environment
+        .iter()
+        .find_map(|name| lookup.lookup(name).filter(|text| !text.is_empty())))
 }
 
 // LiteLLM reads an empty environment variable as unset everywhere, unlike its last-alias get_secret_str
-fn configured_credentials<L>(lookup: &L) -> Result<Option<ConfiguredCredentials>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    lookup
-        .lookup("VERTEXAI_CREDENTIALS")
-        .filter(|text| !text.is_empty())
-        .map_or_else(
-            || Ok(None),
-            |text| {
-                ConfiguredCredentials::from_text(text)
-                    .map(Some)
-                    .map_err(|_source| ConfigError::InvalidScalar {
-                        path: "vertex_credentials".to_owned(),
-                        value: false,
-                    })
-            },
-        )
+fn parse_credentials(text: Option<String>) -> Result<Option<ConfiguredCredentials>, ConfigError> {
+    let Some(credentials) = text else {
+        return Ok(None);
+    };
+    ConfiguredCredentials::from_text(credentials)
+        .map(Some)
+        .map_err(|_source| ConfigError::InvalidScalar {
+            path: "vertex_credentials".to_owned(),
+            value: false,
+        })
 }
 
-fn adc_environment<L>(lookup: &L) -> AdcEnvironment
-where
-    L: EnvironmentLookup,
-{
+fn adc_environment(lookup: &dyn EnvironmentLookup) -> AdcEnvironment {
     let read = |name: &str| lookup.lookup(name).filter(|text| !text.is_empty());
     let gcloud = read("CLOUDSDK_CONFIG").map(PathBuf::from).or_else(|| {
         lookup
             .system_home()
             .map(|home| home.join(".config").join("gcloud"))
     });
+    let active = read("CLOUDSDK_ACTIVE_CONFIG_NAME").unwrap_or_else(|| "default".to_owned());
     AdcEnvironment {
         application_credentials: read("GOOGLE_APPLICATION_CREDENTIALS").map(PathBuf::from),
         project: read("GOOGLE_CLOUD_PROJECT").or_else(|| read("GCLOUD_PROJECT")),
@@ -130,7 +108,7 @@ where
             .map(|dir| dir.join("application_default_credentials.json")),
         gcloud_configuration: gcloud
             .as_ref()
-            .map(|dir| dir.join("configurations").join("config_default")),
+            .map(|dir| dir.join("configurations").join(format!("config_{active}"))),
         metadata_host: read("GCE_METADATA_HOST").or_else(|| read("GCE_METADATA_ROOT")),
     }
 }

@@ -17,10 +17,13 @@ pub fn safe_get_vertex_ai_project<'value>(
     params: &'value VertexParams<'_>,
     settings: &'value VertexSettings,
 ) -> Option<&'value str> {
-    params
-        .project
-        .or(params.ai_project)
-        .or(settings.project.as_deref())
+    if let Some(project) = params.project {
+        return Some(project);
+    }
+    if let Some(project) = params.ai_project {
+        return Some(project);
+    }
+    settings.project.as_deref()
 }
 
 #[must_use]
@@ -28,10 +31,10 @@ pub fn safe_get_vertex_ai_credentials<'value>(
     params: &'value VertexParams<'_>,
     settings: &'value VertexSettings,
 ) -> Option<&'value ConfiguredCredentials> {
-    params
-        .credentials
-        .or(params.ai_credentials)
-        .or(settings.credentials.as_ref())
+    if let Some(credentials) = params.credentials.or(params.ai_credentials) {
+        return Some(credentials);
+    }
+    settings.credentials.as_ref()
 }
 
 // LiteLLM's explicit projection drops empty strings and never falls back to a module or env setting
@@ -42,7 +45,7 @@ pub fn explicit_vertex_ai_location<'value>(
     params
         .location
         .filter(|location| !location.is_empty())
-        .or(params.ai_location.filter(|location| !location.is_empty()))
+        .or_else(|| params.ai_location.filter(|location| !location.is_empty()))
 }
 
 #[must_use]
@@ -50,8 +53,8 @@ pub fn safe_get_vertex_ai_location<'value>(
     params: &'value VertexParams<'_>,
     settings: &'value VertexSettings,
 ) -> Option<&'value str> {
-    match explicit_vertex_ai_location(params) {
-        Some(location) => Some(location),
-        None => settings.location.as_deref(),
+    if let Some(location) = explicit_vertex_ai_location(params) {
+        return Some(location);
     }
+    settings.location.as_deref()
 }

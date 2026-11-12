@@ -3114,7 +3114,6 @@ dependencies = [
  "rust_decimal",
  "secrecy",
  "serde",
- "serde-saphyr",
  "serde_json",
  "serde_with",
  "thiserror",

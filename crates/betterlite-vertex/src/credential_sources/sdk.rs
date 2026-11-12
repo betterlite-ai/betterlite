@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -24,6 +24,7 @@ use url::Url;
 
 use super::aws::{AwsCredentialsSource, AwsWifTokenSource};
 use super::error::CredentialSourceError;
+use crate::aws_federation::FederationInput;
 
 const DEFAULT_METADATA_HOST: &str = "metadata.google.internal";
 const METADATA_PROJECT_PATH: &str = "/computeMetadata/v1/project/project-id";
@@ -75,11 +76,6 @@ pub trait CredentialBuilders: Send + Sync {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
-    fn pluggable(
-        &self,
-        document: &str,
-        scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
     fn metadata(
         &self,
         endpoint: Option<&str>,
@@ -87,7 +83,7 @@ pub trait CredentialBuilders: Send + Sync {
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
     fn aws_federation(
         &self,
-        input: crate::aws_federation::FederationInput,
+        input: FederationInput,
         resolver: Arc<dyn AwsCredentialsSource>,
         clock: Arc<dyn CredentialClock>,
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError>;
@@ -98,14 +94,14 @@ pub trait CredentialBuilders: Send + Sync {
 }
 
 pub trait CredentialClock: Send + Sync {
-    fn now(&self) -> std::time::SystemTime;
+    fn now(&self) -> SystemTime;
 }
 
 pub struct SystemClock;
 
 impl CredentialClock for SystemClock {
-    fn now(&self) -> std::time::SystemTime {
-        std::time::SystemTime::now()
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
     }
 }
 
@@ -141,24 +137,15 @@ fn build(
     Ok(source)
 }
 
-impl GoogleAuth {
-    fn external(
-        &self,
-        document: &str,
-        scopes: &[String],
-        kind: &'static str,
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        let config = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
-        build(
-            kind,
-            external_account::Builder::new(config)
-                .with_scopes(scopes.iter().cloned())
-                .with_retry_policy(self.policy.retry.clone())
-                .with_backoff_policy(self.policy.backoff.clone())
-                .with_retry_throttler(self.policy.throttler.clone())
-                .build_access_token_credentials(),
-        )
-    }
+// every refresh-based builder applies the same scopes and HTTP policy to its SDK builder
+macro_rules! with_http_policy {
+    ($builder:expr, $scopes:expr, $policy:expr) => {
+        $builder
+            .with_scopes($scopes.iter().cloned())
+            .with_retry_policy($policy.retry.clone())
+            .with_backoff_policy($policy.backoff.clone())
+            .with_retry_throttler($policy.throttler.clone())
+    };
 }
 
 impl CredentialBuilders for GoogleAuth {
@@ -168,12 +155,9 @@ impl CredentialBuilders for GoogleAuth {
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
         let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
-        build(
-            "service_account",
-            ServiceAccountBuilder::new(key)
-                .with_access_specifier(AccessSpecifier::from_scopes(scopes.iter().cloned()))
-                .build_access_token_credentials(),
-        )
+        let builder = ServiceAccountBuilder::new(key)
+            .with_access_specifier(AccessSpecifier::from_scopes(scopes.iter().cloned()));
+        build("service_account", builder.build_access_token_credentials())
     }
 
     fn authorized_user(
@@ -182,15 +166,8 @@ impl CredentialBuilders for GoogleAuth {
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
         let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
-        build(
-            "authorized_user",
-            user_account::Builder::new(key)
-                .with_scopes(scopes.iter().cloned())
-                .with_retry_policy(self.policy.retry.clone())
-                .with_backoff_policy(self.policy.backoff.clone())
-                .with_retry_throttler(self.policy.throttler.clone())
-                .build_access_token_credentials(),
-        )
+        let builder = with_http_policy!(user_account::Builder::new(key), scopes, &self.policy);
+        build("authorized_user", builder.build_access_token_credentials())
     }
 
     fn identity_pool(
@@ -198,23 +175,18 @@ impl CredentialBuilders for GoogleAuth {
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.external(document, scopes, "identity_pool")
+        let key = serde_json::from_str(document).map_err(CredentialSourceError::Document)?;
+        let builder = with_http_policy!(external_account::Builder::new(key), scopes, &self.policy);
+        build("external_account", builder.build_access_token_credentials())
     }
 
+    // google-cloud-auth picks the AWS subject token from credential_source itself
     fn identity_pool_with_aws(
         &self,
         document: &str,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        self.external(document, scopes, "identity_pool_with_aws")
-    }
-
-    fn pluggable(
-        &self,
-        _document: &str,
-        _scopes: &[String],
-    ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        Err(CredentialSourceError::ExecutableSource)
+        self.identity_pool(document, scopes)
     }
 
     fn metadata(
@@ -222,11 +194,7 @@ impl CredentialBuilders for GoogleAuth {
         endpoint: Option<&str>,
         scopes: &[String],
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
-        let mut builder = mds::Builder::default()
-            .with_scopes(scopes.iter().cloned())
-            .with_retry_policy(self.policy.retry.clone())
-            .with_backoff_policy(self.policy.backoff.clone())
-            .with_retry_throttler(self.policy.throttler.clone());
+        let mut builder = with_http_policy!(mds::Builder::default(), scopes, &self.policy);
         if let Some(host) = endpoint {
             builder = builder.with_endpoint(format!("http://{host}"));
         }
@@ -235,7 +203,7 @@ impl CredentialBuilders for GoogleAuth {
 
     fn aws_federation(
         &self,
-        input: crate::aws_federation::FederationInput,
+        input: FederationInput,
         resolver: Arc<dyn AwsCredentialsSource>,
         clock: Arc<dyn CredentialClock>,
     ) -> Result<Arc<dyn TokenSource>, CredentialSourceError> {
@@ -251,9 +219,9 @@ impl CredentialBuilders for GoogleAuth {
         &self,
         endpoint: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
-        let endpoint = endpoint.map(str::to_owned);
+        let owned_endpoint = endpoint.map(str::to_owned);
         Box::pin(async move {
-            let host = endpoint.as_deref().unwrap_or(DEFAULT_METADATA_HOST);
+            let host = owned_endpoint.as_deref().unwrap_or(DEFAULT_METADATA_HOST);
             let url = Url::parse(&format!("http://{host}{METADATA_PROJECT_PATH}")).ok()?;
             let mut headers = HeaderMap::new();
             headers.insert("metadata-flavor", HeaderValue::from_static("Google"));

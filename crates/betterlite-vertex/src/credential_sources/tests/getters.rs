@@ -3,6 +3,7 @@
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
+use secrecy::SecretString;
 
 use crate::credential_sources::getters::{
     VertexParams, explicit_vertex_ai_location, safe_get_vertex_ai_credentials,
@@ -10,7 +11,7 @@ use crate::credential_sources::getters::{
 };
 
 fn text(value: &str) -> ConfiguredCredentials {
-    ConfiguredCredentials::Text(value.to_owned())
+    ConfiguredCredentials::Text(SecretString::from(value))
 }
 
 fn params<'values>(
