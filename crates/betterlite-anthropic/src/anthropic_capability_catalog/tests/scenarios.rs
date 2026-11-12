@@ -1,3 +1,4 @@
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::fixture::{Fixture, Session, capture_warnings};
@@ -21,12 +22,14 @@ use crate::anthropic_capability_catalog::{
 const CATALOG_MODELS: &str = r#"{
     "anthropic/claude-x": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
     "claude-y": {"litellm_provider": "anthropic", "supports_adaptive_thinking": false},
-    "claude-z": {"litellm_provider": "anthropic"}
+    "claude-z": {"litellm_provider": "anthropic"},
+    "anthropic/claude-q": {"litellm_provider": "anthropic", "supports_adaptive_thinking": "yes"}
 }"#;
 const CATALOG_PACKAGED: &str = r#"{
     "claude-x": {"thinking_always_on": true},
     "claude-y": {"supports_adaptive_thinking": true},
-    "claude-z": {"supports_legacy_thinking": true}
+    "claude-z": {"supports_legacy_thinking": true},
+    "claude-q": {"supports_adaptive_thinking": true}
 }"#;
 
 const THINKING_MODELS: &str = r#"{
@@ -185,6 +188,11 @@ pub(super) async fn provider_qualified_catalog() {
         [false, false, true],
         "the raw fallback is the last resort"
     );
+    assert_eq!(
+        thinking_capabilities(&fixture, "claude-q").await,
+        [true, false, false],
+        "a non-bool resolved flag has no opinion, so the raw packaged true answers"
+    );
 }
 
 // Each row is the model, the optional_params before translation and the expected params after it.
@@ -276,6 +284,12 @@ const CALL_DROP: DropParams = DropParams {
     call: true,
 };
 
+fn assert_unsupported_params(class: Option<ErrorClass>) {
+    let error_class = class.expect("an UnsupportedParamsError class");
+    assert!(matches!(error_class, ErrorClass::UnsupportedParams(_)));
+    assert_eq!(error_class.metadata().code, "400_INVALID_PARAMETER_VALUE");
+}
+
 pub(super) fn forced_tool_downgrade() {
     let fixture = Fixture::new(FORCED_MODELS, "{}");
     let catalogs = fixture.catalogs();
@@ -284,6 +298,8 @@ pub(super) fn forced_tool_downgrade() {
     let refused = forced_tool_use_downgraded("claude-fable-5-1", NO_DROP, &catalogs)
         .expect_err("no drop_params");
     assert_eq!(refused.status_code(), Some(400));
+    assert_unsupported_params(refused.classify());
+    assert!(ForcedToolChoiceError::MissingType.classify().is_none());
     assert_eq!(
         forced_tool_use_downgraded("claude-sonnet-4-5", NO_DROP, &catalogs),
         Ok(false)
@@ -427,6 +443,7 @@ fn temperature_refusal(fixture: &Fixture) {
     let temperature = sampling(fixture, "claude-opus-4-8", Temperature, &half, NO_DROP)
         .expect_err("no drop_params");
     assert_eq!(temperature.status_code(), Some(400));
+    assert_unsupported_params(temperature.classify());
     let message = temperature.to_string();
     assert!(message.contains("claude-opus-4-8 does not support temperature=0.5."));
     assert!(message.contains("Only temperature=1 is supported."));
@@ -449,6 +466,12 @@ fn other_refusals(fixture: &Fixture) {
         .expect_err("no drop_params");
     assert_eq!(top_k.status_code(), Some(400));
     assert!(top_k.to_string().contains("does not support top_k=5."));
+    // LiteLLM forwards a value of 1 only for temperature
+    for param in [TopP, TopK] {
+        let refused = sampling(fixture, "claude-opus-4-8", param, &json("1"), NO_DROP)
+            .expect_err("only temperature=1 is forwarded");
+        assert_eq!(refused.status_code(), Some(400), "{param:?}=1");
+    }
 }
 
 pub(super) async fn legacy_budget_effort() {

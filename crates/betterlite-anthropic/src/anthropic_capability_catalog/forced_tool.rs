@@ -1,8 +1,9 @@
 use betterlite_context::anthropic_catalog_lookup::model_capability;
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{CatalogSources, DropParams};
+use super::{CatalogSources, DropParams, unsupported_params};
 
 pub const DROP_FORCED_TOOL_WARNING: &str = "Downgrading forced tool_choice to 'auto' for model=%s (drop_params=True): this model rejects tool_choice type 'any'/'tool' with a 400 because thinking is always on and a forced call would skip it.";
 
@@ -23,6 +24,14 @@ impl ForcedToolChoiceError {
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Unsupported { .. } => Some(400),
+            Self::MissingType | Self::NotAnObject => None,
+        }
+    }
+
+    #[must_use]
+    pub fn classify(&self) -> Option<ErrorClass> {
+        match self {
+            Self::Unsupported { .. } => Some(unsupported_params(self.to_string())),
             Self::MissingType | Self::NotAnObject => None,
         }
     }

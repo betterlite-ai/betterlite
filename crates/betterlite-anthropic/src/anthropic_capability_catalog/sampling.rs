@@ -1,8 +1,9 @@
 use betterlite_context::anthropic_catalog_lookup::model_capability;
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
-use super::{CatalogSources, DropParams};
+use super::{CatalogSources, DropParams, unsupported_params};
 
 // Claude 4.7+ (Opus 4.7/4.8, Fable 5) rejects top_p, top_k and any temperature but 1.
 const SAMPLING_REMOVED_MARKERS: [&str; 9] = [
@@ -59,6 +60,14 @@ impl SamplingError {
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Unsupported { .. } => Some(400),
+            Self::Value { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn classify(&self) -> Option<ErrorClass> {
+        match self {
+            Self::Unsupported { .. } => Some(unsupported_params(self.to_string())),
             Self::Value { .. } => None,
         }
     }

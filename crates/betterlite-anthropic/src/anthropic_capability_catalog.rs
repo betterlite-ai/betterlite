@@ -9,6 +9,7 @@ use betterlite_config::sections::anthropic_capability_catalog::{
 };
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 
@@ -55,4 +56,18 @@ pub struct CatalogSources<'source> {
     pub patterns: &'source CandidatePatterns,
     pub runtime: &'source RawCatalog,
     pub packaged: &'source RawCatalog,
+}
+
+// LiteLLM raises UnsupportedParamsError(message, status_code=400) with no model or provider.
+fn unsupported_params(message: String) -> ErrorClass {
+    ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+        message,
+        model: None,
+        provider: None,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }))
 }

@@ -7,14 +7,17 @@ call:
         anthropic/claude-x: {litellm_provider: anthropic, supports_adaptive_thinking: true}
         claude-y: {litellm_provider: anthropic, supports_adaptive_thinking: false}
         claude-z: {litellm_provider: anthropic}
+        anthropic/claude-q: {litellm_provider: anthropic, supports_adaptive_thinking: "yes"}
       packaged:
         claude-x: {thinking_always_on: true}
         claude-y: {supports_adaptive_thinking: true}
         claude-z: {supports_legacy_thinking: true}
+        claude-q: {supports_adaptive_thinking: true}
       thresholds: {medium: 2048, high: 4096, xhigh: 8192}
     steps:
       - {function: provider_qualified_catalog, model: claude-x, custom_llm_provider: anthropic}
       - {function: provider_qualified_catalog, model: claude-y, custom_llm_provider: anthropic}
       - {function: provider_qualified_catalog, model: claude-z, custom_llm_provider: anthropic}
+      - {function: provider_qualified_catalog, model: claude-q, custom_llm_provider: anthropic}
 env: {}
 compare: {ignore: []}

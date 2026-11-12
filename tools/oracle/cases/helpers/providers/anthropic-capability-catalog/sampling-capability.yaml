@@ -20,6 +20,8 @@ call:
       - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 0.9, output_key: top_p, drop_params: false, global_drop_params: true}
       - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 0.9, output_key: top_p, drop_params: false, global_drop_params: false}
       - {function: sampling_capability, model: claude-opus-4-8, param: top_k, value: 5, output_key: top_k, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 1, output_key: top_p, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_k, value: 1, output_key: top_k, drop_params: false, global_drop_params: false}
       - {function: sampling_capability, model: claude-opus-4-6, param: top_k, value: 5, output_key: top_k, drop_params: false, global_drop_params: false}
       - {function: sampling_capability, model: claude-opus-4-7, param: temperature, value: 0.2, output_key: temperature, drop_params: false, global_drop_params: false}
       - {function: sampling_capability, model: claude-fable-lite, param: temperature, value: 0.2, output_key: temperature, drop_params: false, global_drop_params: false}

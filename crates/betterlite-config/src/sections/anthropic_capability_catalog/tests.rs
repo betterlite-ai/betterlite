@@ -4,6 +4,7 @@ mod bedrock;
 
 use std::collections::BTreeMap;
 
+use betterlite_env::EnvError;
 use rstest::rstest;
 
 use super::{
@@ -64,10 +65,14 @@ fn assert_variable(name: &str, default: i64, variable: Variable) {
     assert_eq!(variable.read(&load("", &[(name, "")]).unwrap()), default);
     assert_eq!(variable.read(&load("", &[(name, " 88 ")]).unwrap()), 88);
     assert_eq!(variable.read(&load("", &[(name, "-5")]).unwrap()), -5);
-    assert!(matches!(
-        load("", &[(name, "not-a-number")]),
-        Err(ConfigError::InvalidInteger { path, .. }) if path == name
-    ));
+    for invalid in ["not-a-number", "1.5"] {
+        assert!(matches!(
+            load("", &[(name, invalid)]),
+            Err(ConfigError::Environment {
+                source: EnvError::Number { name: failed }
+            }) if failed == name
+        ));
+    }
 }
 
 fn assert_unrelated_key_rejected() {
