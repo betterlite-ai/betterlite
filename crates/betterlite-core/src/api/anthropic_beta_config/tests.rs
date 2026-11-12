@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fs;
 use std::future::pending;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -464,10 +464,17 @@ fn provider_alias_resolution(#[case] config: &str, #[case] provider: &str, #[cas
     assert_eq!(matrix(config).provider_name(provider), expected);
 }
 
-#[rstest]
-fn replays_corpus(#[files("fuzz/corpus/anthropic_beta_config/*")] path: PathBuf) {
-    let bytes = fs::read(path).unwrap();
-    if let Ok(node) = decode_beta_matrix(&bytes, ApiLimits::default()) {
-        drop(validate_beta_matrix(node));
-    }
+#[test]
+fn replays_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_beta_config");
+    let replayed = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let bytes = fs::read(entry.unwrap().path()).unwrap();
+            if let Ok(node) = decode_beta_matrix(&bytes, ApiLimits::default()) {
+                drop(validate_beta_matrix(node));
+            }
+        })
+        .count();
+    assert!(replayed >= 9);
 }
