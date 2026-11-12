@@ -1,7 +1,7 @@
 import time
 import uuid
 from collections.abc import Collection, Mapping, Sequence
-from typing import ClassVar, Final, Literal
+from typing import ClassVar, Final, Literal, TypeVar
 
 from typing_extensions import override
 
@@ -9,7 +9,7 @@ from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.choices import Choices, FinishReason, StreamingChoices
 from betterlite.types.utils.tool_calls import ChatCompletionTokenLogprob
 from betterlite.types.utils.usage import Usage
-from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
+from betterlite.types.utils.values import JsonValue, ModelObject, StoredValue, ValidationError
 
 OPENAI_RESPONSE_HEADERS: Final[tuple[str, ...]] = (
     "x-ratelimit-remaining-requests", "x-ratelimit-remaining-tokens",
@@ -81,7 +81,7 @@ class ModelResponse(ModelResponseBase):
         data: dict[str, StoredValue] = dict(params)
         match choices:
             case list():
-                data["choices"] = choices
+                data["choices"] = [convert_choice(choice, Choices) for choice in choices]
             case _other:
                 data["choices"] = [Choices()]
         data["id"] = _generate_id() if id is None else id
@@ -113,7 +113,7 @@ class ModelResponseStream(ModelResponseBase):
         data: dict[str, StoredValue] = dict(kwargs)
         match choices:
             case list():
-                data["choices"] = choices
+                data["choices"] = [convert_choice(choice, StreamingChoices) for choice in choices]
             case _other:
                 data["choices"] = [StreamingChoices()]
         data["id"] = _generate_id() if id is None else id
@@ -217,7 +217,7 @@ def response_usage(value: StoredValue) -> StoredValue:
             return value
         case Mapping():
             return Usage(**value)
-        case ResponseObject():
+        case ModelObject():
             dumped = value.model_dump()
             match dumped:
                 case Mapping():
@@ -226,6 +226,26 @@ def response_usage(value: StoredValue) -> StoredValue:
                     return value
         case _other:
             return value
+
+
+ChoiceType = TypeVar("ChoiceType", Choices, StreamingChoices)
+
+
+def convert_choice(choice: StoredValue, constructor: type[ChoiceType]) -> StoredValue:
+    if constructor in choice.__class__.__mro__:
+        return choice
+    match choice:
+        case Mapping():
+            return constructor(**choice)
+        case ModelObject():
+            dumped = choice.model_dump()
+            match dumped:
+                case Mapping():
+                    return constructor(**dumped)
+                case _other:
+                    return choice
+        case _other:
+            return choice
 
 
 __all__ = [

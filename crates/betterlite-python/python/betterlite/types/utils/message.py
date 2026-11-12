@@ -83,7 +83,7 @@ class Delta(ResponseObject):
     role: str | None
     function_call: FunctionCall | None
     tool_calls: list[ChatCompletionDeltaToolCall | DeltaCustomToolCall] | None
-    audio: ChatCompletionAudioResponse | None
+    audio: ChatCompletionAudioResponse | JsonValue
     reasoning_content: str | None
     thinking_blocks: list[JsonValue] | None
     reasoning_items: list[JsonValue] | None

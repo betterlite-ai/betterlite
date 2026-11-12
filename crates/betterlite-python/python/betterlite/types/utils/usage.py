@@ -4,7 +4,13 @@ from typing import ClassVar, Literal
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
+from betterlite.types.utils.values import (
+    MODEL_TYPES,
+    JsonValue,
+    ModelObject,
+    StoredValue,
+    ValidationError,
+)
 
 CACHED_TARGETS: tuple[tuple[Literal["cached", "write"], str], ...] = (
     ("cached", "prompt_cache_hit_tokens"), ("cached", "cache_read_input_tokens"),
@@ -120,12 +126,13 @@ class Usage(ResponseObject):
         server_tool_use: StoredValue = None, cost: StoredValue = None,
         **params: StoredValue,
     ) -> None:
+        prompt_details_input = prompt_details_value(prompt_tokens_details)
         super().__init__(
             prompt_tokens=token_count(prompt_tokens, "prompt_tokens"),
             completion_tokens=token_count(completion_tokens, "completion_tokens"),
             total_tokens=token_count(total_tokens, "total_tokens"),
             completion_tokens_details=completion_tokens_details,
-            prompt_tokens_details=prompt_tokens_details,
+            prompt_tokens_details=prompt_details_input,
             server_tool_use=server_tool_use,
         )
         if reasoning_tokens is not None:
@@ -158,6 +165,21 @@ def int_value(value: StoredValue) -> int | None:
             return value
         case _other:
             return None
+
+
+def prompt_details_value(value: StoredValue) -> StoredValue:
+    if value is None or value.__class__ in MODEL_TYPES:
+        return value
+    match value:
+        case ModelObject():
+            dumped = value.model_dump()
+            match dumped:
+                case Mapping():
+                    return dumped
+                case _other:
+                    raise ValidationError("Usage", ("prompt_tokens_details",), "wrong type")
+        case _other:
+            return value
 
 
 def drop_none_fields(details: PromptTokensDetailsWrapper) -> None:

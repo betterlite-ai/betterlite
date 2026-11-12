@@ -7,7 +7,7 @@ from typing_extensions import override
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.message import Delta, Message
 from betterlite.types.utils.tool_calls import ChoiceLogprobs
-from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
+from betterlite.types.utils.values import JsonValue, ModelObject, StoredValue, ValidationError
 
 FinishReason: TypeAlias = Literal[
     "stop", "length", "tool_calls", "content_filter", "function_call",
@@ -53,16 +53,22 @@ class Choices(ResponseObject):
 
     @override
     def __init__(
-        self, finish_reason: str | None = None, index: int | None = None,
+        self, finish_reason: StoredValue = None, index: StoredValue = None,
         message: StoredValue = None, logprobs: StoredValue = None,
         enhancements: StoredValue = None, provider_specific_fields: StoredValue = None,
         **params: StoredValue,
     ) -> None:
         fields = provider_specific_fields
-        mapped = "stop" if finish_reason is None else map_finish_reason(finish_reason)
-        params["finish_reason"] = mapped
-        if finish_reason is not None and finish_reason != mapped:
-            fields = native_finish_reason(provider_specific_fields, finish_reason)
+        match finish_reason:
+            case None:
+                params["finish_reason"] = "stop"
+            case str():
+                mapped = map_finish_reason(finish_reason)
+                params["finish_reason"] = mapped
+                if finish_reason != mapped:
+                    fields = native_finish_reason(provider_specific_fields, finish_reason)
+            case _other:
+                raise ValidationError("Choices", ("finish_reason",), "wrong type")
         params.update(index=0 if index is None else index, message=message_value(message))
         params["logprobs"] = logprobs_value(logprobs)
         super().__init__(**params)
@@ -137,6 +143,13 @@ def message_value(message: StoredValue) -> StoredValue:
             return message
         case Mapping():
             return Message(**message)
+        case ModelObject():
+            dumped = message.model_dump()
+            match dumped:
+                case Mapping():
+                    return Message(**dumped)
+                case _other:
+                    return message
         case _other:
             return message
 

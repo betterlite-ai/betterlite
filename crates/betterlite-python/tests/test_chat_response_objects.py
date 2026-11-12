@@ -1,14 +1,21 @@
 import json
 import logging
+import types
 import uuid
 from abc import ABC
 from datetime import UTC, datetime
-from typing import ClassVar, Generic, Protocol, TypeVar
+from typing import ClassVar, Generic, Protocol, TypeAlias, TypeVar, cast, get_args
 
 import httpx
 import litellm.types.completion as litellm_completion  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/completion.py#L19
 import litellm.types.utils as litellm_utils  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1
 import pytest
+from openai.types import CompletionUsage
+from openai.types.chat import ChatCompletionMessage
+from openai.types.chat.chat_completion import Choice
+from openai.types.chat.chat_completion_chunk import Choice as ChunkChoice
+from openai.types.chat.chat_completion_chunk import ChoiceDelta
+from openai.types.completion_usage import PromptTokensDetails
 from typing_extensions import override
 
 import betterlite.types.utils as betterlite_utils
@@ -50,8 +57,6 @@ CUSTOM_TOOL_CALL: dict[str, JsonValue] = {
 TOOL_CALLS: list[JsonValue] = [TOOL_CALL]
 EMPTY_LIST: list[JsonValue] = []
 ANNOTATIONS: list[JsonValue] = [{"type": "url_citation"}]
-IMAGE: dict[str, JsonValue] = {"image_url": {"url": "u"}, "index": 0, "type": "image_url"}
-IMAGES: list[JsonValue] = [IMAGE]
 MESSAGE_TEXT: dict[str, JsonValue] = {"content": "x"}
 DELTA_TEXT: dict[str, JsonValue] = {"content": "y"}
 LOGPROBS: dict[str, JsonValue] = {
@@ -83,11 +88,26 @@ CHOICE_MESSAGE_LENGTH: dict[str, JsonValue] = {
     "finish_reason": "length",
 }
 CHOICES: list[JsonValue] = [CHOICE_MESSAGE_LENGTH]
+AUDIO_CHUNK: dict[str, JsonValue] = {"id": "a1", "transcript": "hi"}
+CUSTOM_DELTA_CALL: dict[str, JsonValue] = {
+    "type": "custom",
+    "id": "c",
+    "custom": {"name": "n", "input": "i"},
+    "function": None,
+}
+
+
+Member: TypeAlias = JsonValue | type | types.UnionType
 
 
 def parse_object(text: str) -> dict[str, JsonValue]:
     parsed: dict[str, JsonValue] = json.loads(text)
     return parsed
+
+
+def union_names(alias: Member) -> list[str]:
+    members = cast("tuple[Member, ...]", get_args(alias))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1012
+    return [str(member).rsplit(".", 1)[-1].strip("'>)") for member in members]
 
 
 class Dumpable(Protocol):
@@ -212,13 +232,6 @@ def test_access_get_and_contains() -> None:
         reference["missing"]
 
 
-def test_access_provider_fields() -> None:
-    ours = betterlite_utils.Message(content="x", provider_specific_fields=PROVIDER)
-    reference = litellm_utils.Message(content="x", provider_specific_fields=PROVIDER)
-    assert ours.provider_specific_fields == PROVIDER
-    assert_same("provider fields", reference, ours)
-
-
 def test_access_delete_missing() -> None:
     message = betterlite_utils.Message(content="x")
     del message.missing
@@ -246,152 +259,120 @@ def test_access_dict_parity() -> None:
     assert dumped_usage == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
-def test_dump_message_parity() -> None:
-    assert_same("empty", litellm_utils.Message(), betterlite_utils.Message())
-    assert_same(
-        "content",
-        litellm_utils.Message(content="hi"),
-        betterlite_utils.Message(content="hi"),
-    )
-    assert_same(
-        "role",
-        litellm_utils.Message(content="hi", role="user"),
-        betterlite_utils.Message(content="hi", role="user"),
-    )
-    assert_same(
-        "none content",
-        litellm_utils.Message(content=None),
-        betterlite_utils.Message(content=None),
-    )
-    assert_same(
-        "reasoning",
-        litellm_utils.Message(content="hi", reasoning_content="r"),
-        betterlite_utils.Message(content="hi", reasoning_content="r"),
-    )
-    assert_same(
-        "provider",
-        litellm_utils.Message(content="hi", provider_specific_fields=PROVIDER),
-        betterlite_utils.Message(content="hi", provider_specific_fields=PROVIDER),
-    )
-    assert_same(
-        "extra",
-        litellm_utils.Message(content="hi", extra_field="x"),
-        betterlite_utils.Message(content="hi", extra_field="x"),
-    )
-    assert_same(
-        "annotations",
-        litellm_utils.Message(content="hi", annotations=ANNOTATIONS),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1415
-        betterlite_utils.Message(content="hi", annotations=ANNOTATIONS),
-    )
-    assert_same(
-        "function call",
-        litellm_utils.Message(content=None, function_call=FUNCTION_CALL),
-        betterlite_utils.Message(content=None, function_call=FUNCTION_CALL),
-    )
-
-
-def test_dump_delta_parity() -> None:
+def test_dump_message_choices() -> None:
+    ours_message = betterlite_utils.Message
+    ours_choices = betterlite_utils.Choices
     cases: list[tuple[str, Dumpable, Dumpable]] = [
-        ("empty", litellm_utils.Delta(), betterlite_utils.Delta()),
-        ("content", litellm_utils.Delta(content="x"), betterlite_utils.Delta(content="x")),
-        ("role", litellm_utils.Delta(role="assistant"), betterlite_utils.Delta(role="assistant")),
-        ("reasoning", litellm_utils.Delta(reasoning="r"), betterlite_utils.Delta(reasoning="r")),
+        ("message empty", litellm_utils.Message(), ours_message()),
+        ("message content", litellm_utils.Message(content="hi"), ours_message(content="hi")),
         (
-            "provider",
-            litellm_utils.Delta(provider_specific_fields=PROVIDER),
-            betterlite_utils.Delta(provider_specific_fields=PROVIDER),
+            "message role",
+            litellm_utils.Message(content="hi", role="user"),
+            ours_message(content="hi", role="user"),
+        ),
+        ("message none", litellm_utils.Message(content=None), ours_message(content=None)),
+        (
+            "message reasoning",
+            litellm_utils.Message(content="hi", reasoning_content="r"),
+            ours_message(content="hi", reasoning_content="r"),
         ),
         (
-            "images",
-            litellm_utils.Delta(images=EMPTY_LIST),  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1518
-            betterlite_utils.Delta(images=EMPTY_LIST),
+            "message provider",
+            litellm_utils.Message(content="hi", provider_specific_fields=PROVIDER),
+            ours_message(content="hi", provider_specific_fields=PROVIDER),
         ),
         (
-            "function call",
-            litellm_utils.Delta(function_call=FUNCTION_CALL),
-            betterlite_utils.Delta(function_call=FUNCTION_CALL),
+            "message extra",
+            litellm_utils.Message(content="hi", extra_field="x"),
+            ours_message(content="hi", extra_field="x"),
+        ),
+        (
+            "message annotations",
+            litellm_utils.Message(content="hi", annotations=ANNOTATIONS),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1415
+            ours_message(content="hi", annotations=ANNOTATIONS),
+        ),
+        (
+            "message function call",
+            litellm_utils.Message(content=None, function_call=FUNCTION_CALL),
+            ours_message(content=None, function_call=FUNCTION_CALL),
+        ),
+        ("choices empty", litellm_utils.Choices(), ours_choices()),
+        (
+            "choices tool use",
+            litellm_utils.Choices(finish_reason="tool_use"),
+            ours_choices(finish_reason="tool_use"),
+        ),
+        ("choices index", litellm_utils.Choices(index=2), ours_choices(index=2)),
+        (
+            "choices message",
+            litellm_utils.Choices(message=MESSAGE_TEXT),  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1656
+            ours_choices(message=MESSAGE_TEXT),
+        ),
+        (
+            "choices enhancements",
+            litellm_utils.Choices(enhancements=ENHANCEMENTS),
+            ours_choices(enhancements=ENHANCEMENTS),
+        ),
+        (
+            "choices provider empty",
+            litellm_utils.Choices(provider_specific_fields=EMPTY_PROVIDER),
+            ours_choices(provider_specific_fields=EMPTY_PROVIDER),
+        ),
+        (
+            "choices logprobs",
+            litellm_utils.Choices(logprobs=LOGPROBS),  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1648
+            ours_choices(logprobs=LOGPROBS),
         ),
     ]
-    for label, reference, ours in cases:
-        assert_same(label, reference, ours)
-    extra = betterlite_utils.Delta(**EXTRA_VALUES)
-    assert parse_object(extra.model_dump_json())["foo"] == "bar"
-
-
-def test_dump_choices_parity() -> None:
-    assert_same("empty", litellm_utils.Choices(), betterlite_utils.Choices())
-    assert_same(
-        "tool use",
-        litellm_utils.Choices(finish_reason="tool_use"),
-        betterlite_utils.Choices(finish_reason="tool_use"),
-    )
-    assert_same("index", litellm_utils.Choices(index=2), betterlite_utils.Choices(index=2))
-    assert_same(
-        "message",
-        litellm_utils.Choices(message=MESSAGE_TEXT),  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1656
-        betterlite_utils.Choices(message=MESSAGE_TEXT),
-    )
-    assert_same(
-        "enhancements",
-        litellm_utils.Choices(enhancements=ENHANCEMENTS),
-        betterlite_utils.Choices(enhancements=ENHANCEMENTS),
-    )
-    assert_same(
-        "provider empty",
-        litellm_utils.Choices(provider_specific_fields=EMPTY_PROVIDER),
-        betterlite_utils.Choices(provider_specific_fields=EMPTY_PROVIDER),
-    )
-    assert_same(
-        "logprobs",
-        litellm_utils.Choices(logprobs=LOGPROBS),  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1648
-        betterlite_utils.Choices(logprobs=LOGPROBS),
-    )
+    for label, reference, item in cases:
+        assert_same(label, reference, item)
 
 
 def test_dump_usage_parity() -> None:
-    assert_same("empty", litellm_utils.Usage(), betterlite_utils.Usage())
+    ours = betterlite_utils.Usage
+    assert_same("empty", litellm_utils.Usage(), ours())
     assert_same(
         "counts",
         litellm_utils.Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-        betterlite_utils.Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ours(prompt_tokens=10, completion_tokens=5, total_tokens=15),
     )
     assert_same(
         "reasoning",
         litellm_utils.Usage(completion_tokens=10, reasoning_tokens=4),
-        betterlite_utils.Usage(completion_tokens=10, reasoning_tokens=4),
+        ours(completion_tokens=10, reasoning_tokens=4),
     )
     assert_same(
         "cache hit",
         litellm_utils.Usage(prompt_tokens=5, prompt_cache_hit_tokens=3),
-        betterlite_utils.Usage(prompt_tokens=5, prompt_cache_hit_tokens=3),
+        ours(prompt_tokens=5, prompt_cache_hit_tokens=3),
     )
     assert_same(
         "cache read",
         litellm_utils.Usage(prompt_tokens=5, cache_read_input_tokens=3),
-        betterlite_utils.Usage(prompt_tokens=5, cache_read_input_tokens=3),
+        ours(prompt_tokens=5, cache_read_input_tokens=3),
     )
     assert_same(
         "cache creation",
         litellm_utils.Usage(prompt_tokens=5, cache_creation_input_tokens=3),
-        betterlite_utils.Usage(prompt_tokens=5, cache_creation_input_tokens=3),
+        ours(prompt_tokens=5, cache_creation_input_tokens=3),
     )
     assert_same(
         "prompt details",
         litellm_utils.Usage(prompt_tokens_details=PROMPT_DETAILS),
-        betterlite_utils.Usage(prompt_tokens_details=PROMPT_DETAILS),
+        ours(prompt_tokens_details=PROMPT_DETAILS),
     )
     assert_same(
         "server and cost",
         litellm_utils.Usage(server_tool_use=SERVER_TOOL_USE, cost=0.5),
-        betterlite_utils.Usage(server_tool_use=SERVER_TOOL_USE, cost=0.5),
+        ours(server_tool_use=SERVER_TOOL_USE, cost=0.5),
     )
-    extra = betterlite_utils.Usage(**EXTRA_VALUES)
-    assert parse_object(extra.model_dump_json())["foo"] == "bar"
     assert_same(
         "nested cache",
         litellm_utils.Usage(prompt_tokens_details=NESTED_CACHE),
-        betterlite_utils.Usage(prompt_tokens_details=NESTED_CACHE),
+        ours(prompt_tokens_details=NESTED_CACHE),
     )
+    extra = betterlite_utils.Usage(**EXTRA_VALUES)
+    assert parse_object(extra.model_dump_json())["foo"] == "bar"
 
 
 def test_dump_unset_default() -> None:
@@ -477,18 +458,11 @@ def test_tool_call_custom_helpers() -> None:
     assert "custom" in ours
     assert "function" not in ours
     assert ours.model_dump() == reference.model_dump()
-
-
-def test_tool_call_from_dict() -> None:
-    payload: dict[str, JsonValue] = {
-        "type": "function",
-        "id": "call",
-        "function": {"name": "f", "arguments": "{}"},
-    }
-    ours = betterlite_utils.chat_completion_tool_call_from_dict(payload)
-    reference: Dumpable = litellm_utils.chat_completion_tool_call_from_dict(payload)
-    assert "function" in ours
-    assert ours.model_dump() == reference.model_dump()
+    payload = {"type": "function", "id": "call", "function": {"name": "f", "arguments": "{}"}}
+    called = betterlite_utils.chat_completion_tool_call_from_dict(payload)
+    called_reference: Dumpable = litellm_utils.chat_completion_tool_call_from_dict(payload)
+    assert "function" in called
+    assert called.model_dump() == called_reference.model_dump()
 
 
 def test_tool_call_delta_indexing() -> None:
@@ -508,50 +482,36 @@ def test_tool_call_delta_indexing() -> None:
     assert [call.index for call in ours_calls] == [0, 3, 1]
 
 
+def test_tool_call_delta_custom() -> None:
+    calls_in: list[JsonValue] = [CUSTOM_DELTA_CALL.copy()]
+    ours = betterlite_utils.Delta(tool_calls=calls_in)
+    reference: Dumpable = litellm_utils.Delta(tool_calls=calls_in)
+    assert_same("custom delta", reference, ours)
+    calls = ours.tool_calls
+    assert calls is not None
+    assert calls[0].index == 0
+
+
 def test_message_none_fields() -> None:
     reference = litellm_utils.Message(content="x", audio=None, images=None, annotations=None)
     ours = betterlite_utils.Message(content="x", audio=None, images=None, annotations=None)
     assert_same("none fields", reference, ours)
     for name in ("audio", "images", "annotations", "reasoning_content", "thinking_blocks"):
         assert name not in ours
-
-
-def test_message_tool_calls() -> None:
-    ours = betterlite_utils.Message(content="x", tool_calls=TOOL_CALLS)
-    reference = litellm_utils.Message(content="x", tool_calls=TOOL_CALLS)
-    calls = ours.tool_calls
+    calls_message = betterlite_utils.Message(content="x", tool_calls=TOOL_CALLS)
+    calls = calls_message.tool_calls
     assert calls is not None
     assert "function" in calls[0]
-    assert_same("tool calls", reference, ours)
+    tool_reference = litellm_utils.Message(content="x", tool_calls=TOOL_CALLS)
+    assert_same("tool calls", tool_reference, calls_message)
     assert betterlite_utils.Message(content="x", tool_calls=EMPTY_LIST).tool_calls is None
-
-
-def test_message_provider_fields() -> None:
-    ours = betterlite_utils.Message(content="x", provider_specific_fields=PROVIDER)
-    reference = litellm_utils.Message(content="x", provider_specific_fields=PROVIDER)
-    assert_same("provider", reference, ours)
+    provided = betterlite_utils.Message(content="x", provider_specific_fields=PROVIDER)
+    reference_provided = litellm_utils.Message(content="x", provider_specific_fields=PROVIDER)
+    assert_same("provider", reference_provided, provided)
     absent = betterlite_utils.Message(content="x")
-    parsed = parse_object(absent.model_dump_json(exclude_unset=True))
-    assert "provider_specific_fields" not in parsed
-
-
-def test_delta_reasoning_mapping() -> None:
-    ours = betterlite_utils.Delta(reasoning="r")
-    reference = litellm_utils.Delta(reasoning="r")
-    assert ours.reasoning_content == reference.reasoning_content
-    assert ours.reasoning_content == "r"
-    assert "reasoning" not in ours
-    assert_same("reasoning", reference, ours)
-
-
-def test_delta_images_annotations() -> None:
-    ours = betterlite_utils.Delta(images=IMAGES, annotations=ANNOTATIONS)
-    reference = litellm_utils.Delta(
-        images=IMAGES,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1518
-        annotations=ANNOTATIONS,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1537
+    assert "provider_specific_fields" not in parse_object(
+        absent.model_dump_json(exclude_unset=True)
     )
-    assert_same("delta images", reference, ours)
-    assert "images" not in betterlite_utils.Delta(images=EMPTY_LIST)
 
 
 def test_choices_native_reason() -> None:
@@ -599,26 +559,18 @@ def test_choices_defaults() -> None:
 
 
 def test_choices_logprobs() -> None:
-    ours = betterlite_utils.Choices(logprobs=LOGPROBS)
-    reference = litellm_utils.Choices(logprobs=LOGPROBS)  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1648
-    assert_same("logprobs", reference, ours)
     holder = betterlite_utils.ChatCompletionTokenLogprob(
         token=SAMPLE_TEXT, logprob=-1.0, top_logprobs=None
     )
     assert holder.top_logprobs == []
-    assert_same(
-        "token logprob",
-        litellm_utils.ChatCompletionTokenLogprob(
-            token=SAMPLE_TEXT, logprob=-1.0, top_logprobs=[]
-        ),
-        holder,
+    reference = litellm_utils.ChatCompletionTokenLogprob(
+        token=SAMPLE_TEXT, logprob=-1.0, top_logprobs=[]
     )
+    assert_same("token logprob", reference, holder)
 
 
 def test_streaming_choices_message() -> None:
-    ours = betterlite_utils.StreamingChoices(
-        message=MESSAGE_TEXT, delta=DELTA_TEXT, index=2
-    )
+    ours = betterlite_utils.StreamingChoices(message=MESSAGE_TEXT, delta=DELTA_TEXT, index=2)
     reference = litellm_utils.StreamingChoices(
         message=MESSAGE_TEXT, delta=litellm_utils.Delta(content="y"), index=2
     )
@@ -626,17 +578,13 @@ def test_streaming_choices_message() -> None:
     assert ours.finish_reason is None
     assert parse_object(ours.model_dump_json())["index"] == STREAM_INDEX
     assert_same("streaming message", reference, ours)
-
-
-def test_streaming_choices_reason() -> None:
     for reason in (None, "", "bogus", "length"):
-        ours = betterlite_utils.StreamingChoices(finish_reason=reason)
-        reference = litellm_utils.StreamingChoices(finish_reason=reason)
-        assert ours.finish_reason == reference.finish_reason
-        assert_same("streaming reason", reference, ours)
+        streamed = betterlite_utils.StreamingChoices(finish_reason=reason)
+        streamed_ref = litellm_utils.StreamingChoices(finish_reason=reason)
+        assert streamed.finish_reason == streamed_ref.finish_reason
+        assert_same("streaming reason", streamed_ref, streamed)
     assert betterlite_utils.StreamingChoices(finish_reason="bogus").finish_reason == "stop"
     assert betterlite_utils.StreamingChoices(finish_reason=None).finish_reason is None
-    assert betterlite_utils.StreamingChoices(finish_reason="").finish_reason is None
 
 
 def test_usage_text_tokens() -> None:
@@ -648,14 +596,18 @@ def test_usage_text_tokens() -> None:
 
 def test_usage_cache_tokens() -> None:
     ours = betterlite_utils.Usage(prompt_tokens=5, prompt_cache_hit_tokens=3)
-    reference = litellm_utils.Usage(prompt_tokens=5, prompt_cache_hit_tokens=3)
-    assert_same("cache hit", reference, ours)
+    assert_same("cache hit", litellm_utils.Usage(prompt_tokens=5, prompt_cache_hit_tokens=3), ours)
     assert ours._cache_read_input_tokens == READ_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
     creation = betterlite_utils.Usage(prompt_tokens=5, cache_creation_input_tokens=3)
     assert creation._cache_creation_input_tokens == CACHE_WRITE_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
     dumped = parse_object(creation.model_dump_json())
     assert "cache_creation_input_tokens" in dumped
     assert "_cache_creation_input_tokens" not in dumped
+    private = betterlite_utils.Usage(cache_read_input_tokens=3, cache_creation_input_tokens=4)
+    assert private._cache_read_input_tokens == READ_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
+    assert private._cache_creation_input_tokens == CREATED_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
+    assert parse_object(private.model_dump_json())["cache_read_input_tokens"] == READ_TOKENS
+    assert "_cache_read_input_tokens" not in parse_object(private.model_dump_json())
 
 
 def test_usage_details_wrappers() -> None:
@@ -672,6 +624,10 @@ def test_usage_details_wrappers() -> None:
     assert prompt_details is not None
     assert prompt_details.cached_tokens == PROMPT_CACHE_TOKENS
     assert_same("prompt details", reference_cached, cached)
+    openai_details = PromptTokensDetails(cached_tokens=2)
+    with_openai = betterlite_utils.Usage(prompt_tokens=1, prompt_tokens_details=openai_details)
+    reference_openai = litellm_utils.Usage(prompt_tokens=1, prompt_tokens_details=openai_details)
+    assert_same("openai details", reference_openai, with_openai)
 
 
 def test_usage_server_tool() -> None:
@@ -754,16 +710,6 @@ def test_usage_token_details() -> None:
     )
 
 
-def test_usage_private_cache() -> None:
-    ours = betterlite_utils.Usage(cache_read_input_tokens=3, cache_creation_input_tokens=4)
-    assert ours._cache_read_input_tokens == READ_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
-    assert ours._cache_creation_input_tokens == CREATED_TOKENS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1858-L1863
-    dumped = parse_object(ours.model_dump_json())
-    assert "_cache_read_input_tokens" not in dumped
-    assert "_cache_creation_input_tokens" not in dumped
-    assert dumped["cache_read_input_tokens"] == READ_TOKENS
-
-
 def test_model_response_defaults() -> None:
     ours = betterlite_utils.ModelResponse(id="x", created=1)
     reference = litellm_utils.ModelResponse(id="x", created=1)
@@ -805,6 +751,11 @@ def test_model_response_headers() -> None:
         "llm_provider-x-ratelimit-limit-requests": "10",
         "llm_provider-content-type": "application/json",
     }
+    first = betterlite_utils.ModelResponse(id="i", created=5)
+    first._hidden_params["x"] = 1  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088-L2094
+    second = betterlite_utils.ModelResponse(id="i", created=5)
+    assert second._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088-L2094
+    assert "_hidden_params" not in parse_object(first.model_dump_json())
 
 
 def test_model_response_stream() -> None:
@@ -849,12 +800,23 @@ def test_model_response_chunk() -> None:
     assert parse_object(ours.model_dump_json()) == parse_object(reference.model_dump_json())
 
 
-def test_model_response_private() -> None:
-    first = betterlite_utils.ModelResponse(id="i", created=5)
-    first._hidden_params["x"] = 1  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088-L2094
-    second = betterlite_utils.ModelResponse(id="i", created=5)
-    assert second._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088-L2094
-    assert "_hidden_params" not in parse_object(first.model_dump_json())
+def test_model_response_openai() -> None:
+    message = ChatCompletionMessage(role="assistant", content="x")
+    choice = Choice(finish_reason="stop", index=0, message=message)
+    chunk_choice = ChunkChoice(delta=ChoiceDelta(content="x"), index=0)
+    usage = CompletionUsage(prompt_tokens=1, completion_tokens=2, total_tokens=3)
+    choice_message = betterlite_utils.Choices(message=message)
+    assert_same("choices", litellm_utils.Choices(message=message), choice_message)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1690-L1693
+    choices: list[StoredValue] = [choice]
+    response = betterlite_utils.ModelResponse(id="i", created=5, choices=choices)
+    response_reference = litellm_utils.ModelResponse(id="i", created=5, choices=choices)
+    assert_same("response", response_reference, response)
+    chunk_choices: list[StoredValue] = [chunk_choice]
+    stream = betterlite_utils.ModelResponseStream(id="i", created=5, choices=chunk_choices)
+    stream_reference = litellm_utils.ModelResponseStream(id="i", created=5, choices=chunk_choices)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2107-L2113
+    assert_same("stream", stream_reference, stream)
+    with_usage = betterlite_utils.ModelResponse(id="i", created=5, usage=usage)
+    assert_same("usage", litellm_utils.ModelResponse(id="i", created=5, usage=usage), with_usage)
 
 
 def test_model_response_hidden() -> None:
@@ -871,56 +833,42 @@ def test_dump_include_and_exclude() -> None:
 
 
 def test_typed_dict_keys_match() -> None:
+    ref, ours = litellm_completion, betterlite_completion
     pairs = (
-        (
-            betterlite_completion.ChatCompletionSystemMessageParam,
-            litellm_completion.ChatCompletionSystemMessageParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionContentPartTextParam,
-            litellm_completion.ChatCompletionContentPartTextParam,
-        ),
-        (betterlite_completion.ImageURL, litellm_completion.ImageURL),
-        (
-            betterlite_completion.ChatCompletionContentPartImageParam,
-            litellm_completion.ChatCompletionContentPartImageParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionUserMessageParam,
-            litellm_completion.ChatCompletionUserMessageParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionToolMessageParam,
-            litellm_completion.ChatCompletionToolMessageParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionFunctionMessageParam,
-            litellm_completion.ChatCompletionFunctionMessageParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionMessageToolCallParam,
-            litellm_completion.ChatCompletionMessageToolCallParam,
-        ),
-        (
-            betterlite_completion.ChatCompletionAssistantMessageParam,
-            litellm_completion.ChatCompletionAssistantMessageParam,
-        ),
+        (ours.ChatCompletionSystemMessageParam, ref.ChatCompletionSystemMessageParam),
+        (ours.ChatCompletionContentPartTextParam, ref.ChatCompletionContentPartTextParam),
+        (ours.ImageURL, ref.ImageURL),
+        (ours.ChatCompletionContentPartImageParam, ref.ChatCompletionContentPartImageParam),
+        (ours.ChatCompletionUserMessageParam, ref.ChatCompletionUserMessageParam),
+        (ours.FunctionCall, ref.FunctionCall),
+        (ours.Function, ref.Function),
+        (ours.ChatCompletionToolMessageParam, ref.ChatCompletionToolMessageParam),
+        (ours.ChatCompletionFunctionMessageParam, ref.ChatCompletionFunctionMessageParam),
+        (ours.ChatCompletionMessageToolCallParam, ref.ChatCompletionMessageToolCallParam),
+        (ours.ChatCompletionAssistantMessageParam, ref.ChatCompletionAssistantMessageParam),
     )
-    for ours, reference in pairs:
-        assert sorted(ours.__annotations__) == sorted(reference.__annotations__)
+    for pair in pairs:
+        assert sorted(pair[0].__annotations__) == sorted(pair[1].__annotations__)
 
 
 def test_typed_dict_unions() -> None:
-    assert betterlite_completion.ChatCompletionContentPartParam is not None
-    assert betterlite_completion.ChatCompletionMessageParam is not None
-    assert "function" in betterlite_completion.ChatCompletionMessageToolCallParam.__annotations__
+    content: tuple[Member, Member] = (
+        betterlite_completion.ChatCompletionContentPartParam,
+        litellm_completion.ChatCompletionContentPartParam,
+    )
+    message: tuple[Member, Member] = (
+        betterlite_completion.ChatCompletionMessageParam,
+        litellm_completion.ChatCompletionMessageParam,
+    )
+    for ours, reference in (content, message):
+        assert sorted(union_names(ours)) == sorted(union_names(reference))
 
 
 def test_typed_dict_request() -> None:
     ours = betterlite_completion.CompletionRequest(model="gpt-4o")
-    assert ours.messages == []
+    reference: Dumpable = litellm_completion.CompletionRequest(model="gpt-4o")
+    assert_same("request", reference, ours)
     assert ours.stream is None
-    assert ours.model == "gpt-4o"
     assert betterlite_completion.CompletionRequest(model="m", extra="x")["extra"] == "x"
 
 

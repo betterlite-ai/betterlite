@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import ClassVar, Literal, Required, TypeAlias, TypedDict, Union
+from typing import ClassVar, Literal, Required, TypeAlias, TypedDict
 
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.values import JsonValue, StoredValue
@@ -29,10 +29,10 @@ class ChatCompletionContentPartImageParam(TypedDict, total=False):
     type: Required[Literal["image_url"]]
 
 
-ChatCompletionContentPartParam: TypeAlias = Union[
-    "ChatCompletionContentPartTextParam",
-    "ChatCompletionContentPartImageParam",
-]
+ChatCompletionContentPartParam: TypeAlias = (
+    # ast-grep-ignore: no-long-names
+    ChatCompletionContentPartTextParam | ChatCompletionContentPartImageParam
+)
 
 
 class ChatCompletionUserMessageParam(TypedDict, total=False):
@@ -80,13 +80,16 @@ class ChatCompletionAssistantMessageParam(TypedDict, total=False):
     tool_calls: Iterable["ChatCompletionMessageToolCallParam"]
 
 
-ChatCompletionMessageParam: TypeAlias = Union[
-    "ChatCompletionSystemMessageParam",
-    "ChatCompletionUserMessageParam",
-    "ChatCompletionAssistantMessageParam",
-    "ChatCompletionFunctionMessageParam",
-    "ChatCompletionToolMessageParam",
-]
+ChatCompletionMessageParam: TypeAlias = (
+    # ast-grep-ignore: no-long-names
+    ChatCompletionSystemMessageParam
+    | ChatCompletionUserMessageParam
+    # ast-grep-ignore: no-long-names
+    | ChatCompletionAssistantMessageParam
+    # ast-grep-ignore: no-long-names
+    | ChatCompletionFunctionMessageParam
+    | ChatCompletionToolMessageParam
+)
 
 
 class CompletionRequest(ResponseObject):
