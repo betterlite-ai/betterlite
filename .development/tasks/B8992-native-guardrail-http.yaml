@@ -111,7 +111,7 @@ out_of_scope:
   - B1391 implements Google text projection and B3680 its adapter; B6163 owns A2A translation and B3818 MCP translation.
   - B3506/B8774 own Google handlers/mounting, B8589/B8648 A2A handlers/mounting, B4682 MCP discovery scanning, B8198 MCP post-call execution and B8626 REST mounting.
   - B6370 owns stream wrapper composition; B8632 owns the production stream item bridge and must carry raw native text/bytes through the wrapper.
-  - MCP session/toolset and protocol mounts remain B8701/B8728; no additional MCP endpoint is registered here.
+  - MCP session/toolset and protocol mounts remain B8701/B9950/B8728; no additional MCP endpoint is registered here.
 pitfalls:
   - Google streaming replacement text is deliberately ignored even when the same guardrail rewrites a nonstreaming candidate.
   - A2A task output extraction visits every artifact but its stream text extractor takes the first applicable location per chunk.

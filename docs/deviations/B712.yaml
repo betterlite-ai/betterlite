@@ -1,0 +1,14 @@
+task: B712
+deviations:
+  - what: Token-expiry input over 1048576 bytes or Entra claims JSON nested deeper than 64 levels is treated as unreadable with a redacted debug reason, so the refresh scheduler uses its fixed-interval fallback.
+    why: Bound the new token parser at the database boundary without turning an expiry hint into authentication validation; the pinned parser imposes no size or depth cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L204-L236
+  - what: Expiry-parser debug logs keep the RDS and Azure failure prefix but omit the raw validation values that the pinned exception text would include.
+    why: The reference exception representation can put a token or a credential claim into operator logs; the parsed result and the log-vs-silent behavior stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L215-L236
+  - what: A token payload whose base64url characters are non-canonical or whose extra padding is malformed is rejected as unreadable instead of being decoded with CPython's lenient binascii rules.
+    why: Entra ID issues canonical base64url payloads, no working setup relies on decoding a corrupted token, and the strict decoder cannot silently accept an altered claims document.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L229-L232
+  - what: IAM_TOKEN_DB_AUTH and AZURE_POSTGRESQL_AUTH are read through the config loader in their upper-case and all-lower-case spellings only, so a mixed-case name such as Iam_Token_Db_Auth does not enable token auth.
+    why: The config loader looks environment names up exactly and does not enumerate the environment; LiteLLM's documentation and helm chart spell both toggles in upper case. B710 records the same limit for the DATABASE_* fields of the same settings model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L320-L323

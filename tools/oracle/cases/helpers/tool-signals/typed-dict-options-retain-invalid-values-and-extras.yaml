@@ -1,0 +1,21 @@
+kind: helper
+name: typed-dict-options-retain-invalid-values-and-extras
+call:
+  tool_signals:
+    responses: []
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs:
+      - web_search_options:
+          search_context_size: gigantic
+          extra: {nested: [1, 2]}
+          user_location: invalid
+      - tools:
+          - {type: web_search, search_context_size: enormous, unknown_field: 7}
+          - {type: web_search_preview}
+      - tools:
+          - {type: file_search, vector_store_ids: [vs_1], malformed: {deep: true}}
+          - {type: file_search, vector_store_ids: []}
+compare: {ignore: []}
+env: {}
