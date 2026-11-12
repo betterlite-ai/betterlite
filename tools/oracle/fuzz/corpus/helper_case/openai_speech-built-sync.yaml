@@ -1,0 +1,9 @@
+kind: helper
+name: openai-speech-seed-built-sync
+call:
+  openai_speech:
+    client: {api_key: sk-seed, api_base: 'https://speech.test/v1', timeout: 30, max_retries: 2}
+    request: {model: tts-1, input: seed, voice: alloy}
+    reply: {status: 200, headers: [[content-type, audio/mpeg]], chunks: [[1, 2]]}
+env: {}
+compare: {ignore: []}

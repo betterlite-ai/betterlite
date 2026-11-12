@@ -1,7 +1,7 @@
 id: B1004
 milestone: M5 api families
 title: Realtime contracts
-status: todo
+status: done
 depends_on: [B010, B011, B171, B1087]
 file: tasks/B1004-realtime-contracts.yaml
 covers:
@@ -14,7 +14,7 @@ covers:
   - "litellm/litellm_core_utils/realtime_streaming.py"
 parent: B084
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1378
