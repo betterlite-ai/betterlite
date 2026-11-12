@@ -834,9 +834,10 @@ def test_model_response_chunk() -> None:
                 "index": 0,
                 "delta": {"role": "assistant", "content": None},
                 "finish_reason": "tool_use",
+                "logprobs": {"content": [{"token": "a", "logprob": -1.0, "top_logprobs": []}]},
             }
         ],
-        "usage": USAGE_VALUES,
+        "usage": {**USAGE_VALUES, "prompt_tokens_details": CACHED_DETAILS},
     }
     ours = betterlite_utils.StreamingChatCompletionChunk(**chunk)
     reference: Dumpable = litellm_utils.StreamingChatCompletionChunk(**chunk)
