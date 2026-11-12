@@ -27,6 +27,7 @@ const KEYS: [&str; 11] = [
 #[derive(Default)]
 struct Recorder {
     supported: Vec<String>,
+    disabled: Vec<String>,
 }
 
 impl CapabilityPredicates for Recorder {
@@ -52,6 +53,7 @@ impl CapabilityPredicates for Recorder {
         _request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
+        self.disabled.push(key.to_owned());
         ready(key == "supports_vision")
     }
 
@@ -122,4 +124,5 @@ async fn vision_disabled_asks_the_disabled_factory_for_vision() {
     };
     assert!(is_vision_explicitly_disabled(&mut recorder, &request).await);
     assert!(recorder.supported.is_empty());
+    assert_eq!(recorder.disabled, ["supports_vision".to_owned()]);
 }
