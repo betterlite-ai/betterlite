@@ -185,6 +185,10 @@ fn no_inline_data_yields_no_images() {
 #[case::trailing_bits_are_not_canonical(r#"[{"text":"data:audio/wav;base64,QR=="}]"#, None)]
 #[case::invalid_payload(r#"[{"text":"data:audio/wav;base64,!!!"}]"#, None)]
 #[case::missing_base64_marker(r#"[{"text":"data:audio/wav,QUJD"}]"#, None)]
+#[case::a_second_marker_fails_the_split(
+    r#"[{"text":"data:audio/wav;base64,,;base64,QUJD"}]"#,
+    None
+)]
 #[case::missing_comma(r#"[{"text":"data:audio/wav;base64QUJD"}]"#, None)]
 #[case::audiobook_is_not_audio(r#"[{"text":"data:audiobook;base64,QUJD"}]"#, None)]
 #[case::non_audio_text_is_skipped(

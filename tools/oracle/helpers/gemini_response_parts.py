@@ -1,5 +1,5 @@
 import json
-from typing import Final, NotRequired, Protocol, TypedDict, cast
+from typing import Final, Protocol, TypedDict, cast
 
 from litellm._uuid import uuid as fastuuid
 from litellm.llms.vertex_ai.gemini import vertex_and_google_ai_studio_gemini as gemini
@@ -24,17 +24,11 @@ class Part(TypedDict, total=False):
 
 
 class Function(TypedDict, total=False):
-    name: str
     arguments: str
-    provider_specific_fields: JsonValue
 
 
 class Tool(TypedDict):
     function: Function
-    id: NotRequired[str]
-    type: NotRequired[str]
-    index: NotRequired[int]
-    provider_specific_fields: NotRequired[JsonValue]
 
 
 class Input(TypedDict):

@@ -1,6 +1,5 @@
 use crate::gemini_response_parts::projection::{Part, PartKind, PartsError};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+use betterlite_prompts::media::base64_string::is_base64_encoded;
 use serde::Serialize;
 use uuid::Uuid;
 const AUDIO_TTL_SECONDS: i64 = 86_400;
@@ -68,18 +67,14 @@ pub(crate) fn audio_part(
 }
 pub(super) fn audio_uri(text: &str) -> Option<(&str, &str)> {
     let (_, rest) = text.split_once("data:")?;
-    if !text.starts_with("data:audio") || !text.contains(";base64,") {
-        return None;
-    }
-    let payload = rest.split(',').nth(1).unwrap_or_default();
-    if !STANDARD
-        .decode(payload)
-        .is_ok_and(|decoded| STANDARD.encode(decoded) == payload)
-    {
+    if !text.starts_with("data:audio") || !is_base64_encoded(text) {
         return None;
     }
     let segment = rest.split_once("data:").map_or(rest, |(before, _)| before);
     let (media_type, data) = segment.split_once(";base64,")?;
+    if data.contains(";base64,") {
+        return None;
+    }
     media_type
         .starts_with("audio/")
         .then_some((media_type, data))
