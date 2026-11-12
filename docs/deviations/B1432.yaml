@@ -3,3 +3,6 @@ deviations:
   - what: Constructor settings belong to the config that supplied them; a later config never inherits a value an earlier one passed.
     why: LiteLLM writes every non-None constructor argument onto the class, so constructing a second config of the same provider silently reuses the first one's values through get_config. No working setup can depend on one config's settings leaking into another, and per-config snapshots are what B668's policy requires.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/baseten/chat.py#L26-L47
+  - what: The unsupported tool option error says that Featherless AI does not support the named parameter, with status 400, and leaves out the parameter's value and the litellm.drop_params hint.
+    why: LiteLLM formats the value with Python's repr into the message, and the text is not an API contract a client can rely on. The status code, which clients branch on, is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/featherless_ai/chat/transformation.py#L83-L92
