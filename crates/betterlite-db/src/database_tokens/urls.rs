@@ -54,7 +54,8 @@ where
         return Ok(password_writer_url(settings, AuthMode::Password)?);
     };
     let endpoint = writer_endpoint(settings, token_auth)?;
-    let url = token_url(settings, token_auth, &endpoint)?;
+    let token = strategy::mint_database_token(token_auth, &endpoint)?;
+    let url = token_url(settings, &endpoint, &token)?;
     Ok(Some(SecretString::from(url)))
 }
 
@@ -85,7 +86,8 @@ where
         return Ok(None);
     };
     let endpoint = reader_endpoint(fields, token_auth)?;
-    let url = token_url(settings, token_auth, &endpoint)?;
+    let token = strategy::mint_database_token(token_auth, &endpoint)?;
+    let url = token_url(settings, &endpoint, &token)?;
     Ok(Some(SecretString::from(url)))
 }
 
@@ -204,21 +206,14 @@ fn missing_fields(candidates: &[(&'static str, bool)]) -> String {
     missing.join(", ")
 }
 
-fn token_url<Factory>(
+fn token_url(
     settings: &DatabaseUrlSettings,
-    auth: &DatabaseTokenAuth<Factory>,
     endpoint: &IAMEndpoint,
-) -> Result<String, UrlAssemblyError<Factory::Error>>
-where
-    Factory: AzureProviderFactory,
-{
-    let token = strategy::mint_database_token(auth, endpoint)?;
+    token: &SecretString,
+) -> Result<String, DatabaseUrlError> {
     let assembled = endpoint.build_url(token.expose_secret());
-    add_missing_query_params(&assembled, &tls_params(settings)).map_err(|source| {
-        UrlAssemblyError::Password {
-            source: DatabaseUrlError::Url { source },
-        }
-    })
+    add_missing_query_params(&assembled, &tls_params(settings))
+        .map_err(|source| DatabaseUrlError::Url { source })
 }
 
 const fn non_empty(value: Option<&str>) -> Option<&str> {
