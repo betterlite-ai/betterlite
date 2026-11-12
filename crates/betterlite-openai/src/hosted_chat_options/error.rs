@@ -1,5 +1,4 @@
 use thiserror::Error;
-
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum HostedChatOptionsError {
     #[error("Featherless AI does not support the {name} parameter")]

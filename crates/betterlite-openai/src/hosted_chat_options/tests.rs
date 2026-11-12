@@ -205,6 +205,20 @@ fn cerebras_copies_only_its_supported_subset() {
 }
 
 #[test]
+fn cerebras_renames_a_null_token_limit() {
+    let mut existing = IndexMap::new();
+    map_renaming_token_limit(
+        &params(r#"{"max_completion_tokens": null}"#),
+        &mut existing,
+        &cerebras::supported_params(false),
+    );
+    assert_eq!(
+        Value::Object(existing.into_iter().collect()),
+        value(r#"{"max_tokens": null}"#)
+    );
+}
+
+#[test]
 fn baseten_snapshot_starts_empty_and_keeps_supplied_falsey_values() {
     assert_eq!(snapshot(&BasetenSettings::default()), value("{}"));
     let given: BasetenSettings = serde_json::from_str(

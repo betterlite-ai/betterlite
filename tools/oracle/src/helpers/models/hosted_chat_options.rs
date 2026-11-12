@@ -10,6 +10,7 @@ use betterlite_openai::hosted_chat_options::{CompatibleChatAlias, aiml, map_rena
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::Error as _;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 mod tests;
@@ -80,7 +81,7 @@ impl Helper for Op {
                 lookup: scenario.environment.clone(),
             }
             .load("")
-            .map_err(|error| failure(None, error.to_string()))?
+            .map_err(serde_json::Error::custom)?
             .sections;
             let steps = scenario
                 .calls
@@ -191,19 +192,8 @@ where
     Settings: serde::Serialize + serde::de::DeserializeOwned,
 {
     let object = Value::Object(config.clone().into_iter().collect());
-    let settings: Settings =
-        serde_json::from_value(object).map_err(|error| failure(None, error.to_string()))?;
-    provider_config(&settings)
-        .map(Value::Object)
-        .map_err(|error| failure(None, error.to_string()))
-}
-fn failure(status: Option<u16>, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("InvalidInput"),
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
+    let settings: Settings = serde_json::from_value(object)?;
+    Ok(Value::Object(
+        provider_config(&settings).map_err(serde_json::Error::custom)?,
+    ))
 }

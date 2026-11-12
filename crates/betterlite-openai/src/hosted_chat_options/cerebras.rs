@@ -15,7 +15,6 @@ pub const SUPPORTED_PARAMS: &[&str] = &[
     "max_retries",
     "extra_headers",
 ];
-// B668's class snapshot: every constructor field starts absent and only a supplied non-null value is kept
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CerebrasSettings {

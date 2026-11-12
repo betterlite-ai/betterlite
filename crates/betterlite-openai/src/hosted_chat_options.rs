@@ -40,14 +40,10 @@ pub fn map_renaming_token_limit(
 ) {
     for (name, value) in non_default {
         match name.as_str() {
-            "max_completion_tokens" => {
-                existing.insert(String::from("max_tokens"), value.clone());
-            }
-            _ if supported.contains(&name.as_str()) => {
-                existing.insert(name.clone(), value.clone());
-            }
-            _ => {}
-        }
+            "max_completion_tokens" => existing.insert(String::from("max_tokens"), value.clone()),
+            _ if supported.contains(&name.as_str()) => existing.insert(name.clone(), value.clone()),
+            _ => None,
+        };
     }
 }
 // LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step

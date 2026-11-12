@@ -141,8 +141,6 @@ def map_value(step: MapStep) -> Json:
 
 
 def info_value(step: InfoStep) -> Json:
-    base: str | None
-    key: str | None
     api_base = step.get("api_base")
     api_key = step.get("api_key")
     if step["host"] == "featherless":
@@ -167,8 +165,7 @@ def run(input_value: dict[str, Json]) -> Json:
         os.environ.clear()
         environment = scenario.get("environment")
         if environment is not None:
-            for name, value in environment.items():
-                os.environ[name] = value
+            os.environ.update(environment)
         litellm.drop_params = drop_params_env_flag(os.environ, logging.getLogger("LiteLLM"))
         steps: list[Json] = [
             map_value(step) if step["op"] == "map" else info_value(step)
