@@ -5,6 +5,7 @@ from typing import Protocol
 
 import litellm.types.utils as litellm_utils  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1
 import pytest
+from openai.types.image import Image as OpenAIImage
 from typing_extensions import override
 
 import betterlite.types.utils as betterlite_utils
@@ -176,6 +177,9 @@ def test_embedding_response_data() -> None:
     )
     assert private._response_ms == RESPONSE_MS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2303-L2304
     assert private._response_headers == {"h": "v"}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2303-L2304
+    dropped_reference = litellm_utils.EmbeddingResponse(unknown="x")
+    dropped_ours = betterlite_utils.EmbeddingResponse(unknown="x")
+    assert_same("embedding response dropped", dropped_reference, dropped_ours)
 
 
 def test_text_completion_logprobs() -> None:
@@ -282,6 +286,21 @@ def test_text_completion_stream() -> None:
     assert chosen_ours.object == "text_completion"
     assert chosen_ours.choices[0].text == "x"
     assert_same("text completion object", chosen_reference, chosen_ours)
+    fallback_reference = litellm_utils.TextCompletionResponse(
+        id="i", created=CREATED, choices="x",
+    )
+    fallback_ours = betterlite_utils.TextCompletionResponse(id="i", created=CREATED, choices="x")
+    assert len(fallback_ours.choices) == 1
+    assert_same("text completion fallback", fallback_reference, fallback_ours)
+    timed_reference = litellm_utils.TextCompletionResponse(
+        id="i", created=CREATED, response_ms=CREATED,
+    )
+    timed_ours = betterlite_utils.TextCompletionResponse(
+        id="i", created=CREATED, response_ms=CREATED,
+    )
+    assert timed_ours._response_ms == CREATED  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2510-L2513
+    assert timed_reference._response_ms == CREATED  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2510-L2513
+    assert_same("text completion timed", timed_reference, timed_ours)
 
 
 def test_image_objects() -> None:
@@ -384,6 +403,25 @@ def test_image_response() -> None:
     assert empty_ours.usage is not None
     assert empty_ours.usage.input_tokens == 0
     assert_same("image response empty", empty_reference, empty_ours)
+    generated = betterlite_utils.ImageResponse()
+    assert generated.created > 0
+    dict_ours = betterlite_utils.ImageResponse(created=CREATED, data=[{"url": "u3"}])
+    dict_reference = litellm_utils.ImageResponse(
+        created=CREATED, data=[litellm_utils.ImageObject(url="u3")],
+    )
+    assert dict_ours.data[0].url == "u3"
+    assert_same("image dict data", dict_reference, dict_ours)
+
+
+def test_image_model_data() -> None:
+    model = OpenAIImage(url="u2")
+    reference = litellm_utils.ImageResponse(
+        created=CREATED,
+        data=[model],  # type: ignore[list-item]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2676-L2682
+    )
+    ours = betterlite_utils.ImageResponse(created=CREATED, data=[model])
+    assert ours.data[0].url == "u2"
+    assert_same("image model data", reference, ours)
 
 
 def test_image_selection() -> None:
@@ -402,6 +440,7 @@ def test_image_selection() -> None:
         {"data": {}},
         {"data": []},
         {"created"},
+        {"created": False},
     ]
     for selector in includes:
         expected = parse_object(reference.model_dump_json(include=selector))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2625-L2660
@@ -415,6 +454,7 @@ def test_image_selection() -> None:
         {"data": {"__all__": {"url": False}}},
         {"data": {}},
         {"created"},
+        {"created": False},
     ]
     for selector in excludes:
         expected = parse_object(reference.model_dump_json(exclude=selector))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2625-L2660
@@ -484,6 +524,9 @@ def test_adapter_stream_sync() -> None:
         empty = AdapterCompletionStreamWrapper(ChunkStream([]))
         with pytest.raises(StopIteration):
             _ = next(empty)
+        asynchronous = AdapterCompletionStreamWrapper(AsyncChunkStream([]))
+        with pytest.raises(TypeError):
+            _ = next(asynchronous)
     finally:
         logger.removeHandler(handler)
         logger.setLevel(previous_level)
@@ -513,6 +556,9 @@ async def adapter_stream_async_case() -> None:
     empty = AdapterCompletionStreamWrapper(AsyncChunkStream([]))
     with pytest.raises(StopAsyncIteration):
         _ = await empty.__anext__()
+    synchronous = AdapterCompletionStreamWrapper(ChunkStream([]))
+    with pytest.raises(TypeError):
+        _ = await synchronous.__anext__()
 
 
 def test_adapter_stream_decoder() -> None:
@@ -556,6 +602,9 @@ def test_small_types_budget() -> None:
     assert both_ours.budget_duration == "2h"
     assert both_ours.max_budget == BUDGET_LIMIT
     assert_same("budget both", both_reference, both_ours)
+    unknown_reference = litellm_utils.BudgetConfig(unknown="x")
+    unknown_ours = betterlite_utils.BudgetConfig(unknown="x")
+    assert_same("budget unknown", unknown_reference, unknown_ours)
 
 
 def test_small_types_logging() -> None:
@@ -599,6 +648,12 @@ def test_small_types_fine_tuning() -> None:
     assert_same("fine tuning seed", seeded_reference, seeded_ours)
     hidden = betterlite_utils.LiteLLMFineTuningJob(**job, _hidden_params={"a": 1})
     assert hidden._hidden_params == {"a": 1}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4307-L4317
+    assert betterlite_utils.LiteLLMFineTuningJob(**job)._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4308
+    empty_error: dict[str, JsonValue] = {}
+    empty_reference = litellm_utils.LiteLLMFineTuningJob(**job, error=empty_error)
+    empty_ours = betterlite_utils.LiteLLMFineTuningJob(**job, error=empty_error)
+    assert empty_ours.error is None
+    assert_same("fine tuning error empty", empty_reference, empty_ours)
     with pytest.raises(ValueError, match="validation error"):
         _ = betterlite_utils.LiteLLMFineTuningJob(id="x")
 
