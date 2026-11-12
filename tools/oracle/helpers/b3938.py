@@ -39,12 +39,19 @@ class Params(TypedDict, total=False):
     turn_off_message_logging: bool
 
 
-class Action(TypedDict):
-    do: Literal["success", "failure", "flush"]
-    payload: NotRequired[JsonObject]
+class Call(TypedDict):
+    do: Literal["success", "failure"]
+    payload: JsonObject
     metadata: NotRequired[JsonObject]
-    start_time: NotRequired[float]
-    end_time: NotRequired[float]
+    start_time: float
+    end_time: float
+
+
+class Flush(TypedDict):
+    do: Literal["flush"]
+
+
+Action = Call | Flush
 
 
 class Scenario(TypedDict, total=False):
@@ -121,19 +128,15 @@ def _init_params(params: Params | None) -> DatadogLLMObsInitParams | None:
 
 
 def _logger_kwargs(init: Init) -> JsonObject:
-    kwargs: JsonObject = {}
-    turn_off = init.get("turn_off_message_logging")
-    if turn_off is not None:
-        kwargs["turn_off_message_logging"] = turn_off
+    # the callee defaults these three when None; a None message_logging would redact
+    kwargs: JsonObject = {
+        "turn_off_message_logging": init.get("turn_off_message_logging"),
+        "batch_size": init.get("batch_size"),
+        "flush_interval": init.get("flush_interval"),
+    }
     message_logging = init.get("message_logging")
     if message_logging is not None:
         kwargs["message_logging"] = message_logging
-    batch_size = init.get("batch_size")
-    if batch_size is not None:
-        kwargs["batch_size"] = batch_size
-    flush_interval = init.get("flush_interval")
-    if flush_interval is not None:
-        kwargs["flush_interval"] = flush_interval
     return kwargs
 
 
@@ -154,8 +157,7 @@ def _queue(logger: DataDogLLMObsLogger) -> list[JsonValue]:
 
 
 async def _perform(logger: DataDogLLMObsLogger, action: Action) -> None:
-    step = action["do"]
-    if step == "flush":
+    if action["do"] == "flush":
         await logger.flush_queue()  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54
         return
     metadata = action.get("metadata")
@@ -165,19 +167,10 @@ async def _perform(logger: DataDogLLMObsLogger, action: Action) -> None:
     }
     start = datetime.fromtimestamp(action["start_time"], tz=UTC)
     end = datetime.fromtimestamp(action["end_time"], tz=UTC)
-    if step == "success":
+    if action["do"] == "success":
         await logger.async_log_success_event(kwargs, None, start, end)  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L531
     else:
         await logger.async_log_failure_event(kwargs, None, start, end)  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L543
-
-
-def _init_report(logger: DataDogLLMObsLogger) -> JsonValue:
-    return {
-        "batch_size": logger.batch_size,
-        "intake_url": logger.intake_url,
-        "authenticated": logger.DD_API_KEY is not None,
-        "error": None,
-    }
 
 
 async def _execute(scenario: Scenario, client: _Client) -> JsonValue:
@@ -202,7 +195,12 @@ async def _execute(scenario: Scenario, client: _Client) -> JsonValue:
     queue = _queue(logger)
     return {
         "name": scenario.get("name"),
-        "init": _init_report(logger),
+        "init": {
+            "batch_size": logger.batch_size,
+            "intake_url": logger.intake_url,
+            "authenticated": logger.DD_API_KEY is not None,
+            "error": None,
+        },
         "results": results,
         "calls": client.calls,
         "queue": {"length": len(queue), "head": queue[:3], "tail": queue[-3:]},

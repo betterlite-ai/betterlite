@@ -1,6 +1,6 @@
 {
   "kind": "helper",
-  "name": "datadog-llm-observability-span-assembly-success",
+  "name": "datadog_llm_observability-span-assembly-success",
   "call": {
     "b3938": {
       "scenarios": [
