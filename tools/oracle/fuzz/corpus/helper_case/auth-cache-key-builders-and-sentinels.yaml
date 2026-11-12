@@ -1,0 +1,22 @@
+kind: helper
+name: auth-cache-key-builders-and-sentinels
+call:
+  auth_cache:
+    scenario: keys
+    payloads: []
+    ttls: []
+    fallback: 60
+    keys: []
+    ids:
+      user_id: "user:1"
+      object_permission_id: perm-1
+      tag: "prod:eu"
+      access_group: group-1
+      project_id: project_1
+      end_user_id: end-user-1
+      team_id: team_1
+      member_user_id: user-1
+    auth: {}
+env: {}
+compare:
+  ignore: []
