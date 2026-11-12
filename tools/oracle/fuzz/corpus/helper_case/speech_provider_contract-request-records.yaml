@@ -1,0 +1,10 @@
+kind: helper
+name: speech-provider-contract-request-records-seed
+call:
+  speech_provider_contract:
+    function: request_contract
+    records:
+      - {dict_body: {}, ssml_body: "", headers: {}}
+      - {ssml_body: "<speak>a</speak>", headers: {b: c}}
+env: {}
+compare: {ignore: []}

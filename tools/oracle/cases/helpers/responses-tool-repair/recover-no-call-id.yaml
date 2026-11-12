@@ -1,0 +1,9 @@
+kind: helper
+name: recover-no-call-id
+call:
+  responses_tool_repair:
+    operation: recover
+    assistant: {tool_calls: [{type: function}]}
+env: {}
+compare:
+  ignore: []

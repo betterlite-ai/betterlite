@@ -1,0 +1,11 @@
+kind: helper
+name: cached-shapes-chunk
+call:
+  responses_tool_repair:
+    operation: chunk
+    definition: {id: call_7, type: function, function: {name: f, arguments: {a: [1, 2]}}}
+    tool_call_id: call_7
+    index: 2
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,64 @@
+use betterlite_models::decisions::Json;
+
+use super::error::NativeCompactionError;
+use super::protocol::{CompactionProtocol, Mapping};
+
+fn objects<'response>(
+    value: Option<&'response Json>,
+    field: &'static str,
+) -> Result<Vec<&'response Mapping>, NativeCompactionError> {
+    let items = match value {
+        None | Some(Json::Null) => &[],
+        Some(Json::List(list)) => list.as_slice(),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+            return Err(NativeCompactionError::NotAnObjectList { field });
+        }
+    };
+    let mut found = Vec::with_capacity(items.len());
+    for item in items {
+        let Json::Object(entry) = item else {
+            return Err(NativeCompactionError::NotAnObjectList { field });
+        };
+        found.push(entry);
+    }
+    Ok(found)
+}
+
+fn member<'response>(
+    parent: &'response Mapping,
+    field: &'static str,
+) -> Result<Option<&'response Mapping>, NativeCompactionError> {
+    match parent.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(found)) => Ok(Some(found)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(NativeCompactionError::NotAnObject { field })
+        }
+    }
+}
+
+// A messages reply carries its blocks only when it stopped for compaction; a chat reply needs exactly one choice.
+pub fn native_blocks(
+    protocol: CompactionProtocol,
+    response: &Mapping,
+) -> Result<Vec<&Mapping>, NativeCompactionError> {
+    if protocol == CompactionProtocol::Messages {
+        let stopped = matches!(response.get("stop_reason"), Some(Json::Text(reason)) if reason == "compaction");
+        return if stopped {
+            objects(response.get("content"), "content")
+        } else {
+            Ok(Vec::new())
+        };
+    }
+    let choices = objects(response.get("choices"), "choices")?;
+    let [choice] = choices.as_slice() else {
+        return Ok(Vec::new());
+    };
+    let Some(message) = member(choice, "message")? else {
+        return Ok(Vec::new());
+    };
+    let Some(fields) = member(message, "provider_specific_fields")? else {
+        return Ok(Vec::new());
+    };
+    objects(fields.get("compaction_blocks"), "compaction_blocks")
+}

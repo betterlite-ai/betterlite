@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-unknown-model
+call:
+  b3545: {"function": "supports", "model": "not-a-real-model-name", "custom_llm_provider": null}
+env: {}
+compare:
+  ignore: []
