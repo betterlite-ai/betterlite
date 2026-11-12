@@ -1,0 +1,76 @@
+kind: helper
+name: responses-tool-namespaces-hosted-search-output
+call:
+  responses_tool_namespaces:
+    operation: tool_outputs
+    tools:
+      - {type: function, name: lookup}
+    choices:
+      - provider_specific_fields:
+          web_search_calls:
+            first:
+              id: ws_call_search
+              type: web_search_call
+              status: completed
+              action:
+                type: search
+                queries: [rust async, tokio]
+                query: rust async
+                sources:
+                  - {type: url, url: "https://example.com/a"}
+            second:
+              id: ws_call_open
+              type: web_search_call
+              status: searching
+              action: {type: open_page, url: "https://example.com/b"}
+            third:
+              id: ws_call_find
+              type: web_search_call
+              status: failed
+              action: {type: find_in_page, pattern: needle, url: "https://example.com/c"}
+            broken:
+              id: ws_call_broken
+              type: web_search_call
+              status: completed
+              action: {type: unknown_action}
+            not_an_object: text
+        tool_calls:
+          - {id: call_search, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_open, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_find, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_broken, type: function, name: lookup, arguments: '{"q":1}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_plain, type: function, name: lookup, arguments: '{"q":2}', status: null, tool_fields: null, function_fields: null}
+      - provider_specific_fields:
+          web_search_calls:
+            - id: unprefixed_call
+              type: web_search_call
+              status: in_progress
+              action: {type: search, query: listed}
+        tool_calls:
+          - {id: unprefixed_call, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+      - provider_specific_fields:
+          web_search_calls:
+            - id: ws_call_extra
+              type: web_search_call
+              status: completed
+              provider_note: kept
+              action:
+                type: search
+                query: extras
+                action_note: kept
+                sources:
+                  - {type: url, url: "https://example.com/d", source_note: kept}
+            - id: ws_call_extra_open
+              type: web_search_call
+              status: completed
+              action: {type: open_page, url: "https://example.com/e", open_note: kept}
+        tool_calls:
+          - {id: call_extra, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_extra_open, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+      - provider_specific_fields: {web_search_calls: text}
+        tool_calls: []
+      - provider_specific_fields: {other: 1}
+        tool_calls: []
+env: {}
+compare:
+  ignore: []
