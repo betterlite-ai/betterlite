@@ -53,6 +53,16 @@ pub enum ImageGenerationSource {
     Reply(#[from] ImageReplyError),
 }
 
+impl ErrorStatus {
+    #[must_use]
+    pub const fn code(self) -> Option<u16> {
+        match self {
+            Self::Code(code) => Some(code),
+            Self::Missing => None,
+        }
+    }
+}
+
 impl ImageGenerationSource {
     // the status_code attribute the caught exception carries, absent where it carries none
     #[must_use]
@@ -110,13 +120,9 @@ pub enum ImageGenerationFailure {
 impl ImageGenerationFailure {
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
-        let status = match self {
-            Self::Wrapped(error) => error.status,
-            Self::Raw(source) => source.status(),
-        };
-        match status {
-            ErrorStatus::Code(code) => Some(code),
-            ErrorStatus::Missing => None,
+        match self {
+            Self::Wrapped(error) => error.status.code(),
+            Self::Raw(source) => source.status().code(),
         }
     }
 
