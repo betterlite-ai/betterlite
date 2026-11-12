@@ -97,9 +97,11 @@ fn step(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
 }
 fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     match call.host {
-        Some(Host::Baseten) => {
-            token_limit_map::<BasetenSettings>(call, baseten::SUPPORTED_PARAMS, Some(&call.model))
-        }
+        Some(Host::Baseten) => token_limit_map::<BasetenSettings>(
+            call,
+            baseten::SUPPORTED_PARAMS,
+            Some(call.model.as_str()),
+        ),
         Some(Host::Cerebras) => token_limit_map::<CerebrasSettings>(
             call,
             &cerebras::supported_params(call.supports_reasoning),
