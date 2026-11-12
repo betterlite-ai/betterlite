@@ -7,6 +7,7 @@ from .views import (
     ConfigView,
     FlowInput,
     Json,
+    OptionsView,
     ReplyCase,
     RequestCase,
     RequestsInput,
@@ -50,13 +51,13 @@ def flow_value(config: ConfigView, input_value: FlowInput) -> Json:
         provider["api_base"],
         provider["api_key"],
     )
+    urls = [url_value(config, case) for case in input_value["urls"]]
+    validated = [validate_value(config, case) for case in input_value["validate"]]
     return {
         "supported": config.get_supported_openai_params(model=MODEL),
         "provider": {"api_base": base, "api_key": key},
-        "urls": [url_value(config, case) for case in input_value["urls"]],
-        "validated": [
-            validate_value(config, case) for case in input_value["validate"]
-        ],
+        "urls": urls,
+        "validated": validated,
     }
 
 
@@ -71,7 +72,8 @@ def request_value(config: ConfigView, case: RequestCase) -> Json:
         )
     except FAILURE as error:
         return {"ok": False, "status": error.status_code}
-    return {"ok": True, "body": body}
+    else:
+        return {"ok": True, "body": body}
 
 
 def requests_value(config: ConfigView, input_value: RequestsInput) -> Json:
@@ -85,7 +87,7 @@ def requests_value(config: ConfigView, input_value: RequestsInput) -> Json:
 
 def signature_value(config: ConfigView, case: SignCase) -> Json:
     try:
-        headers, body = config.sign_request(
+        signed = config.sign_request(
             headers=case["headers"],
             optional_params={},
             request_data=case["request_data"],
@@ -96,18 +98,20 @@ def signature_value(config: ConfigView, case: SignCase) -> Json:
         )
     except FAILURE as error:
         return {"ok": False, "status": error.status_code}
+    headers, body = signed
     return {"ok": True, "headers": headers, "body": body is not None}
 
 
 def reply_value(config: ConfigView, case: ReplyCase) -> Json:
+    raw_response = httpx.Response(
+        case["status"],
+        content=case["body"].encode(),
+        request=httpx.Request("POST", "https://langflow.test"),
+    )
     try:
         response = config.transform_response(
             model=case["model"],
-            raw_response=httpx.Response(
-                case["status"],
-                content=case["body"].encode(),
-                request=httpx.Request("POST", "https://langflow.test"),
-            ),
+            raw_response=raw_response,
             model_response=ModelResponse(),
             logging_obj=None,
             request_data={},
@@ -118,6 +122,10 @@ def reply_value(config: ConfigView, case: ReplyCase) -> Json:
         )
     except FAILURE as error:
         return {"ok": False, "status": error.status_code}
+    return reply_json(response)
+
+
+def reply_json(response: OptionsView) -> Json:
     choice = response.choices[0]
     return {
         "ok": True,
