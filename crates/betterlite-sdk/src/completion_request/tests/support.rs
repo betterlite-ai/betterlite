@@ -264,6 +264,7 @@ pub(super) struct LoggedEnvironment {
     pub model: String,
     pub user: Option<String>,
     pub provider: Option<String>,
+    pub optional_params: JsonObject,
 }
 
 #[derive(Default)]
@@ -279,6 +280,7 @@ impl CompletionLogging for FakeLogging {
             model: update.model.to_owned(),
             user: update.user.map(str::to_owned),
             provider: update.custom_llm_provider.map(str::to_owned),
+            optional_params: update.optional_params.clone(),
         });
     }
 }

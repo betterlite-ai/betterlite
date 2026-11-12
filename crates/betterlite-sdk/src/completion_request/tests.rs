@@ -10,6 +10,7 @@ use betterlite_router::routing_timeouts::completion::TimeoutValue;
 use betterlite_router::routing_timeouts::seconds::Seconds;
 use indexmap::IndexMap as JsonObject;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::de::DeserializeOwned;
 
 use super::call::PreparedCompletion;
 use super::error::CompletionRequestError;
@@ -684,6 +685,151 @@ async fn provider_timeout_phases_collapse_for_a_provider_without_support() {
     fixture.args.timeout = Some(json(r#"{"connect":1,"read":7}"#));
     let call = call_of(run(&fixture).await.unwrap());
     assert_eq!(call.timeout, Some(TimeoutValue::Seconds(Seconds(7.0))));
+}
+
+#[tokio::test]
+async fn provider_base_url_becomes_the_api_base() {
+    let mut fixture = Fixture::new();
+    fixture.args.base_url = Some(String::from("https://base.test"));
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("api_base"), json("\"https://kw.test\""));
+    run(&fixture).await.unwrap();
+    assert_eq!(
+        lookups(&fixture.metadata)[0].api_base.as_deref(),
+        Some("https://base.test")
+    );
+}
+
+#[tokio::test]
+async fn provider_hidden_params_record_provider_and_region() {
+    let mut fixture = Fixture::new();
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("aws_region_name"), json("\"us-east-1\""));
+    let call = call_of(run(&fixture).await.unwrap());
+    assert_eq!(
+        call.hidden_params.get("custom_llm_provider"),
+        Some(&Json::Text(String::from("openai")))
+    );
+    assert_eq!(
+        call.hidden_params.get("region_name"),
+        Some(&Json::Text(String::from("us-east-1")))
+    );
+}
+
+#[tokio::test]
+async fn provider_custom_prompt_dict_collects_template_keys() {
+    let mut fixture = Fixture::new();
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("initial_prompt_value"), json("\"hi\""));
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("bos_token"), json("\"<s>\""));
+    let call = call_of(run(&fixture).await.unwrap());
+    let Some(Json::Object(template)) = call.custom_prompt_dict.get("gpt-4o") else {
+        panic!("expected a custom prompt template");
+    };
+    assert_eq!(
+        template.get("initial_prompt_value"),
+        Some(&Json::Text(String::from("hi")))
+    );
+    assert_eq!(
+        template.get("bos_token"),
+        Some(&Json::Text(String::from("<s>")))
+    );
+}
+
+#[tokio::test]
+async fn provider_file_ids_use_the_model_mapping() {
+    let mut fixture = Fixture::new();
+    fixture.args.messages = vec![json(
+        r#"{"role":"user","content":[{"type":"file","file":{"file_id":"file-1"}}]}"#,
+    )];
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("model_info"), json(r#"{"id":"model-1"}"#));
+    fixture.args.kwargs.insert(
+        String::from("model_file_id_mapping"),
+        json(r#"{"file-1":{"model-1":"provider-file"}}"#),
+    );
+    let call = call_of(run(&fixture).await.unwrap());
+    let messages: Vec<Json> = convert(&call.messages).unwrap();
+    let Some(Json::Object(message)) = messages.first() else {
+        panic!("expected a message object");
+    };
+    let Some(Json::List(parts)) = message.get("content") else {
+        panic!("expected content parts");
+    };
+    let Some(Json::Object(part)) = parts.first() else {
+        panic!("expected a part object");
+    };
+    let Some(Json::Object(file)) = part.get("file") else {
+        panic!("expected a file object");
+    };
+    assert_eq!(
+        file.get("file_id"),
+        Some(&Json::Text(String::from("provider-file")))
+    );
+}
+
+#[tokio::test]
+async fn provider_system_prompt_merges_into_the_first_system_message() {
+    let mut fixture = Fixture::new();
+    fixture.args.messages = vec![message("system", "base"), message("user", "hi")];
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("litellm_system_prompt"), json("\"extra\""));
+    let call = call_of(run(&fixture).await.unwrap());
+    let Some(Content::Text(text)) = &call.messages[0].content else {
+        panic!("expected text content");
+    };
+    assert_eq!(text, "extra\n\nbase");
+}
+
+#[tokio::test]
+async fn provider_environment_uses_the_processed_parameters() {
+    let mut fixture = Fixture::new();
+    fixture.args.max_tokens = Some(5);
+    fixture
+        .args
+        .kwargs
+        .insert(String::from("custom_key"), json("\"secret\""));
+    run(&fixture).await.unwrap();
+    let updates = fixture.logging.updates.lock().unwrap().clone();
+    assert!(updates[0].optional_params.contains_key("max_tokens"));
+    assert!(!updates[0].optional_params.contains_key("custom_key"));
+}
+
+#[tokio::test]
+async fn provider_ollama_function_calling_falls_back_to_prompt() {
+    let mut fixture = Fixture::new();
+    fixture.metadata.resolved_provider = Some("ollama");
+    fixture.args.tools = Some(vec![json(r#"{"type":"function","function":{"name":"f"}}"#)]);
+    let call = call_of(run(&fixture).await.unwrap());
+    let system = call
+        .messages
+        .iter()
+        .find(|message| message.role == "system");
+    let Some(Content::Text(text)) = system.and_then(|message| message.content.as_ref()) else {
+        panic!("expected a system prompt with text");
+    };
+    assert!(text.contains("Produce JSON OUTPUT ONLY"));
+}
+
+fn convert<Out, In>(value: &In) -> super::error::RequestResult<Out>
+where
+    In: serde::Serialize + ?Sized,
+    Out: DeserializeOwned,
+{
+    super::steps::convert::convert(value)
 }
 
 fn convert_value(value: &Json) -> JsonValue {
