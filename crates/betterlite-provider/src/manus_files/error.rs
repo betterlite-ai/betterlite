@@ -50,15 +50,6 @@ pub enum ManusFilesError {
     },
 }
 
-#[must_use]
-pub fn get_error_class(message: &str, status_code: u16, headers: Headers) -> BaseLlmException {
-    BaseLlmException {
-        status_code,
-        message: message.to_owned(),
-        headers,
-    }
-}
-
 impl From<ManusFilesError> for FileContractError {
     fn from(error: ManusFilesError) -> Self {
         Self::Upstream(BaseLlmException {

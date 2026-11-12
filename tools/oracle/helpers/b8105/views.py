@@ -162,7 +162,7 @@ class ConfigView(Protocol):
         stream: bool | None = None,
     ) -> str: ...
 
-    def transform_create_file_request(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L156-L215
+    def transform_create_file_request(
         self,
         *,
         model: str,
@@ -171,7 +171,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> PlanView: ...
 
-    def transform_create_file_response(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L217-L282
+    def transform_create_file_response(
         self,
         *,
         model: str | None,
@@ -181,7 +181,7 @@ class ConfigView(Protocol):
     ) -> FileResult: ...
 
     # ast-grep-ignore: no-long-names
-    def transform_retrieve_file_request(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L285-L300
+    def transform_retrieve_file_request(
         self,
         *,
         file_id: str,
@@ -189,7 +189,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> tuple[str, Object]: ...
 
-    def transform_delete_file_request(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L316-L331
+    def transform_delete_file_request(
         self,
         *,
         file_id: str,
@@ -197,7 +197,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> tuple[str, Object]: ...
 
-    def transform_delete_file_response(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L333-L341
+    def transform_delete_file_response(
         self,
         *,
         raw_response: httpx.Response,
@@ -205,7 +205,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> DeletedResult: ...
 
-    def transform_list_files_request(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L343-L360
+    def transform_list_files_request(
         self,
         *,
         purpose: str | None,
@@ -213,7 +213,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> tuple[str, Object]: ...
 
-    def transform_list_files_response(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L362-L371
+    def transform_list_files_response(
         self,
         *,
         raw_response: httpx.Response,
@@ -221,7 +221,7 @@ class ConfigView(Protocol):
         litellm_params: Object,
     ) -> list[FileResult]: ...
 
-    def transform_file_content_request(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L402-L418
+    def transform_file_content_request(
         self,
         *,
         file_content_request: FileContentView,
