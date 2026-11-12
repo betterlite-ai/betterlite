@@ -1,0 +1,13 @@
+kind: helper
+name: environment-validation-key-validity
+call:
+  b5364:
+    operation: check_valid_key
+    cases:
+    - {model: gpt-4o, api_key: sk-good, fails: false}
+    - {model: gpt-4o, api_key: sk-bad, fails: true}
+    - {model: claude-x, api_key: '', fails: false}
+    - {model: claude-x, api_key: '', fails: true}
+env: {}
+compare:
+  ignore: []
