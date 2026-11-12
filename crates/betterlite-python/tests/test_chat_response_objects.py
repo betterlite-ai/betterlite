@@ -241,6 +241,9 @@ def test_access_dict_parity() -> None:
     reference_message: Dumpable = litellm_utils.Message(content="x")
     assert message.dict() == reference_message.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
     assert message.dict(exclude_none=True) == reference_message.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    usage_text = betterlite_utils.Usage().json(exclude_none=True)
+    dumped_usage = parse_object(str(usage_text))
+    assert dumped_usage == {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
 def test_dump_message_parity() -> None:
