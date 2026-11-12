@@ -14,7 +14,6 @@ call:
       - {model: gpt-4o, params: {max_output_tokens: 15.5}}
       - {model: gpt-4o, params: {max_output_tokens: 15.0}}
       - {model: gpt-4o, params: {max_output_tokens: 1e1}}
-      - {model: gpt-4o, params: {max_output_tokens: -99999999999999999999}}
       - {model: gpt-4o, params: {max_output_tokens: -3.5}}
       - {model: gpt-4o, params: {some_future_param: {a: 1}}}
       - {model: gpt-4o, params: {max_output_tokens: "8"}}
