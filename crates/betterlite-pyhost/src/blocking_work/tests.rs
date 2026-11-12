@@ -71,9 +71,9 @@ fn spawn_blocked_jobs(
         let job_started = Arc::clone(started);
         tasks.spawn(async move {
             job_tracker
-                .run(&job_host, LONG_DEADLINE, move |_py| {
+                .run(&job_host, LONG_DEADLINE, move |py| {
                     job_started.fetch_add(1, Ordering::SeqCst);
-                    release.blocking_recv().unwrap_or_default();
+                    py.detach(|| release.blocking_recv()).unwrap_or_default();
                 })
                 .await
         });
@@ -101,9 +101,10 @@ where
     let mut runs = JoinSet::new();
     runs.spawn(async move {
         job_tracker
-            .run(&job_host, deadline, move |_py| {
+            .run(&job_host, deadline, move |py| {
                 job_started.store(true, Ordering::SeqCst);
-                release_receiver.blocking_recv().unwrap_or_default();
+                py.detach(|| release_receiver.blocking_recv())
+                    .unwrap_or_default();
                 value
             })
             .await
@@ -200,7 +201,7 @@ fn capture() -> (Captured, DefaultGuard) {
 #[tokio::test]
 async fn run_returns_the_job_result() {
     let host = start_host();
-    let tracker = WorkTracker::new(2);
+    let tracker = WorkTracker::new(2, Duration::from_secs(10));
     let result = tracker
         .run(&host, Duration::from_secs(5), |py| py.version_info().major)
         .await
@@ -219,7 +220,7 @@ async fn run_returns_the_job_result() {
 #[tokio::test]
 async fn a_panicking_job_gives_panicked() {
     let host = start_host();
-    let tracker = WorkTracker::new(2);
+    let tracker = WorkTracker::new(2, Duration::from_secs(10));
     let outcome = tracker
         .run(&host, Duration::from_secs(5), |_py| -> u8 {
             panic!("the hook panicked")
@@ -242,10 +243,34 @@ async fn a_panicking_job_gives_panicked() {
     );
 }
 
+async fn assert_the_abandoned_job_keeps_its_slot(
+    tracker: &Arc<WorkTracker>,
+    host: &PythonHost,
+    release_sender: oneshot::Sender<()>,
+) {
+    let (mut second_runs, second_release, second_started) =
+        spawn_one_blocked_job(tracker, host, LONG_DEADLINE, 8_u8);
+    yield_times(100).await;
+    assert_eq!(
+        tracker.stats().running,
+        1,
+        "the abandoned job must keep its pool slot"
+    );
+    assert!(
+        !second_started.load(Ordering::SeqCst),
+        "the second job must wait for the slot"
+    );
+    release_sender.send(()).unwrap();
+    wait_until_started(&second_started).await;
+    second_release.send(()).unwrap();
+    join_one(&mut second_runs).await.unwrap();
+    wait_for_idle(tracker).await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn run_times_out_at_the_deadline_and_counts_the_job_abandoned() {
     let host = start_host();
-    let tracker = Arc::new(WorkTracker::new(2));
+    let tracker = Arc::new(WorkTracker::new(1, Duration::from_secs(10)));
     let (mut runs, release_sender, started) =
         spawn_one_blocked_job(&tracker, &host, Duration::from_secs(5), 7_u8);
     wait_until_started(&started).await;
@@ -263,14 +288,13 @@ async fn run_times_out_at_the_deadline_and_counts_the_job_abandoned() {
             completed: 0
         }
     );
-    release_sender.send(()).unwrap();
-    wait_for_idle(&tracker).await;
+    assert_the_abandoned_job_keeps_its_slot(&tracker, &host, release_sender).await;
     assert_eq!(
         tracker.stats(),
         Stats {
             running: 0,
             abandoned: 0,
-            completed: 1
+            completed: 2
         }
     );
 }
@@ -278,7 +302,7 @@ async fn run_times_out_at_the_deadline_and_counts_the_job_abandoned() {
 #[tokio::test(start_paused = true)]
 async fn a_run_that_times_out_while_queued_is_not_abandoned() {
     let host = start_host();
-    let tracker = Arc::new(WorkTracker::new(1));
+    let tracker = Arc::new(WorkTracker::new(1, Duration::from_secs(10)));
     let (mut first_runs, first_release, first_started) =
         spawn_one_blocked_job(&tracker, &host, LONG_DEADLINE, 1_u8);
     wait_until_started(&first_started).await;
@@ -314,7 +338,7 @@ async fn a_run_that_times_out_while_queued_is_not_abandoned() {
 #[tokio::test(start_paused = true)]
 async fn the_pool_never_runs_more_than_max_threads_jobs() {
     let host = start_host();
-    let tracker = Arc::new(WorkTracker::new(2));
+    let tracker = Arc::new(WorkTracker::new(2, Duration::from_secs(10)));
     let started = Arc::new(AtomicUsize::new(0));
     let (releases, receivers) = release_channels(3);
     let mut tasks = JoinSet::new();
@@ -362,7 +386,7 @@ async fn the_default_pool_runs_sixteen_jobs_at_once() {
 #[tokio::test(start_paused = true)]
 async fn shutdown_waits_for_running_jobs() {
     let host = start_host();
-    let tracker = Arc::new(WorkTracker::new(2));
+    let tracker = Arc::new(WorkTracker::new(2, Duration::from_secs(10)));
     let (mut runs, release_sender, started) =
         spawn_one_blocked_job(&tracker, &host, LONG_DEADLINE, ());
     wait_until_started(&started).await;
@@ -389,15 +413,39 @@ async fn shutdown_waits_for_running_jobs() {
     );
 }
 
+fn assert_no_warning_yet(shutdowns: &mut JoinSet<()>, captured: &Captured) {
+    assert!(
+        shutdowns.try_join_next().is_none(),
+        "shutdown returned before the configured grace"
+    );
+    assert!(
+        !captured.text().contains("shutdown grace elapsed"),
+        "shutdown warned before the configured grace: {}",
+        captured.text()
+    );
+}
+
 #[tokio::test(start_paused = true)]
-async fn shutdown_warns_after_the_grace_with_jobs_still_running() {
+async fn shutdown_honors_the_configured_grace_then_warns() {
     let host = start_host();
-    let tracker = Arc::new(WorkTracker::new(2));
+    let config = HostConfig {
+        module_dirs: Vec::new(),
+        shutdown_grace: Duration::from_secs(2),
+    };
+    let tracker = Arc::new(WorkTracker::new(1, config.shutdown_grace));
     let (mut runs, release_sender, started) =
         spawn_one_blocked_job(&tracker, &host, LONG_DEADLINE, ());
     wait_until_started(&started).await;
     let (captured, _guard) = capture();
-    tracker.shutdown().await;
+    let shutdown_tracker = Arc::clone(&tracker);
+    let mut shutdowns = JoinSet::new();
+    shutdowns.spawn(async move { shutdown_tracker.shutdown().await });
+    yield_times(100).await;
+    advance(Duration::from_millis(1999)).await;
+    yield_times(100).await;
+    assert_no_warning_yet(&mut shutdowns, &captured);
+    advance(Duration::from_millis(1)).await;
+    join_quiet(&mut shutdowns).await;
     let text = captured.text();
     assert!(text.contains("shutdown grace elapsed"), "logs were: {text}");
     assert!(text.contains("jobs=1"), "logs were: {text}");

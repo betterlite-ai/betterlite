@@ -42,16 +42,16 @@ pub struct WorkTracker {
 
 impl Default for WorkTracker {
     fn default() -> Self {
-        Self::new(DEFAULT_MAX_THREADS)
+        Self::new(DEFAULT_MAX_THREADS, DEFAULT_SHUTDOWN_GRACE)
     }
 }
 
 impl WorkTracker {
     #[must_use]
-    pub fn new(max_threads: usize) -> Self {
+    pub fn new(max_threads: usize, shutdown_grace: Duration) -> Self {
         let permits = Arc::new(Semaphore::new(max_threads.min(Semaphore::MAX_PERMITS)));
         Self {
-            shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
+            shutdown_grace,
             state: Arc::new(WorkState {
                 permits,
                 counters: Mutex::new(Counters::default()),

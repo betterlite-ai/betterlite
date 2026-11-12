@@ -6,11 +6,10 @@ use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt as _;
 #[cfg(unix)]
 use std::path::PathBuf;
-use std::time::Duration;
 
 use pyo3::types::PyAnyMethods as _;
 
-use super::{HostConfig, HostError, PythonHost, ensure_supported};
+use super::{DEFAULT_SHUTDOWN_GRACE, HostConfig, HostError, PythonHost, ensure_supported};
 
 fn start_host() -> PythonHost {
     PythonHost::start(&HostConfig::default()).unwrap()
@@ -30,7 +29,7 @@ fn start_puts_module_dirs_first_in_sys_path_in_order() {
     let second = tempfile::tempdir().unwrap();
     let config = HostConfig {
         module_dirs: vec![first.path().to_path_buf(), second.path().to_path_buf()],
-        shutdown_grace: Duration::from_secs(1),
+        shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
     };
     let host = PythonHost::start(&config).unwrap();
     let path = sys_path(&host);
@@ -44,7 +43,7 @@ fn a_second_start_keeps_each_module_dir_once() {
     let wanted = dir.path().to_str().unwrap();
     let config = HostConfig {
         module_dirs: vec![dir.path().to_path_buf()],
-        shutdown_grace: Duration::from_secs(1),
+        shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
     };
     let first = PythonHost::start(&config).unwrap();
     let second = PythonHost::start(&config).unwrap();
@@ -140,7 +139,7 @@ fn a_module_dir_that_is_not_utf8_is_refused() {
     let path = PathBuf::from(OsString::from_vec(vec![b'/', b'm', 0xff]));
     let config = HostConfig {
         module_dirs: vec![path.clone()],
-        shutdown_grace: Duration::from_secs(1),
+        shutdown_grace: DEFAULT_SHUTDOWN_GRACE,
     };
     match PythonHost::start(&config).unwrap_err() {
         HostError::ModuleDirNotUtf8 { path: reported } => assert_eq!(reported, path),

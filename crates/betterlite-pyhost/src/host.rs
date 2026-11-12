@@ -68,8 +68,8 @@ impl PythonHost {
 
     #[must_use]
     pub fn version(&self) -> (u8, u8, u8) {
-        let (major, minor, patch) = self.state.version;
-        (major, minor, patch)
+        // pyo3 never finalizes the interpreter after start, so the recorded triple stays right.
+        self.state.version
     }
 
     pub fn attach<T, F>(&self, body: F) -> T
