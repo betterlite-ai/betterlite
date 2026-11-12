@@ -1,0 +1,30 @@
+task: B3851
+deviations:
+  - what: >-
+      The three allowlist warnings (Langfuse host, SigNoz host, SigNoz endpoint without key) are logged on every call. LiteLLM wraps each in an lru_cache of 128, so a given host or endpoint is logged once.
+    why: Rule `no module-level state` leaves no place for the cache. The text of each warning is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/destinations.py#L25-L32
+  - what: >-
+      The AgentOps exporter fetches its JWT through the proxy's own HTTP client for OTLP traffic (`HttpClients.traces`, with its TLS policy and proxy settings) inside an async send. LiteLLM opens a separate blocking httpx client with a 10 second timeout in the batch worker thread. The 10 second timeout, the request body, the headers and the once-only attempt are the same.
+    why: A Rust export is already async and off the request path, and a second client would skip the TLS and proxy policy of the first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/agentops.py#L120-L133
+  - what: >-
+      The AgentOps exporter does not read OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_TIMEOUT or the certificate variables. LiteLLM builds the stock Python OTLPSpanExporter, which reads them.
+    why: Rule `no reading the environment outside the config crate`; B3842 makes the same choice for the certificate variables.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/agentops.py#L102-L117
+  - what: >-
+      Environment names are read in upper case only (NEW_RELIC_*, AGENTOPS_*, SIGNOZ_*). LiteLLM reads them through pydantic-settings with case_sensitive=False, so a lower-case spelling also works there.
+    why: Environment names on Linux are case-sensitive and every documented spelling is upper case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/newrelic.py#L32-L41
+  - what: >-
+      The AgentOps exporter logs one debug line when no API key was configured; LiteLLM returns from the auth step silently in that case. With a key, every failed fetch logs the same debug line in both.
+    why: The task text names the missing-key outcome among the failures that log. The line keeps a keyless operator from wondering why exports carry no Authorization header.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/agentops.py#L125-L131
+  - what: >-
+      An unknown or non-canonical langfuse_span_scope value in a tenant destination resolves to full. LiteLLM passes the raw value into OtelDestination, whose pydantic Literal rejects it with a validation error.
+    why: A bogus scope value is a config mistake no working setup relies on, and the task text names full as every other case. Returning full keeps auth from failing with a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/destinations.py#L100-L103
+  - what: >-
+      Tenant callback parameters that are not strings are dropped before routing. LiteLLM reads whatever the dict holds and can pass a non-string header value into the exporter.
+    why: A header value is text, and docs/compatibility.md makes a wrong-typed value an error rather than a runtime surprise; the routing functions have no error channel, so the unusable parameter is treated as absent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/__init__.py#L108-L121
