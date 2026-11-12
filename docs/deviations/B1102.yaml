@@ -1,0 +1,5 @@
+task: B1102
+deviations:
+  - what: A request whose body, CLI, endpoint and configured defaults name no model is rejected at the destination stage with 400 invalid_request_error and code "400". The pinned proxy stores null as the model and forwards it to the provider layer, which raises a ValueError that the proxy answers with 500; with a router configured the same call already comes back as a 400 BadRequestError.
+    why: A request the proxy already fails on belongs to a 4xx, and no working setup can rely on the 500 of the routerless path. The status, type and code match the failure a router-backed proxy returns for the same input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L177
