@@ -72,8 +72,11 @@ fn malformed_bytes_become_typed_miss() {
     let (decoded, log) = capture(|| decode_cached_auth(b"{oops", ReadOperation::Get));
     assert!(decoded.unwrap().is_none());
     assert!(log.contains("is not decodable"), "{log}");
-    let invalid_utf8 = decode_cached_auth(&[0xff, 0xfe, 0x00], ReadOperation::AsyncGet);
+    assert!(log.contains("literal_eval"), "{log}");
+    let (invalid_utf8, utf8_log) =
+        capture(|| decode_cached_auth(&[0xff, 0xfe, 0x00], ReadOperation::AsyncGet));
     assert!(invalid_utf8.unwrap().is_none());
+    assert!(utf8_log.contains("utf8"), "{utf8_log}");
     let absent = decode_cached_auth(b"", ReadOperation::Get);
     assert!(absent.unwrap().is_none());
 }
@@ -115,6 +118,7 @@ fn cache_diagnostics_redact_payload_and_key() {
         "{log}"
     );
     assert!(!log.contains("sk-live-secret"), "{log}");
+    assert!(log.contains("view") || log.contains("json"), "{log}");
     let cache = local_cache(Some(60.0_f64));
     let key = "team_membership:user-1:team-1";
     let stored: Json = serde_json::from_str(r#"{"max_budget":"sk-live-secret"}"#).unwrap();
