@@ -141,6 +141,10 @@ fn tool_message(tool_call_id: &str, content: &str) -> ResultMessage {
     ),
     r#"[{"type":"text","text":"before"},{"type":"image_url","image_url":{"url":"i1"}},{"type":"text","text":"after"}]"#
 )]
+#[case::empty_text_skipped_beside_image(
+    Some(r#"[{"type":"text","text":""},{"type":"input_image","image_url":"i1"}]"#),
+    r#"[{"type":"image_url","image_url":{"url":"i1"}}]"#
+)]
 #[case::empty_list(Some("[]"), r#""[]""#)]
 #[case::unrecognized_list(
     Some(r#"[{"type":"audio","data":"\u00e9"}]"#),

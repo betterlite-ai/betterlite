@@ -48,6 +48,10 @@ call:
           - {type: text, text: before}
           - {type: input_image, image_url: i1}
           - {type: output_text, text: after}
+      - call_id: c
+        output:
+          - {type: text, text: ""}
+          - {type: input_image, image_url: i1}
       - {call_id: c, output: []}
       - {call_id: c, output: [{type: audio, data: "é"}]}
       - {call_id: c, output: {a: [1, 2]}}
