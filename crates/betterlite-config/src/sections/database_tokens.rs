@@ -14,7 +14,7 @@ use crate::sections::Section;
 mod tests;
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw;
+pub struct Raw {}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {

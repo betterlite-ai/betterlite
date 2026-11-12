@@ -76,12 +76,18 @@ def expiry_value(kind: Literal["rds", "azure"], token: str) -> Json:
     capture = LevelCapture()
     logger = logging.getLogger("LiteLLM Proxy")
     previous_level = logger.level
-    logger.setLevel(logging.DEBUG)
+    previous_handlers = list(logger.handlers)
+    # LiteLLM's own handler writes DEBUG records to stdout; route them to the capture instead.
+    for handler in previous_handlers:
+        logger.removeHandler(handler)
     logger.addHandler(capture)
+    logger.setLevel(logging.DEBUG)
     try:
         expiration = parse_database_token_expiration(authentication(kind), token)
     finally:
         logger.removeHandler(capture)
+        for handler in previous_handlers:
+            logger.addHandler(handler)
         logger.setLevel(previous_level)
     level = capture.levels[0] if capture.levels else None
     value = None if expiration is None else expiration.isoformat()
