@@ -99,9 +99,13 @@ pub struct SleepStep {
     pub min_timeout: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Output(Box<Fields>);
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Output {
+pub struct Fields {
     pub num_retries: Option<i64>,
     pub policy_applies: Option<bool>,
     pub policy: Option<RetryPolicy>,
@@ -115,7 +119,7 @@ pub(crate) fn run(
     random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let mut fields = Output::default();
+    let mut fields = Fields::default();
     match payload.function {
         Function::Count => {
             let count = require(payload.count.as_ref(), "count")?;
@@ -149,14 +153,13 @@ pub(crate) fn run(
                     .collect(),
             );
         }
-        Function::Sleep => {
-            let input = require(payload.sleep.as_ref(), "sleep")?;
-            let (delays, retry_afters) = sleep(input, random)?;
-            fields.delays = Some(delays);
-            fields.retry_afters = Some(retry_afters);
-        }
+        Function::Sleep => sleep(
+            require(payload.sleep.as_ref(), "sleep")?,
+            random,
+            &mut fields,
+        )?,
     }
-    Ok(ProbeOutput::RetryPolicy(fields))
+    Ok(ProbeOutput::RetryPolicy(Output(Box::new(fields))))
 }
 
 fn policies(count: &CountInput) -> RetryPolicies {
@@ -179,7 +182,8 @@ fn availability(step: &EligibilityStep) -> Availability {
 fn sleep(
     payload: &SleepInput,
     random: &mut InjectedRandom<'_>,
-) -> Result<(Vec<String>, Vec<String>), OperationError> {
+    fields: &mut Fields,
+) -> Result<(), OperationError> {
     let mut delays = Vec::with_capacity(payload.steps.len());
     let mut retry_afters = Vec::with_capacity(payload.steps.len());
     for step in &payload.steps {
@@ -192,30 +196,7 @@ fn sleep(
             Some(-1) | None => "invalid".to_owned(),
             Some(seconds) => format!("seconds:{seconds}"),
         });
-        let settings = BackoffSettings {
-            initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
-            max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
-            jitter: DEFAULT_JITTER,
-            min_timeout: f64::from(step.min_timeout),
-        };
-        // a retry sleeps only on how many deployments answer, so the fallback lists stay absent here
-        let counts = Availability {
-            healthy_deployments: step.healthy_deployments,
-            all_deployments: step.all_deployments,
-            context_window_fallbacks: None,
-            content_policy_fallbacks: None,
-            regular_fallbacks: None,
-        };
-        let delay = sleep_before_retry(
-            &settings,
-            RetryTiming {
-                remaining_retries: step.remaining_retries,
-                max_retries: step.max_retries,
-            },
-            &counts,
-            parsed,
-            random,
-        );
+        let delay = step_delay(step, parsed, random);
         delays.push(format!("{delay:.6}"));
     }
     // LiteLLM raises when random() has no injected draw left, and the fallback sample must not hide that
@@ -224,7 +205,36 @@ fn sleep(
             message: "the request has no sample left for this draw".to_owned(),
         });
     }
-    Ok((delays, retry_afters))
+    fields.delays = Some(delays);
+    fields.retry_afters = Some(retry_afters);
+    Ok(())
+}
+
+fn step_delay(step: &SleepStep, retry_after: Option<i64>, random: &mut InjectedRandom<'_>) -> f64 {
+    let settings = BackoffSettings {
+        initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
+        max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
+        jitter: DEFAULT_JITTER,
+        min_timeout: f64::from(step.min_timeout),
+    };
+    // a retry sleeps only on how many deployments answer, so the fallback lists stay absent here
+    let counts = Availability {
+        healthy_deployments: step.healthy_deployments,
+        all_deployments: step.all_deployments,
+        context_window_fallbacks: None,
+        content_policy_fallbacks: None,
+        regular_fallbacks: None,
+    };
+    sleep_before_retry(
+        &settings,
+        RetryTiming {
+            remaining_retries: step.remaining_retries,
+            max_retries: step.max_retries,
+        },
+        &counts,
+        retry_after,
+        random,
+    )
 }
 
 fn require<'value, T>(value: Option<&'value T>, name: &str) -> Result<&'value T, OperationError> {
