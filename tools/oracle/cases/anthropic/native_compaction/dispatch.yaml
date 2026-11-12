@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch
+call:
+  b3545: {"function": "dispatch", "protocol": "messages", "payload": {"model": "claude-opus-4-7", "max_tokens": 64, "messages": [{"role": "user", "content": "hi"}]}, "reply_id": "msg_1"}
+env: {}
+compare:
+  ignore: []

@@ -140,6 +140,11 @@ pub(crate) struct Rung {
     pub(crate) timeout_minutes: u32,
     #[schemars(
         length(min = 1),
+        description = "The model a worker fix turn on this rung runs on after a run that reported done: failed task checks, review changes or a CI round. It resumes the rung's session with the rung's effort. A run after a blocked, unfinished or malformed answer keeps the rung's model."
+    )]
+    pub(crate) fix_model: Option<String>,
+    #[schemars(
+        length(min = 1),
         description = "The only tasks this worker rung runs for. Every other task's ladder leaves the rung out, so the places their saved progress points at stay the same."
     )]
     pub(crate) tasks: Option<Vec<String>>,
