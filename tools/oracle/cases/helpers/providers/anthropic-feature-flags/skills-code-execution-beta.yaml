@@ -1,0 +1,43 @@
+kind: helper
+name: skills-code-execution-beta
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - function: skills
+        tools: [{type: code_execution_20250825}]
+        params: {container: {skills: [{type: custom}]}}
+        headers: [null, "a,b", " a , ,b ", ""]
+        providers: [vertex_ai, vertex_ai_beta, bedrock, anthropic, azure, azure_ai, unknown]
+      - function: skills
+        tools: [{type: code_execution_20250101}]
+        params: {container: {skills: []}}
+        headers: []
+        providers: []
+      - function: skills
+        tools: null
+        params: {container: {}}
+        headers: []
+        providers: []
+      - function: skills
+        tools: []
+        params: {container: null}
+        headers: []
+        providers: []
+      - function: skills
+        tools: null
+        params: {container: skills}
+        headers: []
+        providers: []
+      - function: skills
+        tools: null
+        params: {container: {skills: one}}
+        headers: []
+        providers: []
+      - function: skills
+        tools: null
+        params: {}
+        headers: []
+        providers: []
+env: {}
+compare: {ignore: []}

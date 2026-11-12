@@ -1,0 +1,14 @@
+kind: helper
+name: deployment-base-url
+call:
+  azure_urls:
+    deployment_base_url:
+      - azure_endpoint: https://example.openai.azure.com/openai/deployments/deployment
+        base_url: https://previous.example
+      - azure_endpoint: https://example.openai.azure.com/prefix/openai/deployments?x=1
+      - azure_endpoint: https://example.openai.azure.com
+        base_url: https://previous.example
+      - base_url: https://previous.example
+      - azure_endpoint: ""
+env: {}
+compare: {ignore: []}

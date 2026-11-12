@@ -1,0 +1,6 @@
+kind: helper
+name: is-all-text-parts-text-only
+call:
+  b3663: {"function": "content_text", "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}], "parts": [], "new_text": ""}
+env: {}
+compare: {ignore: []}

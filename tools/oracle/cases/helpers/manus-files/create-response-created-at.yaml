@@ -1,0 +1,22 @@
+kind: helper
+name: manus-files-create-response-created-at
+env: {TZ: UTC}
+compare: {ignore: []}
+call:
+  b8105:
+    op: create_reply
+    environment: {TZ: UTC}
+    now: 1700000000
+    cases:
+      - {litellm_params: {}, body: '{"created_at":"2025-01-02T03:04:05Z"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-01-02T03:04:05.123Z"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-01-02T03:04:05+02:00"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-1-2T3:4:5"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-01-02t03:04:05"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-01- 2T03:04:05"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-01-02T23:59:60"}'}
+      - {litellm_params: {}, body: '{"created_at":""}'}
+      - {litellm_params: {}, body: '{"created_at":"not-a-time"}'}
+      - {litellm_params: {}, body: '{"created_at":"2025-02-30T00:00:00"}'}
+      - {litellm_params: {}, body: '{"created_at":null}'}
+      - {litellm_params: {}, body: '{}'}

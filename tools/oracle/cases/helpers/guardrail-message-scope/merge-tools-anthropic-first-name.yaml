@@ -1,0 +1,6 @@
+kind: helper
+name: merge-tools-anthropic-first-name
+call:
+  b3663: {"function": "merge_tools", "extractor": "anthropic", "request": null, "returned": [{"type": "function", "name": "flat", "function": {"name": "nested"}}, {"name": "flat"}]}
+env: {}
+compare: {ignore: []}

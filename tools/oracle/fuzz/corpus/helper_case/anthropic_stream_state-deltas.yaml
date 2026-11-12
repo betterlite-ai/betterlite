@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-stream-state-deltas
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {current_content_block_type: tool_use, tool_index: 0}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{}'}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: note}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: sig}}}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: input_json_delta}}]}}
+      - {function: check_empty}
+      - {function: state}
+env: {}
+compare: {ignore: []}

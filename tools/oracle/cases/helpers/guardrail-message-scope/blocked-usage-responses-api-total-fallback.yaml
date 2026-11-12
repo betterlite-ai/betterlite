@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-usage-responses-api-total-fallback
+call:
+  b3663: {"function": "blocked_usage", "shape": "responses_api", "original": {"kind": "response", "response": {"usage": {"prompt_tokens": 2, "completion_tokens": 3}}}}
+env: {}
+compare: {ignore: []}
