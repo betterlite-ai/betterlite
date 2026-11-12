@@ -157,7 +157,7 @@ fn rejection(result: Result<(), RequestDestinationError>) -> Value {
                 "type": facts.error_type,
                 "param": facts.param,
                 "code": facts.code,
-                "detail": error.detail(),
+                "detail": facts.detail,
             })
         }
     }

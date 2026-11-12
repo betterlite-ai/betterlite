@@ -10,7 +10,7 @@ pub struct ExceptionDetail {
     pub param: DestinationField,
 }
 
-// the fields the handler mapper reads off an exception; the wire envelope is the mapper's answer, not this record
+// what the handler mapper reads off an exception; the HTTP wire envelope is the mapper's answer, not this record
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ErrorFacts {
     pub status: u16,
@@ -18,6 +18,7 @@ pub struct ErrorFacts {
     pub error_type: &'static str,
     pub param: Option<&'static str>,
     pub code: &'static str,
+    pub detail: Option<ExceptionDetail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -36,29 +37,30 @@ impl RequestDestinationError {
     #[must_use]
     pub const fn facts(&self) -> ErrorFacts {
         match self {
-            Self::UrlValuedDestination { .. } | Self::MissingModel => ErrorFacts {
+            Self::UrlValuedDestination { field } => ErrorFacts {
                 status: 400,
                 error_type: "invalid_request_error",
                 param: None,
                 code: "400",
+                detail: Some(ExceptionDetail {
+                    error: "invalid_request",
+                    param: *field,
+                }),
+            },
+            Self::MissingModel => ErrorFacts {
+                status: 400,
+                error_type: "invalid_request_error",
+                param: None,
+                code: "400",
+                detail: None,
             },
             Self::ModelNotText => ErrorFacts {
                 status: 400,
                 error_type: "bad_request_error",
                 param: Some("model"),
                 code: "400",
+                detail: None,
             },
-        }
-    }
-
-    #[must_use]
-    pub const fn detail(&self) -> Option<ExceptionDetail> {
-        match self {
-            Self::UrlValuedDestination { field } => Some(ExceptionDetail {
-                error: "invalid_request",
-                param: *field,
-            }),
-            Self::MissingModel | Self::ModelNotText => None,
         }
     }
 }

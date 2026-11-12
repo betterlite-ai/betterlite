@@ -313,22 +313,18 @@ fn deployment_url_rejected(
         error,
         RequestDestinationError::UrlValuedDestination { field }
     );
-    let facts = error.facts();
     assert_eq!(
-        facts,
+        error.facts(),
         ErrorFacts {
             status: 400,
             error_type: "invalid_request_error",
             param: None,
             code: "400",
+            detail: Some(ExceptionDetail {
+                error: "invalid_request",
+                param: field,
+            }),
         }
-    );
-    assert_eq!(
-        error.detail(),
-        Some(ExceptionDetail {
-            error: "invalid_request",
-            param: field,
-        })
     );
 }
 
@@ -433,9 +429,9 @@ fn missing_model_source_error(#[case] kind: InferenceModelKind) {
             error_type: "invalid_request_error",
             param: None,
             code: "400",
+            detail: None,
         }
     );
-    assert_eq!(error.detail(), None);
 }
 
 #[test]
@@ -471,6 +467,7 @@ fn a_non_text_model_is_rejected() {
             error_type: "bad_request_error",
             param: Some("model"),
             code: "400",
+            detail: None,
         }
     );
 }
