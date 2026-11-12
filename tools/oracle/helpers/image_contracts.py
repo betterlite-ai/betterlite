@@ -14,6 +14,7 @@ from pydantic import JsonValue, TypeAdapter
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 TEXT: TypeAdapter[str] = TypeAdapter(str)
 CONFIG: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
+NAMES: TypeAdapter[list[str]] = TypeAdapter(list[str])
 BASES: TypeAdapter[list[str | None]] = TypeAdapter(list[str | None])
 TEXTS: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
 Parts: TypeAlias = list[tuple[str, tuple[str | None, bytes, str | None]]]
@@ -48,7 +49,6 @@ class Scenario(TypedDict):
 SCENARIOS: TypeAdapter[list[Scenario]] = TypeAdapter(list[Scenario])
 ENTRIES: TypeAdapter[list[ClassEntry]] = TypeAdapter(list[ClassEntry])
 
-
 RAISED = "the fixture provider failed"
 
 
@@ -58,7 +58,8 @@ class FixtureProviderError(Exception): ...
 def stub(*_args: JsonValue) -> JsonValue: ...
 
 
-Attr: TypeAlias = JsonValue | Callable[..., JsonValue] | property  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
+Produced: TypeAlias = JsonValue | tuple[dict[str, JsonValue], Parts]
+Attr: TypeAlias = JsonValue | Callable[..., Produced] | property  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
 GEN_NS: dict[str, Attr] = {"get_supported_openai_params": stub, "map_openai_params": stub}
 VAR_NS: dict[str, Attr] = {
     "get_supported_openai_params": stub, "map_openai_params": stub, "get_error_class": stub,
@@ -89,25 +90,28 @@ def record_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lite
     model: str,
     prompt: str | None,
     image: FileTypes | None,
-    params: dict[str, JsonValue],
-    _litellm_params: JsonValue,
+    litellm_params: JsonValue,
     headers: dict[str, str],
-) -> JsonValue:
+    **options: dict[str, JsonValue],
+) -> tuple[dict[str, JsonValue], Parts]:
     state = self.state
+    params = options["image_edit_optional_request_params"]
     if image is not None:
         raise ValueError("the fixture records only a missing image")
     seen: dict[str, JsonValue] = {"model": model, "prompt": prompt, "image": None,
-                                   "options": dict(params), "headers": dict(headers)}
+                                   "options": dict(params),
+                                   "headers": dict(headers)}
     state.seen.append(seen)
     state.calls += 1
     if state.raise_status is not None:
         raise FixtureProviderError(RAISED)
+    del litellm_params
     data = dict(params)
     data["touched"] = True
     request_headers = dict(headers)
     request_headers["touched"] = "yes"
     data["header_touched"] = "touched" in request_headers
-    return [data, [["image", ["a.png", [97], "image/png"]]]]
+    return data, [("image", ("a.png", b"a", "image/png"))]
 
 
 def edit_fixture(state: EditState) -> type[BaseImageEditConfig]:
@@ -215,8 +219,8 @@ def edit_class_configuration(raw: dict[str, JsonValue]) -> JsonValue:
         )
     parent = type("InheritedConfig", (edit_fixture(EditState(None)),), inherited)
     config_type: type[BaseImageEditConfig] = type("ConfiguredConfig", (parent,), own)
-    config_raw = config_type.get_config()  # type: ignore[no-untyped-call, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
-    config = CONFIG.validate_python(config_raw)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
+    config_raw: dict[str, JsonValue] = config_type.get_config()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
+    config = NAMES.validate_python(list(config_raw))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/image_edit/transformation.py
     known = {entry["name"]: entry for entry in entries}
     values: dict[str, JsonValue] = {
         name: {"kind": "value", "value": known[name]["value"]}
@@ -244,9 +248,10 @@ def error_probe(raw: dict[str, JsonValue], kind: str) -> JsonValue:
             )
     except BaseLLMException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py
         header_map = raised.headers  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py
-        headers_value = list(header_map.items()) if header_map is not None else []  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py
+        pairs: list[tuple[str, str]] = [] if header_map is None else list(header_map.items())  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py
+        headers_value = [[name, value] for name, value in pairs]
         facts: dict[str, JsonValue] = {"status_code": raised.status_code, "message": raised.message,
-                                       "headers": JSON.validate_python(headers_value)}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py
+                                       "headers": JSON.validate_python(headers_value)}
         return JSON.validate_python(facts)
     raise AssertionError("get_error_class returned without raising")
 

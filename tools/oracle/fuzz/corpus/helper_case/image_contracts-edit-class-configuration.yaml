@@ -4,7 +4,7 @@ call:
   image_contracts:
     operation: edit_class_configuration
     entries:
-      - {name: n, kind: value, value: 0, inherited: false}
+      - {name: "n", kind: value, value: 0, inherited: false}
       - {name: prop, kind: property, value: null, inherited: false}
       - {name: size, kind: value, value: 3, inherited: true}
 env: {}

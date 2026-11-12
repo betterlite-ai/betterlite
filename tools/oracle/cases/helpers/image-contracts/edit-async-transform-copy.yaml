@@ -6,13 +6,13 @@ call:
     scenarios:
       - model: gpt-image-1
         prompt: null
-        options: {n: 2}
+        options: {"n": 2}
         headers: {x: a}
         litellm_params: {}
         raise_status: null
       - model: gpt-image-1
         prompt: null
-        options: {n: 2}
+        options: {"n": 2}
         headers: {x: a}
         litellm_params: {}
         raise_status: 418
