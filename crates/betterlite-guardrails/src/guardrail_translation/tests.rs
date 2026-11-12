@@ -198,58 +198,78 @@ fn metadata_merge_skips_when_user_metadata_is_empty() {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the no-op translation never fails")]
-struct NoopFailure;
+#[error("the marker translation never fails")]
+struct MarkerFailure;
 
-struct NoopTranslation;
+struct MarkerTranslation;
 
-impl BaseTranslation for NoopTranslation {
-    type Guardrail = ();
+impl BaseTranslation for MarkerTranslation {
+    type Guardrail = String;
     type LogTarget = ();
-    type Failure = NoopFailure;
+    type Failure = MarkerFailure;
 
     fn process_input_messages(
         &self,
-        _data: &mut BTreeMap<String, GuardrailValue>,
+        data: &mut BTreeMap<String, GuardrailValue>,
         _guardrail: &Self::Guardrail,
-        _call: TranslationCall<'_, Self::LogTarget>,
+        _logging_obj: Option<&mut Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
+        data.insert("input_scanned".to_owned(), GuardrailValue::Boolean(true));
         ready(Ok(()))
     }
 
     fn process_output_response(
         &self,
-        _response: &mut GuardrailValue,
-        _guardrail: &Self::Guardrail,
-        _call: TranslationCall<'_, Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        ready(Ok(()))
+        response: GuardrailValue,
+        guardrail: &Self::Guardrail,
+        call: TranslationCall<'_, Self::LogTarget>,
+    ) -> impl Future<Output = Result<GuardrailValue, Self::Failure>> + Send {
+        if let Some(request_data) = call.request_data {
+            request_data.insert("response".to_owned(), response);
+        }
+        ready(Ok(text(guardrail)))
     }
 }
 
 #[tokio::test]
-async fn translation_defaults_leave_requests_and_responses_unchanged() {
-    let translation = NoopTranslation;
+async fn translation_runs_required_hooks_and_keeps_stream_chunks() {
+    let translation = MarkerTranslation;
+    let guardrail = "[redacted]".to_owned();
     let mut data = BTreeMap::from([("model".to_owned(), text("gpt-4o"))]);
-    let original = data.clone();
     translation
-        .process_input_messages(&mut data, &(), call())
+        .process_input_messages(&mut data, &guardrail, None)
         .await
         .unwrap();
-    assert_eq!(data, original);
+    assert_eq!(
+        data,
+        BTreeMap::from([
+            ("input_scanned".to_owned(), GuardrailValue::Boolean(true)),
+            ("model".to_owned(), text("gpt-4o")),
+        ])
+    );
 
-    let mut response = text("answer");
-    let original_response = response.clone();
-    translation
-        .process_output_response(&mut response, &(), call())
+    let mut request_data = BTreeMap::new();
+    let output_call = TranslationCall {
+        user_api_key_dict: None,
+        request_data: Some(&mut request_data),
+        logging_obj: None,
+        stream_transform_sink: None,
+        deliver_ended_stream_rewrites: false,
+    };
+    let response = translation
+        .process_output_response(text("answer"), &guardrail, output_call)
         .await
         .unwrap();
-    assert_eq!(response, original_response);
+    assert_eq!(response, text("[redacted]"));
+    assert_eq!(
+        request_data,
+        BTreeMap::from([("response".to_owned(), text("answer"))])
+    );
 
     let mut responses_so_far = vec![text("chunk")];
     let original_chunks = responses_so_far.clone();
     translation
-        .process_streaming_response(&mut responses_so_far, &(), call())
+        .process_streaming_response(&mut responses_so_far, &guardrail, call())
         .await
         .unwrap();
     assert_eq!(responses_so_far, original_chunks);
@@ -257,14 +277,14 @@ async fn translation_defaults_leave_requests_and_responses_unchanged() {
 
 #[test]
 fn translation_defaults_have_no_provider_specific_extras() {
-    let translation = NoopTranslation;
+    let translation = MarkerTranslation;
     assert_eq!(translation.get_streaming_scan_key(&[]), None);
     assert_eq!(
-        translation.build_block_sse_chunks(&NoopFailure, false, None),
+        translation.build_block_sse_chunks(&MarkerFailure, false, None),
         None
     );
     assert_eq!(
-        translation.build_stream_error_items(&NoopFailure, None),
+        translation.build_stream_error_items(&MarkerFailure, None),
         None
     );
     assert_eq!(translation.get_structured_messages(&BTreeMap::new()), None);

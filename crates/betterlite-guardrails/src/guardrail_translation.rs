@@ -70,15 +70,15 @@ pub trait BaseTranslation {
         &self,
         data: &mut BTreeMap<String, GuardrailValue>,
         guardrail: &Self::Guardrail,
-        call: TranslationCall<'_, Self::LogTarget>,
+        logging_obj: Option<&mut Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send;
 
     fn process_output_response(
         &self,
-        response: &mut GuardrailValue,
+        response: GuardrailValue,
         guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
-    ) -> impl Future<Output = Result<(), Self::Failure>> + Send;
+    ) -> impl Future<Output = Result<GuardrailValue, Self::Failure>> + Send;
 
     // LiteLLM's process_output_streaming_response; the name limit drops its output_ prefix
     fn process_streaming_response(
