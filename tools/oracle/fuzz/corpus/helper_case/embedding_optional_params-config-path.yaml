@@ -1,0 +1,19 @@
+kind: helper
+name: embedding-optional-params-config-path-seed
+call:
+  b5363:
+    calls:
+      - model: m
+        custom_llm_provider: hosted_vllm
+        user: u
+        kwargs: {timeout: 30}
+        provider_config: {supported: [timeout, dimensions, encoding_format, user], mapped: {user: u}}
+      - model: embed-english-v3.0
+        custom_llm_provider: cohere
+        user: u
+        dimensions: 8
+        drop_params: true
+        kwargs: {}
+        provider_config: {supported: [encoding_format, dimensions], mapped: {output_dimension: 8}}
+env: {}
+compare: {ignore: []}

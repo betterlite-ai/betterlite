@@ -1,0 +1,16 @@
+kind: helper
+name: langgraph-chat-headers
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: headers
+    cases:
+      - {api_key: null, headers: {}}
+      - {api_key: 'secret-1', headers: {}}
+      - {api_key: '', headers: {}}
+      - {api_key: 'secret-1', headers: {X-Trace: 'abc'}}
+      - {api_key: null, headers: {X-Trace: 'abc'}}
+      - {api_key: 'secret-1', headers: {Content-Type: 'text/plain'}}
+      - {api_key: 'secret-1', headers: {Authorization: 'Bearer old'}}
+      - {api_key: null, headers: {Authorization: 'Bearer old'}}
