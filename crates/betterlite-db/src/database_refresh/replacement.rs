@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::error::Error;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use secrecy::SecretString;
 
@@ -103,11 +103,12 @@ where
     };
     pending.handle.take();
     let old_generation = generation.generation.load(Ordering::SeqCst);
-    let previous = publish_tracked(generation, Arc::clone(&candidate), tracker);
+    let previous = publish(generation, Arc::clone(&candidate), Some(tracker));
     generation
         .generation
         .store(old_generation.saturating_add(1), Ordering::SeqCst);
-    invoke_replaced(generation).map_err(|source| ReplacementError::Callback { source })?;
+    invoke_replaced(generation.on_replaced.as_ref())
+        .map_err(|source| ReplacementError::Callback { source })?;
     schedule_retirement(generation, previous, old_generation);
     Ok(())
 }
@@ -134,7 +135,7 @@ where
         );
         return Ok(false);
     }
-    if let Some(previous) = clone_current(generation) {
+    if let Some(previous) = clone_current(&generation.current) {
         previous.handle.close();
     }
     let Some(url) = replacement_url(generation, new_db_url) else {
@@ -145,7 +146,7 @@ where
         .build(&url, transport)
         .map_err(|source| ReplacementError::Build { source })?;
     let replacement = Arc::new(built);
-    publish_untracked(generation, Arc::clone(&replacement));
+    drop(publish(generation, Arc::clone(&replacement), None));
     replacement
         .connect(None)
         .await
@@ -156,7 +157,8 @@ where
     generation
         .generation
         .store(current_generation.saturating_add(1), Ordering::SeqCst);
-    invoke_replaced(generation).map_err(|source| ReplacementError::Callback { source })?;
+    invoke_replaced(generation.on_replaced.as_ref())
+        .map_err(|source| ReplacementError::Callback { source })?;
     Ok(true)
 }
 
@@ -175,38 +177,17 @@ where
     generation.options.url.snapshot()
 }
 
-fn clone_current<P, T, C>(generation: &PoolGeneration<P, T, C>) -> Option<ActivePool<P::Handle>>
-where
-    P: PoolProvider,
-    T: RefreshTrigger,
-    C: Error + Send + Sync + 'static,
-{
-    match generation.current.lock() {
-        Ok(current) => current.clone(),
+fn clone_current<H>(current: &Mutex<Option<ActivePool<H>>>) -> Option<ActivePool<H>> {
+    match current.lock() {
+        Ok(slot) => slot.clone(),
         Err(poisoned) => poisoned.into_inner().clone(),
     }
 }
 
-fn publish_untracked<P, T, C>(generation: &PoolGeneration<P, T, C>, handle: Arc<P::Handle>)
-where
-    P: PoolProvider,
-    T: RefreshTrigger,
-    C: Error + Send + Sync + 'static,
-{
-    generation
-        .current
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .replace(ActivePool {
-            handle,
-            tracker: None,
-        });
-}
-
-fn publish_tracked<P, T, C>(
+fn publish<P, T, C>(
     generation: &PoolGeneration<P, T, C>,
     handle: Arc<P::Handle>,
-    tracker: Arc<DrainTracker>,
+    tracker: Option<Arc<DrainTracker>>,
 ) -> Option<ActivePool<P::Handle>>
 where
     P: PoolProvider,
@@ -217,20 +198,14 @@ where
         .current
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .replace(ActivePool {
-            handle,
-            tracker: Some(tracker),
-        })
+        .replace(ActivePool { handle, tracker })
 }
 
-fn invoke_replaced<P, T, C>(generation: &PoolGeneration<P, T, C>) -> Result<(), C>
-where
-    P: PoolProvider,
-    T: RefreshTrigger,
-    C: Error + Send + Sync + 'static,
-{
-    let Some(callback) = &generation.on_replaced else {
+fn invoke_replaced<C>(
+    callback: Option<&Arc<dyn Fn() -> Result<(), C> + Send + Sync>>,
+) -> Result<(), C> {
+    let Some(settled) = callback else {
         return Ok(());
     };
-    callback()
+    settled()
 }

@@ -314,9 +314,9 @@ pub(super) fn token_options(slot: DatabaseUrlSlot) -> GenerationOptions {
     }
 }
 
-pub(super) fn callback(
-    script: &Arc<FakeScript>,
-) -> Arc<dyn Fn() -> Result<(), FakeError> + Send + Sync> {
+pub(super) type FakeCallback = Arc<dyn Fn() -> Result<(), FakeError> + Send + Sync>;
+
+pub(super) fn callback(script: &Arc<FakeScript>) -> FakeCallback {
     let sink = Arc::clone(script);
     Arc::new(move || {
         sink.record("callback".to_owned());
@@ -324,15 +324,16 @@ pub(super) fn callback(
     })
 }
 
-pub(super) fn failing_callback() -> Arc<dyn Fn() -> Result<(), FakeError> + Send + Sync> {
+pub(super) fn failing_callback() -> FakeCallback {
     Arc::new(|| Err(FakeError::Callback))
 }
 
-pub(super) fn generation(
+pub(super) async fn create(
     script: &Arc<FakeScript>,
     options: GenerationOptions,
     refresh: Option<Arc<FakeRefresh>>,
-    on_replaced: Option<Arc<dyn Fn() -> Result<(), FakeError> + Send + Sync>>,
+    on_replaced: Option<FakeCallback>,
+    connect: bool,
 ) -> Arc<FakeGeneration> {
     let provider = Arc::new(FakeProvider {
         script: Arc::clone(script),
@@ -342,7 +343,7 @@ pub(super) fn generation(
             .build(&secret("postgres://initial"), None)
             .expect("the fake initial handle builds"),
     );
-    Arc::new(
+    let built = Arc::new(
         FakeGeneration::new(
             Arc::clone(&provider),
             options,
@@ -351,20 +352,13 @@ pub(super) fn generation(
             on_replaced,
         )
         .expect("the generation builds"),
-    )
-}
-
-pub(super) async fn connected_generation(
-    script: &Arc<FakeScript>,
-    options: GenerationOptions,
-    refresh: Option<Arc<FakeRefresh>>,
-    on_replaced: Option<Arc<dyn Fn() -> Result<(), FakeError> + Send + Sync>>,
-) -> Arc<FakeGeneration> {
-    let built = generation(script, options, refresh, on_replaced);
-    built
-        .connect(None)
-        .await
-        .expect("the initial handle connects");
+    );
+    if connect {
+        built
+            .connect(None)
+            .await
+            .expect("the initial handle connects");
+    }
     built
 }
 
@@ -517,7 +511,7 @@ pub(super) struct RetirementDeadline {
 pub(super) async fn retirement_deadline() -> RetirementDeadline {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let held = tracker.begin_transaction();

@@ -11,14 +11,14 @@ use crate::database_refresh::access::{self, AccessError};
 use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::generation::{GenerationError, GenerationOptions};
 use crate::database_refresh::handle::PoolProvider as _;
+use crate::database_refresh::handle::TransactionEnd;
 use crate::database_refresh::retirement;
 use crate::database_refresh::tracker::{DrainTracker, TransactionId};
 use crate::database_tokens::expiry::TokenAuthKind;
 
 use super::support::{
     ConnectStep, FakeError, FakeGeneration, FakeProvider, FakeScript, QueryStep, TestTransaction,
-    connected_generation, generation, lock, options, refresh, secret, stop, token_options,
-    transaction, wait_for_event,
+    create, lock, options, refresh, secret, stop, token_options, transaction, wait_for_event,
 };
 
 #[test]
@@ -93,8 +93,14 @@ async fn query_guard_on_error_and_cancel() {
     let gate = Arc::new(Notify::new());
     script.script_query("blocks", QueryStep::Blocked);
     script.gate_query("blocks", Arc::clone(&gate));
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     handle.query("fails").await.unwrap_err();
@@ -118,8 +124,14 @@ async fn transaction_pins_idle_generation() {
     let gate = Arc::new(Notify::new());
     script.script_query("inside", QueryStep::Blocked);
     script.gate_query("inside", Arc::clone(&gate));
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let opened = transaction(&script);
@@ -137,7 +149,7 @@ async fn transaction_pins_idle_generation() {
     stop(&mut tasks).await;
     assert_eq!(tracker.status().active_operations, 1);
     handle
-        .commit_transaction(held)
+        .finish_transaction(held, TransactionEnd::Commit)
         .await
         .expect("the transaction commits");
     assert!(tracker.status().drained);
@@ -147,8 +159,14 @@ async fn transaction_pins_idle_generation() {
 #[tokio::test]
 async fn begin_failure_releases_guard() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let outcome = handle
@@ -162,8 +180,14 @@ async fn begin_failure_releases_guard() {
 #[tokio::test]
 async fn commit_failure_releases_transaction() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let mut opened = transaction(&script);
@@ -172,7 +196,9 @@ async fn commit_failure_releases_transaction() {
         .begin_transaction(ready(Ok::<TestTransaction, FakeError>(opened)))
         .await
         .expect("a transaction begins");
-    let outcome = handle.commit_transaction(held).await;
+    let outcome = handle
+        .finish_transaction(held, TransactionEnd::Commit)
+        .await;
     assert!(outcome.is_err());
     assert_eq!(tracker.status().active_operations, 0);
     assert_eq!(tracker.status().transactions, 0);
@@ -183,8 +209,14 @@ async fn commit_failure_releases_transaction() {
 async fn rollback_cancel_releases_transaction() {
     let script = Arc::new(FakeScript::default());
     let gate = Arc::new(Notify::new());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let mut opened = transaction(&script);
@@ -195,7 +227,11 @@ async fn rollback_cancel_releases_transaction() {
         .expect("a transaction begins");
     let mut tasks = JoinSet::new();
     let rolling = access::operation(&built).expect("a connected operation");
-    tasks.spawn(async move { rolling.rollback_transaction(held).await });
+    tasks.spawn(async move {
+        rolling
+            .finish_transaction(held, TransactionEnd::Rollback)
+            .await
+    });
     wait_for_event(&script, "rollback").await;
     assert_eq!(tracker.status().active_operations, 2);
     stop(&mut tasks).await;
@@ -223,8 +259,14 @@ fn unknown_transaction_no_underflow() {
 #[tokio::test]
 async fn tracker_reused() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let current = built.observe().handle.expect("the initial handle");
     let first = built.instrument(&current).expect("a tracker");
     built.connect(None).await.expect("a second connect");
@@ -244,7 +286,14 @@ async fn tracker_reused() {
 #[tokio::test]
 async fn connect_timeout_forwarding() {
     let script = Arc::new(FakeScript::default());
-    let built = generation(&script, options(DatabaseUrlSlot::default()), None, None);
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        false,
+    )
+    .await;
     built
         .connect(Some(Duration::from_secs(42)))
         .await
@@ -261,7 +310,14 @@ async fn connect_timeout_forwarding() {
 async fn connect_failure_installs_no_tracker() {
     let script = Arc::new(FakeScript::default());
     script.script_connect(0, ConnectStep::Fail);
-    let built = generation(&script, options(DatabaseUrlSlot::default()), None, None);
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        false,
+    )
+    .await;
     assert!(built.connect(None).await.is_err());
     let handle = access::operation(&built).expect("the handle stays selected");
     assert!(handle.tracker.is_none());

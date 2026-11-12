@@ -76,6 +76,12 @@ impl TransactionControl for deadpool_postgres::Transaction<'_> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionEnd {
+    Commit,
+    Rollback,
+}
+
 pub struct OperationHandle<H> {
     pub handle: Arc<H>,
     pub tracker: Option<Arc<DrainTracker>>,
@@ -104,27 +110,19 @@ where
         Ok(TrackedTransaction { value, hold })
     }
 
-    pub async fn commit_transaction<T>(
+    pub async fn finish_transaction<T>(
         &self,
         transaction: TrackedTransaction<T>,
+        end: TransactionEnd,
     ) -> Result<(), T::Error>
     where
         T: TransactionControl,
     {
         let _operation = self.tracker.as_ref().map(DrainTracker::begin_operation);
         let TrackedTransaction { value, hold: _hold } = transaction;
-        value.commit().await
-    }
-
-    pub async fn rollback_transaction<T>(
-        &self,
-        transaction: TrackedTransaction<T>,
-    ) -> Result<(), T::Error>
-    where
-        T: TransactionControl,
-    {
-        let _operation = self.tracker.as_ref().map(DrainTracker::begin_operation);
-        let TrackedTransaction { value, hold: _hold } = transaction;
-        value.rollback().await
+        match end {
+            TransactionEnd::Commit => value.commit().await,
+            TransactionEnd::Rollback => value.rollback().await,
+        }
     }
 }

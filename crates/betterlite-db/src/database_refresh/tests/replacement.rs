@@ -14,9 +14,8 @@ use crate::database_refresh::replacement::{self, ReplacementError};
 use crate::database_refresh::retirement::{self, wait_for_pool_replacement};
 
 use super::support::{
-    ConnectStep, FakeScript, NEXT_URL, callback, capture_logs, connected_generation,
-    failing_callback, generation, options, retirement_deadline, secret, set_url, stop,
-    wait_for_event,
+    ConnectStep, FakeScript, NEXT_URL, callback, capture_logs, create, failing_callback, options,
+    retirement_deadline, secret, set_url, stop, wait_for_event,
 };
 
 #[tokio::test]
@@ -24,7 +23,7 @@ async fn stale_generation_no_effects() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, NEXT_URL);
-    let built = connected_generation(&script, options(slot), None, None).await;
+    let built = create(&script, options(slot), None, None, true).await;
     let (logs, subscriber) = capture_logs();
     let guard = set_default(subscriber);
     let replaced = replacement::recreate(&built, &secret(NEXT_URL), None, Some(7))
@@ -50,7 +49,7 @@ async fn competing_recoveries_coalesce() {
     script.gate_connect(1, Arc::clone(&gate));
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, NEXT_URL);
-    let built = connected_generation(&script, options(slot), None, None).await;
+    let built = create(&script, options(slot), None, None, true).await;
     let mut tasks = JoinSet::new();
     let first_generation = Arc::clone(&built);
     let first_url = secret(NEXT_URL);
@@ -87,7 +86,7 @@ async fn recovery_failure_keeps_counter() {
     script.script_connect(1, ConnectStep::Fail);
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, NEXT_URL);
-    let built = connected_generation(&script, options(slot), None, None).await;
+    let built = create(&script, options(slot), None, None, true).await;
     let initial = built.observe().handle.expect("the initial handle");
     let outcome = replacement::recreate(&built, &secret(NEXT_URL), None, None).await;
     assert!(matches!(outcome, Err(ReplacementError::Connect { .. })));
@@ -106,7 +105,7 @@ async fn refresh_cancel_cleans_candidate() {
     script.script_connect(1, ConnectStep::Blocked);
     script.gate_connect(1, Arc::clone(&gate));
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     let initial = built.observe().handle.expect("the initial handle");
     set_url(&slot, NEXT_URL);
     let mut tasks = JoinSet::new();
@@ -134,11 +133,12 @@ async fn refresh_cancel_cleans_candidate() {
 async fn refresh_publish_then_callback_then_retire() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(
+    let built = create(
         &script,
         options(slot.clone()),
         None,
         Some(callback(&script)),
+        true,
     )
     .await;
     let initial = built.observe().handle.expect("the initial handle");
@@ -164,11 +164,12 @@ async fn refresh_publish_then_callback_then_retire() {
 async fn callback_error_after_publication() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(
+    let built = create(
         &script,
         options(slot.clone()),
         None,
         Some(failing_callback()),
+        true,
     )
     .await;
     set_url(&slot, NEXT_URL);
@@ -189,7 +190,7 @@ async fn writer_snapshot_vs_explicit_reader_url() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, "postgres://snapshot");
-    let writer = connected_generation(&script, options(slot.clone()), None, None).await;
+    let writer = create(&script, options(slot.clone()), None, None, true).await;
     replacement::recreate(&writer, &secret("postgres://passed"), None, None)
         .await
         .expect("the writer replaces");
@@ -213,7 +214,7 @@ async fn writer_snapshot_vs_explicit_reader_url() {
     let reader_slot = DatabaseUrlSlot::default();
     let mut reader_settings = options(reader_slot);
     reader_settings.recreate_uses_datasource = true;
-    let reader = connected_generation(&script, reader_settings, None, None).await;
+    let reader = create(&script, reader_settings, None, None, true).await;
     replacement::recreate(&reader, &secret("postgres://reader"), None, None)
         .await
         .expect("the reader replaces");
@@ -227,7 +228,7 @@ async fn writer_snapshot_vs_explicit_reader_url() {
 async fn retirement_waits_for_transaction() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let held = tracker.begin_transaction();
@@ -250,7 +251,7 @@ async fn retirement_waits_for_transaction() {
 async fn missing_tracker_retires_immediately() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = generation(&script, options(slot.clone()), None, None);
+    let built = create(&script, options(slot.clone()), None, None, false).await;
     set_url(&slot, NEXT_URL);
     let lock_guard = built.replacement_lock.lock().await;
     replacement::replace_locked(&built, &secret(NEXT_URL), None)
@@ -268,7 +269,7 @@ async fn missing_tracker_retires_immediately() {
 async fn completed_retirement_removed() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     set_url(&slot, NEXT_URL);
     let lock_guard = built.replacement_lock.lock().await;
     replacement::replace_locked(&built, &secret(NEXT_URL), None)
@@ -285,7 +286,7 @@ async fn completed_retirement_removed() {
 async fn shutdown_releases_retirements() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     let handle = access::operation(&built).expect("a connected operation");
     let tracker = handle.tracker.clone().expect("a tracker");
     let held = tracker.begin_transaction();
@@ -305,8 +306,14 @@ async fn shutdown_releases_retirements() {
 #[tokio::test]
 async fn wait_without_lock_returns() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     timeout(
         Duration::from_secs(1),
         wait_for_pool_replacement(&built, Duration::from_secs(300)),
@@ -318,8 +325,14 @@ async fn wait_without_lock_returns() {
 #[tokio::test]
 async fn nonpositive_wait_returns() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let lock_guard = built.replacement_lock.lock().await;
     timeout(
         Duration::from_millis(50),
@@ -333,8 +346,14 @@ async fn nonpositive_wait_returns() {
 #[tokio::test(start_paused = true)]
 async fn wait_timeout_is_not_success() {
     let script = Arc::new(FakeScript::default());
-    let built =
-        connected_generation(&script, options(DatabaseUrlSlot::default()), None, None).await;
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
     let gate = Arc::new(Notify::new());
     let mut holder_tasks = JoinSet::new();
     let holding = Arc::clone(&built);
@@ -365,7 +384,7 @@ async fn failed_replace_has_no_generation_change() {
     let script = Arc::new(FakeScript::default());
     script.script_connect(1, ConnectStep::Fail);
     let slot = DatabaseUrlSlot::default();
-    let built = connected_generation(&script, options(slot.clone()), None, None).await;
+    let built = create(&script, options(slot.clone()), None, None, true).await;
     set_url(&slot, NEXT_URL);
     let lock_guard = built.replacement_lock.lock().await;
     let outcome = replacement::replace_locked(&built, &secret(NEXT_URL), None).await;
@@ -383,7 +402,7 @@ async fn waiter_cancel_does_not_cancel_replace() {
     script.gate_connect(1, Arc::clone(&gate));
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, NEXT_URL);
-    let built = connected_generation(&script, options(slot), None, None).await;
+    let built = create(&script, options(slot), None, None, true).await;
     let mut replacers = JoinSet::new();
     let replacing = Arc::clone(&built);
     let url = secret(NEXT_URL);
@@ -411,7 +430,7 @@ async fn transport_override_forwarded_when_present() {
     let script = Arc::new(FakeScript::default());
     let slot = DatabaseUrlSlot::default();
     set_url(&slot, NEXT_URL);
-    let built = connected_generation(&script, options(slot), None, None).await;
+    let built = create(&script, options(slot), None, None, true).await;
     let transport = PoolTransport { max_size: Some(5) };
     replacement::recreate(&built, &secret(NEXT_URL), Some(&transport), None)
         .await

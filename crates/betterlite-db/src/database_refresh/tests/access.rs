@@ -9,18 +9,19 @@ use crate::database_refresh::access::{self, BlockingAccessError};
 use crate::database_refresh::endpoint::DatabaseUrlSlot;
 
 use super::support::{
-    FakeScript, capture_logs, connected_generation, lock, refresh, secret, set_url, token_options,
+    FakeScript, capture_logs, create, lock, refresh, secret, set_url, token_options,
 };
 
 #[tokio::test]
 async fn fresh_access_no_refresh() {
     let script = Arc::new(FakeScript::default());
     let refresh = Arc::new(refresh());
-    let built = connected_generation(
+    let built = create(
         &script,
         token_options(DatabaseUrlSlot::default()),
         Some(Arc::clone(&refresh)),
         None,
+        true,
     )
     .await;
     let handle = access::operation(&built).expect("a connected operation");
@@ -37,11 +38,12 @@ async fn async_expired_access_schedules_and_returns_stale() {
     fake.expired.store(true, Ordering::SeqCst);
     *lock(&fake.gate) = Some(Arc::clone(&gate));
     let refresh = Arc::new(fake);
-    let built = connected_generation(
+    let built = create(
         &script,
         token_options(DatabaseUrlSlot::default()),
         Some(Arc::clone(&refresh)),
         None,
+        true,
     )
     .await;
     let (logs, subscriber) = capture_logs();
@@ -71,11 +73,12 @@ async fn sync_expired_access_refetches_after_recovery() {
     fake.expired.store(true, Ordering::SeqCst);
     fake.minted = Mutex::new(Some(secret("postgres://minted")));
     let refresh = Arc::new(fake);
-    let built = connected_generation(
+    let built = create(
         &script,
         token_options(slot),
         Some(Arc::clone(&refresh)),
         None,
+        true,
     )
     .await;
     let (logs, subscriber) = capture_logs();
@@ -102,11 +105,12 @@ async fn sync_falsey_mint_exact_error() {
     fake.slot = slot.clone();
     fake.expired.store(true, Ordering::SeqCst);
     let refresh = Arc::new(fake);
-    let built = connected_generation(
+    let built = create(
         &script,
         token_options(slot),
         Some(Arc::clone(&refresh)),
         None,
+        true,
     )
     .await;
     let missing = access::operation_blocking(&built)
