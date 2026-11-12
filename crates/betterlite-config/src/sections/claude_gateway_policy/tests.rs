@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
-use crate::sections::claude_gateway_policy::{ManagedSettings, Settings};
+use crate::sections::claude_gateway_policy::{ManagedSettings, Settings, recursion_depth};
 
 const ENABLED_TRUE: &str = "general_settings:\n  enable_claude_code_gateway: true\n";
 const ENABLED_FALSE: &str = "general_settings:\n  enable_claude_code_gateway: false\n";
@@ -141,25 +141,24 @@ fn loads_settings(
     }
 }
 
+// serde-saphyr stops a YAML document at 64 nesting levels, below LiteLLM's default depth of 100
 #[test]
-fn resolves_references_up_to_the_default_recursion_depth() {
+fn resolves_references_through_the_deepest_mapping_yaml_allows() {
     let environment = [("GATEWAY_URL", "https://gateway.example")];
-    let within = load(&nested_settings_yaml(98), &environment).unwrap();
+    let settings = load(&nested_settings_yaml(60), &environment).unwrap();
     assert_eq!(
-        within.managed_settings,
+        settings.managed_settings,
         Some(nested_expected(
-            98,
+            60,
             Json::Text("https://gateway.example".to_owned())
         ))
     );
-    let past = load(&nested_settings_yaml(99), &environment).unwrap();
-    assert_eq!(
-        past.managed_settings,
-        Some(nested_expected(
-            99,
-            Json::Text("os.environ/GATEWAY_URL".to_owned())
-        ))
-    );
+}
+
+#[test]
+fn an_unset_depth_variable_keeps_litellms_default() {
+    let lookup = BTreeMap::<String, String>::new();
+    assert_eq!(recursion_depth(&lookup).unwrap(), 100);
 }
 
 #[test]
