@@ -2,8 +2,8 @@ id: B151
 milestone: M11 distribution
 title: Container images and Compose files
 status: todo
-depends_on: [B5070, B5071, B5072, B5073, B5074, B5075]
-file: null
+depends_on: [B5070, B5071, B5072, B5073, B5074, B5075, B8543, B8375]
+file: tasks/B151-container-stack-composition.yaml
 covers:
   - "docker/README.md"
   - "docker/install_auto_router.sh"

@@ -1,0 +1,11 @@
+kind: helper
+name: guardrail-params-limits-must-be-positive
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: pre_call
+      max_input_chars: 0
+env: {}
+compare: {ignore: []}

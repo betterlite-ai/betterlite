@@ -1,7 +1,7 @@
 id: B1358
 milestone: M3 providers
 title: Chirp native gRPC stream and bounded request relay
-status: todo
+status: done
 depends_on: [B1300, B171]
 file: tasks/B1358-chirp-recognize-stream.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/llms/vertex_ai_speech_to_text.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1426

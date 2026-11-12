@@ -18,10 +18,12 @@ description: >-
   returns (B3846 and B3892). Then it calls the wrapped callback's own pre-call hook. The stamp comes first, the wrapped
   call second.
 
-  `LangfuseContentOtel` wraps `LangfuseOtel` and adds the input and output stamp. `async_post_call_success_hook(data,
+  `LangfuseContentOtel` wraps `LangfuseOtel` and adds the input and output stamp. It is built with
+  `stream_assembler: Arc<dyn StreamOutputAssembler>`, B3857's port in otel::content_projections, which B8910's factory hands in. `async_post_call_success_hook(data,
   user_api_key_dict, response)` calls `stamp_root_io(data, || response_output(response))`. The streaming hook
-  `async_post_call_streaming_iterator_hook` relays every chunk to the caller unchanged and in order, keeps each chunk,
-  and only after the last chunk calls `stamp_root_io(request_data, || stream_output(chunks, request_data))`. If the caller
+  `async_post_call_streaming_iterator_hook` relays every chunk to the caller unchanged and in order, keeps each chunk as B3857's `RelayedChunk`,
+  and only after the last chunk calls `stamp_root_io(request_data, || stream_output(&chunks, request_data, stream_assembler.as_ref()))`; tests pass a fake
+  assembler. If the caller
   drops the stream early, nothing is stamped, the same as LiteLLM's async generator that never reaches its tail.
   `stamp_root_io` returns at once when the root is missing or not recording. It renders the output first; when the output
   is `None` it returns without stamping anything. Otherwise it sets `LANGFUSE_OBSERVATION_OUTPUT`, then renders the input
@@ -105,7 +107,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L19-L28
 out_of_scope:
   - "The axum layer that opens the HTTP server span, extracts traceparent and anchors the root span: B8680 installs the span layer in app::edge::wrap. This task only supplies ServerSpanPolicy and passthrough_span_name."
-  - "LangfuseMapper, caller_trace_controls, request_root_span and the three content projections: B3846, B3892, B3847 and B3857 own them; this task calls them."
+  - "LangfuseMapper, caller_trace_controls, request_root_span and the three content projections: B3846, B3892, B3847 and B3857 own them; this task calls them. The production StreamOutputAssembler is B110's; this task only holds it and passes it to stream_output."
   - "Choosing the Langfuse callbacks from the OTel config name: B8910's factory dispatches to them, and that wiring is not part of this task."
 pitfalls:
   - >-

@@ -1,0 +1,31 @@
+kind: helper
+name: file-routing-ids-legacy-prefix-and-targets
+call:
+  file_routing_ids:
+    calls:
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlO3VuaWZpZWRfaWQsdQ"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDptO2xsbV9iYXRjaF9pZDpi"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eWp1bms"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ"}
+      - {"function": "convert", "value": "b3RoZXI6ZmlsZQ"}
+      - {"function": "convert", "value": "file-1"}
+      - {"function": "convert", "value": "/w=="}
+      - {"function": "convert", "value": ""}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eQ==A"}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl=="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxl="}
+      - {"function": "convert", "value": "bGl0ZWxsbV9wcm94eTpmaWxlOz8-Pg"}
+      - {"function": "convert", "value": "é"}
+      - {"function": "target_models", "value": "target_model_names,a, b,,a"}
+      - {"function": "target_models", "value": "bGl0ZWxsbV9wcm94eTp4O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxh"}
+      - {"function": "target_models", "value": 5}
+      - {"function": "target_models", "value": null}
+      - {"function": "target_models", "value": ""}
+      - {"function": "resolve_output_model", "value": "litellm_proxy:x;target_model_names,a, b,,a", "fallback": "fallback"}
+      - {"function": "resolve_output_model", "value": "bGl0ZWxsbV9wcm94eTp4O3RhcmdldF9tb2RlbF9uYW1lcyxhLCBiLCxh", "fallback": "fallback"}
+      - {"function": "resolve_output_model", "value": null, "fallback": "fallback"}
+      - {"function": "resolve_output_model", "value": null, "fallback": null}
+      - {"function": "resolve_output_model", "value": "file-1", "fallback": "fallback"}
+      - {"function": "resolve_output_model", "value": "", "fallback": "fallback"}
+env: {}
+compare: {ignore: []}

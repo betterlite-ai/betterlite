@@ -1,0 +1,9 @@
+router_settings:
+  num_retries: 2
+  retry_after: 3
+  retry_policy:
+    RateLimitErrorRetries: 2
+    DefaultRetries: 1
+  model_group_retry_policy:
+    corpus-group:
+      AuthenticationErrorRetries: 3

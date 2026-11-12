@@ -40,3 +40,10 @@ path = "fuzz_targets/tag_match.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "retry_after"
+path = "fuzz_targets/retry_after.rs"
+test = false
+doc = false
+bench = false

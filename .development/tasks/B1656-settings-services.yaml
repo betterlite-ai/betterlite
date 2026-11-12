@@ -19,14 +19,26 @@ description: >-
   defaults; retain each caller record's own validation and extra-field policy.
   The shared update first requires effective store_model_in_db=true, returning the pinned
   500 detail.error otherwise. Serialize the validated record in JSON mode excluding nulls,
-  load current config with B8379's reload_config, capture the prior selected block, then publish the in-memory litellm
-  setting. This publication must occur after get_config because that read can restore stale
-  persisted overrides. Replace the selected litellm_settings block, save through B8380's save_config and
+  load current config with reload_config on B8379's ConfigOverlayPort (betterlite-server's
+  config_overlay_port), capture the prior selected block, then publish the in-memory litellm
+  setting. The shared update takes the port as `&dyn ConfigOverlayPort`, since B8379's
+  reload_config lives in the binary crate this crate cannot depend on. This publication must
+  occur after get_config because that read can restore stale persisted overrides. A
+  ConfigOverlayPortError ends the update before publication, save and audit, answered the way
+  LiteLLM's unhandled-error handler does (proxy_server.py L2049-L2080): DatabaseUnavailable is
+  503 with B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503", the transient message) sent as {"error":
+  {"message", "type", "param", "code"}}; Reload and PassThrough are 500 {"error": {"message":
+  "Internal server error", "type": "internal_server_error"}}. Replace the selected litellm_settings block, save through B8380's save_config and
   submit the config audit to B065's bounded audit service only after success. The audit goes through a ConfigAudit port, a trait in settings_services that takes the setting name, the before and after values and the acting admin. B8612's ConfigAuditLog backs that port with B8594's config_audit_log, so this task does not depend on the /config/update route. Tests use a recording fake. Return
   the caller's success message, status=success and serialized settings. A failed save does
   not undo the already-published runtime value. Expose typed SettingKey variants for the five
   source consumers, not an arbitrary runtime attribute setter.
-  Use native fault-injected tests for load/publication/save/audit ordering. The pure
+  Use native fault-injected tests for load/publication/save/audit ordering, with the load
+  through a scripted ConfigOverlayPort fake that returns a given config or fails; tests named
+  `reload_database_unavailable_*` and `reload_failure_*` make it return DatabaseUnavailable and
+  Reload and assert the 503 and 500 bodies with nothing published, saved or audited. The pure
   settings_schema helper compares union, items and legacy-definition projection with Python;
   caller-owned HTTP cases compare complete response schemas and persistence behavior. Add
   helper_case seeds for this operation and replay the existing decoder, since these services
@@ -60,6 +72,8 @@ dod:
     proof: [settings-services-tests]
   - text: The shared update reaches the config audit only through the ConfigAudit port, and a recording fake sees one call per successful save.
     proof: [settings-services-tests]
+  - text: The shared update loads config only through ConfigOverlayPort::reload_config, and a reload failure leaves nothing published, saved or audited and answers 503 no_db_connection for DatabaseUnavailable and 500 internal_server_error otherwise.
+    proof: [settings-services-tests]
 checks:
   optional: []
   commands:
@@ -83,6 +97,7 @@ deviations:
 out_of_scope:
   - "Other proxy_setting_endpoints.py functions belong to B1657 (default-user/team routes and validators L852-L998, L1075-L1127), B1658 (allowed-IP L585-L720), B1659 (UI flags L379-L399, L453-L470, L786-L797, L1671-L1742), B1660 (UI GET/PATCH L1745-L1961), B1661 (SSO L1130-L1322), B1662 (theme helpers L141-L167 and routes L1325-L1463, L1964-L2024), and B1663 (search helpers L548-L582 and routes L1466-L1664)."
   - register_extra_ui_setting L439-L450 has no caller at the pin outside the absent enterprise extension and is not implemented.
+  - "ProxyConfig.get_config and the ConfigOverlayPort it is reached through: B8379. The production port value: B8613 and B8610."
 pitfalls:
   - 'The oracle helper for this task is pre-registered as settings_schema in the server group. Replace the stub Op in tools/oracle/src/helpers/server/settings_schema.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/settings_schema.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Saving failure leaves the new runtime setting in place because _update_litellm_setting assigns before save_config.

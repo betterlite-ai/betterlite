@@ -1,0 +1,11 @@
+kind: helper
+name: azure-urls-append-route-once-seed
+call:
+  azure_urls:
+    append_route_once:
+      - params: {api_base: https://seed.example/openai}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+env: {}
+compare: {ignore: []}

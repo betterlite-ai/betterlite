@@ -1,0 +1,22 @@
+kind: helper
+name: gemini-response-malformed-version
+call:
+  gemini_response:
+    model: gemini-2.5-flash
+    legacy_function: false
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    headers: {}
+    body:
+      modelVersion: 42
+      candidates:
+        - content:
+            parts:
+              - text: kept requested model
+          finishReason: STOP
+      usageMetadata:
+        promptTokenCount: 1
+        candidatesTokenCount: 1
+        totalTokenCount: 2
+env: {}
+compare: {ignore: []}

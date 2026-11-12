@@ -1,0 +1,44 @@
+kind: probe
+name: retry-policy-model-group-replaces-global
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: gpt-4
+          retry_policy: {RateLimitErrorRetries: 1, DefaultRetries: 7}
+          model_group_retry_policy:
+            gpt-4: {DefaultRetries: 2}
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: claude
+          retry_policy: {RateLimitErrorRetries: 1, DefaultRetries: 7}
+          model_group_retry_policy:
+            gpt-4: {DefaultRetries: 2}
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: rate_limit, status: 429}
+          model_group: null
+          retry_policy: {RateLimitErrorRetries: 1, DefaultRetries: 7}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null

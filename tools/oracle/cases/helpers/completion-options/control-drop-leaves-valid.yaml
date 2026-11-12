@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-control-drop-leaves-valid
+call:
+  b5650: {function: control, kwargs: {stream_chunk_size: 7, drop_params: true}, model: gpt-4o, global_drop_params: true}
+env: {}
+compare: {ignore: []}

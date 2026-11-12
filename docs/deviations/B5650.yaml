@@ -1,0 +1,8 @@
+task: B5650
+deviations:
+  - what: 'An invalid stream_chunk_size fails with a 400 whose message is "invalid stream_chunk_size: expected a positive integer of at most 18 digits" and does not echo the rejected value.'
+    why: The message text comes from the shared control option parser (B176), which does not carry a bounded repr of the value. The status, type, param and code match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L100-L109
+  - what: A model_info.id that is a boolean, a list or an object is an error that names the field.
+    why: LiteLLM turns any value into the deployment id with str(), so a list or object becomes its Python repr and a boolean becomes "True". Nobody can rely on that as a cache key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1270-L1281

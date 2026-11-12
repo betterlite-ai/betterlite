@@ -1,0 +1,8 @@
+kind: helper
+name: docker-model-runner-provider-api-base-and-key
+call:
+  b8152:
+    function: "provider_info"
+    calls: [{"provider": "docker_model_runner", "api_base": null, "api_key": null, "env": {}}, {"provider": "docker_model_runner", "api_base": null, "api_key": null, "env": {"DOCKER_MODEL_RUNNER_API_BASE": "http://env-host:1/v1", "DOCKER_MODEL_RUNNER_API_KEY": "env-key"}}, {"provider": "docker_model_runner", "api_base": "http://arg-host:2/v1", "api_key": "arg-key", "env": {"DOCKER_MODEL_RUNNER_API_BASE": "http://env-host:1/v1", "DOCKER_MODEL_RUNNER_API_KEY": "env-key"}}, {"provider": "docker_model_runner", "api_base": "", "api_key": "", "env": {"DOCKER_MODEL_RUNNER_API_BASE": "http://env-host:1/v1", "DOCKER_MODEL_RUNNER_API_KEY": "env-key"}}, {"provider": "docker_model_runner", "api_base": null, "api_key": null, "env": {"DOCKER_MODEL_RUNNER_API_BASE": "http://env-host:1/v1", "DOCKER_MODEL_RUNNER_API_KEY": ""}}, {"provider": "docker_model_runner", "api_base": "http://arg-host:2/v1", "api_key": null, "env": {"DOCKER_MODEL_RUNNER_API_KEY": "env-key"}}, {"provider": "docker_model_runner", "api_base": null, "api_key": null, "env": {"DOCKER_MODEL_RUNNER_API_BASE": "", "DOCKER_MODEL_RUNNER_API_KEY": ""}}]
+env: {}
+compare: {ignore: []}

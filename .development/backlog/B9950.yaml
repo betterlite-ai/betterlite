@@ -1,0 +1,13 @@
+id: B9950
+milestone: M9 agents and mcp
+title: Mount the /v1/mcp/sessions routes over the live transport's session registry
+status: todo
+depends_on: [B8701, B8728, B8727, B8723, B4725, B4717, B8620, B8610]
+file: tasks/B9950-mcp-gateway-sessions-mount.yaml
+covers: []
+parent: B136
+split_from: B8701
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

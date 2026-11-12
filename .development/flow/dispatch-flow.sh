@@ -12,7 +12,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, three rounds at most; once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, three rounds at most; once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 id=$1
@@ -105,8 +105,12 @@ if [[ -z "${LAND_ONLY}" ]]; then
       say "crate cycle, back to the worker: ${note%%$'\n'*}"
     fi
   fi
+  # the review gets a draft PR, so CI runs while it reviews
+  bash "${P}/early-pr.sh" "${id}" "$$" >> "${L}/early-pr-${id}.log" 2>&1 &
+  early=$!
   GRANT=${grant} bash "${P}/next-slot.sh" "${id}" "${run}" "${note}" > /dev/null
   code=$?
+  kill "${early}" 2> /dev/null
   # maintenance stopped the run: the flow comes back when it ends
   [[ "${code}" -eq 75 ]] && {
     trap - EXIT
@@ -165,6 +169,15 @@ if ! bash "${P}/crate-cycles.sh" "${worktree}" > /dev/null; then LAND_ONLY='' ex
 cd "${worktree}" || exit 3
 exec >> "${L}/land-${id}.log" 2>&1
 branch=$(git branch --show-current)
+# an early draft PR's branch holds the done mark on a commit this checkout never had
+rm -f -- "${main}/.git/betterlite/${id}/ci-failures"
+if git fetch -q origin "refs/heads/${branch}" 2> /dev/null && ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
+  git merge -q --no-edit FETCH_HEAD || {
+    git merge --abort
+    park "ready, but its draft PR's branch does not merge"
+    exit 3
+  }
+fi
 title=$(sed -n 's/^title: //p' "${main}/.development/backlog/${id}.yaml")
 file=$(sed -n 's/^file: //p' "${main}/.development/backlog/${id}.yaml")
 size=$(git diff --shortstat origin/main...HEAD -- . ':(exclude)Cargo.lock')
@@ -222,6 +235,11 @@ if ! git diff --quiet -- ".development/backlog/${id}.yaml"; then
     land_again "PR #${pr} open, but the done-mark push failed, see logs/land-${id}.log"
   fi
 fi
+draft=$(gh pr view "${pr}" --json isDraft -q .isDraft)
+if [[ "${draft}" = true ]]; then
+  gh pr edit "${pr}" --body-file "${body}" > /dev/null
+  gh pr ready "${pr}" > /dev/null || land_again "PR #${pr} is open, but it did not leave draft, see logs/land-${id}.log"
+fi
 gh pr merge "${branch}" --auto --squash > /dev/null 2>&1
 say "PR #${pr} open: https://github.com/betterlite-ai/betterlite/pull/${pr}"
 verified_head=$(git rev-parse HEAD) || exit 5
@@ -269,6 +287,11 @@ case "${result}" in
     [[ ${result} =~ run\ ([0-9]+)\ failed ]] && run_id=${BASH_REMATCH[1]}
     # in a GitHub Actions outage the check jobs never start, or all pass and the run still fails, so the flow runs CI again instead of spending a fix round
     lost=$(gh run view "${run_id}" --json jobs -q '[.jobs[] | select(.name != "gate" and (.conclusion == "failure" or .conclusion == "cancelled"))] | length' 2> /dev/null)
+    # a 5xx from GitHub's API in the job that picks the parts skips every check, so it is an outage too
+    if [[ "${lost}" != 0 ]]; then
+      picked=$(gh run view "${run_id}" --log-failed 2> /dev/null)
+      grep -q -E 'curl: \(22\) The requested URL returned error: 5[0-9]{2}' <<< "${picked}" && ! grep -q -E 'FAIL ' <<< "${picked}" && lost=0
+    fi
     if [[ "${lost}" = 0 ]] && [[ "${OUTAGES:-0}" -lt 6 ]]; then
       say "CI run ${run_id} on PR #${pr} failed with no failed check, a GitHub outage; running CI again in 15 minutes"
       sleep 900

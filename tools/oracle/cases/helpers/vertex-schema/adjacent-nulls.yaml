@@ -1,0 +1,14 @@
+kind: helper
+name: adjacent-nulls
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        leading: {anyOf: [{type: "null"}, {type: "null"}, {type: string}], title: T}
+        trailing: {anyOf: [{type: string}, {type: "null"}, {type: "null"}]}
+    add_property_ordering: false
+    settings: {}
+env: {}
+compare: {ignore: []}

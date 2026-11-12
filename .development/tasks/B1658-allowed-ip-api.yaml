@@ -18,6 +18,17 @@ description: >-
   loaded persisted list, then save and audit with action deleted. Preserve the source's
   success strings and operation-specific error shapes. Neither operation rolls runtime state
   back when reading or saving config fails.
+  Both load config with reload_config on B8379's ConfigOverlayPort (betterlite-server's
+  config_overlay_port), since get_config lives in the binary crate this crate cannot depend
+  on; the router this module exports takes the port as an `Arc<dyn ConfigOverlayPort>`
+  argument. A port error keeps the runtime mutation, saves and audits nothing, and is answered
+  as LiteLLM's unhandled-error handler does (proxy_server.py L2049-L2080): DatabaseUnavailable
+  is 503 with B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503"), and Reload and PassThrough are 500
+  {"error": {"message": "Internal server error", "type": "internal_server_error"}}. Native
+  tests named `reload_database_unavailable_*` and `reload_failure_*` drive add and delete with
+  a ConfigOverlayPort fake that returns those errors.
   Map ConfigOwnedKeyError from runtime assignment to 400 detail containing error, keys,
   section and stored_database_value_ignored. This happens before either operation loads
   persisted configuration. Avoid logging the loaded full config; report only the allowed-IP
@@ -54,6 +65,8 @@ dod:
     proof: [allowed-ip-tests, oracle]
   - text: The three HTTP paths retain authentication, hidden GET documentation and their status/error contracts.
     proof: [allowed-ip-tests, oracle, allowed-ip-corpus]
+  - text: Add and delete load config only through ConfigOverlayPort::reload_config, and a port error keeps the runtime mutation, saves nothing and answers 503 no_db_connection for DatabaseUnavailable and 500 internal_server_error otherwise.
+    proof: [allowed-ip-tests]
 checks:
   optional: []
   commands:

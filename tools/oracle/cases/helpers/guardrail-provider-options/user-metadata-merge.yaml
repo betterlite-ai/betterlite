@@ -1,0 +1,16 @@
+kind: helper
+name: user-metadata-merge
+call:
+  b3661:
+    function: merge_metadata
+    model: bedrock
+    body: {}
+    extras: null
+    request_data: {model: gpt-4o}
+    user_api_key_dict: {user_id: u-1}
+    key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    other_key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    sink_mutated: {}
+    sink_holdback: {}
+env: {}
+compare: {ignore: []}

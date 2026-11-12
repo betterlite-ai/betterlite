@@ -1,0 +1,12 @@
+kind: helper
+name: openai-speech-seed-error
+call:
+  openai_speech:
+    client: {api_key: sk-seed, api_base: 'https://speech.test/v1', timeout: 30, max_retries: 1}
+    request: {model: tts-1, input: seed, voice: nobody}
+    reply:
+      status: 400
+      headers: [[content-type, application/json]]
+      text: '{"error":{"message":"bad voice","type":"invalid_request_error","param":"voice","code":"bad_voice"}}'
+env: {}
+compare: {ignore: []}

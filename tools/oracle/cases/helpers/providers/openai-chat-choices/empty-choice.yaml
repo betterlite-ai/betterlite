@@ -1,0 +1,12 @@
+kind: helper
+name: empty-choice
+call:
+  openai_chat_choices:
+    empty_choice:
+      steps:
+        - choices:
+            - {index: 0, finish_reason: stop, message: {}}
+        - choices:
+            - {index: 3, finish_reason: stop, message: {}}
+env: {}
+compare: {ignore: []}

@@ -12,7 +12,8 @@ description: >-
   reconcile lock (B836's MODEL_RECONCILE_LOCK; clear_cache calls the locked half directly) and run, catching and logging
   every error: prefetch the config params general_settings, router_settings, litellm_settings, environment_variables and
   anthropic_beta_headers_reload_config (B8397); when B8380's should_load_db_object allows models, read rows with
-  B8382's model reader; sync credentials; update the router; apply the general_settings row through B8379; then run
+  B8382's model reader; sync credentials; update the router; apply the general_settings row through B8379's apply_general_settings_row, passing the
+  Arc<dyn PassThroughInstaller> (B8379's port) that DeploymentSync takes when it is built; then run
   B8384's non-LLM object sync. It returns ReconcileOutcome { still_desired, live_after } (live_after only when a
   reconcile ran) for the model routes.
 

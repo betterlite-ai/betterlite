@@ -1,0 +1,8 @@
+task: B8040
+deviations:
+  - what: A Python job that passes its deadline keeps running on its blocking thread, and the caller gets a timeout while the job is counted as abandoned until it ends.
+    why: Python has no way to stop a thread from outside. LiteLLM sets no deadline on these hooks, so this only bounds the wait; the abandoned count and the shutdown warning make a job that outlives its caller visible.
+    link: ''
+  - what: Packages are found the standard CPython way, through PYTHONHOME, PYTHONPATH and the site-packages of the interpreter pyo3 linked. There is no betterlite setting that installs or locates them.
+    why: The operator installs the betterlite wheel and the libraries a hook imports into the interpreter pyo3 linked, as with any embedded CPython.
+    link: ''

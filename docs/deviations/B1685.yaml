@@ -1,0 +1,11 @@
+task: B1685
+deviations:
+  - what: Built-in tool fees are exact decimals, so 2 GB for 3 days at 0.1 a GB-day is 0.6 where LiteLLM's floats give 0.6000000000000001.
+    why: Money sums must not carry binary rounding noise into spend records. The oracle cases use inputs whose float result is exact, and the Rust tests vector_store_fee_selects_its_rate and vector_store_fee_edges prove the decimal results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L569-L603
+  - what: A fee product that leaves the decimal range is a typed Overflow error instead of an infinite float.
+    why: An infinite cost cannot be stored or billed, and a typed error lets the caller refuse the usage record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L605-L633
+  - what: The five built-in tool price variables reject nan, inf and any text that is not a plain decimal, and the error names the variable and not its value.
+    why: Python's float() accepts nan and inf at import time, and a nan default would make every file search and computer use fee nan.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L470-L485
