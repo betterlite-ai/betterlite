@@ -25,14 +25,24 @@ pub fn parse_expiration(
     parse_token_expiration(kind_value, token_value)
 }
 
+// A missing URL and an undecodable token both mean no expiration; each caller picks its own fallback.
+fn expiration_of(
+    kind: Option<TokenAuthKind>,
+    token_url: Option<&str>,
+) -> Result<Option<NaiveDateTime>, ExpiryError> {
+    let Some(url) = token_url else {
+        return Ok(None);
+    };
+    let token = extract_refresh_password(url);
+    parse_expiration(kind, token.as_deref())
+}
+
 pub fn seconds_until_refresh(
     kind: Option<TokenAuthKind>,
     token_url: Option<&str>,
     now: NaiveDateTime,
 ) -> Result<RefreshSchedule, ExpiryError> {
-    let token = token_url.and_then(extract_refresh_password);
-    let parsed = parse_expiration(kind, token.as_deref())?;
-    let Some(expiration) = parsed else {
+    let Some(expiration) = expiration_of(kind, token_url)? else {
         tracing::debug!(
             "Could not parse token expiration, using fallback interval of {FALLBACK_REFRESH_SECONDS}s"
         );
@@ -66,8 +76,7 @@ pub fn is_token_expired(
     let Some(url) = token_url else {
         return Ok(true);
     };
-    let token = extract_refresh_password(url);
-    let Some(expiration) = parse_expiration(kind, token.as_deref())? else {
+    let Some(expiration) = expiration_of(kind, Some(url))? else {
         tracing::debug!("Could not parse token expiration, treating as expired");
         return Ok(true);
     };
@@ -79,9 +88,7 @@ pub fn token_refresh_not_needed(
     token_url: Option<&str>,
     now: NaiveDateTime,
 ) -> Result<bool, ExpiryError> {
-    let token = token_url.and_then(extract_refresh_password);
-    let parsed = parse_expiration(kind, token.as_deref())?;
-    let Some(expiration) = parsed else {
+    let Some(expiration) = expiration_of(kind, token_url)? else {
         return Ok(false);
     };
     let buffer =
