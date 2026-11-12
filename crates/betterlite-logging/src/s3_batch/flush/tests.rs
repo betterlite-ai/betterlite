@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime};
 use crate::s3_batch::Element;
 use crate::s3_batch::S3BatchUploadError;
 use crate::s3_batch::flush::{
-    FlushContext, FlushError, FlushSettings, MonotonicClock as _, SystemMonotonic, UploadOperation,
+    FlushContext, FlushError, FlushSettings, MonotonicClock, SystemMonotonic, UploadOperation,
     send_batch,
 };
 use crate::s3_batch::queue::{BatchQueue, QueueState};
@@ -95,6 +95,31 @@ impl UploadOperation for ScriptedUpload<'_> {
 }
 
 #[derive(Debug)]
+struct ManualMonotonic(Mutex<f64>);
+
+impl MonotonicClock for ManualMonotonic {
+    fn seconds(&self) -> f64 {
+        *self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+struct AdvancingUpload<'clock> {
+    clock: &'clock ManualMonotonic,
+    after: f64,
+    inner: ScriptedUpload<'static>,
+}
+
+impl UploadOperation for AdvancingUpload<'_> {
+    fn upload<'operation>(
+        &'operation self,
+        element: &'operation Element,
+    ) -> Pin<Box<dyn Future<Output = UploadOutcome> + Send + 'operation>> {
+        *self.clock.0.lock().unwrap_or_else(PoisonError::into_inner) = self.after;
+        self.inner.upload(element)
+    }
+}
+
+#[derive(Debug)]
 struct FixedClock(SystemTime);
 
 impl Clock for FixedClock {
@@ -151,11 +176,12 @@ async fn run(
     upload: &dyn UploadOperation,
 ) -> Result<usize, FlushError> {
     let clock = clock();
+    let monotonic = ManualMonotonic(Mutex::new(now));
     let context = FlushContext {
         queue,
         settings,
         clock: &clock,
-        now,
+        monotonic: &monotonic,
     };
     send_batch(&context, upload).await
 }
@@ -405,6 +431,38 @@ async fn retrying_since_stays_unset_without_a_retry_age() {
         .await
         .expect_err("one upload survives");
     assert_eq!(queue.snapshot().entries[0].retrying_since, None);
+}
+
+#[tokio::test]
+async fn retry_age_is_measured_after_the_uploads() {
+    let queue = queue(10);
+    queue.enqueue(element("delivered", "delivered"));
+    queue.enqueue(element_since("old", "old", Some(0.0_f64)));
+    queue.enqueue(element("fresh", "fresh"));
+    let settings = settings(Some(Duration::from_secs(10)), 10);
+    let clock = clock();
+    let monotonic = ManualMonotonic(Mutex::new(5.0_f64));
+    let context = FlushContext {
+        queue: &queue,
+        settings: &settings,
+        clock: &clock,
+        monotonic: &monotonic,
+    };
+    let upload = AdvancingUpload {
+        clock: &monotonic,
+        after: 20.0_f64,
+        inner: ScriptedUpload::with(&[
+            UploadOutcome::Delivered,
+            UploadOutcome::Retry,
+            UploadOutcome::Retry,
+        ]),
+    };
+    send_batch(&context, &upload)
+        .await
+        .expect_err("the fresh upload survives");
+    let restored = queue.snapshot().entries;
+    assert_eq!(keys(&queue), vec!["fresh"]);
+    assert_eq!(restored[0].retrying_since, Some(20.0_f64));
 }
 
 #[tokio::test]

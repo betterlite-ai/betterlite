@@ -124,7 +124,7 @@ impl S3BatchLogger {
             queue: &self.queue,
             settings: &self.settings,
             clock: self.clock.as_ref(),
-            now: self.monotonic.seconds(),
+            monotonic: self.monotonic.as_ref(),
         };
         send_batch(&context, &TransportUpload { logger: self }).await
     }

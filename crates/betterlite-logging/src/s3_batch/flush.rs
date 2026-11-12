@@ -44,7 +44,7 @@ pub struct FlushContext<'flush> {
     pub queue: &'flush BatchQueue,
     pub settings: &'flush FlushSettings,
     pub clock: &'flush dyn Clock,
-    pub now: f64,
+    pub monotonic: &'flush dyn MonotonicClock,
 }
 pub trait UploadOperation: Send + Sync {
     fn upload<'operation>(
@@ -157,12 +157,12 @@ fn reconcile(
         total: uploads.len(),
     }))
 }
-
 fn survivors(
     context: &FlushContext<'_>,
     failed: &[(&Element, UploadOutcome)],
     bucket_wide: bool,
 ) -> Vec<Element> {
+    let now = context.monotonic.seconds();
     let mut requeued = Vec::new();
     for (element, outcome) in failed {
         if bucket_wide {
@@ -172,7 +172,7 @@ fn survivors(
         if *outcome == UploadOutcome::Dropped {
             continue;
         }
-        if let Some(kept) = survivor(element, context.settings.max_retry_age, context.now) {
+        if let Some(kept) = survivor(element, context.settings.max_retry_age, now) {
             requeued.push(kept);
         }
     }
