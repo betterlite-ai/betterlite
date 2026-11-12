@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-gcs-access-filename-sanitization
+call:
+  vertex_gcs_access:
+    operation: filename_sanitization
+    params: {}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids: []
+    filenames: ["report final?.pdf", null]
+    model_paths: []
+env: {}
+compare: {ignore: []}

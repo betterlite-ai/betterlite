@@ -1,0 +1,16 @@
+kind: helper
+name: google-pricing-token-input-threshold
+call:
+  google_pricing:
+    operation: cost_per_token
+    model: gemini-1.5-pro-002
+    custom_llm_provider: vertex_ai
+    record:
+      input_cost_per_token: 0.0000005
+      input_cost_per_token_above_128k_tokens: 0.00000125
+      output_cost_per_token: 0.0000025
+    usage:
+      prompt_tokens: 128001
+      completion_tokens: 8
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: model-path
+call:
+  vertex_gcs_access:
+    operation: model_path
+    params: {}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids: []
+    filenames: []
+    model_paths:
+      - "publishers/google/models/gemini-2.5-pro"
+      - "publishers/google/models/gemini 2.5?pro"
+      - "endpoints/123456789012345"
+      - "../publishers//google/./models/x"
+      - ""
+      - null
+env: {}
+compare: {ignore: []}

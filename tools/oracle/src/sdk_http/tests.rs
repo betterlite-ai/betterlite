@@ -322,7 +322,10 @@ fn assert_authentication_failure(side: &Capture) {
 fn decoded_kind(text: &str) -> Nullable {
     match decode_sdk_http_result(text.as_bytes(), &OracleLimits::default()).unwrap() {
         SdkResult::Failure(failure) => failure.kind,
-        SdkResult::Success { .. } | SdkResult::Embedding { .. } | SdkResult::Vectors { .. } => None,
+        SdkResult::Success { .. }
+        | SdkResult::Embedding { .. }
+        | SdkResult::Vectors { .. }
+        | SdkResult::BetaConfig { .. } => None,
     }
 }
 
