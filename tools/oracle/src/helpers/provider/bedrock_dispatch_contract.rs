@@ -72,7 +72,11 @@ fn case_plan(case: &PlanCase, input: &Input, converse_models: &IndexSet<String>)
         converse_models: converse_models.clone(),
         request_metadata_owned: !input.request_metadata_fields.is_empty(),
     };
-    match dispatch(&BedrockOperation::Plan(Box::new(request))) {
+    plan_value(dispatch(&BedrockOperation::Plan(Box::new(request))))
+}
+
+fn plan_value(result: Result<BedrockPrepared, BedrockDispatchError>) -> Value {
+    match result {
         Ok(BedrockPrepared::Invoke {
             model,
             model_id,
