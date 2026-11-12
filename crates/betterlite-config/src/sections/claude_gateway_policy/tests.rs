@@ -156,7 +156,7 @@ fn resolves_references_through_the_deepest_mapping_yaml_allows() {
 }
 
 #[test]
-fn an_unset_depth_variable_keeps_litellms_default() {
+fn an_unset_depth_variable_keeps_the_litellm_default() {
     let lookup = BTreeMap::<String, String>::new();
     assert_eq!(recursion_depth(&lookup).unwrap(), 100);
 }
