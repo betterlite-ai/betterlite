@@ -1,0 +1,19 @@
+kind: sdk_http
+name: anthropic-beta-config-remote-http-failure
+env: {}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load, load, reload]
+upstream:
+  - status: 503
+    headers: {content-type: application/json}
+    body: {error: unavailable}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {vertex_ai: {custom: back}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
