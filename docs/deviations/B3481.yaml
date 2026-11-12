@@ -24,3 +24,6 @@ deviations:
   - what: Batch polling is not built; each poll task fetches on its own.
     why: The task text defers grouping polls by provider and interaction id to a later optimization.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L114-L164
+  - what: An interaction record keeps created, updated and object as the provider's strings, so an unparsable datetime or an object other than "interaction" is accepted where Pydantic's AwareDatetime and Literal["interaction"] would reject it.
+    why: Nothing else comes from a working provider, and parsing would change the Rust field type without changing any value betterlite writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L744-L770
