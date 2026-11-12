@@ -24,7 +24,7 @@ use crate::anthropic_capability_catalog::{
 
 const CATALOG_MODELS: &str = r#"{
     "anthropic/claude-x": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
-    "claude-y": {"litellm_provider": "anthropic", "supports_adaptive_thinking": false},
+    "anthropic/claude-y": {"litellm_provider": "anthropic", "supports_adaptive_thinking": false},
     "claude-z": {"litellm_provider": "anthropic"},
     "anthropic/claude-q": {"litellm_provider": "anthropic", "supports_adaptive_thinking": "yes"},
     "anthropic/claude-w": {"litellm_provider": "anthropic"},
@@ -186,7 +186,7 @@ pub(super) async fn provider_qualified_catalog() {
     assert_eq!(
         thinking_capabilities(&fixture, "claude-y").await,
         [false, false, false],
-        "a resolved false is authoritative over the raw true"
+        "a resolved false on the provider entry wins over the factory and the raw packaged true"
     );
     assert_eq!(
         thinking_capabilities(&fixture, "claude-z").await,

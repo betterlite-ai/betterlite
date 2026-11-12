@@ -5,7 +5,7 @@ call:
     fixture:
       model_cost:
         anthropic/claude-x: {litellm_provider: anthropic, supports_adaptive_thinking: true}
-        claude-y: {litellm_provider: anthropic, supports_adaptive_thinking: false}
+        anthropic/claude-y: {litellm_provider: anthropic, supports_adaptive_thinking: false}
         claude-z: {litellm_provider: anthropic}
         anthropic/claude-q: {litellm_provider: anthropic, supports_adaptive_thinking: "yes"}
         anthropic/claude-w: {litellm_provider: anthropic}
