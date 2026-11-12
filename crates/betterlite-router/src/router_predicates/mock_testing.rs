@@ -103,7 +103,7 @@ pub fn raise_mock_rate_limit(
     );
     Err(ErrorClass::RateLimit(Box::new(RateLimitDetails {
         context: mock_context(message, model_group, num_retries),
-        category: RateLimitCategory::LitellmRateLimit,
+        category: RateLimitCategory::VendorRateLimit,
         dimension: None,
         headers: BTreeMap::new(),
     })))

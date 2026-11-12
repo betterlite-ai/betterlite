@@ -8,10 +8,7 @@ use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::JsonMap;
-use super::kinds::{
-    deployment_tags, is_adaptive_router, is_auto_router, is_complexity_router,
-    joins_adaptive_routing,
-};
+use super::kinds::{deployment_tags, joins_adaptive_routing, strategy_kind};
 use super::lists::{config_deployments, deployment_ids};
 use super::mock_testing::{MockTestingParams, raise_mock_fallback_error, raise_mock_rate_limit};
 use super::params::{
@@ -57,31 +54,22 @@ fn joined_message(label: &str, fallbacks: &str) -> String {
 }
 
 #[rstest]
-#[case::semantic("auto_router/semantic", true, false, false)]
-#[case::complexity("auto_router/complexity_router", false, true, false)]
-#[case::adaptive("auto_router/adaptive_router", false, false, true)]
-#[case::quality("auto_router/quality_router", false, false, false)]
-#[case::plain("gpt-4", false, false, false)]
-fn kind_router_checks_follow_the_classifier(
-    #[case] model: &str,
-    #[case] auto: bool,
-    #[case] complexity: bool,
-    #[case] adaptive: bool,
-) {
+#[case::semantic("auto_router/semantic", Some("semantic"))]
+#[case::complexity("auto_router/complexity_router", Some("complexity"))]
+#[case::adaptive("auto_router/adaptive_router", Some("adaptive"))]
+#[case::quality("auto_router/quality_router", Some("quality"))]
+#[case::plain("gpt-4", None)]
+fn kind_router_checks_follow_the_classifier(#[case] model: &str, #[case] expected: Option<&str>) {
     let params = object(&format!(r#"{{"model": "{model}"}}"#));
-    assert_eq!(is_auto_router(&params, classify), auto);
-    assert_eq!(is_complexity_router(&params, classify), complexity);
-    assert_eq!(is_adaptive_router(&params, classify), adaptive);
+    assert_eq!(strategy_kind(&params, classify), expected);
 }
 
 #[rstest]
 #[case::missing("{}")]
+#[case::null(r#"{"model": null}"#)]
 #[case::non_text(r#"{"model": 7}"#)]
 fn kind_router_checks_treat_an_unusable_model_as_plain(#[case] fixture: &str) {
-    let params = object(fixture);
-    assert!(!is_auto_router(&params, classify));
-    assert!(!is_complexity_router(&params, classify));
-    assert!(!is_adaptive_router(&params, classify));
+    assert_eq!(strategy_kind(&object(fixture), classify), None);
 }
 
 #[rstest]
@@ -153,6 +141,10 @@ fn kind_deployment_tags_skip_non_text_entries() {
 #[case::text_negative(r#""-2""#, None)]
 #[case::text_garbage(r#""abc""#, None)]
 #[case::text_empty(r#""""#, None)]
+#[case::text_underscore(r#""1_000""#, Some(1000))]
+#[case::text_double_underscore(r#""1__0""#, None)]
+#[case::text_leading_underscore(r#""_10""#, None)]
+#[case::text_trailing_underscore(r#""10_""#, None)]
 #[case::text_infinite(r#""inf""#, None)]
 #[case::boolean_true("true", None)]
 #[case::boolean_false("false", None)]
@@ -180,6 +172,7 @@ fn param_allowlist_keeps_only_strings(#[case] params: &str, #[case] expected: &[
 }
 
 struct Expected {
+    authenticating_model: String,
     model: String,
     provider: Option<String>,
     base_model: Option<String>,
@@ -193,7 +186,11 @@ struct Support {
 }
 
 impl ParamSupport for Support {
-    fn is_authenticating_provider(&self, _model: &str, _custom: Option<&str>) -> bool {
+    fn is_authenticating_provider(&self, model: &str, custom_llm_provider: Option<&str>) -> bool {
+        if let Some(expected) = &self.expected {
+            assert_eq!(model, expected.authenticating_model.as_str());
+            assert_eq!(custom_llm_provider, expected.provider.as_deref());
+        }
         self.authenticating
     }
 
@@ -347,17 +344,32 @@ fn param_accepts_param_checks_the_supported_list() {
 }
 
 #[rstest]
-#[case::model_present(r#"{"litellm_params": {"model": "gpt-4"}}"#, "gpt-4", None, None)]
-#[case::model_empty(r#"{"litellm_params": {"model": ""}}"#, "group", None, None)]
-#[case::model_missing(r#"{"litellm_params": {"api_key": "x"}}"#, "group", None, None)]
+#[case::model_present(
+    r#"{"litellm_params": {"model": "gpt-4"}}"#,
+    "gpt-4",
+    "gpt-4",
+    None,
+    None
+)]
+#[case::model_empty(r#"{"litellm_params": {"model": ""}}"#, "", "group", None, None)]
+#[case::model_missing(r#"{"litellm_params": {"api_key": "x"}}"#, "", "group", None, None)]
 #[case::custom_provider(
     r#"{"litellm_params": {"model": "m", "custom_llm_provider": "azure"}}"#,
     "m",
+    "m",
+    Some("azure"),
+    None
+)]
+#[case::empty_model_with_custom_provider(
+    r#"{"litellm_params": {"model": "", "custom_llm_provider": "azure"}}"#,
+    "",
+    "group",
     Some("azure"),
     None
 )]
 #[case::model_info_first(
     r#"{"litellm_params": {"model": "m", "base_model": "params-base"}, "model_info": {"base_model": "info-base"}}"#,
+    "m",
     "m",
     None,
     Some("info-base")
@@ -365,18 +377,21 @@ fn param_accepts_param_checks_the_supported_list() {
 #[case::params_fallback(
     r#"{"litellm_params": {"model": "m", "base_model": "params-base"}}"#,
     "m",
+    "m",
     None,
     Some("params-base")
 )]
 #[case::empty_info_falls_back(
     r#"{"litellm_params": {"model": "m", "base_model": "params-base"}, "model_info": {"base_model": ""}}"#,
     "m",
+    "m",
     None,
     Some("params-base")
 )]
-#[case::missing_base_model(r#"{"litellm_params": {"model": "m"}}"#, "m", None, None)]
+#[case::missing_base_model(r#"{"litellm_params": {"model": "m"}}"#, "m", "m", None, None)]
 fn param_accepts_param_passes_the_resolved_request(
     #[case] deployment: &str,
+    #[case] authenticating_model: &str,
     #[case] model: &str,
     #[case] provider: Option<&str>,
     #[case] base_model: Option<&str>,
@@ -386,6 +401,7 @@ fn param_accepts_param_passes_the_resolved_request(
         resolves: true,
         supported: Some(vec![String::from("max_tokens")]),
         expected: Some(Expected {
+            authenticating_model: authenticating_model.to_owned(),
             model: model.to_owned(),
             provider: provider.map(str::to_owned),
             base_model: base_model.map(str::to_owned),
@@ -697,7 +713,7 @@ fn mock_rate_limit_raises_with_the_only_deployment_retries() {
     assert_eq!(details.context.model.as_deref(), Some("gpt-4"));
     assert_eq!(details.context.provider.as_deref(), Some(""));
     assert_eq!(details.context.num_retries, Some(3));
-    assert_eq!(details.category, RateLimitCategory::LitellmRateLimit);
+    assert_eq!(details.category, RateLimitCategory::VendorRateLimit);
     assert_eq!(request.keys().collect::<Vec<_>>(), vec!["model"]);
 }
 
@@ -737,14 +753,14 @@ fn mock_rate_limit_needs_an_exact_boolean() {
 #[case::list(r#"["a", true, null]"#, "['a', True, None]")]
 #[case::nested(r#"[{"gpt-4": ["gpt-3.5"]}]"#, "[{'gpt-4': ['gpt-3.5']}]")]
 #[case::object(r#"{"b": 1, "a": 2}"#, "{'b': 1, 'a': 2}")]
-#[case::double_quote(r#""say \"hi\"""#, r#"'"say "hi"'"#)]
-#[case::single_quote(r#""it's""#, "\"it's\"")]
-#[case::both_quotes(r#""it's \"x\"""#, r#"'it\'s "x"'"#)]
-#[case::backslash(r#""a\\b""#, r"'a\\b'")]
-#[case::newline(r#""a\nb""#, r"'a\nb'")]
-#[case::control(r#""a\u0001b""#, r"'a\x01b'")]
-#[case::space(r#""a b""#, "'a b'")]
-#[case::delete(r#""a\u007fb""#, r"'a\x7fb'")]
+#[case::double_quote(r#"["say \"hi\""]"#, r#"['say "hi"']"#)]
+#[case::single_quote(r#"["it's"]"#, r#"["it's"]"#)]
+#[case::both_quotes(r#"["it's \"x\""]"#, r#"['it\'s "x"']"#)]
+#[case::backslash(r#"["a\\b"]"#, r"['a\\b']")]
+#[case::newline(r#"["a\nb"]"#, r"['a\nb']")]
+#[case::control(r#"["a\u0001b"]"#, r"['a\x01b']")]
+#[case::space(r#"["a b"]"#, "['a b']")]
+#[case::delete(r#"["a\u007fb"]"#, r"['a\x7fb']")]
 fn mock_messages_print_values_like_python(#[case] value: &str, #[case] expected: &str) {
     assert_eq!(source_text(&json(value)), expected);
 }

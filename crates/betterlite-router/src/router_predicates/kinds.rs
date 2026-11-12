@@ -3,28 +3,17 @@ use betterlite_models::decisions::Json;
 use super::JsonMap;
 use super::map_values::text_value;
 
+// Callers compare the kind with "semantic", "complexity" or "adaptive", as router.py's three _is_*_router_deployment do
 #[must_use]
-pub fn is_auto_router(params: &JsonMap, classify: fn(&str) -> Option<&'static str>) -> bool {
-    if classify(model_name(params)) == Some("semantic") {
-        return true;
+pub fn strategy_kind(
+    litellm_params: &JsonMap,
+    classify: fn(&str) -> Option<&'static str>,
+) -> Option<&'static str> {
+    match litellm_params.get("model") {
+        Some(Json::Text(text)) => classify(text),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
+        | None => classify(""),
     }
-    false
-}
-
-#[must_use]
-pub fn is_complexity_router(params: &JsonMap, classify: fn(&str) -> Option<&'static str>) -> bool {
-    if classify(model_name(params)) == Some("complexity") {
-        return true;
-    }
-    false
-}
-
-#[must_use]
-pub fn is_adaptive_router(params: &JsonMap, classify: fn(&str) -> Option<&'static str>) -> bool {
-    if classify(model_name(params)) == Some("adaptive") {
-        return true;
-    }
-    false
 }
 
 #[must_use]
@@ -32,10 +21,11 @@ pub fn joins_adaptive_routing(
     params: &JsonMap,
     classify: fn(&str) -> Option<&'static str>,
 ) -> bool {
-    if is_adaptive_router(params, classify) {
+    let kind = strategy_kind(params, classify);
+    if kind == Some("adaptive") {
         return true;
     }
-    if !is_complexity_router(params, classify) {
+    if kind != Some("complexity") {
         return false;
     }
     let Some(Json::Object(config)) = params.get("complexity_router_config") else {
@@ -59,12 +49,4 @@ pub fn deployment_tags(deployment: &JsonMap) -> Vec<String> {
         .filter_map(text_value)
         .map(str::to_owned)
         .collect()
-}
-
-fn model_name(litellm_params: &JsonMap) -> &str {
-    match litellm_params.get("model") {
-        Some(Json::Text(text)) => text,
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => "",
-    }
 }

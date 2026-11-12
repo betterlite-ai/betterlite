@@ -11,9 +11,29 @@ use super::map_values::{declared_text, text_value};
 pub fn as_output_cap(value: &Json) -> Option<i64> {
     match value {
         Json::Number(number) => cap_from_float(number.as_f64()?),
-        Json::Text(text) => text.trim().parse::<f64>().ok().and_then(cap_from_float),
+        Json::Text(text) => separated_float(text.trim()).and_then(cap_from_float),
         Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
     }
+}
+
+// Python's float() takes an underscore only between two digits
+fn separated_float(text: &str) -> Option<f64> {
+    let mut cleaned = String::with_capacity(text.len());
+    let mut previous: Option<char> = None;
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '_' {
+            let between_digits = previous.is_some_and(|before| before.is_ascii_digit())
+                && characters.peek().is_some_and(char::is_ascii_digit);
+            if !between_digits {
+                return None;
+            }
+        } else {
+            cleaned.push(character);
+        }
+        previous = Some(character);
+    }
+    cleaned.parse().ok()
 }
 
 fn cap_from_float(value: f64) -> Option<i64> {
