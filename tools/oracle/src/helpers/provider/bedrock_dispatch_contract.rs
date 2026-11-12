@@ -26,13 +26,9 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 struct PlanCase {
     model: String,
-    #[serde(default)]
     model_id: Option<String>,
-    #[serde(default)]
     aws_region_name: Option<String>,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     aws_bedrock_runtime_endpoint: Option<String>,
     #[serde(default)]
     settings: SettingsCase,
@@ -45,13 +41,9 @@ struct PlanCase {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SettingsCase {
-    #[serde(default)]
     aws_region_name: Option<String>,
-    #[serde(default)]
     aws_region: Option<String>,
-    #[serde(default)]
     session_region: Option<String>,
-    #[serde(default)]
     aws_bedrock_runtime_endpoint: Option<String>,
 }
 

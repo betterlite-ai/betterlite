@@ -16,13 +16,10 @@ use crate::provider::Adapter;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Bedrock;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BedrockRequest;
-
 pub struct BedrockResult;
 
-// The plan a Bedrock call runs with: the route B598 selected, the id and region B591 resolved, and the runtime endpoint
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BedrockPrepared {
     pub operation: BedrockRoute,
@@ -42,7 +39,6 @@ pub struct BedrockAwsSettings {
     pub aws_bedrock_runtime_endpoint: Option<String>,
 }
 
-// Everything a plan reads, already normalized: the request parameters, the caller's Bedrock catalog and the settings
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct BedrockPlanRequest {
     pub model: String,
@@ -85,25 +81,17 @@ pub enum BedrockDispatchError {
     Unsupported { operation: &'static str },
 }
 
-// No SDK and no chat body enters here: the dispatcher only composes the route and endpoint leaves
 pub fn dispatch(operation: &BedrockOperation) -> Result<BedrockPrepared, BedrockDispatchError> {
-    match operation {
-        BedrockOperation::Plan(request) => plan(request),
-        BedrockOperation::Chat => Err(BedrockDispatchError::Unsupported { operation: "chat" }),
-        BedrockOperation::Other => Err(BedrockDispatchError::Unsupported {
-            operation: "other endpoints",
-        }),
-        BedrockOperation::Services => Err(BedrockDispatchError::Unsupported {
-            operation: "services",
-        }),
-        BedrockOperation::Image => Err(BedrockDispatchError::Unsupported {
-            operation: "image generation",
-        }),
-        BedrockOperation::Agent => Err(BedrockDispatchError::Unsupported { operation: "agent" }),
-        BedrockOperation::Interactive => Err(BedrockDispatchError::Unsupported {
-            operation: "interactive",
-        }),
-    }
+    let family = match operation {
+        BedrockOperation::Plan(request) => return plan(request),
+        BedrockOperation::Chat => "chat",
+        BedrockOperation::Other => "other endpoints",
+        BedrockOperation::Services => "services",
+        BedrockOperation::Image => "image generation",
+        BedrockOperation::Agent => "agent",
+        BedrockOperation::Interactive => "interactive",
+    };
+    Err(BedrockDispatchError::Unsupported { operation: family })
 }
 
 fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatchError> {
@@ -133,12 +121,11 @@ fn select_operation(request: &BedrockPlanRequest) -> Result<BedrockRoute, Bedroc
         &request.converse_models,
         request.request_metadata_owned,
     )?;
-    let operation = selector.route_for_request(
+    Ok(selector.route_for_request(
         &request.model,
         &request.request_params,
         Some(&request.additional_drop_params),
-    )?;
-    Ok(operation)
+    )?)
 }
 
 fn select_model_id(request: &BedrockPlanRequest) -> Result<String, BedrockDispatchError> {
@@ -158,18 +145,10 @@ fn select_region(
     operation: BedrockRoute,
 ) -> Result<String, BedrockDispatchError> {
     // the Converse handler passes the caller's model_id override to the region resolver; every other route does not
-    let model_id_region = match operation {
-        BedrockRoute::Converse => request.model_id.as_deref(),
-        BedrockRoute::Invoke
-        | BedrockRoute::ClaudePlatform
-        | BedrockRoute::ConverseLike
-        | BedrockRoute::Agent
-        | BedrockRoute::Agentcore
-        | BedrockRoute::AsyncInvoke
-        | BedrockRoute::Openai
-        | BedrockRoute::Mantle
-        | BedrockRoute::ChatCompletions => None,
-    };
+    let model_id_region = request
+        .model_id
+        .as_deref()
+        .filter(|_| operation == BedrockRoute::Converse);
     let region = llm_region_name(LlmRegion {
         explicit: request.aws_region_name.as_deref(),
         model: Some(&request.model),
