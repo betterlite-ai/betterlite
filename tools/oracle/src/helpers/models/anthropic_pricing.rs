@@ -18,6 +18,8 @@ use jiff::tz::TimeZoneDatabase;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::helpers::OrHelperError as _;
+
 pub(crate) struct Op;
 
 struct NullLookup;
@@ -105,8 +107,10 @@ impl crate::helpers::Helper for Op {
         match input {
             Input::Token(fields) => run_token(fields),
             Input::RawProbe { responses } => Ok(raw_probe_value(responses)),
-            Input::WebSearchRequests { record } => Ok(accessor_value(record.as_ref())
-                .map_or_else(|| serde_json::Value::Null, |count| json_value(&count))),
+            Input::WebSearchRequests { record } => accessor_value(record.as_ref())
+                .map_or(Ok(serde_json::Value::Null), |count| {
+                    serde_json::to_value(&count).or_value_error()
+                }),
             Input::SearchCost {
                 model_info,
                 search_context,
@@ -194,22 +198,6 @@ fn accessor_value(record: Option<&RecordInput>) -> Option<Json> {
         RecordInput::Attribute { value } => {
             web_search_requests(Some(ServerToolRecord::Parsed(value)))
         }
-    }
-}
-
-fn json_value(value: &Json) -> serde_json::Value {
-    match value {
-        Json::Null => serde_json::Value::Null,
-        Json::Bool(flag) => json!(flag),
-        Json::Number(number) => serde_json::Value::Number(number.clone()),
-        Json::Text(text) => json!(text),
-        Json::List(items) => serde_json::Value::Array(items.iter().map(json_value).collect()),
-        Json::Object(fields) => serde_json::Value::Object(
-            fields
-                .iter()
-                .map(|(key, item)| (key.clone(), json_value(item)))
-                .collect(),
-        ),
     }
 }
 

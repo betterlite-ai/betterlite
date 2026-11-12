@@ -33,11 +33,8 @@ pub fn web_search_cost(
 // The count reaches the multiplication exactly as the tolerant accessor read it; a value Python could not multiply is a typed failure.
 fn search_count(value: &Json) -> Result<Decimal, AnthropicPricingError> {
     match value {
-        Json::Number(number) => parse_decimal_lexeme(&number.to_string()).map_err(|_source| {
-            AnthropicPricingError::InvalidSearchCount {
-                kind: "a number beyond the decimal range",
-            }
-        }),
+        Json::Number(number) => parse_decimal_lexeme(&number.to_string())
+            .map_err(|source| AnthropicPricingError::InvalidSearchNumber { source }),
         Json::Bool(flag) => Ok(Decimal::from(u8::from(*flag))),
         Json::Null => Err(AnthropicPricingError::InvalidSearchCount { kind: "null" }),
         Json::Text(_) => Err(AnthropicPricingError::InvalidSearchCount { kind: "a string" }),

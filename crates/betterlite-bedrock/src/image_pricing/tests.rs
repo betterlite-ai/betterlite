@@ -32,12 +32,25 @@ struct CatalogLookup {
     last_key: Cell<Option<String>>,
 }
 
+const CROSS_REGION_PREFIXES: [&str; 7] =
+    ["global.", "us.", "eu.", "apac.", "jp.", "au.", "us-gov."];
+
+// The effective lookup strips a Bedrock cross-region prefix and matches the base model case-insensitively.
+fn bedrock_base_model(model: &str) -> &str {
+    for prefix in CROSS_REGION_PREFIXES {
+        if let Some(stripped) = model.strip_prefix(prefix) {
+            return stripped;
+        }
+    }
+    model
+}
+
 impl CatalogLookup {
     fn new(entries: &[(&str, PriceRecord)]) -> Self {
         Self {
             entries: entries
                 .iter()
-                .map(|(key, entry)| ((*key).to_owned(), entry.clone()))
+                .map(|(key, entry)| (key.to_lowercase(), entry.clone()))
                 .collect(),
             last_key: Cell::new(None),
         }
@@ -51,15 +64,17 @@ impl CatalogLookup {
 impl PriceLookup for CatalogLookup {
     fn effective_model_info(
         &self,
-        _model: &str,
+        model: &str,
         _custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        None
+        self.last_key.set(Some(model.to_owned()));
+        self.entries
+            .get(&bedrock_base_model(model).to_lowercase())
+            .cloned()
     }
 
-    fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
-        self.last_key.set(Some(key.to_owned()));
-        self.entries.get(key).cloned()
+    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        None
     }
 
     fn effective_priced_model(
@@ -199,6 +214,23 @@ fn stability1_keeps_the_supplied_size_spelling() {
 }
 
 #[test]
+fn stability1_matches_the_size_key_case_insensitively() {
+    let lookup = CatalogLookup::new(&[(
+        "1024-x-1024/50-steps/stability.stable-diffusion-xl-v1",
+        record(&[("output_cost_per_image", "0.04")]),
+    )]);
+    let result = cost(
+        "stability.stable-diffusion-xl-v1",
+        1,
+        Some("1024-X-1024"),
+        None,
+        &lookup,
+    )
+    .expect("stability 1 pricing succeeds");
+    assert_eq!(result, decimal("0.04"));
+}
+
+#[test]
 fn stability1_treats_an_empty_size_as_absent() {
     let lookup = CatalogLookup::new(&[(
         "1024-x-1024/50-steps/stability.stable-diffusion-xl-v0",
@@ -295,6 +327,36 @@ fn nova_bills_its_flat_model_price() {
     assert_eq!(
         lookup.last_key().as_deref(),
         Some("amazon.nova-canvas-v1:0")
+    );
+}
+
+#[test]
+fn nova_resolves_a_region_prefixed_model() {
+    let lookup = CatalogLookup::new(&[(
+        "amazon.nova-canvas-v1:0",
+        record(&[("output_cost_per_image", "0.06")]),
+    )]);
+    let result = cost("eu.amazon.nova-canvas-v1:0", 1, None, None, &lookup)
+        .expect("region-prefixed nova pricing succeeds");
+    assert_eq!(result, decimal("0.06"));
+    assert_eq!(
+        lookup.last_key().as_deref(),
+        Some("eu.amazon.nova-canvas-v1:0")
+    );
+}
+
+#[test]
+fn stability3_resolves_a_region_prefixed_model() {
+    let lookup = CatalogLookup::new(&[(
+        "stability.sd3-large-v1:0",
+        record(&[("output_cost_per_image", "0.08")]),
+    )]);
+    let result = cost("eu.stability.sd3-large-v1:0", 1, None, None, &lookup)
+        .expect("region-prefixed stability 3 pricing succeeds");
+    assert_eq!(result, decimal("0.08"));
+    assert_eq!(
+        lookup.last_key().as_deref(),
+        Some("eu.stability.sd3-large-v1:0")
     );
 }
 

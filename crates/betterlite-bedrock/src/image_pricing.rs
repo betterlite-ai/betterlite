@@ -23,8 +23,9 @@ pub fn image_cost(
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, ImagePricingError> {
     match select_family(Some(request.model)) {
-        Family::Titan | Family::Stability3 | Family::Nova => flat_cost(request, lookup),
+        Family::Titan => flat_cost(request, None, lookup),
         Family::Stability1 => stability1_cost(request, lookup),
+        Family::Stability3 | Family::Nova => flat_cost(request, Some("bedrock"), lookup),
     }
 }
 

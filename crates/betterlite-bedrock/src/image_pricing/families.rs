@@ -12,20 +12,21 @@ const DEFAULT_STEPS: i64 = 50;
 const STEP_BUCKET_DEFAULT: &str = "50-steps";
 const STEP_BUCKET_MAX: &str = "max-steps";
 
-// Titan, Stability 3 and Nova resolve their unqualified model before charging its flat per-image price.
+// Titan, Stability 3 and Nova resolve their model through the effective lookup; the source passes no provider for Titan and bedrock for the other two.
 pub(super) fn flat_cost(
     request: &ImageCostRequest<'_>,
+    provider: Option<&str>,
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, ImagePricingError> {
-    let entry = lookup.raw_cost_map_entry(request.model).ok_or_else(|| {
-        ImagePricingError::UnknownModel {
+    let entry = lookup
+        .effective_model_info(request.model, provider)
+        .ok_or_else(|| ImagePricingError::UnknownModel {
             model: request.model.to_owned(),
-        }
-    })?;
+        })?;
     flat_charge(&entry, request.image_count)
 }
 
-// Stability 1 keeps the supplied size spelling and folds the step bucket into the catalog key.
+// Stability 1 keeps the supplied size spelling and folds the step bucket into the catalog key, resolved through the bedrock provider.
 pub(super) fn stability1_cost(
     request: &ImageCostRequest<'_>,
     lookup: &dyn PriceLookup,
@@ -40,17 +41,10 @@ pub(super) fn stability1_cost(
         .filter(|size| !size.is_empty())
         .unwrap_or(DEFAULT_SIZE);
     let key = format!("{size}/{steps}/{}", request.model);
-    let entry = catalog_entry(lookup, &key)?;
+    let entry = lookup
+        .effective_model_info(&key, Some("bedrock"))
+        .ok_or(ImagePricingError::UnknownModel { model: key })?;
     flat_charge(&entry, request.image_count)
-}
-
-// A failed lookup errors before the returned image count can short-circuit, matching the source's lookup-before-empty-data order.
-fn catalog_entry(lookup: &dyn PriceLookup, key: &str) -> Result<PriceRecord, ImagePricingError> {
-    lookup
-        .raw_cost_map_entry(key)
-        .ok_or_else(|| ImagePricingError::UnknownModel {
-            model: key.to_owned(),
-        })
 }
 
 // A present steps value must compare with fifty exactly like the source's int comparison does.
