@@ -91,12 +91,8 @@ fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
                 return Ok(json!({"ok": false, "error": {"status": error.status_code()}}));
             }
             let snapshot = class_snapshot::<FeatherlessSettings>(&call.config)?;
-            Ok(mapped_value(
-                snapshot,
-                &options,
-                featherless::SUPPORTED_PARAMS,
-                None,
-            ))
+            let supported = featherless::SUPPORTED_PARAMS;
+            Ok(mapped_value(&snapshot, &options, supported, None))
         }
         _ => Err(failure(None, String::from("the host has no option map"))),
     }
