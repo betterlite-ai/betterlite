@@ -1,6 +1,7 @@
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::definitions::expand::unpack_defs;
+use betterlite_prompts::definitions::legacy::DEFS_MAX_INLINED_BYTES;
 
 use super::anyof::convert_anyof_null_to_nullable;
 use super::enum_empty_strings::fix_enum_empty_strings;
@@ -49,7 +50,8 @@ fn build_response_schema(
             return Err(VertexSchemaError::DefinitionsNotObject);
         }
     };
-    let mut shaped = unpack_defs(parameters, &definitions, None)?;
+    // A request schema is untrusted and a doubled reference doubles the expansion, so the shared 10 MB budget bounds it
+    let mut shaped = unpack_defs(parameters, &definitions, Some(DEFS_MAX_INLINED_BYTES))?;
     let recursion = Recursion { max_depth };
     convert_anyof_null_to_nullable(&mut shaped, recursion, 0)?;
     convert_schema_types(&mut shaped, recursion, 0)?;

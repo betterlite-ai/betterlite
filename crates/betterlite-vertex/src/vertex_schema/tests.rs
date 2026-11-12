@@ -2,6 +2,8 @@
 
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::definitions::error::DefinitionsError;
+use betterlite_prompts::definitions::legacy::DEFS_MAX_INLINED_BYTES;
 use rstest::rstest;
 
 use super::anyof::convert_anyof_null_to_nullable;
@@ -117,6 +119,50 @@ fn a_definitions_table_that_is_not_an_object_is_rejected() {
     )
     .expect_err("a null $defs cannot be expanded");
     assert!(matches!(error, VertexSchemaError::DefinitionsNotObject));
+}
+
+#[test]
+fn an_expansion_past_the_bytes_budget_is_rejected() {
+    let definitions: Object = (0..30_u32)
+        .map(|index| {
+            let mut reference = Object::new();
+            reference.insert(
+                "$ref".to_owned(),
+                Json::Text(format!("#/$defs/d{}", index.saturating_add(1))),
+            );
+            let mut properties = Object::new();
+            properties.insert("left".to_owned(), Json::Object(reference.clone()));
+            properties.insert("right".to_owned(), Json::Object(reference));
+            let mut definition = Object::new();
+            definition.insert("type".to_owned(), Json::Text("object".to_owned()));
+            definition.insert("properties".to_owned(), Json::Object(properties));
+            (format!("d{index}"), Json::Object(definition))
+        })
+        .collect();
+    let mut root = Object::new();
+    root.insert("type".to_owned(), Json::Text("object".to_owned()));
+    let mut root_reference = Object::new();
+    root_reference.insert("$ref".to_owned(), Json::Text("#/$defs/d0".to_owned()));
+    let mut properties = Object::new();
+    properties.insert("root".to_owned(), Json::Object(root_reference));
+    root.insert("properties".to_owned(), Json::Object(properties));
+    root.insert("$defs".to_owned(), Json::Object(definitions));
+
+    let error = shape_parameters(
+        root,
+        SchemaFormat::ResponseSchema,
+        false,
+        &settings(DEFAULT_DEPTH),
+    )
+    .expect_err("the doubling references pass the 10 MB inlined-byte budget");
+    assert!(matches!(
+        error,
+        VertexSchemaError::Definitions {
+            source: DefinitionsError::ExpansionBudgetExceeded {
+                limit: DEFS_MAX_INLINED_BYTES
+            }
+        }
+    ));
 }
 
 #[test]

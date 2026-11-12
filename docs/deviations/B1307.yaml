@@ -10,3 +10,12 @@ deviations:
       thousand frames on the same input, so no working setup uses a limit above that ceiling.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+  - what: >-
+      The response schema's $defs expansion stops at a 10 MB inlined-byte budget and answers an
+      error, where LiteLLM expands with no budget.
+    why: >-
+      The expansion walks schema text from an untrusted request and doubles with every doubled
+      reference, so a body of about 2 KB reaches 2^30 copies; no real response schema expands past
+      10 MB.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L706
