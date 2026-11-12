@@ -39,25 +39,30 @@ fn present_value(tool: &Fields, key: &str) -> Option<Json> {
     }
 }
 
+fn tool_extras(tool: &Fields) -> ToolExtras {
+    ToolExtras {
+        cache_control: present_value(tool, "cache_control"),
+        defer_loading: present_value(tool, "defer_loading"),
+        allowed_callers: present_value(tool, "allowed_callers"),
+        input_examples: present_value(tool, "input_examples"),
+        eager_input_streaming: tool
+            .get("eager_input_streaming")
+            .filter(|value| **value != Json::Null)
+            .cloned(),
+    }
+}
+
 fn function_chat_tool(tool: &Fields) -> Result<ChatFunctionTool, NamespaceToolsError> {
+    let function = ChatFunction {
+        name: text_field(tool, "name")?.to_owned(),
+        description: text_field(tool, "description")?.to_owned(),
+        parameters: schema_parameters(tool.get("parameters"))?,
+        strict: present_value(tool, "strict").unwrap_or(Json::Bool(false)),
+    };
     Ok(ChatFunctionTool {
         kind: "function",
-        function: ChatFunction {
-            name: text_field(tool, "name")?.to_owned(),
-            description: text_field(tool, "description")?.to_owned(),
-            parameters: schema_parameters(tool.get("parameters"))?,
-            strict: present_value(tool, "strict").unwrap_or(Json::Bool(false)),
-        },
-        extras: ToolExtras {
-            cache_control: present_value(tool, "cache_control"),
-            defer_loading: present_value(tool, "defer_loading"),
-            allowed_callers: present_value(tool, "allowed_callers"),
-            input_examples: present_value(tool, "input_examples"),
-            eager_input_streaming: tool
-                .get("eager_input_streaming")
-                .filter(|value| **value != Json::Null)
-                .cloned(),
-        },
+        function,
+        extras: tool_extras(tool),
     })
 }
 
