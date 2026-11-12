@@ -4,11 +4,13 @@ use std::collections::BTreeMap;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use serde_inline_default::serde_inline_default;
 
 use super::content_filter_records::ConfidenceThreshold;
 use crate::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
 
 pub mod bedrock_checks;
+pub mod provider_options;
 
 use bedrock_checks::{
     BedrockChecksConfigWire, BedrockContentFilterModel, BedrockPromptAttackModel,
@@ -18,7 +20,7 @@ use bedrock_checks::{
 // serde's library adapter builds this private, non-Debug value only while a model is serialized
 #[derive(Serialize)]
 #[serde(transparent)]
-struct ExposedSecret(String);
+pub(crate) struct ExposedSecret(String);
 
 impl From<&SecretString> for ExposedSecret {
     fn from(secret: &SecretString) -> Self {
@@ -149,13 +151,14 @@ impl BedrockChecksConfigModel {
     }
 }
 
+#[serde_inline_default]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
 pub struct BedrockGuardrailConfigModel {
     #[serde(rename = "guardrailIdentifier")]
     pub guardrail_identifier: Option<String>,
     #[serde(rename = "guardrailVersion")]
     pub guardrail_version: Option<String>,
+    #[serde_inline_default(Some(false))]
     pub disable_exception_on_block: Option<bool>,
     pub aws_region_name: Option<String>,
     pub aws_access_key_id: Option<String>,
@@ -178,180 +181,17 @@ pub struct BedrockGuardrailConfigModel {
     pub aws_external_id: Option<String>,
     pub aws_bedrock_runtime_endpoint: Option<String>,
     pub checks: Option<BedrockChecksConfigModel>,
+    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub content_filter_threshold: Option<ConfidenceThreshold>,
+    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub prompt_attack_threshold: Option<ConfidenceThreshold>,
+    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub pii_confidence_threshold: Option<ConfidenceThreshold>,
+    #[serde_inline_default(ChunkBudgetChars(25_000))]
     pub chunk_budget_chars: ChunkBudgetChars,
     #[serde(rename = "contextual_grounding_from_messages")]
+    #[serde_inline_default(false)]
     pub contextual_grounding: bool,
-}
-
-impl Default for BedrockGuardrailConfigModel {
-    fn default() -> Self {
-        Self {
-            guardrail_identifier: None,
-            guardrail_version: None,
-            disable_exception_on_block: Some(false),
-            aws_region_name: None,
-            aws_access_key_id: None,
-            aws_secret_access_key: None,
-            aws_session_token: None,
-            aws_session_name: None,
-            aws_profile_name: None,
-            aws_role_name: None,
-            aws_web_identity_token: None,
-            aws_sts_endpoint: None,
-            aws_external_id: None,
-            aws_bedrock_runtime_endpoint: None,
-            checks: None,
-            content_filter_threshold: Some(ConfidenceThreshold(0.5)),
-            prompt_attack_threshold: Some(ConfidenceThreshold(0.5)),
-            pii_confidence_threshold: Some(ConfidenceThreshold(0.5)),
-            chunk_budget_chars: ChunkBudgetChars(25_000),
-            contextual_grounding: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LakeraV2GuardrailConfigModel {
-    #[serde(
-        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedSecret>>>::serialize"
-    )]
-    pub api_key: Option<SecretString>,
-    pub api_base: Option<String>,
-    pub project_id: Option<String>,
-    pub payload: Option<bool>,
-    pub breakdown: Option<bool>,
-    pub metadata: Option<BTreeMap<String, GuardrailValue>>,
-    pub dev_info: Option<bool>,
-    pub on_flagged: Option<LakeraOnFlagged>,
-    pub advisory_system_message: Option<String>,
-}
-
-impl Default for LakeraV2GuardrailConfigModel {
-    fn default() -> Self {
-        Self {
-            api_key: None,
-            api_base: None,
-            project_id: None,
-            payload: Some(true),
-            breakdown: Some(true),
-            metadata: None,
-            dev_info: Some(true),
-            on_flagged: Some(LakeraOnFlagged::Block),
-            advisory_system_message: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LakeraOnFlagged {
-    Block,
-    Monitor,
-    InjectSystemMessage,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct LassoGuardrailConfigModel {
-    pub lasso_user_id: Option<String>,
-    pub lasso_conversation_id: Option<String>,
-    pub mask: Option<bool>,
-}
-
-impl Default for LassoGuardrailConfigModel {
-    fn default() -> Self {
-        Self {
-            lasso_user_id: None,
-            lasso_conversation_id: None,
-            mask: Some(false),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DeepKeepGuardrailConfigModel {
-    pub deepkeep_firewall_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct PillarGuardrailConfigModel {
-    pub on_flagged_action: Option<String>,
-    pub async_mode: Option<bool>,
-    pub persist_session: Option<bool>,
-    pub include_scanners: Option<bool>,
-    pub include_evidence: Option<bool>,
-}
-
-impl Default for PillarGuardrailConfigModel {
-    fn default() -> Self {
-        Self {
-            on_flagged_action: Some("monitor".to_owned()),
-            async_mode: None,
-            persist_session: None,
-            include_scanners: Some(true),
-            include_evidence: Some(true),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct NomaGuardrailConfigModel {
-    pub use_v2: Option<bool>,
-    pub application_id: Option<String>,
-    pub gateway_name: Option<String>,
-    pub monitor_mode: Option<bool>,
-    pub block_failures: Option<bool>,
-    pub anonymize_input: Option<bool>,
-}
-
-impl Default for NomaGuardrailConfigModel {
-    fn default() -> Self {
-        Self {
-            use_v2: Some(false),
-            application_id: None,
-            gateway_name: None,
-            monitor_mode: None,
-            block_failures: None,
-            anonymize_input: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ZscalerAIGuardConfigModel {
-    pub policy_id: Option<i64>,
-    pub send_user_api_key_alias: Option<bool>,
-    pub send_user_api_key_user_id: Option<bool>,
-    pub send_user_api_key_team_id: Option<bool>,
-}
-
-impl Default for ZscalerAIGuardConfigModel {
-    fn default() -> Self {
-        Self {
-            policy_id: None,
-            send_user_api_key_alias: Some(false),
-            send_user_api_key_user_id: Some(false),
-            send_user_api_key_team_id: Some(false),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct JavelinGuardrailConfigModel {
-    pub guard_name: Option<String>,
-    pub api_version: Option<String>,
-    pub metadata: Option<BTreeMap<String, GuardrailValue>>,
-    pub application: Option<String>,
-    pub config: Option<BTreeMap<String, GuardrailValue>>,
 }
 
 #[path = "guardrail_translation/guardrail_provider_options/tests.rs"]

@@ -1,14 +1,17 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_translation::{
-    BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams,
+use betterlite_config::sections::guardrail_translation::provider_options::{
     JavelinGuardrailConfigModel, LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel,
     PillarGuardrailConfigModel, ZscalerAIGuardConfigModel,
+};
+use betterlite_config::sections::guardrail_translation::{
+    BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams,
 };
 use betterlite_guardrails::guardrail_translation::{
     StreamTransformSink, StreamingScanKey, merge_user_key_metadata, transform_user_key_metadata,
 };
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -62,45 +65,30 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
-            Function::BedrockChecks => config_answer(serde_json::from_value::<
-                BedrockChecksConfigModel,
-            >(input.body.clone())),
-            Function::BedrockGuardrail => config_answer(serde_json::from_value::<
-                BedrockGuardrailConfigModel,
-            >(input.body.clone())),
-            Function::BedrockStreamingFromExtras => config_answer(
-                BedrockGuardrailStreamParams::from_extras(input.extras.as_ref()),
-            ),
-            Function::ProviderConfig => provider_config(input),
+            Function::BedrockChecks => deserialize_config::<BedrockChecksConfigModel>(&input.body),
+            Function::BedrockGuardrail => {
+                deserialize_config::<BedrockGuardrailConfigModel>(&input.body)
+            }
+            Function::BedrockStreamingFromExtras => {
+                match BedrockGuardrailStreamParams::from_extras(input.extras.as_ref()) {
+                    Ok(value) => encode(value),
+                    Err(_) => Ok(json!({"accepted": false})),
+                }
+            }
+            Function::ProviderConfig => match input.model {
+                Model::Bedrock => deserialize_config::<BedrockGuardrailConfigModel>(&input.body),
+                Model::LakeraV2 => deserialize_config::<LakeraV2GuardrailConfigModel>(&input.body),
+                Model::Pillar => deserialize_config::<PillarGuardrailConfigModel>(&input.body),
+                Model::Noma => deserialize_config::<NomaGuardrailConfigModel>(&input.body),
+                Model::Zscaler => deserialize_config::<ZscalerAIGuardConfigModel>(&input.body),
+                Model::Javelin => deserialize_config::<JavelinGuardrailConfigModel>(&input.body),
+            },
             Function::ScanKey => Ok(scan_key(input)),
             Function::UserMetadata => encode(transform_user_key_metadata(
                 input.user_api_key_dict.as_ref(),
             )),
             Function::MergeMetadata => merge_metadata(input),
         }
-    }
-}
-
-fn provider_config(input: &Input) -> HelperResult {
-    match input.model {
-        Model::Bedrock => config_answer(serde_json::from_value::<BedrockGuardrailConfigModel>(
-            input.body.clone(),
-        )),
-        Model::LakeraV2 => config_answer(serde_json::from_value::<LakeraV2GuardrailConfigModel>(
-            input.body.clone(),
-        )),
-        Model::Pillar => config_answer(serde_json::from_value::<PillarGuardrailConfigModel>(
-            input.body.clone(),
-        )),
-        Model::Noma => config_answer(serde_json::from_value::<NomaGuardrailConfigModel>(
-            input.body.clone(),
-        )),
-        Model::Zscaler => config_answer(serde_json::from_value::<ZscalerAIGuardConfigModel>(
-            input.body.clone(),
-        )),
-        Model::Javelin => config_answer(serde_json::from_value::<JavelinGuardrailConfigModel>(
-            input.body.clone(),
-        )),
     }
 }
 
@@ -126,11 +114,8 @@ fn merge_metadata(input: &Input) -> HelperResult {
     encode(request_data)
 }
 
-fn config_answer<T, E>(result: Result<T, E>) -> HelperResult
-where
-    T: Serialize,
-{
-    match result {
+fn deserialize_config<T: DeserializeOwned + Serialize>(body: &Value) -> HelperResult {
+    match serde_json::from_value::<T>(body.clone()) {
         Ok(value) => encode(value),
         Err(_) => Ok(json!({"accepted": false})),
     }

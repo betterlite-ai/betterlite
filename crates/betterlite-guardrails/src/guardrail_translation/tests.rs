@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
+use std::future::Future;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
@@ -214,16 +214,16 @@ impl BaseTranslation for NoopTranslation {
         _guardrail: &Self::Guardrail,
         _call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        ready(Ok(()))
+        std::future::ready(Ok(()))
     }
 
     fn process_output_response(
         &self,
         _response: &mut GuardrailValue,
-        _guardrail: &Self::Guardrail,
-        _call: TranslationCall<'_, Self::LogTarget>,
+        _guard: &Self::Guardrail,
+        _context: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
-        ready(Ok(()))
+        async { Ok::<(), NoopFailure>(()) }
     }
 }
 

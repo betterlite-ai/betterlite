@@ -8,19 +8,33 @@ use super::bedrock_checks::{
     BedrockChecksError, BedrockContentFilterCategory, BedrockPromptAttackCategory,
     BedrockSensitiveInfoEntity,
 };
-use super::{
-    BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams,
+use super::provider_options::{
     DeepKeepGuardrailConfigModel, JavelinGuardrailConfigModel, LakeraOnFlagged,
     LakeraV2GuardrailConfigModel, LassoGuardrailConfigModel, NomaGuardrailConfigModel,
     PillarGuardrailConfigModel, ZscalerAIGuardConfigModel,
 };
+use super::{BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams};
 use crate::sections::guardrail_identity::item::GuardrailValue;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 fn extras(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue> {
     entries
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
         .collect()
+}
+
+fn assert_literal_round_trip<T>(wire: &str, value: T)
+where
+    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
+{
+    let parsed: T = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
+    assert_eq!(parsed, value);
+    assert_eq!(
+        serde_json::to_string(&value).unwrap(),
+        format!("\"{wire}\"")
+    );
 }
 
 #[test]
@@ -215,13 +229,7 @@ fn bedrock_content_filter_literals(
     #[case] wire: &str,
     #[case] value: BedrockContentFilterCategory,
 ) {
-    let parsed: BedrockContentFilterCategory =
-        serde_json::from_str(&format!("\"{wire}\"")).unwrap();
-    assert_eq!(parsed, value);
-    assert_eq!(
-        serde_json::to_string(&value).unwrap(),
-        format!("\"{wire}\"")
-    );
+    assert_literal_round_trip(wire, value);
 }
 
 #[rstest]
@@ -229,12 +237,7 @@ fn bedrock_content_filter_literals(
 #[case::prompt_injection("PROMPT_INJECTION", BedrockPromptAttackCategory::PromptInjection)]
 #[case::prompt_leakage("PROMPT_LEAKAGE", BedrockPromptAttackCategory::PromptLeakage)]
 fn bedrock_prompt_attack_literals(#[case] wire: &str, #[case] value: BedrockPromptAttackCategory) {
-    let parsed: BedrockPromptAttackCategory = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
-    assert_eq!(parsed, value);
-    assert_eq!(
-        serde_json::to_string(&value).unwrap(),
-        format!("\"{wire}\"")
-    );
+    assert_literal_round_trip(wire, value);
 }
 
 #[rstest]
@@ -309,12 +312,7 @@ fn bedrock_prompt_attack_literals(#[case] wire: &str, #[case] value: BedrockProm
     BedrockSensitiveInfoEntity::VehicleIdentificationNumber
 )]
 fn bedrock_sensitive_info_literals(#[case] wire: &str, #[case] value: BedrockSensitiveInfoEntity) {
-    let parsed: BedrockSensitiveInfoEntity = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
-    assert_eq!(parsed, value);
-    assert_eq!(
-        serde_json::to_string(&value).unwrap(),
-        format!("\"{wire}\"")
-    );
+    assert_literal_round_trip(wire, value);
 }
 
 #[test]
