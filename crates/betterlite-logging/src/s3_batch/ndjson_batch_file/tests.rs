@@ -1,10 +1,24 @@
 #![cfg(test)]
 
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use betterlite_models::decisions::Json;
 
 use crate::s3_batch::Element;
-use crate::s3_batch::ndjson_batch_file::{batch_file_elements, batch_file_mode_active};
+use crate::s3_batch::ndjson_batch_file::{
+    batch_file_elements, batch_file_mode_active, batch_stamp,
+};
 use crate::s3_transport::batch_element::ContentType;
+use crate::s3_transport::signing::Clock;
+
+#[derive(Debug)]
+struct FixedClock(SystemTime);
+
+impl Clock for FixedClock {
+    fn now(&self) -> SystemTime {
+        self.0
+    }
+}
 
 fn payload(text: &str) -> Json {
     serde_json::from_str(text).expect("the payload is JSON")
@@ -125,4 +139,12 @@ fn disables_when_cold_storage() {
     assert!(batch_file_mode_active(true, None));
     assert!(!batch_file_mode_active(false, None));
     assert!(!batch_file_mode_active(false, Some("s3_v2")));
+}
+
+#[test]
+fn stamps_batch_files_with_the_clock_time() {
+    let moment = UNIX_EPOCH
+        .checked_add(Duration::from_secs(1_767_323_045))
+        .expect("the clock fits");
+    assert_eq!(batch_stamp(&FixedClock(moment)), "03-04-05");
 }
