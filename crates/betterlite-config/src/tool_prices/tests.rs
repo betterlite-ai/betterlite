@@ -96,6 +96,7 @@ fn loads_builtin_tool_prices(#[case] pairs: &[(&str, &str)], #[case] expected: T
 #[case::bare_exponent("1e")]
 #[case::huge_exponent("1e99999999999999999999")]
 #[case::beyond_the_decimal_range("1e40")]
+#[case::underscore_separators("1_000")]
 fn a_bad_price_names_the_variable_and_not_the_value(#[case] text: &str) {
     let error = load_tool_prices(&environment(&[(AZURE_VECTOR_STORE_ENV, text)])).unwrap_err();
     assert!(matches!(

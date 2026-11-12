@@ -491,6 +491,29 @@ fn an_empty_vector_store_usage_is_skipped_even_with_a_null_rate() {
 }
 
 #[test]
+fn a_half_filled_vector_store_usage_is_still_billed() {
+    let info = info_with(|info| {
+        info.vector_store_per_gb_per_day = Rate::Null;
+    });
+    let source = FakeSource::default().with_entry("gpt-4o", Some("azure"), info);
+    let reply = response(QUIET);
+    let params = params_with(|params| {
+        params.vector_store_usage = Some(VectorStoreUsage {
+            storage_gb: Some(money(2, 0)),
+            days: None,
+        });
+    });
+    let asked = request(Some("azure"), &reply, &params);
+    let null_rate = ToolFeeError::NullRate {
+        field: RateField::VectorStoreCostPerGbPerDay,
+    };
+    assert_eq!(
+        price(&source, &FakePolicy::default(), &PRICES, &asked),
+        Err(null_rate)
+    );
+}
+
+#[test]
 fn a_failed_catalog_lookup_leaves_azure_defaults() {
     let source = FakeSource::default().with_container("azure", Err(LookupFailed));
     let reply = response(QUIET);
