@@ -27,6 +27,7 @@ fn characters(text: &str) -> Vec<char> {
 #[case::non_ascii_tie("m\u{fc}nchen", "munchen", 6, 12, 14)]
 #[case::first_argument_is_the_window("aba", "babba", 3, 6, 8)]
 #[case::reversed_first_argument("babba", "aba", 2, 4, 8)]
+#[case::right_boundary_repeat("aab", "bab", 2, 4, 6)]
 fn reproduces_pythons_sequence_matcher(
     #[case] first: &str,
     #[case] second: &str,

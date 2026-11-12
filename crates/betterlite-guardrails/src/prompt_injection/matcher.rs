@@ -33,33 +33,16 @@ pub fn matching_characters(first: &[char], second: &[char]) -> usize {
         second_low: 0,
         second_high: second.len(),
     }];
-    let mut matched: usize = 0;
+    let mut blocks = Vec::new();
     while let Some(bounds) = queue.pop() {
-        let (first_start, second_start, size) = longest_match(first, second, &positions, bounds);
+        let (first_start, second_start, size) = longest_match(first, &positions, bounds);
         if size == 0 {
             continue;
         }
-        matched = matched.saturating_add(size);
-        if bounds.first_low < first_start && bounds.second_low < second_start {
-            queue.push(Bounds {
-                first_low: bounds.first_low,
-                first_high: first_start,
-                second_low: bounds.second_low,
-                second_high: second_start,
-            });
-        }
-        let first_end = first_start.saturating_add(size);
-        let second_end = second_start.saturating_add(size);
-        if first_end < bounds.first_high && second_end < bounds.second_high {
-            queue.push(Bounds {
-                first_low: first_end,
-                first_high: bounds.first_high,
-                second_low: second_end,
-                second_high: bounds.second_high,
-            });
-        }
+        blocks.push(size);
+        enqueue_subregions(&mut queue, bounds, first_start, second_start, size);
     }
-    matched
+    blocks.iter().sum()
 }
 
 fn positions(second: &[char]) -> HashMap<char, Vec<usize>> {
@@ -70,10 +53,43 @@ fn positions(second: &[char]) -> HashMap<char, Vec<usize>> {
     positions
 }
 
-// difflib's find_longest_match with no junk function: ties keep the earliest start in a, then in b
+fn enqueue_subregions(
+    queue: &mut Vec<Bounds>,
+    bounds: Bounds,
+    first_start: usize,
+    second_start: usize,
+    size: usize,
+) {
+    let left_gap = first_start
+        .saturating_sub(bounds.first_low)
+        .min(second_start.saturating_sub(bounds.second_low));
+    if left_gap >= 1 {
+        queue.push(Bounds {
+            first_low: bounds.first_low,
+            first_high: first_start,
+            second_low: bounds.second_low,
+            second_high: second_start,
+        });
+    }
+    let first_end = first_start.saturating_add(size);
+    let second_end = second_start.saturating_add(size);
+    let right_gap = bounds
+        .first_high
+        .saturating_sub(first_end)
+        .min(bounds.second_high.saturating_sub(second_end));
+    if right_gap >= 1 {
+        queue.push(Bounds {
+            first_low: first_end,
+            first_high: bounds.first_high,
+            second_low: second_end,
+            second_high: bounds.second_high,
+        });
+    }
+}
+
+// The backward and forward extension past junk is dead without a junk function, so difflib omits its effect.
 fn longest_match(
     first: &[char],
-    second: &[char],
     positions: &HashMap<char, Vec<usize>>,
     bounds: Bounds,
 ) -> (usize, usize, usize) {
@@ -107,31 +123,6 @@ fn longest_match(
             }
         }
         previous_lengths = lengths;
-    }
-    extend_match(first, second, bounds, best)
-}
-
-fn extend_match(
-    first: &[char],
-    second: &[char],
-    bounds: Bounds,
-    mut best: (usize, usize, usize),
-) -> (usize, usize, usize) {
-    while best.0 > bounds.first_low
-        && best.1 > bounds.second_low
-        && first.get(best.0.saturating_sub(1)) == second.get(best.1.saturating_sub(1))
-    {
-        best = (
-            best.0.saturating_sub(1),
-            best.1.saturating_sub(1),
-            best.2.saturating_add(1),
-        );
-    }
-    while best.0.saturating_add(best.2) < bounds.first_high
-        && best.1.saturating_add(best.2) < bounds.second_high
-        && first.get(best.0.saturating_add(best.2)) == second.get(best.1.saturating_add(best.2))
-    {
-        best.2 = best.2.saturating_add(1);
     }
     best
 }
