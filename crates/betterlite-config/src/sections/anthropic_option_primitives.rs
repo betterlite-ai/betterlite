@@ -143,9 +143,9 @@ where
     };
     let base = format!("{prefix}.metadata");
     let mut resolved = IndexMap::with_capacity(fields.len());
-    for (key, value) in fields {
+    for (key, field) in fields {
         let path = format!("{base}.{key}");
-        resolved.insert(key, resolved_json(value, &path, lookup)?);
+        resolved.insert(key, resolved_json(field, &path, lookup)?);
     }
     Ok(Some(resolved))
 }
