@@ -440,7 +440,7 @@ fn tool_calls_are_none_without_function_calls() {
 fn arguments_keep_unicode_and_input_order() {
     let mut ids = fixed_ids();
     let (_, tools, _) = transform(
-        &parts(r#"[{"functionCall":{"name":"f","args":{"b":"lλ","a":1}}}]"#),
+        &parts(r#"[{"functionCall":{"name":"f","args":{"b":"l\u03bb","a":1}}}]"#),
         0,
         CallMode::Tools,
         &mut ids,
