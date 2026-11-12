@@ -265,7 +265,7 @@ fn request(
         host,
         custom_llm_provider: "gemini".to_owned(),
         api_key: Some(SecretString::from("key")),
-        api_base: None,
+        api_base: Some("https://interactions.example".to_owned()),
         polling_enabled: true,
         initial_interval: Duration::from_secs(5),
         max_interval: Duration::from_secs(10),
@@ -777,7 +777,15 @@ async fn maybe_schedule_poll_tracks_a_pollable_response() {
         script.fetch()
     ));
     yield_now().await;
-    assert!(registry.active_poll("interaction-1").is_some());
+    let poll = registry
+        .active_poll("interaction-1")
+        .expect("the scheduled poll is tracked");
+    assert_eq!(poll.custom_llm_provider, "gemini");
+    assert_eq!(
+        poll.api_base.as_deref(),
+        Some("https://interactions.example")
+    );
+    assert!(poll.api_key.is_some());
     registry.shutdown().await;
 }
 
