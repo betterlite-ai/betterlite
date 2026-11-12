@@ -164,6 +164,19 @@ async fn a_missing_module_is_reported_as_an_import_error() {
 }
 
 #[tokio::test]
+async fn a_missing_module_without_an_instance_name_keeps_the_import_error() {
+    let loader = loader_without_modules();
+    let error = loader
+        .load("b8042_no_such_module.", None)
+        .await
+        .unwrap_err();
+    let LoadError::Python(failure) = &error else {
+        panic!("expected the import error to pass through, got {error:?}");
+    };
+    assert_eq!(failure.type_name, "ModuleNotFoundError");
+}
+
+#[tokio::test]
 async fn a_missing_attribute_is_a_passed_through_python_error() {
     let loader = loader_without_modules();
     let error = loader.load("json.b8042_missing", None).await.unwrap_err();
