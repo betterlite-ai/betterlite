@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-summary-no-blocks-chat
+call:
+  b3545: {"function": "summary", "protocol": "chat", "response": {"choices": [{"message": {"provider_specific_fields": {"compaction_blocks": []}}}]}}
+env: {}
+compare:
+  ignore: []

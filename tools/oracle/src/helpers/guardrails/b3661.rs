@@ -1,9 +1,136 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_translation::bedrock_streaming::BedrockGuardrailStreamParams;
+use betterlite_config::sections::guardrail_translation::{
+    BedrockChecksConfigModel, BedrockGuardrailConfigModel, JavelinGuardrailConfigModel,
+    LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel, PillarGuardrailConfigModel,
+    ZscalerAIGuardConfigModel,
+};
+use betterlite_guardrails::guardrail_translation::{
+    StreamTransformSink, StreamingScanKey, merge_user_key_metadata, transform_user_key_metadata,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::helpers::{Helper, HelperError, HelperResult};
+
+#[path = "b3661/guardrail_provider_options/tests.rs"]
+mod guardrail_provider_options;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Function {
+    BedrockChecks,
+    BedrockGuardrail,
+    BedrockStreamingFromExtras,
+    ProviderConfig,
+    ScanKey,
+    UserMetadata,
+    MergeMetadata,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b3661")
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Model {
+    Bedrock,
+    LakeraV2,
+    Pillar,
+    Noma,
+    Zscaler,
+    Javelin,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    function: Function,
+    model: Model,
+    body: Value,
+    extras: Option<BTreeMap<String, GuardrailValue>>,
+    request_data: BTreeMap<String, GuardrailValue>,
+    user_api_key_dict: Option<BTreeMap<String, GuardrailValue>>,
+    key: StreamingScanKey,
+    other_key: StreamingScanKey,
+    sink_mutated: BTreeMap<i64, String>,
+    sink_holdback: BTreeMap<i64, i64>,
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        match input.function {
+            Function::BedrockChecks => verdict(BedrockChecksConfigModel::deserialize(&input.body)),
+            Function::BedrockGuardrail => {
+                verdict(BedrockGuardrailConfigModel::deserialize(&input.body))
+            }
+            Function::BedrockStreamingFromExtras => verdict(
+                BedrockGuardrailStreamParams::from_extras(input.extras.as_ref()),
+            ),
+            Function::ProviderConfig => match input.model {
+                Model::Bedrock => verdict(BedrockGuardrailConfigModel::deserialize(&input.body)),
+                Model::LakeraV2 => verdict(LakeraV2GuardrailConfigModel::deserialize(&input.body)),
+                Model::Pillar => verdict(PillarGuardrailConfigModel::deserialize(&input.body)),
+                Model::Noma => verdict(NomaGuardrailConfigModel::deserialize(&input.body)),
+                Model::Zscaler => verdict(ZscalerAIGuardConfigModel::deserialize(&input.body)),
+                Model::Javelin => verdict(JavelinGuardrailConfigModel::deserialize(&input.body)),
+            },
+            Function::ScanKey => Ok(scan_key(input)),
+            Function::UserMetadata => encode(transform_user_key_metadata(
+                input.user_api_key_dict.as_ref(),
+            )),
+            Function::MergeMetadata => merge_metadata(input),
+        }
     }
+}
+
+fn scan_key(input: &Input) -> Value {
+    let mut sink = StreamTransformSink::default();
+    for (index, text) in &input.sink_mutated {
+        sink.mutated_text_per_choice.insert(*index, text.clone());
+    }
+    for (index, holdback) in &input.sink_holdback {
+        sink.holdback_per_choice.insert(*index, *holdback);
+    }
+    json!({
+        "equal": input.key == input.other_key,
+        "has_nothing_to_scan": input.key.has_nothing_to_scan(),
+        "mutated": sink.mutated_text_per_choice,
+        "holdback": sink.holdback_per_choice,
+    })
+}
+
+fn merge_metadata(input: &Input) -> HelperResult {
+    let mut request_data = input.request_data.clone();
+    merge_user_key_metadata(&mut request_data, input.user_api_key_dict.as_ref());
+    encode(request_data)
+}
+
+fn verdict<T, E>(outcome: Result<T, E>) -> HelperResult
+where
+    T: Serialize,
+{
+    match outcome {
+        Ok(model) => Ok(json!({"accepted": true, "dump": encode(model)?})),
+        Err(_) => Ok(json!({"accepted": false})),
+    }
+}
+
+fn encode<T>(value: T) -> HelperResult
+where
+    T: Serialize,
+{
+    serde_json::to_value(value).map_err(|error| {
+        Box::new(HelperError {
+            class: "SerializationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })
 }

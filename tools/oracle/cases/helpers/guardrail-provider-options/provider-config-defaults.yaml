@@ -1,0 +1,16 @@
+kind: helper
+name: provider-config-defaults
+call:
+  b3661:
+    function: provider_config
+    model: bedrock
+    body: {}
+    extras: null
+    request_data: {}
+    user_api_key_dict: null
+    key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    other_key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    sink_mutated: {}
+    sink_holdback: {}
+env: {}
+compare: {ignore: []}

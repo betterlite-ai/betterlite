@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch-chat-options
+call:
+  b3545: {"function": "dispatch", "protocol": "chat", "payload": {"model": "anthropic/claude-opus-4-7", "messages": [{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}], "temperature": 0.5, "max_tokens": 32, "compaction": {"type": "summarize"}, "extra_headers": {"anthropic-beta": "compact-2026-09-04"}}, "reply_id": "chat_2"}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,41 @@
+kind: helper
+name: output-call-identity
+call:
+  responses_tool_results:
+    operation: output_call_identity
+    identities:
+      - {id: fc_i, call_id: call_unique}
+      - {id: fc_i, call_id: call_0}
+      - {id: fc_i, call_id: call_123}
+      - {id: fc_i, call_id: null}
+      - {id: fc_i, call_id: ""}
+      - {id: null, call_id: call_0}
+      - {id: "", call_id: call_0}
+      - {id: null, call_id: null}
+      - {id: fc_i, call_id: "call_٣"}
+      - {id: fc_i, call_id: call_1a}
+      - {id: fc_i, call_id: call_}
+      - {id: fc_i, call_id: xcall_1}
+      - {id: fc_i, call_id: "call_1\n"}
+    functions:
+      - {name: shell, arguments: '{"a":1}', id: fc_i, call_id: call_0, provider: null}
+      - {name: shell, arguments: '{"a":1}', id: null, call_id: null, provider: null}
+      - name: shell
+        arguments: '{"a":1}'
+        id: fc_i
+        call_id: c
+        provider: {kind: plain, fields: {thought_signature: abc}}
+      - name: shell
+        arguments: '{"a":1}'
+        id: fc_i
+        call_id: c
+        provider: {kind: record, fields: {thought_signature: abc}}
+      - {name: shell, arguments: "", id: fc_i, call_id: c, provider: {kind: plain, fields: {}}}
+      - {name: shell, arguments: "", id: fc_i, call_id: c, provider: {kind: record, fields: {}}}
+    patches:
+      - {call_id: call_0, index: 4, operation: {type: create_file, path: a.rs, diff: "+x"}}
+      - {call_id: call_0, index: 4, operation: {type: update_file, path: b.rs, diff: "@@é"}}
+      - {call_id: call_0, index: 4, operation: {type: delete_file, path: c.rs}}
+env: {}
+compare:
+  ignore: []

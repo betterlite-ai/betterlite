@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-capability-catalog-provider-qualified
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-x: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+      packaged:
+        claude-x: {thinking_always_on: true}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - {function: provider_qualified_catalog, model: claude-x, custom_llm_provider: anthropic}
+env: {}
+compare: {ignore: []}

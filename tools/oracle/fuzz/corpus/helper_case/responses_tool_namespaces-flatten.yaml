@@ -1,0 +1,17 @@
+kind: helper
+name: responses-tool-namespaces-flatten
+call:
+  responses_tool_namespaces:
+    operation: tools_to_chat
+    tools:
+      - type: namespace
+        name: crm
+        description: CRM tools
+        tools:
+          - {type: function, name: lookup, description: Find a contact, strict: true}
+          - {type: custom, name: patch}
+      - {type: function, name: top}
+      - {type: shell}
+env: {}
+compare:
+  ignore: []
