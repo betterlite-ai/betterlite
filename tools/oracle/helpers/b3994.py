@@ -1,5 +1,4 @@
 import asyncio
-import json
 import re
 import time
 from collections import Counter
@@ -13,8 +12,11 @@ from litellm.integrations.adaptive_concurrency import AdaptiveConcurrencyLimiter
 from litellm.integrations.s3_v2 import S3Logger
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
+from pydantic import JsonValue, TypeAdapter, ValidationError
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+Json: TypeAlias = JsonValue
+
+JSON_LINE: TypeAdapter[Json] = TypeAdapter(Json)
 
 
 class Element(TypedDict):
@@ -87,14 +89,14 @@ def build_logger(
     source: dict[str, Json], client: Client
 ) -> tuple[S3Logger, AdaptiveConcurrencyLimiter | None]:
     logger = object.__new__(S3Logger)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L118
-    logger._init_s3_params(params_source=source)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
+    logger._init_s3_params(params_source=source)  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
     logger.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
     logger.log_queue = []
     logger.max_queue_size = logger.s3_max_queue_size
     BaseAWSLLM.__init__(logger)
-    logger._requeued_count = 0
-    logger._flush_dropped = {}
-    logger._flush_retries = 0
+    logger._requeued_count = 0  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L245
+    logger._flush_dropped = {}  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L247
+    logger._flush_retries = 0  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L246
     logger.flush_lock = asyncio.Lock()
     limiter = None
     if logger.s3_adaptive_concurrency:
@@ -103,9 +105,9 @@ def build_logger(
             logger.s3_max_concurrent_uploads,
             max(logger.s3_max_concurrent_uploads, logger.s3_max_adaptive_concurrency),
         )
-        logger._upload_limiter = limiter
+        logger._upload_limiter = limiter  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213
     else:
-        logger._upload_limiter = asyncio.Semaphore(logger.s3_max_concurrent_uploads)
+        logger._upload_limiter = asyncio.Semaphore(logger.s3_max_concurrent_uploads)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213
     return logger, limiter
 
 
@@ -113,8 +115,8 @@ def body_lines(body: str) -> list[Json]:
     lines: list[Json] = []
     for line in body.split("\n"):
         try:
-            value: Json = json.loads(line)
-        except json.JSONDecodeError:
+            value = JSON_LINE.validate_json(line)
+        except ValidationError:
             value = line
         lines.append(value)
     return lines
@@ -167,7 +169,7 @@ async def execute(input_value: Input) -> dict[str, Json]:
                 {
                     "requests": requests,
                     "queue": remaining,
-                    "requeued_count": logger._requeued_count,  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L246
+                    "requeued_count": logger._requeued_count,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L245
                     "limit": (fallback if limiter is None else limiter.limit),
                 }
             )
