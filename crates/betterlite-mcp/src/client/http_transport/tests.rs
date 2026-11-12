@@ -257,11 +257,21 @@ struct MergingAuth;
 impl ResolvedAuth for MergingAuth {
     fn authenticate(
         &self,
-        mut request: CredentialRequest,
+        request: CredentialRequest,
     ) -> Result<CredentialRequest, CredentialError> {
-        let seen = request.headers.get("x-config").cloned().unwrap_or_default();
-        request.headers.insert("x-credential".to_owned(), seen);
-        Ok(request)
+        let CredentialRequest {
+            method,
+            url,
+            mut headers,
+        } = request;
+        if let Some(seen) = headers.get("x-config").cloned() {
+            headers.insert("x-credential".to_owned(), seen);
+        }
+        Ok(CredentialRequest {
+            method,
+            url,
+            headers,
+        })
     }
 
     fn close(&self) {}
@@ -278,6 +288,14 @@ impl ResolvedAuth for FailingAuth {
     }
 
     fn close(&self) {}
+}
+
+fn with_token(mut request: CredentialRequest, attempt: usize) -> CredentialRequest {
+    request.headers.insert(
+        "authorization".to_owned(),
+        format!("Bearer token-{attempt}"),
+    );
+    request
 }
 
 struct ScriptedAuth {
@@ -299,14 +317,10 @@ impl ScriptedAuth {
 impl ResolvedAuth for ScriptedAuth {
     fn authenticate(
         &self,
-        mut request: CredentialRequest,
+        request: CredentialRequest,
     ) -> Result<CredentialRequest, CredentialError> {
         let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
-        request.headers.insert(
-            "authorization".to_owned(),
-            format!("Bearer token-{attempt}"),
-        );
-        Ok(request)
+        Ok(with_token(request, attempt))
     }
 
     fn close(&self) {}

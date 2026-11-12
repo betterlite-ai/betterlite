@@ -45,10 +45,11 @@ pub(super) async fn prepare(
     let mut url = request.url.clone();
     match config.credential.as_ref() {
         Some(RequestCredential::Resolved(auth)) => {
+            let pairs = header_pairs(&headers)?.into_iter().collect();
             let outcome = auth.authenticate(credentials::Request {
                 method: method.as_str().to_owned(),
                 url: url.as_str().to_owned(),
-                headers: header_text(&headers)?,
+                headers: pairs,
             });
             // httpx closes the auth flow after the request it yielded, as prepare_request_auth already does
             auth.close();
@@ -64,9 +65,9 @@ pub(super) async fn prepare(
         None => {}
     }
     if let Some(guard) = config.redirect_guard.as_ref() {
-        let mut text = header_text(&headers)?;
-        guard.apply(url.as_str(), &mut text);
-        headers = configured_headers(&text)?;
+        let mut pairs: BTreeMap<String, String> = header_pairs(&headers)?.into_iter().collect();
+        guard.apply(url.as_str(), &mut pairs);
+        headers = configured_headers(&pairs)?;
     }
     Ok(PreparedRequest {
         method,
@@ -120,7 +121,7 @@ fn configured_headers(headers: &BTreeMap<String, String>) -> Result<HeaderMap, M
     Ok(map)
 }
 
-fn header_text(headers: &HeaderMap) -> Result<BTreeMap<String, String>, McpHttpError> {
+fn header_pairs(headers: &HeaderMap) -> Result<Vec<(String, String)>, McpHttpError> {
     headers
         .iter()
         .map(|(name, value)| {
