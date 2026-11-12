@@ -1,0 +1,60 @@
+kind: helper
+name: tool-output-content
+call:
+  responses_tool_results:
+    operation: tool_output_content
+    items:
+      - {output: x}
+      - {call_id: null, output: x}
+      - {call_id: "", output: x}
+      - {call_id: 0, output: x}
+      - {call_id: c, output: null}
+      - {call_id: c}
+      - {call_id: c, output: " padded "}
+      - {call_id: c, output: ""}
+      - call_id: c
+        output:
+          - {type: input_text, text: a}
+          - {type: output_text, text: b}
+          - {type: text, text: c}
+      - call_id: c
+        output:
+          - {type: text, text: ""}
+          - {type: text, text: 7}
+          - {type: text}
+          - {type: text, text: kept}
+      - call_id: c
+        output: [x, 7, null, {type: other, text: "no"}, {text: untyped}, {type: 7, text: "no"}, {type: text, text: "yes"}]
+      - call_id: c
+        output: [{type: input_image, image_url: "https://x/a.png"}]
+      - call_id: c
+        output:
+          - {type: image_url, image_url: {url: "https://x/b.png", detail: high}, detail: low}
+      - call_id: c
+        output: [{type: input_image, url: "https://x/c.png"}]
+      - call_id: c
+        output:
+          - {type: input_image, image_url: "", url: u1}
+          - {type: input_image, image_url: {}, url: u2}
+          - {type: input_image, image_url: null, url: u3}
+      - call_id: c
+        output: [{type: input_image, url: {url: u4}}]
+      - call_id: c
+        output: [{type: input_image, image_url: {detail: low}, url: ignored}]
+      - call_id: c
+        output: [{type: input_image, image_url: {url: ""}}]
+      - call_id: c
+        output:
+          - {type: text, text: before}
+          - {type: input_image, image_url: i1}
+          - {type: output_text, text: after}
+      - {call_id: c, output: []}
+      - {call_id: c, output: [{type: audio, data: "é"}]}
+      - {call_id: c, output: {a: [1, 2]}}
+      - {call_id: c, output: 7}
+      - {call_id: c, output: true}
+      - {call_id: 7, output: x}
+      - {call_id: -3, output: x}
+env: {}
+compare:
+  ignore: []
