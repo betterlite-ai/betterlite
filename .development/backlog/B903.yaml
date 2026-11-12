@@ -1,14 +1,14 @@
 id: B903
 milestone: M5 api families
 title: Response id codecs
-status: todo
+status: done
 depends_on: [B171, B1087, B902]
 file: tasks/B903-response-id-codecs.yaml
 covers:
   - "litellm/responses/utils.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1371

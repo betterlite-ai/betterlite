@@ -1,0 +1,31 @@
+kind: sdk_http
+name: anthropic-beta-config-rejected-remote-shapes
+env: {}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load, reload, reload, reload, reload, reload]
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: []
+  - status: 200
+    headers: {content-type: application/json}
+    body: {}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {provider_aliases: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {databricks: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {bedrock_mantle: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: 'text'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

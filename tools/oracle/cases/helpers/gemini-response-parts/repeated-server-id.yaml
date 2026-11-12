@@ -1,0 +1,27 @@
+kind: helper
+name: gemini-response-parts-repeated-server-id
+call:
+  gemini_response_parts:
+    parts:
+      - toolCall:
+          id: one
+          args: {first: 1}
+      - toolResponse:
+          id: two
+          response: early
+      - toolCall:
+          id: two
+          args: {second: 2}
+      - toolCall:
+          id: one
+          args: {last: 3}
+      - toolResponse:
+          id: two
+          response: late
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}
