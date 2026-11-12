@@ -25,7 +25,7 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct DefaultsCase {
+pub(crate) struct DefaultsCase {
     defaults: OptionDefaults,
     model: Option<String>,
     default_chat_max_tokens: i64,
@@ -33,29 +33,29 @@ struct DefaultsCase {
 }
 
 #[derive(Debug, Deserialize)]
-struct CapacityCase {
+pub(crate) struct CapacityCase {
     models: Vec<Option<String>>,
     default_chat_max_tokens: i64,
 }
 
 #[derive(Debug, Deserialize)]
-struct StopCase {
+pub(crate) struct StopCase {
     drop_params: bool,
     stops: Vec<Json>,
 }
 
 #[derive(Debug, Deserialize)]
-struct WebSearchCase {
+pub(crate) struct WebSearchCase {
     values: Vec<WebSearchOptions>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ContextCase {
+pub(crate) struct ContextCase {
     values: Vec<Json>,
 }
 
 #[derive(Debug, Deserialize)]
-struct UserIdCase {
+pub(crate) struct UserIdCase {
     ids: Vec<String>,
 }
 
@@ -127,12 +127,9 @@ fn answered<T, E>(result: Result<T, E>) -> Answer
 where
     T: serde::Serialize,
 {
-    match result {
-        Ok(value) => Answer::Value {
-            value: json!(value),
-        },
-        Err(_) => Answer::Raised { raised: true },
-    }
+    result.map_or(Answer::Raised { raised: true }, |value| Answer::Value {
+        value: json!(value),
+    })
 }
 
 fn stop_answers(case: &StopCase) -> Value {
