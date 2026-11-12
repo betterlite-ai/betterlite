@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
@@ -174,7 +175,7 @@ fn assert_edit_error(fixture: &Fixture, headers: &ImageHeaders, expected: &Provi
 
 fn assert_raises<T>(result: Result<T, ImageContractError>, message: &str)
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     assert_eq!(result.expect_err("unimplemented").to_string(), message);
 }
@@ -312,69 +313,33 @@ async fn edit_async_transform_copy() {
 }
 
 fn class_entries() -> Vec<ImageClassEntry> {
-    let rows: [(&str, ImageClassKind, Json, bool); 13] = [
-        (
-            "n",
-            ImageClassKind::Value,
-            Json::Number(Number::from(0_i32)),
-            false,
-        ),
-        ("enabled", ImageClassKind::Value, Json::Bool(false), false),
-        (
-            "label",
-            ImageClassKind::Value,
-            Json::Text(String::new()),
-            false,
-        ),
-        ("none", ImageClassKind::Value, Json::Null, false),
-        (
-            "__private",
-            ImageClassKind::Value,
-            Json::Number(Number::from(1_i32)),
-            false,
-        ),
-        (
-            "_abc_x",
-            ImageClassKind::Value,
-            Json::Number(Number::from(2_i32)),
-            false,
-        ),
-        ("method", ImageClassKind::Function, Json::Null, false),
-        (
-            "builtin",
-            ImageClassKind::BuiltinFunction,
-            Json::Null,
-            false,
-        ),
-        (
-            "class_method",
-            ImageClassKind::ClassMethod,
-            Json::Null,
-            false,
-        ),
-        (
-            "static_method",
-            ImageClassKind::StaticMethod,
-            Json::Null,
-            false,
-        ),
-        ("prop", ImageClassKind::Property, Json::Null, false),
-        (
-            "callable",
-            ImageClassKind::CallableObject,
-            Json::Null,
-            false,
-        ),
-        (
-            "size",
-            ImageClassKind::Value,
-            Json::Number(Number::from(3_i32)),
-            true,
-        ),
+    let values = [
+        ("n", Json::Number(Number::from(0_i32)), false),
+        ("enabled", Json::Bool(false), false),
+        ("label", Json::Text(String::new()), false),
+        ("none", Json::Null, false),
+        ("__private", Json::Number(Number::from(1_i32)), false),
+        ("_abc_x", Json::Number(Number::from(2_i32)), false),
+        ("size", Json::Number(Number::from(3_i32)), true),
     ];
-    rows.into_iter()
-        .map(|(name, kind, value, inherited)| class_entry(name, kind, value, inherited))
-        .collect()
+    let kinds = [
+        ("method", ImageClassKind::Function),
+        ("builtin", ImageClassKind::BuiltinFunction),
+        ("class_method", ImageClassKind::ClassMethod),
+        ("static_method", ImageClassKind::StaticMethod),
+        ("prop", ImageClassKind::Property),
+        ("callable", ImageClassKind::CallableObject),
+    ];
+    let mut entries: Vec<ImageClassEntry> = values
+        .into_iter()
+        .map(|(name, value, inherited)| class_entry(name, ImageClassKind::Value, value, inherited))
+        .collect();
+    entries.extend(
+        kinds
+            .into_iter()
+            .map(|(name, kind)| class_entry(name, kind, Json::Null, false)),
+    );
+    entries
 }
 
 fn assert_class_config(config: &ImageConfig) {
