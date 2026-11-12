@@ -15,7 +15,6 @@ use betterlite_openai::api::audio_file_input::{
     HEALTH_AUDIO_FILE_NAME, HEALTH_CHECK_AUDIO, get_audio_file_name, open_health_check_audio,
     process_audio_file,
 };
-use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -120,7 +119,7 @@ fn duration_outcome(file: &mut File, files: &FixtureFiles) -> Value {
     };
     let available = AudioDecoder::Available(&decoder);
     let seconds = calculate_request_duration(&mut file.as_file(), files, available);
-    let duration = seconds.and_then(|decimal| decimal.to_f64());
+    let duration = seconds.and_then(|decimal| decimal.to_string().parse::<f64>().ok());
     json!({ "ok": true, "value": { "duration": duration, "position": file.stream_position() } })
 }
 
