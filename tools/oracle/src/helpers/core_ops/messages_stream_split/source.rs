@@ -4,6 +4,7 @@ use betterlite_core::api::messages_stream_split::{AsyncChunkSource, ChunkSource}
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 
+#[derive(Clone)]
 pub(super) struct ScriptedSource {
     pub(super) chunks: Vec<StreamChunk>,
     pub(super) next: usize,

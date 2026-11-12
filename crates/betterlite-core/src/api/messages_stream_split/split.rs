@@ -142,8 +142,8 @@ fn unsigned_thinking_text(blocks: &JsonValue) -> Option<String> {
         if is_present(fields.get("signature")) {
             return None;
         }
-        if fields.get("type").and_then(text_of) == Some("thinking")
-            && let Some(thinking) = fields.get("thinking").and_then(text_of)
+        if fields.get("type").and_then(JsonValue::as_str) == Some("thinking")
+            && let Some(thinking) = fields.get("thinking").and_then(JsonValue::as_str)
         {
             text.push_str(thinking);
         }
@@ -184,17 +184,6 @@ fn is_present(value: Option<&JsonValue>) -> bool {
         Some(JsonValue::String(text)) => !text.is_empty(),
         Some(JsonValue::Array(items)) => !items.is_empty(),
         Some(JsonValue::Object(fields)) => !fields.is_empty(),
-    }
-}
-
-fn text_of(value: &JsonValue) -> Option<&str> {
-    match value {
-        JsonValue::String(text) => Some(text),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => None,
     }
 }
 
