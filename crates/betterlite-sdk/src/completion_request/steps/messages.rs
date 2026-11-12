@@ -141,9 +141,8 @@ pub(crate) fn system_messages(state: &mut Preparation<'_>) -> RequestResult<()> 
     state.call.messages = messages_from_builtin(&map_system_message_pt(&messages)?)?;
     Ok(())
 }
-pub(crate) fn drop_tool_keys(state: &mut Preparation<'_>) {
-    let provider = state.call.custom_llm_provider.as_deref();
-    if is_claude_tool_target(provider, &state.call.model) {
+pub(crate) fn drop_tool_keys(state: &mut Preparation<'_>, provider: &str) {
+    if is_claude_tool_target(Some(provider), &state.call.model) {
         return;
     }
     state.call.tools = drop_anthropic_only_tool_keys(state.call.tools.as_deref());

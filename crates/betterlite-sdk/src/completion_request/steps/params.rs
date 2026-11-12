@@ -141,14 +141,12 @@ pub(crate) fn router_params(state: &mut Preparation<'_>) -> RequestResult<()> {
     Ok(())
 }
 pub(crate) fn drop_params_flag(kwargs: &JsonObject) -> Option<bool> {
-    let encoded = serde_json::to_value(kwargs.get("drop_params")?).ok()?;
-    let parsed: DropParams = serde_json::from_value(encoded).ok()?;
-    normalize_drop_params(Some(&parsed))
-}
-pub(crate) fn provider_name(state: &Preparation<'_>) -> String {
-    state
-        .call
-        .custom_llm_provider
-        .clone()
-        .unwrap_or_else(|| String::from("openai"))
+    normalize_drop_params(
+        match kwargs.get("drop_params")? {
+            Json::Bool(flag) => Some(DropParams::Flag(*flag)),
+            Json::Text(text) => Some(DropParams::Text(text.clone())),
+            Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        }
+        .as_ref(),
+    )
 }

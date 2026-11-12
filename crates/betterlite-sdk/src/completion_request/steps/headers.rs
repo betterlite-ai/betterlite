@@ -41,10 +41,9 @@ fn provider_header_entries(
         HeaderEntries::Many(entries) => Ok(Some(entries)),
     }
 }
-pub(crate) fn provider_specific(state: &mut Preparation<'_>) -> RequestResult<()> {
+pub(crate) fn provider_specific(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
     let entries = provider_header_entries(state)?;
-    let provider = state.call.custom_llm_provider.as_deref();
-    let scoped = provider_specific_headers(entries.as_deref(), provider);
+    let scoped = provider_specific_headers(entries.as_deref(), Some(provider));
     apply_text_headers(&mut state.call, scoped);
     Ok(())
 }

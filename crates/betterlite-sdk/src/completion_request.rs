@@ -69,22 +69,22 @@ async fn run(state: &mut Preparation<'_>) -> RequestResult<PreparedCompletion> {
     if let Some(outcome) = steps::provider::early_exit(state)? {
         return Ok(outcome);
     }
-    steps::provider::resolve(state)?;
-    steps::bridge::early(state)?;
-    steps::messages::drop_tool_keys(state);
-    steps::headers::provider_specific(state)?;
-    steps::provider::hidden_params(state);
-    steps::provider::timeout(state)?;
-    steps::provider::pricing(state).await?;
+    let provider = steps::provider::resolve(state)?;
+    steps::bridge::early(state, &provider)?;
+    steps::messages::drop_tool_keys(state, &provider);
+    steps::headers::provider_specific(state, &provider)?;
+    steps::provider::hidden_params(state, &provider);
+    steps::provider::timeout(state, &provider)?;
+    steps::provider::pricing(state, &provider).await?;
     steps::provider::custom_prompt(state);
     steps::messages::file_ids(state)?;
     steps::messages::developer_role(state);
     steps::messages::system_messages(state)?;
-    steps::assemble::assemble(state)?;
+    steps::assemble::assemble(state, &provider)?;
     steps::finish::litellm_params(state)?;
     steps::headers::affinity(state)?;
     steps::finish::environment(state);
-    steps::finish::mock_or_bridge(state)
+    steps::finish::mock_or_bridge(state, &provider)
 }
 pub async fn prepare_acompletion<'call, 'ports>(
     args: &'call CompletionArgs,

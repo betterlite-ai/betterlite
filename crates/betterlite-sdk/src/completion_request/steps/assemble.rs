@@ -1,6 +1,6 @@
 use super::convert::{builtin_messages, convert, messages_from_builtin, typed_from};
 use super::messages::{optional, text_of};
-use super::params::{drop_params_flag, provider_name};
+use super::params::drop_params_flag;
 use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
 use crate::completion_request::error::{CompletionRequestError, RequestResult};
@@ -29,13 +29,60 @@ where
     }
     Ok(())
 }
+// LiteLLM's optional_param_args: the only names that reach get_optional_params; every other kwarg stays in non_default_params.
+const NAMED_ARGUMENT_KEYS: &[&str] = &[
+    "functions",
+    "function_call",
+    "temperature",
+    "top_p",
+    "n",
+    "stream",
+    "stream_options",
+    "stop",
+    "max_tokens",
+    "max_completion_tokens",
+    "modalities",
+    "prediction",
+    "audio",
+    "presence_penalty",
+    "frequency_penalty",
+    "logit_bias",
+    "user",
+    "model",
+    "custom_llm_provider",
+    "response_format",
+    "seed",
+    "tools",
+    "tool_choice",
+    "max_retries",
+    "logprobs",
+    "top_logprobs",
+    "api_version",
+    "parallel_tool_calls",
+    "messages",
+    "reasoning_effort",
+    "verbosity",
+    "thinking",
+    "web_search_options",
+    "include_server_side_tool_invocations",
+    "safety_identifier",
+    "service_tier",
+    "store",
+    "prompt_cache_key",
+    "allowed_openai_params",
+    "base_model",
+];
 fn named_arguments(state: &Preparation<'_>) -> RequestResult<JsonObject> {
     let encoded = serde_json::to_value(state.args)?;
     let mut params: JsonObject = serde_json::from_value(encoded)?;
-    params.shift_remove("model_list");
-    params.shift_remove("kwargs");
-    params.retain(|_name, value| !matches!(value, Json::Null));
+    params.retain(|name, value| {
+        NAMED_ARGUMENT_KEYS.contains(&name.as_str()) && !matches!(value, Json::Null)
+    });
     params.insert(String::from("model"), Json::Text(state.call.model.clone()));
+    params.insert(
+        String::from("messages"),
+        convert::<Json, _>(&state.call.messages)?,
+    );
     override_field(
         &mut params,
         "custom_llm_provider",
@@ -164,7 +211,7 @@ fn processed_non_default(
     )?;
     convert::<JsonObject, _>(&processed)
 }
-pub(crate) fn assemble(state: &mut Preparation<'_>) -> RequestResult<()> {
+pub(crate) fn assemble(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
     let additional_drop =
         optional::<Vec<String>>(&state.kwargs, "additional_drop_params")?.unwrap_or_default();
     let allowed = allowed_params(state)?;
@@ -173,7 +220,7 @@ pub(crate) fn assemble(state: &mut Preparation<'_>) -> RequestResult<()> {
         extra: convert::<Params, _>(&state.non_default)?,
         additional_drop,
         allowed,
-        provider: provider_name(state),
+        provider: provider.to_owned(),
     };
     let chat_policy = state.ports.model_metadata.chat_policy(
         &state.call.model,

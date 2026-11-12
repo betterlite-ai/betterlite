@@ -262,14 +262,16 @@ async fn provider_deployment_id_becomes_an_azure_model() {
 }
 
 #[tokio::test]
-async fn provider_explicit_settings_base_and_key_win() {
+async fn provider_global_settings_key_and_base_stay_out_of_the_lookup() {
     let mut fixture = Fixture::new();
     fixture.settings.api_base = Some(String::from("https://proxy.test/v1"));
     fixture.settings.api_key = Some(SecretString::from(String::from("global-key")));
-    run(&fixture).await.unwrap();
+    let call = call_of(run(&fixture).await.unwrap());
     let recorded = &lookups(&fixture.metadata)[0];
-    assert_eq!(recorded.api_base.as_deref(), Some("https://proxy.test/v1"));
-    assert!(recorded.has_key);
+    assert_eq!(recorded.api_base, None);
+    assert!(!recorded.has_key);
+    assert_eq!(call.api_base, None);
+    assert!(call.api_key.is_none());
 }
 
 #[tokio::test]
@@ -312,7 +314,28 @@ async fn provider_dynamic_key_wins_over_the_request_key() {
     fixture.args.api_key = Some(SecretString::from(String::from("request-key")));
     fixture.metadata.dynamic_key = Some(String::from("dynamic-key"));
     let call = call_of(run(&fixture).await.unwrap());
+    assert!(lookups(&fixture.metadata)[0].has_key);
     assert_eq!(call.api_key.unwrap().expose_secret(), "dynamic-key");
+}
+
+#[tokio::test]
+async fn provider_metadata_kwarg_stays_out_of_the_parameters() {
+    let mut fixture = Fixture::new();
+    fixture.args.kwargs.insert(
+        String::from("metadata"),
+        json(r#"{"user_api_key":"key-1"}"#),
+    );
+    fixture.args.kwargs.insert(
+        String::from("proxy_server_request"),
+        json(r#"{"headers":{"Authorization":"Bearer sk-live"}}"#),
+    );
+    fixture.metadata.resolved_provider = Some("anthropic");
+    let call = call_of(run(&fixture).await.unwrap());
+    let recorded = parameters(&fixture.metadata);
+    assert!(!recorded[0].passthrough.contains_key("metadata"));
+    assert!(!recorded[0].passthrough.contains_key("proxy_server_request"));
+    assert!(!call.non_default_params.contains_key("metadata"));
+    assert!(!call.non_default_params.contains_key("proxy_server_request"));
 }
 
 #[tokio::test]
@@ -811,6 +834,26 @@ async fn provider_environment_uses_the_processed_parameters() {
     let updates = fixture.logging.updates.lock().unwrap().clone();
     assert!(updates[0].optional_params.contains_key("max_tokens"));
     assert!(!updates[0].optional_params.contains_key("custom_key"));
+}
+
+#[rstest::rstest]
+#[case::flag(Some(json("true")), Some(true))]
+#[case::text(Some(json("\"true\"")), Some(true))]
+#[case::absent(None, None)]
+#[tokio::test]
+async fn provider_litellm_params_take_the_call_drop_params(
+    #[case] given: Option<Json>,
+    #[case] expected: Option<bool>,
+) {
+    let mut fixture = Fixture::new();
+    if let Some(value) = given {
+        fixture
+            .args
+            .kwargs
+            .insert(String::from("drop_params"), value);
+    }
+    let call = call_of(run(&fixture).await.unwrap());
+    assert_eq!(call.litellm_params.drop_params, expected);
 }
 
 #[tokio::test]

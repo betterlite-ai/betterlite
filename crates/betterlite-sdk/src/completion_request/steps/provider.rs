@@ -1,5 +1,4 @@
 use super::messages::{optional, text_of};
-use super::params::provider_name;
 use crate::completion_request::Preparation;
 use crate::completion_request::args::{CompletionArgs, CompletionSettings, JsonObject};
 use crate::completion_request::call::{FallbackCall, ModelListCall, PreparedCompletion};
@@ -75,7 +74,7 @@ fn base_model(state: &Preparation<'_>) -> RequestResult<Option<String>> {
         .and_then(text_of)
         .map(str::to_owned))
 }
-pub(crate) fn resolve(state: &mut Preparation<'_>) -> RequestResult<()> {
+pub(crate) fn resolve(state: &mut Preparation<'_>) -> RequestResult<String> {
     state.call.base_model = base_model(state)?;
     if let Some(alias) = state.settings.model_alias_map.get(&state.call.model) {
         state.call.model = alias.clone();
@@ -87,55 +86,45 @@ pub(crate) fn resolve(state: &mut Preparation<'_>) -> RequestResult<()> {
         state.call.model = deployment.clone();
         state.call.custom_llm_provider = Some(String::from("azure"));
     }
-    let api_key = state
-        .args
-        .api_key
-        .as_ref()
-        .or(state.settings.api_key.as_ref());
     let lookup = ProviderLookup {
         model: &state.call.model,
         custom_llm_provider: state.call.custom_llm_provider.as_deref(),
-        api_base: state
-            .call
-            .api_base
-            .as_deref()
-            .or(state.settings.api_base.as_deref()),
-        api_key,
+        api_base: state.call.api_base.as_deref(),
+        api_key: state.args.api_key.as_ref(),
     };
     let resolved = state.ports.model_metadata.resolve_provider(&lookup)?;
+    let provider = resolved.provider.slug().to_owned();
     state.call.model = resolved.model;
-    state.call.custom_llm_provider = Some(resolved.provider.slug().to_owned());
+    state.call.custom_llm_provider = Some(provider.clone());
     state.call.api_base = resolved
         .api_base
         .clone()
         .or_else(|| state.call.api_base.clone());
-    state.call.api_key = resolved.api_key.or_else(|| api_key.cloned());
-    Ok(())
+    state.call.api_key = resolved.api_key.or_else(|| state.args.api_key.clone());
+    Ok(provider)
 }
-pub(crate) fn hidden_params(state: &mut Preparation<'_>) {
-    let provider = provider_name(state);
+pub(crate) fn hidden_params(state: &mut Preparation<'_>, provider: &str) {
     let region = state
         .kwargs
         .get("aws_region_name")
         .cloned()
         .unwrap_or(Json::Null);
-    state
-        .call
-        .hidden_params
-        .insert(String::from("custom_llm_provider"), Json::Text(provider));
+    state.call.hidden_params.insert(
+        String::from("custom_llm_provider"),
+        Json::Text(provider.to_owned()),
+    );
     state
         .call
         .hidden_params
         .insert(String::from("region_name"), region);
 }
-pub(crate) fn timeout(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let provider = provider_name(state);
+pub(crate) fn timeout(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
     let request = TimeoutRequest {
         model_timeout: state.args.timeout.as_ref(),
         timeout: state.kwargs.get("timeout"),
         request_timeout: state.kwargs.get("request_timeout"),
         configured_request_timeout: state.settings.request_timeout,
-        custom_llm_provider: &provider,
+        custom_llm_provider: provider,
     };
     state.call.timeout = Some(state.ports.timeout.resolve(&request)?);
     Ok(())
@@ -148,15 +137,14 @@ fn pricing_gate(kwargs: &JsonObject) -> bool {
         || given("output_cost_per_second")
         || given("cost_per_second")
 }
-pub(crate) async fn pricing(state: &Preparation<'_>) -> RequestResult<()> {
+pub(crate) async fn pricing(state: &Preparation<'_>, provider: &str) -> RequestResult<()> {
     if !pricing_gate(&state.kwargs) {
         return Ok(());
     }
     let model_info = optional::<JsonObject>(&state.kwargs, "model_info")?;
-    let provider = provider_name(state);
     let request = CustomPricingRequest {
         model: &state.call.model,
-        custom_llm_provider: &provider,
+        custom_llm_provider: provider,
         kwargs: &state.kwargs,
         model_info: model_info.as_ref(),
     };

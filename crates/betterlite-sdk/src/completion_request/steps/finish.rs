@@ -33,8 +33,8 @@ pub(crate) fn should_use_mcp_gateway(tools: Option<&[Json]>) -> bool {
             || proxy_path_mcp_name(tool).is_some()
     })
 }
-// admission_input_tokens: the first metadata bucket whose budget reservation names input tokens.
 fn admission_prompt_tokens(kwargs: &JsonObject) -> Option<i64> {
+    // LiteLLM takes the first bucket that names input tokens, litellm_metadata before metadata
     ["litellm_metadata", "metadata"]
         .into_iter()
         .find_map(|name| {
@@ -47,7 +47,10 @@ fn admission_prompt_tokens(kwargs: &JsonObject) -> Option<i64> {
             };
             match reservation.get("input_tokens") {
                 Some(Json::Number(raw)) => raw.as_i64(),
-                _ => None,
+                None
+                | Some(
+                    Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
+                ) => None,
             }
         })
 }
@@ -84,7 +87,11 @@ pub(crate) fn litellm_params(state: &mut Preparation<'_>) -> RequestResult<()> {
         custom_llm_provider: state.call.custom_llm_provider.clone(),
         control: state.control,
         credentials: None,
-        drop_params: state.settings.drop_params.map(DropParams::Flag),
+        drop_params: match state.kwargs.get("drop_params") {
+            Some(Json::Bool(flag)) => Some(DropParams::Flag(*flag)),
+            Some(Json::Text(text)) => Some(DropParams::Text(text.clone())),
+            None | Some(Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_)) => None,
+        },
         no_log: optional::<bool>(&state.kwargs, "no-log")?,
         optional: state.settings.optional.clone(),
     };
@@ -101,7 +108,10 @@ pub(crate) fn environment(state: &Preparation<'_>) {
         custom_llm_provider: state.call.custom_llm_provider.as_deref(),
     });
 }
-pub(crate) fn mock_or_bridge(state: &mut Preparation<'_>) -> RequestResult<PreparedCompletion> {
+pub(crate) fn mock_or_bridge(
+    state: &mut Preparation<'_>,
+    provider: &str,
+) -> RequestResult<PreparedCompletion> {
     if should_run_mock(state) {
         return Ok(PreparedCompletion::Mock(MockCall {
             call: state.call.clone(),
@@ -110,7 +120,7 @@ pub(crate) fn mock_or_bridge(state: &mut Preparation<'_>) -> RequestResult<Prepa
             prompt_tokens: admission_prompt_tokens(&state.kwargs),
         }));
     }
-    if super::bridge::late(state)? {
+    if super::bridge::late(state, provider)? {
         return Ok(PreparedCompletion::ResponsesBridge(state.call.clone()));
     }
     Ok(PreparedCompletion::Dispatch(state.call.clone()))

@@ -1,6 +1,5 @@
 use super::convert::{convert, typed_from};
 use super::messages::text_of;
-use super::params::provider_name;
 use crate::completion_request::Preparation;
 use crate::completion_request::error::RequestResult;
 use betterlite_context::non_default_params::reasoning_aliases::{
@@ -24,6 +23,7 @@ fn reasoning_effort(state: &Preparation<'_>) -> RequestResult<Option<ReasoningEf
 }
 fn run_check(
     state: &Preparation<'_>,
+    provider: &str,
     tools: Option<&[Json]>,
     effort: Option<&ReasoningEffort>,
     summary: Option<&Json>,
@@ -42,7 +42,7 @@ fn run_check(
     let summary_value = summary.map(serde_json::to_value).transpose()?;
     let request = BridgeRequest {
         model: &state.call.model,
-        custom_llm_provider: &provider_name(state),
+        custom_llm_provider: provider,
         web_search_options: web_search.as_ref(),
         tools: &tool_values,
         reasoning_effort: effort,
@@ -58,8 +58,8 @@ fn store(state: &mut Preparation<'_>, check: BridgeCheck) -> RequestResult<()> {
     state.call.model = check.model;
     Ok(())
 }
-pub(crate) fn early(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let check = run_check(state, None, None, None)?;
+pub(crate) fn early(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
+    let check = run_check(state, provider, None, None, None)?;
     let value = serde_json::to_value(check.model_info)?;
     state.call.model_info = serde_json::from_value(value)?;
     state.call.model = check.model;
@@ -125,7 +125,7 @@ fn bridge_effort(state: &mut Preparation<'_>) -> RequestResult<()> {
     );
     Ok(())
 }
-pub(crate) fn late(state: &mut Preparation<'_>) -> RequestResult<bool> {
+pub(crate) fn late(state: &mut Preparation<'_>, provider: &str) -> RequestResult<bool> {
     if state.call.model_info.get("mode").and_then(text_of) != Some(RESPONSES_MODE) {
         let effort = reasoning_effort(state)?;
         let summary = peek_reasoning_summary_aliases(&state.call.options.params)
@@ -133,6 +133,7 @@ pub(crate) fn late(state: &mut Preparation<'_>) -> RequestResult<bool> {
             .transpose()?;
         let check = run_check(
             state,
+            provider,
             state.call.tools.as_deref(),
             effort.as_ref(),
             summary.as_ref(),
@@ -145,7 +146,6 @@ pub(crate) fn late(state: &mut Preparation<'_>) -> RequestResult<bool> {
         bridge_effort(state)?;
         return Ok(true);
     }
-    let provider = provider_name(state);
     let azure_model = state
         .call
         .base_model
