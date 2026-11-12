@@ -1,0 +1,23 @@
+kind: helper
+name: attributes-and-scores
+call:
+  bedrock_services_vector_stores:
+    operation: attributes_and_scores
+    responses:
+      - status: 200
+        query: question
+        body: |-
+          {"retrievalResults":[
+            {"content":{"type":"text","text":"first"},"score":0.5,"metadata":{"x-amz-bedrock-kb-source-uri":"s3://bucket/one.txt","x-amz-bedrock-kb-chunk-id":"c1","custom":"a"},"location":{"type":"S3","s3Location":{"uri":"s3://elsewhere/ignored.txt"}}},
+            {"content":{"type":"text","text":""},"metadata":{}},
+            {"content":{},"score":1},
+            {"content":{"text":null},"score":1},
+            {"score":1},
+            {"content":{"text":"third"},"metadata":{"x-amz-bedrock-kb-source-uri":"https://example.com/two.pdf"}},
+            {"content":{"text":"fourth"},"score":2},
+            {"content":{"text":"fifth"},"metadata":null}
+          ]}
+      - status: 200
+        body: '{"retrievalResults":null,"nextToken":"n"}'
+env: {}
+compare: {ignore: []}

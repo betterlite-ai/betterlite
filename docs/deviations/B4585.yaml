@@ -1,0 +1,5 @@
+task: B4585
+deviations:
+  - what: A cancellation is reported through an injected Interrupts port, so `lite login` prints "\nAuthentication cancelled by user." only when the CLI root supplies a port that observes the process interrupt; the default NeverInterrupted leaves a Ctrl-C to end the process.
+    why: Python's KeyboardInterrupt is a runtime signal, not a declared type, and a terminal-signal handler belongs to the one CLI entry point that owns the process, not to this module; writing the port into the trait keeps the message and the zero exit code testable and lets the root decide how Ctrl-C is captured.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L955-L957

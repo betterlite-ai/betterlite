@@ -1,6 +1,4 @@
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::mock_response::MockResponse;
-use betterlite_config::sections::mock_response::selection::MockPermission;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::{Config, ModelDeployment, RoutingStrategy};
 use betterlite_core::mock::chat::response as mock_chat;
@@ -13,19 +11,23 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::chat::MockSettings;
-use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
+use betterlite_openai::chat::deployment::{
+    ChatDeployment, DeploymentError, OpenAiDefaults, Provider as DeploymentProvider,
+};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
+use betterlite_provider::aiohttp_openai_dispatch::{DEFAULT_AIOHTTP_BASE, complete_url};
+use betterlite_provider::provider::Provider;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::rngs::StdRng;
-use secrecy::ExposeSecret;
-use sha2::{Digest as _, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+use url::{ParseError, Url};
+
+use mock::mock_settings;
 use uuid::Uuid;
 
 #[derive(Debug, Error)]
@@ -44,6 +46,14 @@ pub enum ChatSetupError {
     Tls {
         #[from]
         source: TlsPolicyError,
+    },
+    #[error(
+        "model_list entry {model_name} has an api_base the aiohttp_openai provider cannot use: {source}"
+    )]
+    AiohttpBase {
+        model_name: String,
+        #[source]
+        source: ParseError,
     },
     #[error(
         "router_settings.routing_strategy {strategy:?} is not supported, only simple-shuffle is"
@@ -153,17 +163,56 @@ fn chat_deployments(
     resolution: &ResolutionContext<'_>,
 ) -> Result<Vec<ChatDeployment>, ChatSetupError> {
     let identity = &config.sections.provider_resolution;
-    let resolved = config
-        .model_list
-        .iter()
-        .enumerate()
-        .map(|(index, deployment)| {
-            let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
-            ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)
-        });
+    let mut resolved = Vec::new();
+    for (index, deployment) in config.model_list.iter().enumerate() {
+        let custom_llm_provider = identity.deployments.get(index).and_then(Option::as_deref);
+        let mut chat =
+            ChatDeployment::resolve_with(deployment, defaults, custom_llm_provider, resolution)?;
+        prefix_provider(&mut chat, custom_llm_provider);
+        if matches!(
+            Provider::from_deployment(&chat),
+            Ok(Provider::AiohttpOpenAi(_))
+        ) {
+            apply_aiohttp_defaults(&mut chat, deployment)?;
+        }
+        resolved.push(chat);
+    }
+    Ok(resolved)
+}
+
+// the resolver keeps only the model, so the provider LiteLLM took from custom_llm_provider goes back on as a prefix
+fn prefix_provider(resolved: &mut ChatDeployment, custom_llm_provider: Option<&str>) {
+    let (Some(slug), DeploymentProvider::Unsupported { model }) =
+        (custom_llm_provider, &mut resolved.provider)
+    else {
+        return;
+    };
+    if !model.starts_with(&format!("{slug}/")) {
+        *model = format!("{slug}/{model}");
+    }
+}
+
+// aiohttp_openai reads only its own deployment values: the OpenAI environment defaults never apply to it
+fn apply_aiohttp_defaults(
+    resolved: &mut ChatDeployment,
+    deployment: &ModelDeployment,
+) -> Result<(), ChatSetupError> {
+    let base = deployment
+        .litellm_params
+        .api_base
+        .as_deref()
+        .unwrap_or(DEFAULT_AIOHTTP_BASE);
+    resolved.endpoint =
+        Url::parse(&complete_url(base)).map_err(|source| ChatSetupError::AiohttpBase {
+            model_name: resolved.model_group.clone(),
+            source,
+        })?;
+    base.clone_into(&mut resolved.api_base);
     resolved
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(ChatSetupError::from)
+        .api_key
+        .clone_from(&deployment.litellm_params.api_key);
+    resolved.organization = None;
+    Ok(())
 }
 
 fn unix_seconds() -> u64 {
@@ -178,78 +227,6 @@ fn reject_other_strategies(config: &Config) -> Result<(), ChatSetupError> {
             Err(ChatSetupError::RoutingStrategy { strategy })
         }
         Some(_) | None => Ok(()),
-    }
-}
-
-// LiteLLM's generate_model_id hashes the model group and each litellm_params key and value, mock_response included
-fn mock_model_id(entry: &ModelDeployment, mock: &MockResponse) -> Option<String> {
-    if entry.model_info.id.is_some() {
-        return None;
-    }
-    let params = &entry.litellm_params;
-    let api_key = params.api_key.as_ref().map(ExposeSecret::expose_secret);
-    let fields: [(&str, Option<String>); 10] = [
-        ("model", params.model.clone()),
-        ("api_base", params.api_base.clone()),
-        ("api_key", api_key.map(str::to_owned)),
-        ("api_version", params.api_version.clone()),
-        ("timeout", params.timeout.map(|value| value.to_string())),
-        (
-            "stream_timeout",
-            params.stream_timeout.map(|value| value.to_string()),
-        ),
-        (
-            "max_retries",
-            params.max_retries.map(|value| value.to_string()),
-        ),
-        ("rpm", params.rpm.map(|value| value.to_string())),
-        ("tpm", params.tpm.map(|value| value.to_string())),
-        ("weight", params.weight.map(|value| value.to_string())),
-    ];
-    let mut hasher = Sha256::new();
-    hasher.update(entry.model_name.as_bytes());
-    for (name, value) in fields {
-        if let Some(text) = value {
-            hasher.update(name.as_bytes());
-            hasher.update(text.as_bytes());
-        }
-    }
-    hasher.update(b"mock_response");
-    hasher.update(mock_id_value(mock).as_bytes());
-    Some(hex::encode(hasher.finalize()))
-}
-
-// a string is hashed as given and a number vector as Python prints it; an object keeps betterlite's JSON text (deviation)
-fn mock_id_value(mock: &MockResponse) -> String {
-    match mock {
-        MockResponse::Text(text) => text.clone(),
-        MockResponse::Numbers(values) => {
-            let parts: Vec<String> = values.iter().map(ToString::to_string).collect();
-            format!("[{}]", parts.join(", "))
-        }
-        MockResponse::Object(_) => serde_json::to_string(mock).unwrap_or_default(),
-    }
-}
-
-// LiteLLM's model id hashes litellm_params, mock_response included, so deployments that differ only in it stay distinct
-fn mock_settings(config: &Config, deployments: &mut [ChatDeployment]) -> MockSettings {
-    let section = &config.sections.mock_response;
-    let mut responses = BTreeMap::new();
-    for (index, deployment) in deployments.iter_mut().enumerate() {
-        let Some(response) = section.deployments.get(index).and_then(Option::as_ref) else {
-            continue;
-        };
-        let entry = config.model_list.get(index);
-        if let Some(id) = entry.and_then(|listed| mock_model_id(listed, response)) {
-            deployment.model_id = id;
-        }
-        responses.insert(deployment.model_id.clone(), response.clone());
-    }
-    MockSettings {
-        responses,
-        usage: section.usage,
-        // auth metadata is not wired yet, so a client mock field is always stripped until B052 and B057
-        permission: MockPermission::default(),
     }
 }
 
@@ -286,4 +263,6 @@ fn outbound_client(
     Ok(client)
 }
 
+mod mock;
+pub(crate) mod provider_call;
 mod tests;

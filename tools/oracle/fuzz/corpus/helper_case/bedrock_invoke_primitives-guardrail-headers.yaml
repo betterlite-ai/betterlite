@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-invoke-primitives-guardrail-headers-seed
+call:
+  bedrock_invoke_primitives:
+    guardrail_headers:
+      values:
+        - {guardrailIdentifier: id, trace: enabled}
+        - {guardrailVersion: '1'}
+        - text
+env: {}
+compare: {ignore: []}

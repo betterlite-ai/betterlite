@@ -1,7 +1,7 @@
 id: B1340
 milestone: M3 providers
 title: Gemini text and multimodal embedding transformations
-status: todo
+status: done
 depends_on: [B1300, B006, B196, B171]
 file: tasks/B1340-gemini-embedding-records.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1354
