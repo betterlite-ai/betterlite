@@ -1,0 +1,16 @@
+task: B8105
+deviations:
+  - what: >-
+      A Manus created_at text is read as UTC. LiteLLM turns the parsed struct_time into a unix time with
+      time.mktime, which reads it in the server's local time zone, so the same reply gives a different
+      timestamp on a host set to CET than on one set to UTC.
+    why: >-
+      Manus sends UTC timestamps. On a UTC host both agree, and an offset that depends on the host zone is a
+      bug, not a feature.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L256-L266
+  - what: >-
+      The created_at text is cut to its first 19 characters after every Z is spelled +00:00, so a fractional
+      second or an offset in the text is ignored rather than rejected or applied.
+    why: >-
+      Keeps the same parsed seconds as LiteLLM on a UTC host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L261-L263

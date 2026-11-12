@@ -1108,6 +1108,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1129,6 +1130,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
  "chrono",
  "hex",
@@ -1181,6 +1183,7 @@ dependencies = [
  "lru",
  "p12-keystore",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rstest",
  "secrecy",
@@ -1525,6 +1528,7 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_with",
+ "strum",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2652,7 +2656,10 @@ dependencies = [
 name = "betterlite-pyhost"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "pyo3",
+ "rstest",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2840,6 +2847,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
 ]
 
@@ -3249,6 +3257,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "thiserror",
  "tokio",

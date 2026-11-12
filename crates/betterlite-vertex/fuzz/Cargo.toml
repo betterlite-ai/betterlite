@@ -40,6 +40,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "generate_content"
+path = "fuzz_targets/generate_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "multimodal_embedding"
 path = "fuzz_targets/multimodal_embedding.rs"
 test = false
