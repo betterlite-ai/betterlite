@@ -3112,6 +3112,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
@@ -3131,12 +3132,14 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
 name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-bedrock",
  "betterlite-vertex",
  "jiff",
  "libfuzzer-sys",
