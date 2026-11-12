@@ -168,7 +168,7 @@ fn an_external_account_document_carries_its_source_and_aws_keys() {
     let document = decode_vertex_credentials(AWS_EXTERNAL).unwrap().document();
     assert_eq!(
         document,
-        r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","token_url":"https://sts.example/v1/token","service_account_impersonation_url":null,"client_id":null,"client_secret":null,"scopes":null,"credential_source":{"environment_id":"aws1","region_url":"https://metadata.example/region"},"workforce_pool_user_project":null,"universe_domain":null,"aws_access_key_id":"AKIAEXAMPLE","aws_secret_access_key":"AWSSECRET","aws_region_name":"us-east-1","aws_external_id":"external"}"#
+        r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","token_url":"https://sts.example/v1/token","credential_source":{"environment_id":"aws1","region_url":"https://metadata.example/region"},"aws_access_key_id":"AKIAEXAMPLE","aws_secret_access_key":"AWSSECRET","aws_region_name":"us-east-1","aws_external_id":"external"}"#
     );
 }
 

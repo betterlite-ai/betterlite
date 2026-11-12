@@ -8,6 +8,7 @@ use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError as BedrockCredentialError;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_config::sections::vertex_credential_sources::credential_source::decode_vertex_credentials;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -148,15 +149,23 @@ async fn builds_an_authorized_user_credential() {
 
 #[tokio::test]
 async fn builds_an_identity_pool_credential() {
-    let document = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"file":"/run/token"}}"#;
-    google_auth().identity_pool(document, &scopes()).unwrap();
+    let decoded = decode_vertex_credentials(
+        br#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","credential_source":{"file":"/run/token"}}"#,
+    )
+    .unwrap();
+    google_auth()
+        .identity_pool(&decoded.document(), &scopes())
+        .unwrap();
 }
 
 #[tokio::test]
 async fn builds_an_identity_pool_with_aws_credential() {
-    let document = r#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","credential_source":{"environment_id":"aws1"}}"#;
+    let decoded = decode_vertex_credentials(
+        br#"{"type":"external_account","audience":"audience","subject_token_type":"urn:ietf:params:oauth:token-type:aws4_request","credential_source":{"environment_id":"aws1"}}"#,
+    )
+    .unwrap();
     google_auth()
-        .identity_pool_with_aws(document, &scopes())
+        .identity_pool_with_aws(&decoded.document(), &scopes())
         .unwrap();
 }
 

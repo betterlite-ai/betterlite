@@ -5,6 +5,7 @@ use super::aws_params::{AwsParams, ExternalCredentialSource};
 
 const DEFAULT_TOKEN_URL: &str = "https://sts.googleapis.com/v1/token";
 
+// an absent key stays absent in the document, since the AWS federation input reads a null scopes as an error
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ExternalAccountSource {
     #[serde(rename = "type", default = "default_type_external")]
@@ -13,18 +14,22 @@ pub struct ExternalAccountSource {
     pub subject_token_type: String,
     #[serde(default = "default_token_url")]
     pub token_url: String,
-    #[serde(default, rename = "service_account_impersonation_url")]
+    #[serde(
+        default,
+        rename = "service_account_impersonation_url",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub impersonation_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<Secret>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scopes: Option<Vec<String>>,
     pub credential_source: ExternalCredentialSource,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workforce_pool_user_project: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub universe_domain: Option<String>,
     #[serde(flatten)]
     pub aws: AwsParams,
