@@ -4,14 +4,14 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use rstest::rstest;
 
 use super::support::{
-    MODEL, Read, ReadKind, ReadSupport, RecordingBackend, TestCache, cache as build_cache,
-    cache_object, cache_text, cache_with_mode, cached_embedding, chat_kwargs, embedding_kwargs,
-    envelope, handler, handler_named, integer, key_request_of, kwargs, object, source, text,
+    MODEL, Read, ReadKind, ReadSupport, RecordingBackend, cache as build_cache, cache_object,
+    cache_text, cache_with_mode, cached_embedding, cached_embedding_fields, chat_kwargs,
+    embedding_kwargs, envelope, handler, handler_named, integer, key_request_of, kwargs, object,
+    source, text,
 };
 use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::handler::HandlerError;
-use crate::handler::embedding::embedding_entry_key;
 use crate::handler::retrieve::{AsyncSupport, Retrieval, retrieve_from_cache};
 use crate::types::cache_type::CacheMode;
 use crate::types::call_type::CachingSupportedCallType;
@@ -31,14 +31,22 @@ fn stored_value() -> CacheValue {
 }
 
 fn seed_embedding_input(
-    cache: &TestCache,
     backend: &RecordingBackend,
     request_kwargs: &KeyObject,
     input: &KeyValue,
     record: CacheValue,
 ) {
-    let key = embedding_entry_key(cache, request_kwargs, input).expect("the entry key derives");
+    let model = request_kwargs
+        .get("model")
+        .expect("the request has a model");
+    let key = expected_key(&[("model", model.clone()), ("input", input.clone())]);
     backend.seed(&key, envelope(record));
+}
+
+fn indexed_embedding(index: i64) -> CacheValue {
+    let mut fields = cached_embedding_fields(2);
+    fields.insert("index".to_owned(), CacheValue::Integer(index));
+    CacheValue::Object(fields)
 }
 
 #[tokio::test]
@@ -348,14 +356,12 @@ async fn embedding_hits_are_validated_per_input() {
     let cache = build_cache(Arc::clone(&backend));
     let request_kwargs = embedding_kwargs(&["alpha", "beta", "gamma"]);
     seed_embedding_input(
-        &cache,
         &backend,
         &request_kwargs,
         &text("alpha"),
         cached_embedding(2),
     );
     seed_embedding_input(
-        &cache,
         &backend,
         &request_kwargs,
         &text("beta"),
@@ -412,7 +418,6 @@ async fn embedding_string_input_reads_one_key() {
         ("input", text("alpha")),
     ]);
     seed_embedding_input(
-        &cache,
         &backend,
         &request_kwargs,
         &text("alpha"),
@@ -445,13 +450,7 @@ async fn embedding_token_list_input_is_read_by_its_own_key() {
         ("model", text("text-embedding-3-small")),
         ("input", KeyValue::Array(vec![tokens.clone()])),
     ]);
-    seed_embedding_input(
-        &cache,
-        &backend,
-        &request_kwargs,
-        &tokens,
-        cached_embedding(2),
-    );
+    seed_embedding_input(&backend, &request_kwargs, &tokens, cached_embedding(2));
     let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
     let result = retrieve_from_cache(
         &mut handler,
@@ -477,13 +476,7 @@ async fn flat_token_array_input_is_read_as_one_input() {
         ("model", text("text-embedding-3-small")),
         ("input", tokens.clone()),
     ]);
-    seed_embedding_input(
-        &cache,
-        &backend,
-        &request_kwargs,
-        &tokens,
-        cached_embedding(2),
-    );
+    seed_embedding_input(&backend, &request_kwargs, &tokens, cached_embedding(2));
     let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
     let result = retrieve_from_cache(
         &mut handler,
@@ -514,7 +507,6 @@ async fn embedding_read_ignores_s_maxage() {
         ("cache", object(&[("s-maxage", integer(1))])),
     ]);
     seed_embedding_input(
-        &cache,
         &backend,
         &request_kwargs,
         &text("alpha"),
@@ -546,7 +538,6 @@ async fn embedding_read_ignores_use_cache_in_default_off() {
         ("cache", object(&[("use-cache", KeyValue::Bool(true))])),
     ]);
     seed_embedding_input(
-        &cache,
         &backend,
         &request_kwargs,
         &text("alpha"),
@@ -563,6 +554,74 @@ async fn embedding_read_ignores_use_cache_in_default_off() {
     .await
     .expect("the retrieval runs");
     assert_eq!(result, Retrieval::Miss);
+    assert!(backend.reads().is_empty());
+}
+
+#[tokio::test]
+async fn embedding_preset_key_does_not_override_per_input_keys() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = build_cache(Arc::clone(&backend));
+    let request_kwargs = kwargs(&[
+        ("model", text("text-embedding-3-small")),
+        ("input", KeyValue::Array(vec![text("alpha"), text("beta")])),
+        (
+            "litellm_params",
+            object(&[("preset_cache_key", text("preset"))]),
+        ),
+    ]);
+    seed_embedding_input(
+        &backend,
+        &request_kwargs,
+        &text("alpha"),
+        indexed_embedding(0),
+    );
+    seed_embedding_input(
+        &backend,
+        &request_kwargs,
+        &text("beta"),
+        indexed_embedding(1),
+    );
+    let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await
+    .expect("the retrieval runs");
+    let Retrieval::Embeddings(items) = result else {
+        panic!("expected per-input embedding hits");
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].as_ref().and_then(|record| record.index), Some(0));
+    assert_eq!(items[1].as_ref().and_then(|record| record.index), Some(1));
+    assert!(backend.reads().iter().all(|read| read.key != "preset"));
+}
+
+#[tokio::test]
+async fn embedding_input_count_is_capped() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = build_cache(Arc::clone(&backend));
+    let inputs: Vec<KeyValue> = vec![text("x"); 2049];
+    let request_kwargs = kwargs(&[
+        ("model", text("text-embedding-3-small")),
+        ("input", KeyValue::Array(inputs)),
+    ]);
+    let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(HandlerError::FieldType { field: "input", .. })
+    ));
     assert!(backend.reads().is_empty());
 }
 

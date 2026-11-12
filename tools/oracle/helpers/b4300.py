@@ -133,6 +133,27 @@ async def seed_entries(cache: Cache, kwargs: dict[str, Json], entries: list[Seed
         await cache.cache.async_set_cache(key, value)  # type: ignore[no-untyped-call, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L38
 
 
+def embedding_inputs(kwargs: dict[str, Json]) -> list[Json]:
+    match kwargs.get("input"):
+        case str() as text:
+            return [text]
+        case list() as items:
+            return items
+        case None | bool() | int() | float() | dict():
+            return []
+
+
+def per_input_keys(cache: Cache, kwargs: dict[str, Json]) -> list[Json]:
+    keys: list[Json] = []
+    for item in embedding_inputs(kwargs):
+        key_kwargs = dict(kwargs)
+        key_kwargs["input"] = item
+        keys.append(
+            cache.get_cache_key(**key_kwargs)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358
+        )
+    return keys
+
+
 async def retrieve_async(input_value: RetrieveInput) -> Json:
     kwargs = dict(input_value["kwargs"])
     cache = local_cache(None)
@@ -148,6 +169,7 @@ async def retrieve_async(input_value: RetrieveInput) -> Json:
         "cached": cached,
         "preset_cache_key": handler.preset_cache_key,
         "request_kwargs": cast(Json, handler.request_kwargs),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L216
+        "per_input_keys": per_input_keys(cache, kwargs),
     }
     return result
 

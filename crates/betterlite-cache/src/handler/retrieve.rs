@@ -12,7 +12,9 @@ use crate::types::embedding::CachedEmbedding;
 
 use super::HandlerError;
 use super::dynamic_cache::DualCacheEnvelope;
-use super::embedding::{current_format_embedding_entry, embedding_entry_key, input_items};
+use super::embedding::{
+    current_format_embedding_entry, embedding_base_request, embedding_entry_key, input_items,
+};
 use super::kwargs::{
     CACHE_KEY_KWARG, convert_args_to_kwargs, drop_logging_obj_from_kwargs, key_request,
     remove_null_metadata, request_cache_key, request_control, request_stream,
@@ -122,9 +124,10 @@ where
     C: ConsoleSink + Send + Sync,
 {
     let items = input_items(&handler.request_kwargs)?;
+    let base = embedding_base_request(&handler.request_kwargs)?;
     let mut results = Vec::with_capacity(items.len());
     for item in &items {
-        let key = embedding_entry_key(source.cache, &handler.request_kwargs, item)?;
+        let key = embedding_entry_key(source.cache, &base, item)?;
         // LiteLLM's embedding read passes only cache_key and the dynamic cache, so use-cache and s-maxage never reach the read
         let mut request = EnvelopeRequest {
             cache_key: Some(key),

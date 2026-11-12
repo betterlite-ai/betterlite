@@ -4,6 +4,7 @@ use betterlite_models::decisions::{Extra, Json};
 use serde_json::Number;
 
 use crate::cache_key::derive::get_cache_key;
+use crate::cache_key::request::CacheKeyRequest;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::envelope::facade::ResponseCache;
 use crate::types::embedding::{CachedEmbedding, EMBEDDING_CACHE_FORMAT_VERSION, EmbeddingPayload};
@@ -12,38 +13,58 @@ use super::HandlerError;
 use super::kwargs::{INPUT_KWARG, clear_preset_key, key_request, set_input_param};
 use super::value::to_json;
 
+// a batch above this many inputs would clone the input array once per item before any cache read
+const MAX_EMBEDDING_INPUTS: usize = 2048;
+
 // LiteLLM's handle_kwargs_input_list_or_str: an embedding input is one string or a list of strings and token lists
 pub fn input_items(kwargs: &KeyObject) -> Result<Vec<KeyValue>, HandlerError> {
-    match kwargs.get(INPUT_KWARG) {
-        Some(KeyValue::String(text)) => Ok(vec![KeyValue::String(text.clone())]),
+    let items = match kwargs.get(INPUT_KWARG) {
+        Some(KeyValue::String(text)) => vec![KeyValue::String(text.clone())],
         Some(KeyValue::Array(items)) => {
             if items.iter().all(is_embedding_input) {
-                Ok(items.clone())
+                items.clone()
             } else if is_token_array(items) {
-                Ok(vec![KeyValue::Array(items.clone())])
+                vec![KeyValue::Array(items.clone())]
             } else {
-                Err(input_error())
+                return Err(input_error());
             }
         }
         None
         | Some(KeyValue::Null | KeyValue::Bool(_) | KeyValue::Number(_) | KeyValue::Object(_)) => {
-            Err(input_error())
+            return Err(input_error());
         }
+    };
+    if items.len() > MAX_EMBEDDING_INPUTS {
+        return Err(input_too_many());
     }
+    Ok(items)
+}
+
+// the request every per-input key derives from, built once so the input array is cloned only once
+pub fn embedding_base_request(kwargs: &KeyObject) -> Result<CacheKeyRequest, HandlerError> {
+    let mut request = key_request(kwargs)?;
+    clear_preset_key(&mut request);
+    request.params.retain(|param| param.name != INPUT_KWARG);
+    Ok(request)
 }
 
 pub fn embedding_entry_key<L, C>(
     cache: &ResponseCache<L, C>,
-    kwargs: &KeyObject,
+    base: &CacheKeyRequest,
     input: &KeyValue,
 ) -> Result<String, HandlerError>
 where
     L: LoggerSink,
     C: ConsoleSink,
 {
-    let mut request = key_request(kwargs)?;
+    let mut request = CacheKeyRequest {
+        params: base.params.clone(),
+        metadata: base.metadata.clone(),
+        litellm_metadata: base.litellm_metadata.clone(),
+        litellm_params: base.litellm_params.clone(),
+        cache_control: base.cache_control.clone(),
+    };
     set_input_param(&mut request, input);
-    clear_preset_key(&mut request);
     Ok(get_cache_key(
         &mut request,
         &cache.key_settings,
@@ -86,6 +107,13 @@ const fn input_error() -> HandlerError {
     HandlerError::FieldType {
         field: "input",
         expected: "a string or a list",
+    }
+}
+
+const fn input_too_many() -> HandlerError {
+    HandlerError::FieldType {
+        field: "input",
+        expected: "at most 2048 inputs",
     }
 }
 

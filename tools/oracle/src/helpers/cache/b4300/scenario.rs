@@ -9,7 +9,9 @@ use betterlite_cache::envelope::facade::{EnvelopeSettings, ResponseCache};
 use betterlite_cache::handler::call_types::{
     call_type_name, call_type_supported, should_store_result_in_cache,
 };
-use betterlite_cache::handler::embedding::{current_format_embedding_entry, embedding_entry_key};
+use betterlite_cache::handler::embedding::{
+    current_format_embedding_entry, embedding_base_request, embedding_entry_key, input_items,
+};
 use betterlite_cache::handler::retrieve::{
     AsyncSupport, CacheSource, Retrieval, retrieve_from_cache,
 };
@@ -60,9 +62,15 @@ fn entries(case: &Entries) -> HelperResult {
 async fn retrieve(case: &Retrieve) -> HelperResult {
     let backend = Arc::new(SeededBackend::default());
     let cache = helper_cache(Arc::clone(&backend))?;
+    let items = input_items(&case.kwargs).or_value_error()?;
+    let base = embedding_base_request(&case.kwargs).or_value_error()?;
     for entry in &case.entries {
-        let key = embedding_entry_key(&cache, &case.kwargs, &entry.input).or_value_error()?;
+        let key = embedding_entry_key(&cache, &base, &entry.input).or_value_error()?;
         backend.seed(&key, envelope(&entry.record));
+    }
+    let mut per_input_keys = Vec::with_capacity(items.len());
+    for item in &items {
+        per_input_keys.push(embedding_entry_key(&cache, &base, item).or_value_error()?);
     }
     let mut handler = CachingHandler::new(dependencies(case)?, case.kwargs.clone());
     let source = CacheSource {
@@ -82,6 +90,7 @@ async fn retrieve(case: &Retrieve) -> HelperResult {
         "cached": retrieval_json(&retrieval)?,
         "preset_cache_key": handler.preset_cache_key,
         "request_kwargs": kwargs_json(&handler.request_kwargs),
+        "per_input_keys": per_input_keys,
     }))
 }
 

@@ -1,7 +1,11 @@
+use rstest::rstest;
+
 use super::support::{chat_kwargs, handler_named, kwargs, object, text};
 use crate::cache_key::value::KeyValue;
 use crate::handler::HandlerError;
-use crate::handler::call_types::{call_type_supported, should_store_result_in_cache};
+use crate::handler::call_types::{
+    call_type_name, call_type_supported, should_store_result_in_cache,
+};
 use crate::handler::state::CachingHandler;
 use crate::types::call_type::CachingSupportedCallType;
 
@@ -216,4 +220,30 @@ fn a_null_cache_dict_takes_the_default() {
         )
         .expect("a null cache dict stores")
     );
+}
+
+#[rstest]
+#[case::completion(CachingSupportedCallType::Completion, "completion")]
+#[case::acompletion(CachingSupportedCallType::Acompletion, "acompletion")]
+#[case::embedding(CachingSupportedCallType::Embedding, "embedding")]
+#[case::aembedding(CachingSupportedCallType::Aembedding, "aembedding")]
+#[case::atranscription(CachingSupportedCallType::Atranscription, "atranscription")]
+#[case::transcription(CachingSupportedCallType::Transcription, "transcription")]
+#[case::atext_completion(CachingSupportedCallType::AtextCompletion, "atext_completion")]
+#[case::text_completion(CachingSupportedCallType::TextCompletion, "text_completion")]
+#[case::arerank(CachingSupportedCallType::Arerank, "arerank")]
+#[case::rerank(CachingSupportedCallType::Rerank, "rerank")]
+#[case::responses(CachingSupportedCallType::Responses, "responses")]
+#[case::aresponses(CachingSupportedCallType::Aresponses, "aresponses")]
+#[case::anthropic_messages(CachingSupportedCallType::AnthropicMessages, "anthropic_messages")]
+#[case::aanthropic_messages(CachingSupportedCallType::AanthropicMessages, "aanthropic_messages")]
+fn call_type_names_match_the_wire_names(
+    #[case] variant: CachingSupportedCallType,
+    #[case] expected: &str,
+) {
+    assert_eq!(call_type_name(variant), expected);
+    assert!(call_type_supported(
+        call_type_name(variant),
+        Some(&[variant])
+    ));
 }
