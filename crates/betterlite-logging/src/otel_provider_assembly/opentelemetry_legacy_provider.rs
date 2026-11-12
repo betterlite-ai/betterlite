@@ -83,12 +83,7 @@ where
     Ok(provider)
 }
 
-fn create_missing<S, E, F>(slot: &S, skip_set_global: bool, create: F) -> Result<S::Provider, E>
-where
-    S: ProviderSlot,
-    F: FnOnce() -> Result<S::Provider, E>,
-{
-    let name = slot.name();
+fn announce_creation(name: &str, skip_set_global: bool) {
     debug!(provider = name, "OpenTelemetry: creating a new provider");
     if skip_set_global {
         info!(
@@ -96,7 +91,6 @@ where
             "OpenTelemetry: creating a provider but NOT setting it globally (will use dynamic providers per-request)"
         );
     }
-    create_and_publish(slot, skip_set_global, create)
 }
 
 // A failed lookup falls back to a new provider on purpose, so a broken global state never stops startup.
@@ -133,7 +127,10 @@ where
             );
             Ok(existing)
         }
-        Ok(None) => create_missing(slot, skip_set_global, create),
+        Ok(None) => {
+            announce_creation(name, skip_set_global);
+            create_and_publish(slot, skip_set_global, create)
+        }
         Err(error) => {
             debug!(
                 provider = name,

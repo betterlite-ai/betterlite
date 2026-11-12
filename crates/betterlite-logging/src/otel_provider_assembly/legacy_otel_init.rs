@@ -103,40 +103,6 @@ struct ProviderParts<'parts> {
     skip_set_global: bool,
 }
 
-fn create_tracer_provider(
-    parts: &ProviderParts<'_>,
-) -> Result<SdkTracerProvider, LegacyExporterError> {
-    let plan = span_processor_plan(parts.config, None, None, parts.callback_name)?;
-    let processor = parts.builder.span_processor(&plan)?;
-    Ok(SdkTracerProvider::builder()
-        .with_resource(parts.resource.clone())
-        .with_span_processor(processor)
-        .build())
-}
-
-fn create_meter_provider(
-    parts: &ProviderParts<'_>,
-) -> Result<SdkMeterProvider, LegacyExporterError> {
-    let plan = metric_reader_plan(parts.config, parts.callback_name)?;
-    let reader = parts.builder.metric_reader(plan)?;
-    Ok(SdkMeterProvider::builder()
-        .with_reader(reader)
-        .with_resource(parts.resource.clone())
-        .build())
-}
-
-// Legacy logs always batch, whatever the exporter, unlike the v2 provider.
-fn create_logger_provider(
-    parts: &ProviderParts<'_>,
-) -> Result<SdkLoggerProvider, LegacyExporterError> {
-    let plan = log_exporter_plan(parts.config, parts.callback_name, parts.env)?;
-    let sink = parts.builder.log_exporter(plan)?;
-    Ok(SdkLoggerProvider::builder()
-        .with_resource(parts.resource.clone())
-        .with_log_processor(BatchLogProcessor::builder(sink).build())
-        .build())
-}
-
 fn init_tracing(
     parts: &ProviderParts<'_>,
     injected: Option<SdkTracerProvider>,
@@ -145,7 +111,16 @@ fn init_tracing(
         &parts.globals.tracer,
         injected,
         parts.skip_set_global,
-        || create_tracer_provider(parts),
+        || {
+            let plan = span_processor_plan(parts.config, None, None, parts.callback_name)?;
+            let processor = parts.builder.span_processor(&plan)?;
+            Ok::<_, LegacyExporterError>(
+                SdkTracerProvider::builder()
+                    .with_resource(parts.resource.clone())
+                    .with_span_processor(processor)
+                    .build(),
+            )
+        },
     )?;
     let tracer = provider.tracer(legacy_tracer_name(parts.env));
     Ok((provider, tracer))
@@ -162,7 +137,16 @@ fn init_metrics(
         &parts.globals.meter,
         injected,
         parts.skip_set_global,
-        || create_meter_provider(parts),
+        || {
+            let plan = metric_reader_plan(parts.config, parts.callback_name)?;
+            let reader = parts.builder.metric_reader(plan)?;
+            Ok::<_, LegacyExporterError>(
+                SdkMeterProvider::builder()
+                    .with_reader(reader)
+                    .with_resource(parts.resource.clone())
+                    .build(),
+            )
+        },
     )?;
     let instruments = create_instruments(&meter_provider.meter(METER_NAME));
     Ok(Some(MetricsSignal {
@@ -189,6 +173,7 @@ fn new_tracer_cache(
     )
 }
 
+// Legacy logs always batch, whatever the exporter, unlike the v2 provider.
 fn init_logs(
     parts: &ProviderParts<'_>,
     injected: Option<SdkLoggerProvider>,
@@ -200,7 +185,16 @@ fn init_logs(
         &parts.globals.logger,
         injected,
         parts.skip_set_global,
-        || create_logger_provider(parts),
+        || {
+            let plan = log_exporter_plan(parts.config, parts.callback_name, parts.env)?;
+            let sink = parts.builder.log_exporter(plan)?;
+            Ok::<_, LegacyExporterError>(
+                SdkLoggerProvider::builder()
+                    .with_resource(parts.resource.clone())
+                    .with_log_processor(BatchLogProcessor::builder(sink).build())
+                    .build(),
+            )
+        },
     )?;
     Ok(Some(provider))
 }
