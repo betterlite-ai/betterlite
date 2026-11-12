@@ -5,6 +5,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_config::loader::ConfigLoader;
 use rand::TryRng;
 use rstest::rstest;
 
@@ -48,9 +49,9 @@ impl TryRng for FixedSample {
         Ok(self.sample.wrapping_shl(11) | 0x07FF)
     }
 
-    fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), Infallible> {
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
         let bytes = self.sample.to_le_bytes();
-        for (slot, byte) in destination.iter_mut().zip(bytes.iter().cycle()) {
+        for (slot, byte) in dst.iter_mut().zip(bytes.iter().cycle()) {
             *slot = *byte;
         }
         Ok(())
@@ -95,7 +96,7 @@ pub(crate) fn seconds(value: f64) -> String {
 }
 
 fn load_error(source: &str) -> Option<String> {
-    betterlite_config::loader::ConfigLoader {
+    ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(source)

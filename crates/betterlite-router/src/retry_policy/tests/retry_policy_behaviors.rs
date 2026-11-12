@@ -109,8 +109,7 @@ fn a_404_answer_without_not_found_walks_the_class_chain() {
     );
 }
 
-#[test]
-fn a_model_group_policy_replaces_the_global_one_whole() {
+fn replacement_policies() -> RetryPolicies {
     let global = RetryPolicy {
         bad_request: None,
         authentication: Some(6),
@@ -135,10 +134,15 @@ fn a_model_group_policy_replaces_the_global_one_whole() {
     };
     let mut model_group = BTreeMap::new();
     model_group.insert("gpt-4".to_owned(), group);
-    let policies = RetryPolicies {
+    RetryPolicies {
         global: Some(global),
         model_group,
-    };
+    }
+}
+
+#[test]
+fn a_model_group_policy_replaces_the_global_one_whole() {
+    let policies = replacement_policies();
     assert_eq!(
         selected_retries(&policies, FailureClass::RateLimit, Some(429), Some("gpt-4")),
         Some(2)
@@ -186,10 +190,9 @@ fn the_count_follows_request_deployment_and_policy(
     #[case] retries: Option<i64>,
     #[case] expected: (i64, bool),
 ) {
-    let policies = match retries {
-        Some(retries) => rate_limit_policies(Some(retries)),
-        None => RetryPolicies::default(),
-    };
+    let policies = retries.map_or_else(RetryPolicies::default, |value| {
+        rate_limit_policies(Some(value))
+    });
     let counts = RetryCounts {
         request,
         router,
@@ -332,7 +335,7 @@ fn a_healthy_alternative_does_not_draw_a_sample() {
 
 #[test]
 fn the_jitter_scales_the_injected_sample() {
-    let mut random = FixedSample::new(4_503_599_627_370_496);
+    let mut random = FixedSample::new(0x0010_0000_0000_0000);
     let delay = sleep_before_retry(
         &settings(0.0),
         RetryTiming {

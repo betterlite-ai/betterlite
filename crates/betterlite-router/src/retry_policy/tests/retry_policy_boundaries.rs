@@ -151,7 +151,7 @@ fn an_empty_policy_grants_nothing(
 #[case::positive_is_used(Some(8), Some(8))]
 fn a_policy_value_is_used_as_given(#[case] not_found: Option<i64>, #[case] expected: Option<i64>) {
     let policy = RetryPolicy {
-        not_found: not_found,
+        not_found,
         ..every_field()
     };
     assert_eq!(
@@ -174,7 +174,7 @@ fn the_plan_keeps_a_deployment_count_at_the_unsigned_limit() {
         Some(429),
         None,
     );
-    assert_eq!(outcome.num_retries, 4_294_967_295_i64);
+    assert_eq!(outcome.num_retries, 0xFFFF_FFFF_i64);
     assert!(!outcome.policy_applies);
 }
 
@@ -249,7 +249,7 @@ fn the_saturation_of_an_unbounded_seconds_value_never_changes_a_decision() {
 #[case::sixty(b"60", 60)]
 #[case::sixty_one(b"61", 61)]
 #[case::negative_one(b"-1", -1)]
-#[case::negative_at_the_signed_limit(b"-9223372036854775807", -9_223_372_036_854_775_807_i64)]
+#[case::negative_at_the_signed_limit(b"-9223372036854775807", -0x7FFF_FFFF_FFFF_FFFF_i64)]
 fn seconds_are_read_exactly(#[case] bytes: &[u8], #[case] expected: i64) {
     assert_eq!(
         parse_retry_after(bytes).unwrap(),

@@ -34,7 +34,7 @@ pub fn resolve(section: &config::Settings) -> RetrySettings {
     }
 }
 
-fn policy_from_config(policy: &config::RetryPolicySettings) -> RetryPolicy {
+const fn policy_from_config(policy: &config::RetryPolicySettings) -> RetryPolicy {
     RetryPolicy {
         bad_request: policy.bad_request,
         authentication: policy.authentication,
