@@ -5,7 +5,6 @@ use serde_json::Value;
 
 use super::support::{choice, optional_params, parse, text, tool_call, tools, value};
 use crate::chat_choices::ChatChoicesError;
-use crate::chat_choices::choices::passed_in_tools;
 use crate::chat_choices::wire::{CustomPayload, TransformedChoice};
 use crate::openai_base_config::Object;
 
@@ -135,8 +134,9 @@ fn tool_call_json_content_precedence() {
     assert!(empty.message.tool_calls.is_none());
 
     let null_tools = optional_params(&[("tools", Value::Null)]);
-    assert!(!passed_in_tools(&null_tools));
-    assert!(passed_in_tools(&params));
+    let null_read = only(&[content_choice(CONTENT)], Some(&null_tools), false);
+    assert_eq!(null_read.message.content.as_deref(), Some(CONTENT));
+    assert!(null_read.message.tool_calls.is_none());
     let without_tools = optional_params(&[("temperature", Value::from(1_i64))]);
     let kept = only(&[content_choice(CONTENT)], Some(&without_tools), false);
     assert_eq!(kept.message.content.as_deref(), Some(CONTENT));
@@ -308,6 +308,22 @@ fn parallel_tool_calls() {
     );
     assert_eq!(calls[2].id, "call_2");
     unparsable_arguments_keep_the_calls();
+    tool_call_keys_pass_through();
+}
+
+fn tool_call_keys_pass_through() {
+    let mut call = tool_call(Some("call_a"), "lookup", "{}");
+    call["index"] = Value::from(3_i64);
+    let carried = choice(
+        0,
+        Some("stop"),
+        value(&[("tool_calls", Value::Array(vec![call]))]),
+    );
+    let read = only(&[carried], None, false);
+    let kept = &read.message.tool_calls.as_ref().unwrap()[0];
+    assert_eq!(kept.extra.get("index"), Some(&Value::from(3_i64)));
+    let dumped = serde_json::to_value(kept).unwrap();
+    assert_eq!(dumped["index"], Value::from(3_i64));
 }
 
 fn unparsable_arguments_keep_the_calls() {

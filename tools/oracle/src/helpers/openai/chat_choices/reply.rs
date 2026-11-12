@@ -157,8 +157,8 @@ fn error_outcome(error: &TransformResponseError) -> Value {
             "status_code": record.status_code,
             "headers": record.headers.as_ref(),
         }),
-        TransformResponseError::BodyNotUtf8
-        | TransformResponseError::Projection(_)
-        | TransformResponseError::Base { .. } => json!({"kind": "error"}),
+        TransformResponseError::Projection(_) | TransformResponseError::Base { .. } => {
+            json!({"kind": "error"})
+        }
     }
 }

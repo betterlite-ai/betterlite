@@ -1,5 +1,4 @@
 pub mod choices;
-pub mod config;
 pub mod endpoint;
 pub mod reply;
 pub mod stream;
@@ -38,7 +37,6 @@ struct ReplyEnvelope {
     choices: Vec<ReplyChoice>,
 }
 
-// Decodes a chat reply and returns the choices a client sees; a message content holding JSON is parsed here
 pub fn decode_chat_choices(
     bytes: &[u8],
     optional_params: Option<&Object>,

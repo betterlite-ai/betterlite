@@ -7,14 +7,16 @@ use betterlite_config::sections::openai_credentials::Settings as CredentialSetti
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
 use url::Url;
 
-use crate::chat_choices::config::{CredentialInputs, resolve_credentials};
 use crate::chat_choices::endpoint::{
     ModelListRequest, ModelListTransport, get_models, validate_environment,
+};
+use crate::credentials::{
+    ExplicitCredentials, LiteLlmGlobals, OpenAiCredentials, get_openai_credentials,
 };
 use crate::openai_base_config::Headers;
 
@@ -25,23 +27,23 @@ fn settings(api_base: &str) -> CredentialSettings {
     }
 }
 
-fn credentials(configured_key: &str, base: &str) -> (Option<String>, String) {
-    let settings = settings("https://environment.example/v1");
-    let resolved = resolve_credentials(CredentialInputs {
-        api_key: Some(SecretString::from(configured_key)),
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        environment_api_key: None,
-        api_base: Some(base),
-        litellm_api_base: None,
-        settings: &settings,
-    });
+fn credentials(configured_key: &str, base: &str) -> OpenAiCredentials {
+    get_openai_credentials(
+        ExplicitCredentials {
+            api_key: Some(SecretString::from(configured_key)),
+            api_base: Some(base.to_owned()),
+            organization: None,
+        },
+        LiteLlmGlobals::default(),
+        &settings("https://environment.example/v1"),
+        None,
+    )
+}
+
+fn key_and_base(resolved: &OpenAiCredentials) -> (Option<&str>, &str) {
     (
-        resolved
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
-        resolved.api_base,
+        resolved.api_key.as_ref().map(ExposeSecret::expose_secret),
+        resolved.api_base.as_str(),
     )
 }
 
@@ -49,10 +51,14 @@ fn credentials(configured_key: &str, base: &str) -> (Option<String>, String) {
 fn openai_chat_choices_credential_identity_isolation() {
     let first = credentials("key-a", "https://a.example/v1");
     let second = credentials("key-b", "https://b.example/v1");
-    assert_eq!(first.0.as_deref(), Some("key-a"));
-    assert_eq!(second.0.as_deref(), Some("key-b"));
-    assert_eq!(first.1, "https://a.example/v1");
-    assert_eq!(second.1, "https://b.example/v1");
+    assert_eq!(
+        key_and_base(&first),
+        (Some("key-a"), "https://a.example/v1")
+    );
+    assert_eq!(
+        key_and_base(&second),
+        (Some("key-b"), "https://b.example/v1")
+    );
 
     let first_headers = validate_environment(Some(&SecretString::from("key-a")), &Headers::new());
     let second_headers = validate_environment(Some(&SecretString::from("key-b")), &Headers::new());
@@ -67,7 +73,7 @@ fn openai_chat_choices_credential_identity_isolation() {
 
     // resolving the same identity again never picks up the other one's values
     let again = credentials("key-a", "https://a.example/v1");
-    assert_eq!(again, first);
+    assert_eq!(key_and_base(&again), key_and_base(&first));
 }
 
 struct Failing;
@@ -110,16 +116,7 @@ fn request<'base>(api_base: &'base str, key: &str) -> ModelListRequest<'base> {
 #[test]
 fn openai_chat_choices_secret_safe_failure() {
     let secret = "sk-fixture-secret";
-    let settings = settings("https://environment.example/v1");
-    let resolved = resolve_credentials(CredentialInputs {
-        api_key: Some(SecretString::from(secret)),
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        environment_api_key: None,
-        api_base: Some("https://a.example/v1"),
-        litellm_api_base: None,
-        settings: &settings,
-    });
+    let resolved = credentials(secret, "https://a.example/v1");
     let debugged = format!("{resolved:?}");
     assert!(!debugged.contains(secret), "{debugged}");
 

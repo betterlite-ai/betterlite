@@ -19,15 +19,8 @@ pub(super) fn run(steps: &ChunkSteps) -> Value {
 fn provider_outcome(error: &StreamError) -> Value {
     match error {
         StreamError::Provider { status, .. } => json!({"ok": false, "status": status}),
-        StreamError::ChunkNotObject
-        | StreamError::ChoicesNotList
-        | StreamError::ChoiceNotObject
-        | StreamError::DeltaNotObject
-        | StreamError::IndexNotInteger
-        | StreamError::FinishReasonNotText
-        | StreamError::IdNotText
-        | StreamError::CreatedNotInteger
-        | StreamError::ModelNotText
-        | StreamError::UsageNotObject => json!({"ok": false, "error": error.to_string()}),
+        StreamError::Chunk(_) | StreamError::ToolCallPayload => {
+            json!({"ok": false, "error": error.to_string()})
+        }
     }
 }

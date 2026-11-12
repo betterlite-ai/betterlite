@@ -54,6 +54,9 @@ def tool_calls_view(calls: Json) -> Json:
 def tool_call_view(call: Json) -> Json:
     fields = as_object(call)
     kind = fields.get("type")
-    if kind == "custom":
-        return {"id": fields.get("id"), "type": kind, "custom": fields.get("custom")}
-    return {"id": fields.get("id"), "type": kind, "function": fields.get("function")}
+    payload = "custom" if kind == "custom" else "function"
+    view: Object = {"id": fields.get("id"), "type": kind, payload: fields.get(payload)}
+    for name, extra in fields.items():
+        if name not in ("id", "type", "function", "custom"):
+            view[name] = extra
+    return view

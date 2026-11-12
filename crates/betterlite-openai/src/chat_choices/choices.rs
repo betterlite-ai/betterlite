@@ -1,4 +1,3 @@
-use serde_json::Value;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -28,18 +27,11 @@ pub enum ChoicesError {
     ToolsNotList,
     #[error("a tool entry is not an object with a function")]
     ToolNotObject,
-    #[error("a parallel tool call's arguments name no tool_uses list")]
-    ParallelUses,
-    #[error("a parallel tool use is not an object with a recipient name")]
-    ParallelEntry,
-}
-
-#[must_use]
-pub fn passed_in_tools(optional_params: &Object) -> bool {
-    let Some(tools) = optional_params.get("tools") else {
-        return false;
-    };
-    !tools.is_null()
+    #[error("a parallel tool call's arguments are not a list of tool uses")]
+    ParallelUses {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub fn transform_choices(
@@ -102,13 +94,14 @@ fn content_fix_up(
     optional_params: Option<&Object>,
     identifier: fn() -> Uuid,
 ) -> Result<(Option<String>, Option<Vec<ChoiceToolCall>>), ChoicesError> {
-    let fixable = optional_params.is_some_and(passed_in_tools)
-        && content.as_deref().is_some_and(|text| !text.is_empty());
-    let Some(params) = optional_params.filter(|_| fixable) else {
+    let passed = optional_params
+        .and_then(|params| params.get("tools"))
+        .filter(|tools| !tools.is_null());
+    let (Some(tools), Some(text)) = (passed, content.as_deref().filter(|text| !text.is_empty()))
+    else {
         return Ok((content, None));
     };
-    let tools = params.get("tools").unwrap_or(&Value::Null);
-    let converted = content_tool_call(content.as_deref().unwrap_or_default(), tools, identifier)?;
+    let converted = content_tool_call(text, tools, identifier)?;
     Ok(converted.map_or((content, None), |call| (None, Some(vec![call]))))
 }
 

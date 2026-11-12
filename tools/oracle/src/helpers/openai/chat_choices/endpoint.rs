@@ -1,21 +1,15 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::chat_choices::config::{
-    ChatCompletionConfig as _, CredentialInputs, OpenAiChatConfig, resolve_credentials,
-};
 use betterlite_openai::chat_choices::endpoint::{
     ModelListRequest, ModelListTransport, complete_url, get_models, validate_environment,
 };
-use betterlite_openai::count_tokens::counter::OpenAiTokenCounter;
-use betterlite_openai::count_tokens::handler::CountTokensHandler;
+use betterlite_openai::credentials::{ExplicitCredentials, LiteLlmGlobals, get_openai_credentials};
 use betterlite_openai::openai_base_config::Headers;
 use http::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -24,7 +18,7 @@ use serde_json::{Value, json};
 use url::Url;
 
 use super::{AuthSteps, CredentialCall, UrlSteps, failure};
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::HelperResult;
 
 const DEADLINE: Duration = Duration::from_secs(600);
 
@@ -158,20 +152,21 @@ pub(super) fn credentials(call: &CredentialCall) -> HelperResult {
     }
     .load("")
     .map_err(failure)?;
-    let settings = &config.sections.openai_credentials;
-    let inputs = CredentialInputs {
-        api_key: call.api_key.clone().map(SecretString::from),
-        litellm_api_key: call.litellm_api_key.clone().map(SecretString::from),
-        litellm_openai_key: call.litellm_openai_key.clone().map(SecretString::from),
-        environment_api_key: config.sections.resource_sdk_settings.openai_api_key.clone(),
-        api_base: call.api_base.as_deref(),
-        litellm_api_base: call.litellm_api_base.as_deref(),
-        settings,
-    };
-    let resolved = resolve_credentials(inputs);
-    let counter: OpenAiTokenCounter = OpenAiChatConfig.token_counter(handler()?, None);
-    let base_model = OpenAiChatConfig.base_model(Some(call.model.as_str()));
-    drop(counter);
+    let resolved = get_openai_credentials(
+        ExplicitCredentials {
+            api_base: call.api_base.clone(),
+            api_key: call.api_key.clone().map(SecretString::from),
+            organization: None,
+        },
+        LiteLlmGlobals {
+            api_base: call.litellm_api_base.clone(),
+            api_key: call.litellm_api_key.clone().map(SecretString::from),
+            openai_key: call.litellm_openai_key.clone().map(SecretString::from),
+            organization: None,
+        },
+        &config.sections.openai_credentials,
+        config.sections.resource_sdk_settings.openai_api_key.clone(),
+    );
     let api_key = resolved
         .api_key
         .as_ref()
@@ -180,17 +175,7 @@ pub(super) fn credentials(call: &CredentialCall) -> HelperResult {
     Ok(json!({
         "api_key": api_key,
         "api_base": resolved.api_base,
-        "base_model": base_model,
+        "base_model": call.model,
         "token_counter": "openai_api",
     }))
-}
-
-fn handler() -> Result<CountTokensHandler, Box<HelperError>> {
-    let policy =
-        Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(failure)?);
-    let client = betterlite_http::proxy::ProxiedClient::outbound(&policy).map_err(failure)?;
-    Ok(CountTokensHandler {
-        client,
-        request_timeout: DEADLINE,
-    })
 }

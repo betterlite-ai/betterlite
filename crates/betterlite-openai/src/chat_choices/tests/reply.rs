@@ -20,9 +20,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::support::{text, value};
-use crate::chat_choices::reply::{
-    ResponseReply, TransformResponseError, error_class, transform_response,
-};
+use crate::chat_choices::reply::{ResponseReply, TransformResponseError, transform_response};
 use crate::compatible_wire::LogInput;
 use crate::openai_base_config::Headers;
 
@@ -147,7 +145,7 @@ pub(super) fn response_headers() {
     assert_eq!(projected["hidden_headers"], projected["response_headers"]);
     recorded_post_call(&state);
     malformed_reply(&redactor, &env);
-    class_keeps_status_and_headers();
+    invalid_utf8_reply(&redactor, &env);
 }
 
 fn recorded_post_call(state: &LoggingState) {
@@ -170,16 +168,25 @@ fn malformed_reply(redactor: &Redactor, env: &PrePostEnv<'_>) {
             assert_eq!(record.status_code, 400);
             assert_eq!(record.headers, Some(headers()));
         }
-        TransformResponseError::BodyNotUtf8 => panic!("unexpected BodyNotUtf8"),
         TransformResponseError::Projection(_error) => panic!("unexpected projection failure"),
         TransformResponseError::Base { .. } => panic!("unexpected base failure"),
     }
     assert!(state.model_call_details.contains_key("original_response"));
 }
 
-fn class_keeps_status_and_headers() {
-    let class = error_class(429, String::from("slow down"), Some(headers()));
-    assert_eq!(class.status_code, 429);
-    assert_eq!(class.headers, Some(headers()));
-    assert_eq!(class.message, "slow down");
+fn invalid_utf8_reply(redactor: &Redactor, env: &PrePostEnv<'_>) {
+    let (mut state, _) = fixture(redactor);
+    let (error, _projected) = respond(&mut state, env, 502, b"\xff\xfe oops").unwrap_err();
+    match error {
+        TransformResponseError::Json(record) => {
+            assert_eq!(record.status_code, 502);
+            assert_eq!(record.headers, Some(headers()));
+        }
+        TransformResponseError::Projection(_error) => panic!("unexpected projection failure"),
+        TransformResponseError::Base { .. } => panic!("unexpected base failure"),
+    }
+    assert_eq!(
+        state.model_call_details.get("original_response"),
+        Some(&Json::Text(String::from("\u{fffd}\u{fffd} oops")))
+    );
 }

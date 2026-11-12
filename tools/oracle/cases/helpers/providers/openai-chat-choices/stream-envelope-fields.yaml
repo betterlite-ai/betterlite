@@ -9,6 +9,8 @@ call:
         - chunk: {id: c, created: 1, model: m, usage: null, service_tier: ''}
         - chunk: {id: c, created: 1, model: m, service_tier: 3}
         - chunk: {id: c, created: 1, model: m, usage: {}}
+        - chunk: {id: c, created: 1, model: m, usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3, cost: 0.5}}
+        - chunk: {id: c, created: 1, model: m, choices: [{index: 0, delta: {tool_calls: [{index: 5, id: call_a, function: {arguments: '{'}}, {function: {name: f}}, {function: {name: g, arguments: null}}]}}]}
         - chunk: {id: c, created: 1, model: m, choices: [{index: 2, finish_reason: stop_sequence, delta: {content: x}, logprobs: null}]}
 env: {}
 compare: {ignore: []}

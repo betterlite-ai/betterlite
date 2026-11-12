@@ -67,10 +67,17 @@ def delta_view(delta: Object) -> Json:
 
 
 def usage_view(usage: Object) -> Json:
-    return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-        "prompt_tokens_details": usage.get("prompt_tokens_details"),
-        "completion_tokens_details": usage.get("completion_tokens_details"),
+    view: Object = {
+        name: usage.get(name)
+        for name in (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "prompt_tokens_details",
+            "completion_tokens_details",
+        )
     }
+    for name, extra in usage.items():
+        if name not in view and extra is not None:
+            view[name] = extra
+    return view

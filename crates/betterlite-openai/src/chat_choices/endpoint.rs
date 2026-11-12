@@ -6,7 +6,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use http::{HeaderMap, Method};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
+use serde::Deserialize;
 use thiserror::Error;
 use url::{Host, Url};
 
@@ -29,7 +29,6 @@ pub fn complete_url(api_base: Option<&str>) -> String {
     format!("{base}/{CHAT_COMPLETIONS}")
 }
 
-// validate_environment: an api_key overwrites Authorization and a missing content type is filled in
 #[must_use]
 pub fn validate_environment(api_key: Option<&SecretString>, headers: &Headers) -> Headers {
     let mut result = headers.clone();
@@ -69,15 +68,11 @@ pub enum ModelListError {
     },
     #[error("the model list request answered status {status}")]
     Status { status: u16 },
-    #[error("the model list reply is not valid JSON")]
+    #[error("the model list reply is not a data list of entries with an id")]
     Decode {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the model list reply has no data list")]
-    MissingData,
-    #[error("a model list entry has no id")]
-    MissingModelId,
 }
 
 pub trait ModelListTransport: Send + Sync {
@@ -161,23 +156,20 @@ where
     Ok(response.body)
 }
 
+#[derive(Deserialize)]
+struct ModelIds {
+    data: Vec<ModelId>,
+}
+
+#[derive(Deserialize)]
+struct ModelId {
+    id: String,
+}
+
 fn model_ids(body: &[u8]) -> Result<Vec<String>, ModelListError> {
-    let reply: Value =
+    let reply: ModelIds =
         serde_json::from_slice(body).map_err(|source| ModelListError::Decode { source })?;
-    let models = reply
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or(ModelListError::MissingData)?;
-    models
-        .iter()
-        .map(|model| {
-            model
-                .get("id")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .ok_or(ModelListError::MissingModelId)
-        })
-        .collect()
+    Ok(reply.data.into_iter().map(|model| model.id).collect())
 }
 
 // get_models strips api_base to scheme, host and any explicit port before it appends /v1/models

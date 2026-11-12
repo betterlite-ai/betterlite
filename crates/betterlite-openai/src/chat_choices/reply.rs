@@ -1,5 +1,3 @@
-use std::str;
-
 use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
@@ -20,8 +18,6 @@ use crate::openai_base_config::forwarding::{
 pub enum TransformResponseError {
     #[error("the provider answer is not valid JSON")]
     Json(Box<OpenAiErrorRecord>),
-    #[error("the provider answer is not UTF-8")]
-    BodyNotUtf8,
     #[error(transparent)]
     Projection(#[from] ForwardingFailure),
     #[error("api_base is not a valid URL")]
@@ -48,10 +44,13 @@ pub fn transform_response<Projection>(
 where
     Projection: FnOnce(Value, &Headers, &Headers) -> Result<Value, ForwardingFailure>,
 {
-    let text =
-        str::from_utf8(reply.body).map_err(|_ignored| TransformResponseError::BodyNotUtf8)?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "LiteLLM reads raw_response.text leniently, logs it, then fails in .json()"
+    )]
+    let text = String::from_utf8_lossy(reply.body);
     let call = PostCall {
-        original_response: Json::Text(text.to_owned()),
+        original_response: Json::Text(text.clone().into_owned()),
         input: input.messages,
         additional_args: AdditionalArgs {
             api_base: None,
@@ -63,7 +62,7 @@ where
         },
     };
     let wire = ResponseForward {
-        raw_text: text,
+        raw_text: &text,
         raw_headers: reply.headers,
         hidden_headers: reply.headers,
     };
@@ -95,21 +94,4 @@ fn failure(error: BaseConfigError, reply: &ResponseReply<'_>) -> TransformRespon
         }
         BaseConfigError::InvalidUrl(source) => TransformResponseError::Base { source },
     }
-}
-
-// get_error_class: an OpenAIError keeps the status and headers the provider answered with
-#[must_use]
-pub fn error_class(
-    status_code: u16,
-    message: String,
-    headers: Option<Headers>,
-) -> OpenAiErrorRecord {
-    OpenAiErrorRecord::from_parts(OpenAiErrorParts {
-        status_code,
-        message,
-        headers,
-        request: None,
-        response: None,
-        body: None,
-    })
 }

@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use super::support::{fixed_clock, nil_id, text, value};
 use crate::chat_choices::stream::{
-    CHUNK_OBJECT, StreamError, chunk_parser, extract_error_from_chunk, move_reasoning_delta,
+    CHUNK_OBJECT, StreamError, chunk_parser, extract_error_from_chunk,
 };
 use crate::chat_choices::wire::{StreamDelta, StreamReply};
 
@@ -81,19 +81,6 @@ fn absent_delta_or_choices() {
             .choices
             .is_empty()
     );
-
-    let mut choices = vec![value(&[("delta", value(&[("reasoning", text("r"))]))])];
-    move_reasoning_delta(&mut choices).unwrap();
-    assert_eq!(choices[0]["delta"]["reasoning_content"], text("r"));
-    assert!(choices[0]["delta"].get("reasoning").is_none());
-    assert!(matches!(
-        move_reasoning_delta(&mut [Value::from(5_i64)]),
-        Err(StreamError::ChoiceNotObject)
-    ));
-    assert!(matches!(
-        move_reasoning_delta(&mut [value(&[("delta", Value::from(5_i64))])]),
-        Err(StreamError::DeltaNotObject)
-    ));
 }
 
 fn error_chunk(error: Value) -> Value {
@@ -107,56 +94,42 @@ fn error_status(chunk: &Value) -> Option<u16> {
     }
 }
 
+fn error_object(code: Value) -> Value {
+    value(&[("message", text("x")), ("code", code)])
+}
+
 pub(super) fn embedded_stream_error() {
+    let boom = value(&[("message", text("boom")), ("code", Value::from(400_i64))]);
     assert_eq!(
-        extract_error_from_chunk(&error_chunk(value(&[
-            ("message", text("boom")),
-            ("code", Value::from(400_i64)),
-        ]))),
+        extract_error_from_chunk(&boom),
         Some((String::from("boom"), 400))
     );
     assert_eq!(
-        extract_error_from_chunk(&error_chunk(value(&[
-            ("message", text("x")),
-            ("code", Value::from(599_i64)),
-        ]))),
+        extract_error_from_chunk(&error_object(Value::from(599_i64))),
         Some((String::from("x"), 599))
     );
     status_bounds();
     falsy_errors_are_ignored();
-    assert_eq!(
-        error_status(&error_chunk(value(&[
-            ("message", text("boom")),
-            ("code", Value::from(400_i64)),
-        ]))),
-        Some(400)
-    );
+    assert_eq!(error_status(&error_chunk(boom)), Some(400));
     assert_eq!(error_status(&error_chunk(text("plain"))), Some(500));
+    assert_eq!(
+        extract_error_from_chunk(&text("plain")),
+        Some((String::from("plain"), 500))
+    );
+    assert_eq!(
+        extract_error_from_chunk(&Value::Bool(true)).map(|(_, status)| status),
+        Some(500)
+    );
 }
 
 fn status_bounds() {
     for (code, expected) in [(600_i64, 500_u16), (399, 500), (500, 500)] {
-        let error = error_chunk(value(&[
-            ("message", text("x")),
-            ("code", Value::from(code)),
-        ]));
+        let error = error_chunk(error_object(Value::from(code)));
         assert_eq!(error_status(&error), Some(expected));
     }
-    let text_code = error_chunk(value(&[("message", text("x")), ("code", text("400"))]));
-    assert_eq!(error_status(&text_code), Some(500));
-    let float_code = error_chunk(value(&[
-        ("message", text("x")),
-        ("code", Value::from(400.0_f64)),
-    ]));
-    assert_eq!(error_status(&float_code), Some(500));
-    assert_eq!(
-        extract_error_from_chunk(&error_chunk(text("plain"))),
-        Some((String::from("plain"), 500))
-    );
-    assert_eq!(
-        extract_error_from_chunk(&error_chunk(Value::Bool(true))).map(|(_, status)| status),
-        Some(500)
-    );
+    for code in [text("400"), Value::from(400.0_f64)] {
+        assert_eq!(error_status(&error_chunk(error_object(code))), Some(500));
+    }
 }
 
 fn falsy_errors_are_ignored() {
@@ -168,10 +141,7 @@ fn falsy_errors_are_ignored() {
         Value::Array(Vec::new()),
         value(&[]),
     ] {
-        assert_eq!(
-            extract_error_from_chunk(&error_chunk(ignored.clone())),
-            None
-        );
+        assert_eq!(extract_error_from_chunk(&ignored), None);
         let parsed = parse(&value(&[
             ("id", text("c")),
             ("created", Value::from(1_i64)),
@@ -181,7 +151,6 @@ fn falsy_errors_are_ignored() {
         .unwrap();
         assert_eq!(parsed.id, "c");
     }
-    assert_eq!(extract_error_from_chunk(&value(&[("id", text("c"))])), None);
 }
 
 fn full_envelope() -> Value {
@@ -281,7 +250,7 @@ fn choice_finish_mapping() {
             ("model", text("m")),
             ("choices", Value::Null),
         ])),
-        Err(StreamError::ChoicesNotList)
+        Err(StreamError::Chunk(_))
     ));
     let mapped = parse(&envelope(Value::Array(vec![value(&[
         ("index", Value::from(2_i64)),
@@ -300,6 +269,73 @@ fn choice_finish_mapping() {
     assert!(empty_reason.choices[0].finish_reason.is_none());
     assert!(matches!(
         parse(&envelope(Value::Array(vec![Value::from(5_i64)]))),
-        Err(StreamError::ChoiceNotObject)
+        Err(StreamError::Chunk(_))
     ));
+    usage_and_tool_calls();
+}
+
+fn usage_and_tool_calls() {
+    let with_cost = parse(&value(&[
+        ("id", text("c")),
+        ("created", Value::from(1_i64)),
+        ("model", text("m")),
+        (
+            "usage",
+            value(&[
+                ("prompt_tokens", Value::Null),
+                ("cost", Value::from(0.5_f64)),
+            ]),
+        ),
+    ]))
+    .unwrap();
+    let usage = with_cost.usage.as_ref().unwrap();
+    assert_eq!(usage.prompt_tokens, 0);
+    assert_eq!(usage.extra.get("cost"), Some(&Value::from(0.5_f64)));
+    assert_eq!(
+        serde_json::to_value(usage).unwrap()["cost"],
+        Value::from(0.5_f64)
+    );
+    numbered_tool_calls();
+    invalid_tool_calls();
+}
+
+fn numbered_tool_calls() {
+    let sent = Value::Array(vec![
+        value(&[
+            ("index", Value::from(5_i64)),
+            ("id", text("a")),
+            ("function", value(&[("arguments", text("{"))])),
+        ]),
+        value(&[("function", value(&[("name", text("f"))]))]),
+        value(&[("function", value(&[("arguments", Value::Null)]))]),
+        value(&[("index", Value::Null), ("function", value(&[]))]),
+        value(&[("type", text("custom")), ("custom", value(&[]))]),
+    ]);
+    let read = parse(&envelope(delta_choices(value(&[("tool_calls", sent)])))).unwrap();
+    let calls = read.choices[0].delta.tool_calls.as_ref().unwrap();
+    let indexes = calls.iter().map(|call| call.index).collect::<Vec<_>>();
+    assert_eq!(indexes, [Some(5), Some(0), Some(1), Some(2), Some(3)]);
+    assert_eq!(calls[0].kind.as_deref(), Some("function"));
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, "{");
+    assert_eq!(
+        calls[1].function.as_ref().unwrap().name.as_deref(),
+        Some("f")
+    );
+    assert_eq!(calls[1].function.as_ref().unwrap().arguments, "");
+    assert_eq!(calls[2].function.as_ref().unwrap().arguments, "");
+    assert!(calls[4].custom.is_some());
+    assert_eq!(calls[4].kind.as_deref(), Some("custom"));
+}
+
+fn invalid_tool_calls() {
+    for call in [
+        value(&[("id", text("a"))]),
+        value(&[("type", text("custom"))]),
+    ] {
+        let delta = value(&[("tool_calls", Value::Array(vec![call]))]);
+        assert!(matches!(
+            parse(&envelope(delta_choices(delta))),
+            Err(StreamError::ToolCallPayload)
+        ));
+    }
 }

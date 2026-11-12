@@ -1,4 +1,5 @@
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::choices::ChoicesError;
@@ -31,6 +32,7 @@ fn convert_tool_call(
                 name: payload.name.clone(),
                 input: payload.input.clone(),
             }),
+            extra: call.extra.clone(),
         });
     }
     let function = call
@@ -46,6 +48,7 @@ fn convert_tool_call(
             arguments: function.arguments.clone().unwrap_or_default(),
         }),
         custom: None,
+        extra: call.extra.clone(),
     })
 }
 
@@ -64,38 +67,42 @@ pub(crate) fn repair_parallel_tool_calls(
         if function.name.as_deref() != Some(PARALLEL_TOOL) {
             continue;
         }
-        replacements.push((index, expanded_parallel_call(call, &parsed)?));
+        replacements.push((index, expanded_parallel_call(call, parsed)?));
     }
     Ok(splice(calls, replacements))
 }
 
+#[derive(Deserialize)]
+struct ParallelArguments {
+    tool_uses: Vec<ToolUse>,
+}
+
+#[derive(Deserialize)]
+struct ToolUse {
+    recipient_name: String,
+    parameters: Value,
+}
+
 fn expanded_parallel_call(
     call: &ChoiceToolCall,
-    parsed: &Value,
+    parsed: Value,
 ) -> Result<Vec<ChoiceToolCall>, ChoicesError> {
-    let uses = parsed
-        .get("tool_uses")
-        .and_then(Value::as_array)
-        .ok_or(ChoicesError::ParallelUses)?;
-    let mut fixed = Vec::with_capacity(uses.len());
-    for (position, tool_use) in uses.iter().enumerate() {
-        let recipient = tool_use
-            .get("recipient_name")
-            .and_then(Value::as_str)
-            .ok_or(ChoicesError::ParallelEntry)?;
-        let parameters = tool_use
-            .get("parameters")
-            .ok_or(ChoicesError::ParallelEntry)?;
-        let name = recipient.strip_prefix("functions.").unwrap_or(recipient);
-        let call_id = &call.id;
+    let arguments: ParallelArguments =
+        serde_json::from_value(parsed).map_err(|source| ChoicesError::ParallelUses { source })?;
+    let call_id = &call.id;
+    let mut fixed = Vec::with_capacity(arguments.tool_uses.len());
+    for (position, tool_use) in arguments.tool_uses.into_iter().enumerate() {
+        let recipient = tool_use.recipient_name;
+        let name = recipient.strip_prefix("functions.").unwrap_or(&recipient);
         fixed.push(ChoiceToolCall {
             id: format!("{call_id}_{position}"),
             kind: String::from("function"),
             function: Some(CallFunction {
                 name: Some(name.to_owned()),
-                arguments: parameters.to_string(),
+                arguments: tool_use.parameters.to_string(),
             }),
             custom: None,
+            extra: Map::new(),
         });
     }
     Ok(fixed)
@@ -126,48 +133,52 @@ fn splice(
     result
 }
 
+// arguments may be text, an object or null; anything else leaves the content as text
+#[derive(Deserialize)]
+struct ContentCall {
+    #[serde(rename = "type")]
+    kind: String,
+    name: String,
+    #[serde(default)]
+    arguments: ContentArguments,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+enum ContentArguments {
+    Text(String),
+    Object(Map<String, Value>),
+    #[default]
+    Null,
+}
+
 pub(crate) fn content_tool_call(
     content: &str,
     tools: &Value,
     identifier: fn() -> Uuid,
 ) -> Result<Option<ChoiceToolCall>, ChoicesError> {
     let names = tool_call_names(tools)?;
-    let Ok(parsed) = serde_json::from_str::<Value>(content) else {
+    let Ok(parsed) = serde_json::from_str::<ContentCall>(content) else {
         return Ok(None);
     };
-    let Some(fields) = parsed.as_object() else {
-        return Ok(None);
-    };
-    if fields.get("type").and_then(Value::as_str) != Some("function") {
+    if parsed.kind != "function" || !names.contains(&parsed.name) {
         return Ok(None);
     }
-    let Some(name) = fields.get("name").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    if !names.iter().any(|known| known == name) {
-        return Ok(None);
-    }
-    let Some(arguments) = arguments_text(fields.get("arguments")) else {
-        return Ok(None);
+    let arguments = match parsed.arguments {
+        ContentArguments::Text(text) => text,
+        ContentArguments::Object(fields) => Value::Object(fields).to_string(),
+        ContentArguments::Null => String::new(),
     };
     Ok(Some(ChoiceToolCall {
         id: identifier().to_string(),
         kind: String::from("function"),
         function: Some(CallFunction {
-            name: Some(name.to_owned()),
+            name: Some(parsed.name),
             arguments,
         }),
         custom: None,
+        extra: Map::new(),
     }))
-}
-
-fn arguments_text(value: Option<&Value>) -> Option<String> {
-    match value {
-        None | Some(Value::Null) => Some(String::new()),
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(object @ Value::Object(_)) => Some(object.to_string()),
-        Some(Value::Array(_) | Value::Bool(_) | Value::Number(_)) => None,
-    }
 }
 
 fn tool_call_names(tools: &Value) -> Result<Vec<String>, ChoicesError> {

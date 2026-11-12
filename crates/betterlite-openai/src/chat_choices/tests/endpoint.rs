@@ -12,22 +12,18 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::HeaderMap;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
 use url::Url;
 
-use super::super::config::{
-    ChatCompletionConfig as _, CredentialInputs, OpenAiChatConfig, resolve_credentials,
-};
 use super::super::endpoint::{
     ModelListError, ModelListRequest, ModelListTransport, complete_url, get_models,
     validate_environment,
 };
-use crate::count_tokens::counter::OpenAiTokenCounter;
-use crate::count_tokens::handler::CountTokensHandler;
+use crate::credentials::{ExplicitCredentials, LiteLlmGlobals, get_openai_credentials};
 use crate::openai_base_config::Headers;
 
 struct Script {
@@ -182,26 +178,18 @@ pub(super) fn model_list_decode_failure() {
         fetch(&invalid, &request(None, Some("k"))),
         Err(ModelListError::Decode { .. })
     ));
-    let no_data = Script::replying(200, r#"{"models": []}"#);
-    assert!(matches!(
-        fetch(&no_data, &request(None, Some("k"))),
-        Err(ModelListError::MissingData)
-    ));
-    let not_a_list = Script::replying(200, r#"{"data": "x"}"#);
-    assert!(matches!(
-        fetch(&not_a_list, &request(None, Some("k"))),
-        Err(ModelListError::MissingData)
-    ));
-    let no_id = Script::replying(200, r#"{"data": [{}]}"#);
-    assert!(matches!(
-        fetch(&no_id, &request(None, Some("k"))),
-        Err(ModelListError::MissingModelId)
-    ));
-    let text_id = Script::replying(200, r#"{"data": [{"id": 5}]}"#);
-    assert!(matches!(
-        fetch(&text_id, &request(None, Some("k"))),
-        Err(ModelListError::MissingModelId)
-    ));
+    for body in [
+        r#"{"models": []}"#,
+        r#"{"data": "x"}"#,
+        r#"{"data": [{}]}"#,
+        r#"{"data": [{"id": 5}]}"#,
+    ] {
+        let script = Script::replying(200, body);
+        assert!(matches!(
+            fetch(&script, &request(None, Some("k"))),
+            Err(ModelListError::Decode { .. })
+        ));
+    }
     let failed = Script::replying(500, r#"{"error": "boom"}"#);
     assert!(matches!(
         fetch(&failed, &request(None, Some("k"))),
@@ -322,16 +310,21 @@ fn resolved_key(
     openai_key: Option<SecretString>,
     environment: Option<SecretString>,
 ) -> Option<String> {
-    let settings = credential_settings("https://env.example/v1");
-    resolve_credentials(CredentialInputs {
-        api_key,
-        litellm_api_key,
-        litellm_openai_key: openai_key,
-        environment_api_key: environment,
-        api_base: None,
-        litellm_api_base: None,
-        settings: &settings,
-    })
+    get_openai_credentials(
+        ExplicitCredentials {
+            api_key,
+            api_base: None,
+            organization: None,
+        },
+        LiteLlmGlobals {
+            api_base: None,
+            api_key: litellm_api_key,
+            openai_key,
+            organization: None,
+        },
+        &credential_settings("https://env.example/v1"),
+        environment,
+    )
     .api_key
     .as_ref()
     .map(|key| key.expose_secret().to_owned())
@@ -376,63 +369,46 @@ fn credential_precedence() {
     );
 }
 
-fn credential_bases() {
-    let settings = credential_settings("https://env.example/v1");
-    let explicit = resolve_credentials(CredentialInputs {
-        api_key: None,
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        environment_api_key: None,
-        api_base: Some("https://explicit.example/v1"),
-        litellm_api_base: Some("https://litellm.example/v1"),
-        settings: &settings,
-    });
-    assert_eq!(explicit.api_base, "https://explicit.example/v1");
-    let globals = resolve_credentials(CredentialInputs {
-        api_key: None,
-        litellm_api_key: Some(SecretString::from("global-key")),
-        litellm_openai_key: Some(SecretString::from("openai-key")),
-        environment_api_key: None,
-        api_base: None,
-        litellm_api_base: Some("https://litellm.example/v1"),
-        settings: &settings,
-    });
-    assert_eq!(
-        globals.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("global-key")
-    );
-    assert_eq!(globals.api_base, "https://litellm.example/v1");
-    let nothing = resolve_credentials(CredentialInputs {
-        api_key: None,
-        litellm_api_key: None,
-        litellm_openai_key: None,
-        environment_api_key: None,
-        api_base: None,
-        litellm_api_base: None,
-        settings: &CredentialSettings::default(),
-    });
-    assert!(nothing.api_key.is_none());
-    assert_eq!(nothing.api_base, CredentialSettings::default().api_base);
+fn resolved_base(explicit: Option<&str>, litellm: Option<&str>) -> String {
+    get_openai_credentials(
+        ExplicitCredentials {
+            api_base: explicit.map(str::to_owned),
+            api_key: None,
+            organization: None,
+        },
+        LiteLlmGlobals {
+            api_base: litellm.map(str::to_owned),
+            api_key: None,
+            openai_key: None,
+            organization: None,
+        },
+        &credential_settings("https://env.example/v1"),
+        None,
+    )
+    .api_base
 }
 
-fn identity_and_counter() {
+fn credential_bases() {
     assert_eq!(
-        OpenAiChatConfig.base_model(Some("gpt-4o")),
-        Some(String::from("gpt-4o"))
+        resolved_base(
+            Some("https://explicit.example/v1"),
+            Some("https://litellm.example/v1")
+        ),
+        "https://explicit.example/v1"
     );
-    assert_eq!(OpenAiChatConfig.base_model(Some("")), Some(String::new()));
-    assert_eq!(OpenAiChatConfig.base_model(None), None);
-    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
-    let handler = CountTokensHandler {
-        client: ProxiedClient::outbound(&policy).unwrap(),
-        request_timeout: Duration::from_mins(100),
-    };
-    let counter: OpenAiTokenCounter = OpenAiChatConfig.token_counter(handler, None);
-    assert!(counter.environment_api_key.is_none());
+    assert_eq!(
+        resolved_base(None, Some("https://litellm.example/v1")),
+        "https://litellm.example/v1"
+    );
+    assert_eq!(resolved_base(None, None), "https://env.example/v1");
+    assert_eq!(
+        resolved_key(None, None, None, None),
+        None,
+        "no key anywhere resolves to none"
+    );
 }
 
 pub(super) fn credential_accessor_defaults() {
     credential_precedence();
     credential_bases();
-    identity_and_counter();
 }

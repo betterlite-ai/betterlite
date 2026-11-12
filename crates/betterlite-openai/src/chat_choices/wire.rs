@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use serde_with::{DefaultOnNull, serde_as};
 
 // a provider reply choice, of which _transform_choices reads the fields below
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -27,7 +28,7 @@ pub struct ReplyMessage {
 }
 
 // _extract_reasoning_content tests key presence, so an explicit null differs from a missing key
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum ProviderField {
     #[default]
@@ -37,6 +38,7 @@ pub enum ProviderField {
     Text(String),
 }
 
+// ChatCompletionMessageToolCall(**tool_call) keeps the keys it does not name, such as index
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReplyToolCall {
     #[serde(default)]
@@ -47,6 +49,8 @@ pub struct ReplyToolCall {
     pub function: Option<ReplyFunction>,
     #[serde(default)]
     pub custom: Option<ReplyCustom>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -91,6 +95,8 @@ pub struct ChoiceToolCall {
     pub function: Option<CallFunction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom: Option<CustomPayload>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -105,8 +111,8 @@ pub struct CustomPayload {
     pub input: String,
 }
 
-// ModelResponseStream's envelope; the delta stays an open object because providers add fields
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+// ModelResponseStream's envelope
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StreamReply {
     pub id: String,
     pub object: &'static str,
@@ -119,37 +125,142 @@ pub struct StreamReply {
     pub service_tier: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StreamChoice {
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub index: i64,
+    #[serde(default)]
     pub finish_reason: Option<String>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub delta: StreamDelta,
-    pub logprobs: Option<Value>,
+    #[serde(default)]
+    pub logprobs: Option<ChoiceLogprobs>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChoiceLogprobs {
+    #[serde(default)]
+    pub content: Option<Vec<TokenLogprob>>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TokenLogprob {
+    pub token: String,
+    #[serde(default)]
+    pub bytes: Option<Vec<i64>>,
+    pub logprob: f64,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub top_logprobs: Vec<TopLogprob>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TopLogprob {
+    pub token: String,
+    #[serde(default)]
+    pub bytes: Option<Vec<i64>>,
+    pub logprob: f64,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamDelta {
+    #[serde(default)]
     pub role: Option<String>,
+    #[serde(default)]
     pub content: Option<String>,
-    pub function_call: Option<Value>,
-    pub tool_calls: Option<Vec<Value>>,
-    pub audio: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub function_call: Option<DeltaFunctionCall>,
+    #[serde(default)]
+    pub tool_calls: Option<Vec<DeltaToolCall>>,
+    #[serde(default)]
+    pub audio: Option<DeltaAudio>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub reasoning: ProviderField,
     #[serde(flatten)]
     pub passthrough: Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeltaFunctionCall {
+    pub arguments: String,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+// Delta.__init__ numbers the calls that lack an index and types the function ones, after parsing
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeltaToolCall {
+    #[serde(default)]
+    pub index: Option<i64>,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(rename = "type", default)]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<DeltaFunction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<DeltaCustom>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeltaFunction {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub arguments: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeltaCustom {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub input: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeltaAudio {
+    pub data: String,
+    pub expires_at: i64,
+    pub transcript: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamUsage {
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub prompt_tokens: u64,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub completion_tokens: u64,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub total_tokens: u64,
     #[serde(default)]
     pub prompt_tokens_details: Option<Value>,
     #[serde(default)]
     pub completion_tokens_details: Option<Value>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
 }

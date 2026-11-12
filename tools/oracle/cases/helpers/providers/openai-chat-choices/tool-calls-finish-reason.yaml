@@ -7,7 +7,7 @@ call:
         - choices:
             - index: 0
               finish_reason: stop
-              message: {tool_calls: [{id: call_a, type: function, function: {name: lookup, arguments: '{"city":"Paris"}'}}]}
+              message: {tool_calls: [{index: 3, id: call_a, type: function, function: {name: lookup, arguments: '{"city":"Paris"}'}}]}
         - choices:
             - index: 0
               finish_reason: tool_calls
