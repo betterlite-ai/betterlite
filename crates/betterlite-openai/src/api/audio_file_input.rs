@@ -50,7 +50,7 @@ pub enum AudioFile<'file> {
 }
 
 pub struct AudioTuple<'file> {
-    pub filename: Option<&'file str>,
+    pub filename: &'file str,
     pub content: Option<TupleContent<'file>>,
 }
 
@@ -161,10 +161,11 @@ fn extract_tuple(
     let Some(content) = tuple.content else {
         return Err(AudioFileError::ShortTuple);
     };
-    let filename = tuple
-        .filename
-        .filter(|filename| !filename.is_empty())
-        .unwrap_or(AUDIO_FILE_NAME);
+    let filename = if tuple.filename.is_empty() {
+        AUDIO_FILE_NAME
+    } else {
+        tuple.filename
+    };
     let file_content = match content {
         TupleContent::Bytes(bytes) | TupleContent::ByteArray(bytes) => bytes.to_vec(),
         TupleContent::Text(_) => return Err(AudioFileError::BareStringTupleContent),
@@ -217,10 +218,11 @@ fn content_type(filename: &str) -> String {
 }
 
 fn tuple_identity(tuple: &AudioTuple<'_>) -> String {
-    let name = tuple
-        .filename
-        .filter(|name| !name.is_empty())
-        .unwrap_or("None");
+    let name = if tuple.filename.is_empty() {
+        "None"
+    } else {
+        tuple.filename
+    };
     tuple.content.as_ref().map_or_else(
         || format!("({name},)"),
         |content| format!("({name}, {})", content_kind(content)),

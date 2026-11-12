@@ -164,7 +164,7 @@ impl File {
         match self {
             Self::Part(part) => borrow_part!(part, AudioFile),
             Self::Tuple(tuple) => AudioFile::Tuple(AudioTuple {
-                filename: tuple.filename.as_deref(),
+                filename: tuple.filename.as_deref().unwrap_or_default(),
                 content: tuple
                     .content
                     .as_mut()

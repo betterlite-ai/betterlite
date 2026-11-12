@@ -217,7 +217,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 #[case::empty_bytes(AudioFile::Bytes(b""), "audio.wav", "audio/wav", b"")]
 #[case::mp3_tuple(
     AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.MP3"),
+        filename: "voice.MP3",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "voice.MP3",
@@ -226,7 +226,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::empty_tuple_name(
     AudioFile::Tuple(AudioTuple {
-        filename: Some(""),
+        filename: "",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "audio.wav",
@@ -235,7 +235,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::missing_tuple_name(
     AudioFile::Tuple(AudioTuple {
-        filename: None,
+        filename: "",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "audio.wav",
@@ -244,7 +244,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::tuple_without_extension(
     AudioFile::Tuple(AudioTuple {
-        filename: Some("voice"),
+        filename: "voice",
         content: Some(TupleContent::ByteArray(b"abc")),
     }),
     "voice",
@@ -253,7 +253,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::tuple_unknown_extension(
     AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.custom"),
+        filename: "voice.custom",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "voice.custom",
@@ -262,7 +262,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::tuple_last_extension(
     AudioFile::Tuple(AudioTuple {
-        filename: Some("archive.tar.wav"),
+        filename: "archive.tar.wav",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "archive.tar.wav",
@@ -271,7 +271,7 @@ fn hash_of(file: &mut AudioFile<'_>) -> String {
 )]
 #[case::tuple_trailing_dot(
     AudioFile::Tuple(AudioTuple {
-        filename: Some("voice."),
+        filename: "voice.",
         content: Some(TupleContent::Bytes(b"abc")),
     }),
     "voice.",
@@ -304,7 +304,7 @@ fn streams_read_from_the_current_position_and_rewind() {
 fn tuple_streams_follow_the_stream_rule() {
     let mut stream = Stream::named("voice.wav", b"abc").at(2);
     let file = AudioFile::Tuple(AudioTuple {
-        filename: Some("other.mp3"),
+        filename: "other.mp3",
         content: Some(TupleContent::Stream(&mut stream)),
     });
     let processed = process_audio_file(file, &no_files()).unwrap();
@@ -356,7 +356,7 @@ fn audio_input_rejections() {
     assert_eq!(
         process_audio_file(
             AudioFile::Tuple(AudioTuple {
-                filename: Some("voice.wav"),
+                filename: "voice.wav",
                 content: Some(TupleContent::Text("abc")),
             }),
             &files
@@ -373,7 +373,7 @@ fn audio_input_rejections_name_the_unsupported_type() {
     assert_eq!(
         process_audio_file(
             AudioFile::Tuple(AudioTuple {
-                filename: Some("voice.wav"),
+                filename: "voice.wav",
                 content: None,
             }),
             &files
@@ -385,7 +385,7 @@ fn audio_input_rejections_name_the_unsupported_type() {
     assert_eq!(
         process_audio_file(
             AudioFile::Tuple(AudioTuple {
-                filename: Some("voice.wav"),
+                filename: "voice.wav",
                 content: Some(TupleContent::Unsupported {
                     python_class: "int"
                 }),
@@ -441,7 +441,7 @@ fn read_open_and_seek_failures_propagate() {
     assert!(matches!(
         process_audio_file(
             AudioFile::Tuple(AudioTuple {
-                filename: Some("voice.wav"),
+                filename: "voice.wav",
                 content: Some(TupleContent::Path(Path::new("/missing.wav"))),
             }),
             &no_files()
@@ -455,7 +455,7 @@ fn audio_hash_and_position() {
     assert_eq!(hash_of(&mut AudioFile::Bytes(b"abc")), ABC_HASH);
     assert_eq!(hash_of(&mut AudioFile::ByteArray(b"abc")), ABC_HASH);
     let mut tuple = AudioFile::Tuple(AudioTuple {
-        filename: Some("different"),
+        filename: "different",
         content: Some(TupleContent::Bytes(b"abc")),
     });
     assert_eq!(hash_of(&mut tuple), ABC_HASH);
@@ -502,7 +502,7 @@ fn hash_fallbacks_use_the_reader_name_and_the_path() {
 fn a_missing_or_empty_tuple_name_uses_the_tuple_identity() {
     let mut failing = Stream::named("voice.wav", b"abc").with(Flaw::ReadFails);
     let mut empty = AudioFile::Tuple(AudioTuple {
-        filename: Some(""),
+        filename: "",
         content: Some(TupleContent::Stream(&mut failing)),
     });
     assert_eq!(
@@ -510,7 +510,7 @@ fn a_missing_or_empty_tuple_name_uses_the_tuple_identity() {
         TUPLE_IDENTITY_HASH
     );
     let mut missing = AudioFile::Tuple(AudioTuple {
-        filename: None,
+        filename: "",
         content: Some(TupleContent::Stream(&mut failing)),
     });
     assert_eq!(
@@ -522,7 +522,7 @@ fn a_missing_or_empty_tuple_name_uses_the_tuple_identity() {
 #[test]
 fn a_short_tuple_hashes_its_filename() {
     let mut short = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: None,
     });
     assert_eq!(
@@ -534,7 +534,7 @@ fn a_short_tuple_hashes_its_filename() {
 #[test]
 fn a_tuple_string_content_overrides_its_filename() {
     let mut file = AudioFile::Tuple(AudioTuple {
-        filename: Some("other.mp3"),
+        filename: "other.mp3",
         content: Some(TupleContent::Text("abc")),
     });
     assert_eq!(hash_of(&mut file), ABC_HASH);
@@ -543,7 +543,7 @@ fn a_tuple_string_content_overrides_its_filename() {
 #[test]
 fn a_tuple_path_content_overrides_its_filename_when_the_open_fails() {
     let mut file = AudioFile::Tuple(AudioTuple {
-        filename: Some("other.mp3"),
+        filename: "other.mp3",
         content: Some(TupleContent::Path(Path::new("/missing/voice.wav"))),
     });
     assert_eq!(hash_of(&mut file), MISSING_VOICE_HASH);
@@ -595,7 +595,7 @@ fn get_audio_file_name_prefers_the_name() {
     assert_eq!(get_audio_file_name(&AudioFile::Text("abc")), "abc");
     assert_eq!(get_audio_file_name(&AudioFile::Bytes(b"abc")), "audio.wav");
     let tuple = AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::Bytes(b"abc")),
     };
     assert_eq!(
@@ -663,7 +663,7 @@ fn duration_accepts_every_supported_shape() {
     );
     assert_eq!(stream.position, 2);
     let mut tuple_bytes = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::Bytes(&clip)),
     });
     assert_eq!(
@@ -672,7 +672,7 @@ fn duration_accepts_every_supported_shape() {
     );
     let mut tuple_stream = Stream::named("voice.wav", &clip).at(1);
     let mut tuple = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::Stream(&mut tuple_stream)),
     });
     assert_eq!(
@@ -715,7 +715,7 @@ fn duration_returns_none_without_decodable_content() {
 fn duration_returns_none_for_tuple_shapes_it_does_not_read() {
     let clip = wav_bytes(1_000, 1_000, 1);
     let mut tuple_byte_array = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::ByteArray(&clip)),
     });
     assert_eq!(
@@ -723,7 +723,7 @@ fn duration_returns_none_for_tuple_shapes_it_does_not_read() {
         None
     );
     let mut tuple_path = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::Path(Path::new("/authorized/clip.wav"))),
     });
     assert_eq!(
@@ -735,7 +735,7 @@ fn duration_returns_none_for_tuple_shapes_it_does_not_read() {
         None
     );
     let mut short_tuple = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: None,
     });
     assert_eq!(
@@ -743,7 +743,7 @@ fn duration_returns_none_for_tuple_shapes_it_does_not_read() {
         None
     );
     let mut tuple_text = AudioFile::Tuple(AudioTuple {
-        filename: Some("voice.wav"),
+        filename: "voice.wav",
         content: Some(TupleContent::Text("abc")),
     });
     assert_eq!(
@@ -823,6 +823,42 @@ fn decode_limits_reject_more_frames_and_faster_rates() {
     );
     assert_eq!(decode_audio_duration(&clip, &limits(64, 9, 10)), None);
     assert_eq!(decode_audio_duration(&clip, &limits(64, 10, 9)), None);
+}
+
+#[rstest]
+#[case::mono_cut_mid_frame(wav_bytes(10, 10, 1), 51, Decimal::new(3, 1))]
+#[case::three_channels(wav_bytes(10, 10, 3), 57, Decimal::new(2, 1))]
+#[case::header_only(wav_bytes(10, 10, 1), 44, Decimal::ZERO)]
+#[case::complete(wav_bytes(10, 10, 3), 104, Decimal::ONE)]
+fn decode_caps_frames_at_the_bytes_present(
+    #[case] clip: Vec<u8>,
+    #[case] length: usize,
+    #[case] expected: Decimal,
+) {
+    assert_eq!(
+        decode_audio_duration(&clip[..length], &native_limits()),
+        Some(expected)
+    );
+}
+
+#[test]
+fn decode_ignores_a_data_length_beyond_the_upload() {
+    let mut clip = wav_bytes(2, 10, 1);
+    clip[40..44].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert_eq!(
+        decode_audio_duration(&clip, &native_limits()),
+        Some(Decimal::new(2, 1))
+    );
+}
+
+#[rstest]
+#[case::adpcm(2)]
+#[case::a_law(6)]
+#[case::mu_law(7)]
+fn decode_returns_none_for_wav_codecs_it_does_not_read(#[case] format_tag: u8) {
+    let mut clip = wav_bytes(10, 10, 1);
+    clip[20] = format_tag;
+    assert_eq!(decode_audio_duration(&clip, &native_limits()), None);
 }
 
 #[test]

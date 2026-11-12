@@ -54,7 +54,12 @@ pub fn decode_audio_duration(audio: &[u8], limits: &AudioDecodeLimits) -> Option
     if spec.sample_rate == 0 || spec.sample_rate > limits.max_sample_rate {
         return None;
     }
-    let frames = u64::from(reader.duration());
+    let declared_frames = u64::from(reader.duration());
+    let frame_bytes = u64::from(spec.channels) * u64::from(spec.bits_per_sample.div_ceil(8));
+    let data_bytes = u64::try_from(audio.len())
+        .ok()?
+        .saturating_sub(reader.into_inner().position());
+    let frames = declared_frames.min(data_bytes.checked_div(frame_bytes)?);
     if frames > limits.max_frames {
         return None;
     }
