@@ -9,15 +9,16 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::tls::apply_policy;
-use http::{Method, StatusCode};
-use reqwest::Response;
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
+use http::{HeaderMap, Method, StatusCode};
 use tokio::time::timeout;
 
 use crate::client::cleanup::http_client::{HttpResponse, ResponseHead, Transport};
 use crate::client::cleanup::recording::ResponseBody;
 use crate::client::sessions::factory::{HttpClientConfig, RequestCredential, TlsVerification};
 
-use super::capture::{BodyChunks, CaptureRecord, ErrorCapture, Exchange};
+use super::capture::{BodyChunks, CaptureRecord, CapturedBody, ErrorCapture, Exchange};
 use super::error::McpHttpError;
 use super::request::{McpHttpRequest, PreparedRequest, prepare};
 
@@ -30,6 +31,12 @@ pub struct McpHttpTransport {
     config: HttpClientConfig,
     client: ProxiedClient,
     capture: Arc<dyn ErrorCapture>,
+}
+
+struct LiveResponse {
+    status: u16,
+    headers: HeaderMap,
+    stream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
 }
 
 impl McpHttpTransport {
@@ -67,7 +74,7 @@ impl McpHttpTransport {
         })
     }
 
-    async fn execute(&self, prepared: &PreparedRequest) -> Result<Response, McpHttpError> {
+    async fn execute(&self, prepared: &PreparedRequest) -> Result<LiveResponse, McpHttpError> {
         let mut builder = self
             .client
             .client
@@ -76,11 +83,28 @@ impl McpHttpTransport {
         if !prepared.body.is_empty() {
             builder = builder.body(prepared.body.clone());
         }
-        let request = builder.build().map_err(McpHttpError::Request)?;
+        let request = builder
+            .build()
+            .map_err(|source| McpHttpError::Request(HttpError::Request(source)))?;
         match self.client.execute(request).await {
-            Ok(response) => Ok(response),
-            Err(HttpError::Request(source)) => Err(send_failure(source)),
-            Err(other) => Err(McpHttpError::Client(other)),
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let headers = response.headers().clone();
+                let stream = response
+                    .bytes_stream()
+                    .map(|chunk| {
+                        chunk
+                            .map(|bytes| bytes.to_vec())
+                            .map_err(HttpError::Request)
+                    })
+                    .boxed();
+                Ok(LiveResponse {
+                    status,
+                    headers,
+                    stream,
+                })
+            }
+            Err(error) => Err(send_failure(error)),
         }
     }
 
@@ -92,19 +116,17 @@ impl McpHttpTransport {
         let response = timeout(read_timeout, self.execute(prepared))
             .await
             .map_err(McpHttpError::HeadTimeout)??;
-        let status = response.status().as_u16();
-        if status >= 400 && self.config.capture_error_responses {
+        if response.status >= 400 && self.config.capture_error_responses {
             return self
                 .capture_response(response, prepared, read_timeout)
                 .await;
         }
-        let headers = response.headers().clone();
         Ok(HttpResponse {
-            status,
-            headers,
+            status: response.status,
+            headers: response.headers,
             capture: None,
             body: HttpBody {
-                state: BodyState::Live(Box::new(response)),
+                state: BodyState::Live(response.stream),
                 read_timeout,
             },
         })
@@ -112,14 +134,17 @@ impl McpHttpTransport {
 
     async fn capture_response(
         &self,
-        response: Response,
+        response: LiveResponse,
         prepared: &PreparedRequest,
         read_timeout: Duration,
     ) -> Result<HttpResponse<HttpBody>, McpHttpError> {
-        let status = response.status().as_u16();
-        let headers = response.headers().clone();
+        let LiveResponse {
+            status,
+            headers,
+            stream,
+        } = response;
         let mut body = HttpBody {
-            state: BodyState::Live(Box::new(response)),
+            state: BodyState::Live(stream),
             read_timeout,
         };
         let exchange = Exchange {
@@ -130,18 +155,7 @@ impl McpHttpTransport {
             status,
             response_headers: headers.clone(),
         };
-        let limit = TransportLimits::DEFAULT.body_bytes;
-        let captured = self
-            .capture
-            .capture(
-                exchange.clone(),
-                BodyChunks {
-                    body: &mut body,
-                    limit,
-                    remaining: limit,
-                },
-            )
-            .await;
+        let captured = self.capture_body(&mut body, &exchange).await;
         Ok(HttpResponse {
             status,
             headers,
@@ -154,6 +168,20 @@ impl McpHttpTransport {
                 read_timeout,
             },
         })
+    }
+
+    async fn capture_body(&self, body: &mut HttpBody, exchange: &Exchange) -> CapturedBody {
+        let limit = TransportLimits::DEFAULT.body_bytes;
+        self.capture
+            .capture(
+                exchange.clone(),
+                BodyChunks {
+                    body,
+                    limit,
+                    remaining: limit,
+                },
+            )
+            .await
     }
 }
 
@@ -195,7 +223,7 @@ pub struct HttpBody {
 }
 
 enum BodyState {
-    Live(Box<Response>),
+    Live(BoxStream<'static, Result<Vec<u8>, HttpError>>),
     Buffered(Vec<u8>),
 }
 
@@ -208,10 +236,10 @@ impl ResponseBody for HttpBody {
                 let bytes = take(content);
                 (!bytes.is_empty()).then_some(Ok(bytes))
             }
-            BodyState::Live(response) => match timeout(self.read_timeout, response.chunk()).await {
-                Ok(Ok(Some(chunk))) => Some(Ok(chunk.to_vec())),
-                Ok(Ok(None)) => None,
-                Ok(Err(source)) => Some(Err(McpHttpError::Body(source))),
+            BodyState::Live(stream) => match timeout(self.read_timeout, stream.next()).await {
+                Ok(Some(Ok(bytes))) => Some(Ok(bytes)),
+                Ok(Some(Err(error))) => Some(Err(McpHttpError::Body(error))),
+                Ok(None) => None,
                 Err(elapsed) => Some(Err(McpHttpError::BodyTimeout(elapsed))),
             },
         }
@@ -231,12 +259,14 @@ impl ResponseBody for HttpBody {
     }
 }
 
-fn send_failure(source: reqwest::Error) -> McpHttpError {
-    if source.is_timeout() {
-        return McpHttpError::Timeout(source);
+fn send_failure(error: HttpError) -> McpHttpError {
+    let timed_out = matches!(&error, HttpError::Request(source) if source.is_timeout());
+    if timed_out {
+        return McpHttpError::Timeout(error);
     }
-    if source.is_connect() {
-        return McpHttpError::Connect(source);
+    let refused = matches!(&error, HttpError::Request(source) if source.is_connect());
+    if refused {
+        return McpHttpError::Connect(error);
     }
-    McpHttpError::Request(source)
+    McpHttpError::Request(error)
 }

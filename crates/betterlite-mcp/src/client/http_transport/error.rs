@@ -19,17 +19,17 @@ pub enum McpHttpError {
     #[error(transparent)]
     Client(#[from] HttpError),
     #[error("the MCP HTTP request timed out")]
-    Timeout(#[source] reqwest::Error),
+    Timeout(#[source] HttpError),
     #[error("the MCP HTTP server could not be reached")]
-    Connect(#[source] reqwest::Error),
+    Connect(#[source] HttpError),
     #[error("the MCP HTTP request failed")]
-    Request(#[source] reqwest::Error),
+    Request(#[source] HttpError),
     #[error("the MCP HTTP request was not answered in time")]
     HeadTimeout(#[source] Elapsed),
     #[error("the MCP HTTP response body stopped arriving in time")]
     BodyTimeout(#[source] Elapsed),
     #[error("the MCP HTTP response body could not be read")]
-    Body(#[source] reqwest::Error),
+    Body(#[source] HttpError),
     #[error("the MCP HTTP response body is larger than {limit} bytes")]
     BodyTooLarge { limit: usize },
     #[error(transparent)]
