@@ -1,3 +1,5 @@
+use std::num::TryFromIntError;
+
 use thiserror::Error;
 
 pub const INTERNAL_SERVER_ERROR: &str = "internal_server_error";
@@ -31,6 +33,21 @@ pub enum MultimodalEmbeddingError {
     Field(&'static str, &'static str, usize),
     #[error("the multimodal embedding {0} overflows")]
     Overflow(&'static str),
+    #[error("the multimodal embedding {what} does not fit its integer range: {source}")]
+    IntegerRange {
+        what: &'static str,
+        #[source]
+        source: TryFromIntError,
+    },
+    #[error(
+        "the multimodal embedding {field} of prediction {index} is not a decimal number: {source}"
+    )]
+    Decimal {
+        field: &'static str,
+        index: usize,
+        #[source]
+        source: rust_decimal::Error,
+    },
 }
 
 impl MultimodalEmbeddingError {
@@ -46,7 +63,9 @@ impl MultimodalEmbeddingError {
             | Self::PredictionsNotList
             | Self::PredictionNotObject { .. }
             | Self::Field(..)
-            | Self::Overflow(_) => 500,
+            | Self::Overflow(_)
+            | Self::IntegerRange { .. }
+            | Self::Decimal { .. } => 500,
         }
     }
 }

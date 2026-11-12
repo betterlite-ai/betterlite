@@ -22,5 +22,14 @@ call:
         response:
           predictions:
             - {textEmbedding: [], imageEmbedding: [0.7]}
+      - model: multimodalembedding@001
+        status: 200
+        input: []
+        optional: {}
+        response:
+          predictions:
+            - imageEmbedding: [0.5]
+              videoEmbeddings:
+                - {startOffsetSec: 0, endOffsetSec: 2, embedding: [0.6]}
 compare: {ignore: []}
 env: {}

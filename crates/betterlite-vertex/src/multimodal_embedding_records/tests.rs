@@ -10,6 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingVector;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use secrecy::SecretString;
 
 use super::error::INTERNAL_SERVER_ERROR;
 use super::error::MultimodalEmbeddingError;
@@ -77,22 +78,24 @@ fn dimensions_map_to_output_dimensionality() {
 #[test]
 fn headers_force_the_content_type_and_bearer_after_the_caller() {
     let mut caller = BTreeMap::new();
+    caller.insert(String::from("Content-Type"), String::from("text/plain"));
+    caller.insert(String::from("Authorization"), String::from("Bearer caller"));
     caller.insert(String::from("content-type"), String::from("text/plain"));
     caller.insert(String::from("X-Trace"), String::from("one"));
-    let headers = validate_environment(caller, "vertex-key");
+    let headers = validate_environment(caller, &SecretString::from("vertex-key"));
     assert_eq!(
         headers.get("Content-Type").map(String::as_str),
         Some("application/json; charset=utf-8")
+    );
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer vertex-key")
     );
     assert_eq!(
         headers.get("content-type").map(String::as_str),
         Some("text/plain")
     );
     assert_eq!(headers.get("X-Trace").map(String::as_str), Some("one"));
-    assert_eq!(
-        headers.get("Authorization").map(String::as_str),
-        Some("Bearer vertex-key")
-    );
 }
 
 #[test]
@@ -285,6 +288,18 @@ fn text_vector_precedence_skips_image_and_video_vectors() {
 }
 
 #[test]
+fn image_vector_precedence_skips_video_vectors() {
+    let response = answer(
+        r#"{"predictions": [{"imageEmbedding": [0.5], "videoEmbeddings": [{"startOffsetSec": 0, "endOffsetSec": 2, "embedding": [0.6]}]}]}"#,
+        r#"{"instances": []}"#,
+    );
+    assert_eq!(response.response.data.len(), 1);
+    assert_eq!(response.response.data[0].index, 0);
+    assert_eq!(response.response.data[0].embedding, vector("[0.5]"));
+    assert_eq!(response.details.video_length_seconds, Decimal::from(2_u32));
+}
+
+#[test]
 fn repeated_video_index_keeps_the_prediction_index() {
     let response = answer(
         r#"{"predictions": [
@@ -294,7 +309,7 @@ fn repeated_video_index_keeps_the_prediction_index() {
             ]},
             {"imageEmbedding": [0.3]}
         ]}"#,
-        "{}",
+        r#"{"instances": []}"#,
     );
     assert_eq!(response.response.data.len(), 3);
     assert_eq!(response.response.data[0].index, 0);
@@ -309,7 +324,10 @@ fn repeated_video_index_keeps_the_prediction_index() {
 
 #[test]
 fn an_empty_prediction_produces_no_record() {
-    let response = answer(r#"{"predictions": [{}, {"textEmbedding": [0.5]}]}"#, "{}");
+    let response = answer(
+        r#"{"predictions": [{}, {"textEmbedding": [0.5]}]}"#,
+        r#"{"instances": []}"#,
+    );
     assert_eq!(response.response.data.len(), 1);
     assert_eq!(response.response.data[0].index, 1);
 }
@@ -363,6 +381,21 @@ fn video_usage_rejects_a_segment_without_offsets() {
         error,
         MultimodalEmbeddingError::Field("startOffsetSec", "number", 0)
     ));
+}
+
+#[test]
+fn video_usage_accepts_exponent_form_offsets() {
+    let details = calculate_usage(
+        &json(r#"{"instances": []}"#),
+        &items(
+            r#"[{"videoEmbeddings": [{"startOffsetSec": 1e-7, "endOffsetSec": 2e-7, "embedding": [0.1]}]}]"#,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        details.video_length_seconds,
+        Decimal::from_scientific("1e-7").unwrap()
+    );
 }
 
 #[test]

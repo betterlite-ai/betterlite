@@ -4,6 +4,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Extra;
 use betterlite_models::decisions::Json;
+use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 
 use super::error::MultimodalEmbeddingError as Error;
 
@@ -93,13 +95,16 @@ pub fn map_openai_params(non_default_params: &Extra, mut optional_params: Extra)
 #[must_use]
 pub fn validate_environment(
     mut headers: BTreeMap<String, String>,
-    api_key: &str,
+    api_key: &SecretString,
 ) -> BTreeMap<String, String> {
     headers.insert(
         String::from("Content-Type"),
         String::from("application/json; charset=utf-8"),
     );
-    headers.insert(String::from("Authorization"), format!("Bearer {api_key}"));
+    headers.insert(
+        String::from("Authorization"),
+        format!("Bearer {}", api_key.expose_secret()),
+    );
     headers
 }
 
