@@ -104,6 +104,14 @@ fn falsey_conversation_id_falls_back_per_chunk() {
         &text_chunk(&id(SECOND), r#""x""#),
     );
     assert_eq!(decoder.response_id.as_deref(), Some(id(SECOND).as_str()));
+    for source in [
+        r#"{"messageStart": {"conversationId": ""}}"#,
+        r#"{"messageStart": {"conversationId": null}}"#,
+    ] {
+        let mut fresh = state(MODEL, false, &[FIRST]);
+        assert_converse(&mut fresh, source, &empty_delta(&id(FIRST), MODEL));
+        assert_eq!(fresh.response_id, None);
+    }
 }
 
 fn nova_wrapper_uses_the_fallback_id() {
@@ -669,6 +677,30 @@ pub(super) fn json_tool_stream() {
     json_mode_suppresses_the_internal_tool();
     non_tool_start_keeps_the_restored_name();
     json_mode_off_emits_the_tool();
+    json_mode_keeps_other_tools();
+}
+
+fn json_mode_keeps_other_tools() {
+    let mut decoder = state(MODEL, true, &[FIRST]);
+    assert_converse(
+        &mut decoder,
+        r#"{"start": {"toolUse": {"toolUseId": "w", "name": "get_weather"}}, "contentBlockIndex": 0}"#,
+        &tool_chunk(
+            &id(FIRST),
+            &tool_delta(Some("w"), Some("get_weather"), r#""""#, 0),
+        ),
+    );
+    assert_converse(
+        &mut decoder,
+        r#"{"delta": {"toolUse": {"input": ""}}, "contentBlockIndex": 0}"#,
+        &tool_chunk(&id(FIRST), &tool_delta(None, None, r#""""#, 0)),
+    );
+    assert_converse(
+        &mut decoder,
+        r#"{"contentBlockIndex": 0}"#,
+        &tool_chunk(&id(FIRST), &tool_delta(None, None, r#""{}""#, 0)),
+    );
+    assert_eq!(decoder.current_tool_name, None);
 }
 
 fn json_mode_suppresses_the_internal_tool() {
