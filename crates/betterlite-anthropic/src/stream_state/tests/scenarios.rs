@@ -627,6 +627,17 @@ fn code_edge_cases(state: &mut StreamState) {
             r#"[{"type":"code_interpreter_call","id":"c6","code":"","container_id":"c-1","status":"completed","outputs":[{"type":"logs","logs":"out"}]}]"#
         )
     );
+
+    state.server_tool_inputs = IndexMap::from([("c7".to_owned(), chunk(r#"{"command":null}"#))]);
+    state.tool_results = vec![chunk(
+        r#"{"type":"bash_code_execution_tool_result","tool_use_id":"c7","content":{}}"#,
+    )];
+    assert_eq!(
+        as_json(&build_code_interpreter_results(state).unwrap()),
+        expected(
+            r#"[{"type":"code_interpreter_call","id":"c7","code":null,"container_id":"c-1","status":"completed","outputs":null}]"#
+        )
+    );
 }
 
 pub(super) fn code_output_buffer() {
