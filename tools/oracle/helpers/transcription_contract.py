@@ -221,13 +221,9 @@ def defaults_report(input_value: DefaultsInput) -> DefaultsOutput:
     except NotImplementedError as error:
         response_error = str(error)
     object_data = input_value["data_object"]
-    default_record = record_value(
-        AudioTranscriptionRequestData(data=object_data, files=None, content_type=None)
-    )
+    default_record = record_value(AudioTranscriptionRequestData(data=object_data))
     bytes_record = record_value(
-        AudioTranscriptionRequestData(
-            data=input_value["data_bytes"].encode(), files=None, content_type=None
-        )
+        AudioTranscriptionRequestData(data=input_value["data_bytes"].encode())
     )
     explicit_record = record_value(
         AudioTranscriptionRequestData(
