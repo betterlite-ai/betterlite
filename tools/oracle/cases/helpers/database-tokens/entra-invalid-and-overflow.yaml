@@ -1,0 +1,32 @@
+kind: helper
+name: database-tokens-entra-invalid-and-overflow
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: expiration
+        kind: azure
+        token: "a.b"
+      - function: expiration
+        kind: azure
+        token: "a.b.c.d"
+      - function: expiration
+        kind: azure
+        token: "header.e25vdCBqc29ufQ==.signature"
+      - function: expiration
+        kind: azure
+        token: "header.####.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJzdWIiOiJ4In0=.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjI1MzQwMjMwMDgwMH0=.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjk5OTk5OTk5OTk5OTk5OTk5OX0=.signature"
+      - function: expiration
+        kind: azure
+        token: "header.eyJleHAiOjI1MzQwMjMwMDc5OX0=.signature"
+env: {}
+compare: {ignore: []}
