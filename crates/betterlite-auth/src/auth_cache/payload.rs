@@ -67,8 +67,9 @@ pub fn decode<Model>(payload: &Json) -> Result<Option<Model>, PayloadError>
 where
     Model: DeserializeOwned,
 {
-    let wire = serde_json::to_value(payload).map_err(PayloadError::Json)?;
-    let value = serde_json::from_value::<CacheValue>(wire).map_err(PayloadError::Json)?;
+    let value = serde_json::to_value(payload)
+        .and_then(serde_json::from_value::<CacheValue>)
+        .map_err(PayloadError::Json)?;
     Ok(CacheCodec::decode(Some(&value)))
 }
 
