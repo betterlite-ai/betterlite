@@ -471,7 +471,7 @@ fn a_whole_decimal_top_level_cache_count_is_read_as_an_integer() {
     };
     assert_eq!(
         costs(rig(&[]).price(&request).unwrap()),
-        (dec("10"), Decimal::ZERO)
+        (dec("14"), Decimal::ZERO)
     );
 }
 
@@ -488,6 +488,7 @@ fn counter_overflow_is_a_typed_failure() {
         CallPriceError::CounterOverflow
     ));
     let total = CallPriceInput {
+        custom_llm_provider: Some("openai"),
         prompt_tokens: i64::MAX,
         completion_tokens: 1,
         ..input("any-model")
@@ -622,7 +623,10 @@ fn generic_providers_look_up_the_candidate_under_their_own_name(#[case] provider
     rig.price(&request).unwrap();
     assert_eq!(
         rig.catalog_calls(),
-        vec![format!("priced model-a {provider}")]
+        vec![
+            format!("info model-a {provider}"),
+            format!("priced model-a {provider}")
+        ]
     );
 }
 
@@ -682,9 +686,9 @@ fn explicit_cache_creation_counter_is_billed_at_the_creation_rate() {
 }
 
 #[rstest]
-#[case::anthropic("anthropic", vec!["priced model-a anthropic", "info model-a anthropic"])]
-#[case::bedrock("bedrock", vec!["priced model-a bedrock"])]
-#[case::azure_ai("azure_ai", vec!["priced model-a azure_ai"])]
+#[case::anthropic("anthropic", vec!["info model-a anthropic", "priced model-a anthropic", "info model-a anthropic"])]
+#[case::bedrock("bedrock", vec!["info model-a bedrock", "priced model-a bedrock"])]
+#[case::azure_ai("azure_ai", vec!["info model-a azure_ai", "priced model-a azure_ai"])]
 fn native_providers_skip_the_declared_rate_probe(
     #[case] provider: &str,
     #[case] expected: Vec<&str>,

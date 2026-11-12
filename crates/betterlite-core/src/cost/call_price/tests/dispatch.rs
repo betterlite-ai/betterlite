@@ -96,7 +96,7 @@ fn character_speech_needs_prompt_characters() {
 
 #[test]
 fn character_speech_with_an_unusable_rate_has_no_cost() {
-    let rig = rig(&[("tts-1", r#"{"input_cost_per_character": "free"}"#)]);
+    let rig = rig(&[("tts-1", r#"{"input_cost_per_character": []}"#)]);
     let error = rig.price(&speech("openai")).unwrap_err();
     assert!(matches!(error, CallPriceError::MissingSpeechCost { .. }));
 }
