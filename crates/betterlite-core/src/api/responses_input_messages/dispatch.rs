@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::api::responses_input_messages::Assembly;
@@ -34,7 +33,9 @@ pub(crate) fn append_items(
             ) => None,
         };
         if is_function_call(kind) {
-            add_call_id(&mut call_ids, fields);
+            if let Some(id) = produced.first().and_then(first_call_id) {
+                call_ids.insert(id.to_owned());
+            }
             if last_is_assistant(messages) {
                 append_to_last(messages, &produced)?;
                 continue;
@@ -50,37 +51,6 @@ pub(crate) fn append_items(
         merge_reasoning_messages(messages)?;
     }
     Ok(())
-}
-
-// B912 rejects a non-text call id while building the call, so only a text id reaches this set
-fn add_call_id(call_ids: &mut BTreeSet<String>, fields: &IndexMap<String, Json>) {
-    let direct = match fields.get("call_id") {
-        Some(Json::Text(id)) if !id.is_empty() => Some(id.as_str()),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Text(_),
-        ) => None,
-    };
-    let fallback = match fields.get("id") {
-        Some(Json::Text(id)) if !id.is_empty() => Some(id.as_str()),
-        None
-        | Some(
-            Json::Null
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Text(_),
-        ) => None,
-    };
-    if let Some(id) = direct.or(fallback) {
-        call_ids.insert(id.to_owned());
-    }
 }
 
 fn last_is_assistant(messages: &[Value]) -> bool {

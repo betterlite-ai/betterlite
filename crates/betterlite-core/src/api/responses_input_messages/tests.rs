@@ -288,6 +288,32 @@ fn web_search_rejections(#[case] item: &str) {
 }
 
 #[test]
+fn consecutive_web_searches_merge_into_one_assistant() {
+    let input = concat!(
+        r#"[{"type": "web_search_call", "id": "w1", "status": "completed", "action": {"type": "search", "query": "a"}},"#,
+        r#" {"type": "web_search_call", "id": "w2", "status": "completed", "action": {"type": "search", "query": "b"}}]"#
+    );
+    let first = concat!(
+        r#"Hosted web search: {"id":"w1","action":{"type":"search","query":"a"},"#,
+        r#""status":"completed","type":"web_search_call"}"#
+    );
+    let second = concat!(
+        r#"Hosted web search: {"id":"w2","action":{"type":"search","query":"b"},"#,
+        r#""status":"completed","type":"web_search_call"}"#
+    );
+    assert_eq!(
+        messages(input, false),
+        vec![json!({
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": first},
+                {"type": "text", "text": second}
+            ]
+        })]
+    );
+}
+
+#[test]
 fn consecutive_calls_merge_into_one_assistant() {
     let input = concat!(
         r#"[{"type": "function_call", "call_id": "c1", "name": "f", "arguments": "{}"},"#,
@@ -498,6 +524,41 @@ fn cached_wrapper_with_an_empty_id_is_kept() {
     );
 }
 
+#[test]
+fn empty_cached_wrapper_ids_are_never_deduplicated() {
+    let input = concat!(
+        r#"[{"type": "function_call_output", "call_id": "c1", "output": "r1"},"#,
+        r#" {"type": "function_call_output", "call_id": "c2", "output": "r2"}]"#
+    );
+    let entries = [
+        (
+            "c1",
+            r#"{"type": "function", "function": {"name": "f", "arguments": "{}"}}"#,
+        ),
+        (
+            "c2",
+            r#"{"type": "function", "function": {"name": "g", "arguments": "{}"}}"#,
+        ),
+    ];
+    let empty_wrapper = |name: &str| {
+        json!({
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "", "type": "function", "function": {"name": name, "arguments": "{}"}, "index": 0}
+            ]
+        })
+    };
+    assert_eq!(
+        cached_messages(input, &entries),
+        vec![
+            empty_wrapper("f"),
+            json!({"role": "tool", "content": "r1", "tool_call_id": "c1"}),
+            empty_wrapper("g"),
+            json!({"role": "tool", "content": "r2", "tool_call_id": "c2"}),
+        ]
+    );
+}
+
 #[rstest]
 #[case::empty(r#"{"type": "function_call_output", "call_id": "", "output": "r"}"#)]
 #[case::zero(r#"{"type": "function_call_output", "call_id": 0, "output": "r"}"#)]
@@ -583,6 +644,10 @@ fn function_call_predicate(#[case] kind: Option<&str>, #[case] expected: bool) {
 )]
 #[case::non_list_summary_is_ignored(
     r#"[{"type": "reasoning", "summary": "s"}]"#,
+    json!([])
+)]
+#[case::summary_without_text_is_ignored(
+    r#"[{"type": "reasoning", "summary": [{"type": "other"}, {"text": ""}]}]"#,
     json!([])
 )]
 fn reasoning_inspection(#[case] input: &str, #[case] expected: Value) {
