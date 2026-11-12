@@ -556,6 +556,11 @@ fn response_header_lookup_mode() {
         process_azure_headers(&duplicated, HeaderLookup::Exact),
         map(&[("llm_provider-Accept", "a"), ("llm_provider-accept", "b")])
     );
+    let repeated = pairs(&[("accept", "a"), ("accept", "b")]);
+    assert_eq!(
+        process_azure_headers(&repeated, HeaderLookup::Exact),
+        map(&[("llm_provider-accept", "b")])
+    );
 }
 
 pub(super) fn identity_isolation() {
