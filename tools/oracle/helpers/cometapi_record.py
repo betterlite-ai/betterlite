@@ -14,10 +14,7 @@ from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue
 
 litellm.suppress_debug_info = True
-
 EMPTY: dict[str, JsonValue] = {}
-
-
 NO_MESSAGES: list[dict[str, JsonValue]] = []
 
 
