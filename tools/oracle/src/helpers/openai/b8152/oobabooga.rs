@@ -64,20 +64,20 @@ fn wire(url: &str, api_key: Option<&str>, body: &JsonObject) -> Value {
 }
 
 pub(super) fn request_value(call: &RequestCall) -> Result<Value, Box<HelperError>> {
-    let url = match completion_url(&call.model, call.api_base.as_deref()) {
-        Ok(url) => url,
-        Err(error) => return Ok(failure(&error)),
-    };
-    let messages = &call.messages;
-    let body = completion_body(
-        &call.model,
-        messages,
-        &call.optional_params,
-        &RefuseDownloads,
+    completion_url(&call.model, call.api_base.as_deref()).map_or_else(
+        |error| Ok(failure(&error)),
+        |url| {
+            let messages = &call.messages;
+            completion_body(
+                &call.model,
+                messages,
+                &call.optional_params,
+                &RefuseDownloads,
+            )
+            .map(|body| json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
+            .map_err(|error| invalid(error.to_string()))
+        },
     )
-    .map_err(|error| invalid(error.to_string()))?;
-    let request = wire(&url, call.api_key.as_deref(), &body);
-    Ok(json!({"ok": true, "request": request}))
 }
 
 // a server error is a recorded answer; any other reply error is bad input to the helper
