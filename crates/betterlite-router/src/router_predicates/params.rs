@@ -45,14 +45,9 @@ fn cap_from_float(value: f64) -> Option<i64> {
         return None;
     }
     // Decimal rejects only finite values past its own range, which is far past i64's range too
-    let Some(cap) = Decimal::from_f64(truncated) else {
-        return Some(i64::MAX);
-    };
+    let cap = Decimal::from_f64(truncated).unwrap_or(Decimal::MAX);
     // int(float(value)) keeps every finite value, so an oversized cap saturates instead of disappearing
-    if cap > Decimal::from(i64::MAX) {
-        return Some(i64::MAX);
-    }
-    i64::try_from(cap).ok()
+    Some(i64::try_from(cap).unwrap_or(i64::MAX))
 }
 
 #[must_use]
