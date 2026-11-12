@@ -79,16 +79,20 @@ pub(crate) fn validate(state: &mut Preparation<'_>) -> RequestResult<()> {
     state.thinking = thinking;
     Ok(())
 }
-pub(crate) fn alternation(state: &mut Preparation<'_>) -> RequestResult<()> {
+fn continue_messages(kwargs: &JsonObject) -> RequestResult<(Option<Message>, Option<Message>)> {
+    let user = optional::<Message>(kwargs, "user_continue_message")?;
+    let assistant = optional::<Message>(kwargs, "assistant_continue_message")?;
+    Ok((user, assistant))
+}
+fn alternated(state: &Preparation<'_>) -> RequestResult<Vec<Message>> {
+    let (user, assistant) = continue_messages(&state.kwargs)?;
     let ensure = optional::<bool>(&state.kwargs, "ensure_alternating_roles")?.unwrap_or(false);
-    let user = optional::<Message>(&state.kwargs, "user_continue_message")?;
-    let assistant = optional::<Message>(&state.kwargs, "assistant_continue_message")?;
-    state.call.messages = get_completion_messages(
-        &state.call.messages,
-        assistant.as_ref(),
-        user.as_ref(),
-        ensure,
-    )?;
+    let messages = &state.call.messages;
+    get_completion_messages(messages, assistant.as_ref(), user.as_ref(), ensure)
+        .map_err(CompletionRequestError::from)
+}
+pub(crate) fn alternation(state: &mut Preparation<'_>) -> RequestResult<()> {
+    state.call.messages = alternated(state)?;
     Ok(())
 }
 pub(crate) fn system_prompt(state: &mut Preparation<'_>) -> RequestResult<()> {

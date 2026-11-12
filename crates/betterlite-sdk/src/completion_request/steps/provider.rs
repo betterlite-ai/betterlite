@@ -123,10 +123,14 @@ pub(crate) fn hidden_params(state: &mut Preparation<'_>) {
         .get("aws_region_name")
         .cloned()
         .unwrap_or(Json::Null);
-    state.call.hidden_params.extend([
-        (String::from("custom_llm_provider"), Json::Text(provider)),
-        (String::from("region_name"), region),
-    ]);
+    state
+        .call
+        .hidden_params
+        .insert(String::from("custom_llm_provider"), Json::Text(provider));
+    state
+        .call
+        .hidden_params
+        .insert(String::from("region_name"), region);
 }
 fn seconds(value: &Json, field: &'static str) -> RequestResult<Seconds> {
     let parsed = match value {

@@ -53,28 +53,22 @@ struct MappingInputs {
     named: Params,
     extra: Params,
     additional_drop: Vec<String>,
+    allowed: Vec<String>,
     provider: String,
 }
-impl MappingInputs {
-    fn new(state: &Preparation<'_>) -> RequestResult<Self> {
-        Ok(Self {
-            named: convert::<Params, _>(&named_arguments(state)?)?,
-            extra: convert::<Params, _>(&state.non_default)?,
-            additional_drop: optional::<Vec<String>>(&state.kwargs, "additional_drop_params")?
-                .unwrap_or_default(),
-            provider: provider_name(state),
-        })
-    }
+fn list_inputs(kwargs: &JsonObject) -> RequestResult<(Vec<String>, Vec<String>)> {
+    let drop = optional::<Vec<String>>(kwargs, "additional_drop_params")?.unwrap_or_default();
+    let allowed = optional::<Vec<String>>(kwargs, "allowed_openai_params")?.unwrap_or_default();
+    Ok((drop, allowed))
 }
-fn parameter_policy(state: &Preparation<'_>) -> RequestResult<ParameterPolicy> {
-    Ok(ParameterPolicy {
-        drop_params: state.settings.drop_params == Some(true)
-            || drop_params_flag(&state.kwargs).unwrap_or(false),
-        additional_drop_params: optional::<Vec<String>>(&state.kwargs, "additional_drop_params")?
-            .unwrap_or_default(),
-        allowed_openai_params: optional::<Vec<String>>(&state.kwargs, "allowed_openai_params")?
-            .unwrap_or_default(),
-    })
+fn parameter_policy(state: &Preparation<'_>, inputs: &MappingInputs) -> ParameterPolicy {
+    let dropped = state.settings.drop_params == Some(true)
+        || drop_params_flag(&state.kwargs).unwrap_or(false);
+    ParameterPolicy {
+        drop_params: dropped,
+        additional_drop_params: inputs.additional_drop.clone(),
+        allowed_openai_params: inputs.allowed.clone(),
+    }
 }
 fn chat_parameters(params: &Params) -> RequestResult<ChatParameters> {
     let object = convert::<JsonObject, _>(params)?;
@@ -106,7 +100,7 @@ fn map_options(
     inputs: &MappingInputs,
     mapper: Option<&dyn OptionalParamsMapper>,
 ) -> RequestResult<()> {
-    let policy = parameter_policy(state)?;
+    let policy = parameter_policy(state, inputs);
     let mut special = pre_process_non_default_params(
         &PreProcessRequest {
             passed_params: &inputs.named,
@@ -162,7 +156,14 @@ fn processed_non_default(
     convert::<JsonObject, _>(&processed)
 }
 pub(crate) fn assemble(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let inputs = MappingInputs::new(state)?;
+    let (additional_drop, allowed) = list_inputs(&state.kwargs)?;
+    let inputs = MappingInputs {
+        named: convert::<Params, _>(&named_arguments(state)?)?,
+        extra: convert::<Params, _>(&state.non_default)?,
+        additional_drop,
+        allowed,
+        provider: provider_name(state),
+    };
     let chat_policy = state.ports.model_metadata.chat_policy(
         &state.call.model,
         &inputs.provider,

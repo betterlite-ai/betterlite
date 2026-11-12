@@ -36,10 +36,15 @@ pub(crate) fn non_default(state: &mut Preparation<'_>) -> RequestResult<()> {
     state.non_default = convert::<JsonObject, _>(&filter_out_litellm_params(&kwargs, &names))?;
     Ok(())
 }
+fn seed_api_base(state: &Preparation<'_>) -> RequestResult<Option<String>> {
+    match optional::<String>(&state.kwargs, "api_base")? {
+        Some(given) if !given.is_empty() => Ok(Some(given)),
+        Some(_) | None => Ok(state.args.base_url.clone()),
+    }
+}
 pub(crate) fn cache_control(state: &mut Preparation<'_>) -> RequestResult<()> {
     let provider = optional::<String>(&state.kwargs, "custom_llm_provider")?;
-    let given = optional::<String>(&state.kwargs, "api_base")?.filter(|value| !value.is_empty());
-    let api_base = given.or_else(|| state.args.base_url.clone());
+    let api_base = seed_api_base(state)?;
     let enable = optional::<bool>(&state.kwargs, "enable_prompt_caching")?;
     let request = CacheSeedRequest {
         messages: &state.call.messages,
@@ -104,8 +109,7 @@ pub(crate) async fn prompt_hook(state: &mut Preparation<'_>, form: HookForm) -> 
     Ok(())
 }
 pub(crate) fn resolve_head_provider(state: &Preparation<'_>) -> RequestResult<String> {
-    let given = optional::<String>(&state.kwargs, "api_base")?.filter(|value| !value.is_empty());
-    let api_base = given.or_else(|| state.args.base_url.clone());
+    let api_base = seed_api_base(state)?;
     let lookup = ProviderLookup {
         model: &state.call.model,
         custom_llm_provider: None,

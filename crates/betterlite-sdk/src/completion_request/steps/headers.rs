@@ -3,6 +3,7 @@ use super::messages::optional;
 use crate::completion_options::headers::merge_request_headers;
 use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
+use crate::completion_request::call::PreparedCall;
 use crate::completion_request::error::RequestResult;
 use betterlite_models::decisions::Json;
 use betterlite_models::headers::affinity::{
@@ -14,11 +15,9 @@ use betterlite_models::headers::provider_specific::{
 use indexmap::IndexMap;
 pub(crate) fn merge(state: &mut Preparation<'_>) -> RequestResult<()> {
     let headers = optional::<JsonObject>(&state.kwargs, "headers")?;
-    state.call.headers = merge_request_headers(
-        headers.as_ref(),
-        state.args.extra_headers.as_ref(),
-        &state.settings.proxy_headers,
-    );
+    let proxy = &state.settings.proxy_headers;
+    let extra = state.args.extra_headers.as_ref();
+    state.call.headers = merge_request_headers(headers.as_ref(), extra, proxy);
     Ok(())
 }
 #[derive(serde::Deserialize)]
@@ -44,14 +43,15 @@ fn provider_header_entries(
 }
 pub(crate) fn provider_specific(state: &mut Preparation<'_>) -> RequestResult<()> {
     let entries = provider_header_entries(state)?;
-    let scoped = provider_specific_headers(
-        entries.as_deref(),
-        state.call.custom_llm_provider.as_deref(),
-    );
-    for (name, value) in scoped {
-        state.call.headers.insert(name, Json::Text(value));
-    }
+    let provider = state.call.custom_llm_provider.as_deref();
+    let scoped = provider_specific_headers(entries.as_deref(), provider);
+    apply_text_headers(&mut state.call, scoped);
     Ok(())
+}
+fn apply_text_headers(call: &mut PreparedCall, entries: IndexMap<String, String>) {
+    for (name, value) in entries {
+        call.headers.insert(name, Json::Text(value));
+    }
 }
 fn text_headers(headers: &JsonObject) -> IndexMap<String, String> {
     headers
@@ -71,8 +71,6 @@ pub(crate) fn affinity(state: &mut Preparation<'_>) -> RequestResult<()> {
         litellm_metadata: optional::<SessionMetadata>(&state.kwargs, "litellm_metadata")?,
     };
     let updated = add_provider_affinity_header(&text_headers(&state.call.headers), &params)?;
-    for (name, value) in updated {
-        state.call.headers.insert(name, Json::Text(value));
-    }
+    apply_text_headers(&mut state.call, updated);
     Ok(())
 }

@@ -55,21 +55,6 @@ pub(super) struct FakeMetadata {
     pub lookups: Arc<Mutex<Vec<Lookup>>>,
     pub parameters: Arc<Mutex<Vec<ChatParameters>>>,
 }
-impl FakeMetadata {
-    fn with_events(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            translates_developer_role: false,
-            mapping: None,
-            resolved_model: None,
-            resolved_provider: None,
-            resolved_base: None,
-            dynamic_key: None,
-            events,
-            lookups: Arc::new(Mutex::new(Vec::new())),
-            parameters: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-}
 
 fn provider_identity(name: Option<&str>) -> ProviderIdentity {
     match name {
@@ -141,16 +126,13 @@ pub(super) struct FakePrompt {
     pub seeded: Arc<Mutex<Vec<JsonObject>>>,
     pub hook_parameters: Arc<Mutex<Vec<JsonObject>>>,
 }
+
 impl FakePrompt {
-    fn with_events(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            should_run: false,
-            outcome: None,
-            seed_value: None,
-            events,
-            seeded: Arc::new(Mutex::new(Vec::new())),
-            hook_parameters: Arc::new(Mutex::new(Vec::new())),
-        }
+    fn recorded(&self, event: &str, request: PromptRequest) -> PromptOutcome {
+        lock(&self.events).push(event.to_owned());
+        self.outcome
+            .clone()
+            .unwrap_or_else(|| prompt_outcome(request))
     }
 }
 
@@ -194,11 +176,7 @@ impl PromptManagement for FakePrompt {
         &self,
         request: PromptRequest,
     ) -> Result<PromptOutcome, PromptManagementError> {
-        lock(&self.events).push(String::from("hook_sync"));
-        Ok(self
-            .outcome
-            .clone()
-            .unwrap_or_else(|| prompt_outcome(request)))
+        Ok(self.recorded("hook_sync", request))
     }
 
     async fn async_completion_prompt(
@@ -206,10 +184,7 @@ impl PromptManagement for FakePrompt {
         request: PromptRequest,
     ) -> Result<PromptOutcome, PromptManagementError> {
         lock(&self.events).push(String::from("hook_async"));
-        Ok(self
-            .outcome
-            .clone()
-            .unwrap_or_else(|| prompt_outcome(request)))
+        self.get_chat_completion_prompt(request).await
     }
 }
 
@@ -220,17 +195,6 @@ pub(super) struct FakeBridge {
     pub gpt5_4: Option<bool>,
     pub search: Option<bool>,
     pub events: Arc<Mutex<Vec<String>>>,
-}
-impl FakeBridge {
-    fn with_events(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            mode: None,
-            gpt5: None,
-            gpt5_4: None,
-            search: None,
-            events,
-        }
-    }
 }
 
 impl ResponsesBridgeCapabilities for FakeBridge {
@@ -279,14 +243,6 @@ pub(super) struct FakePricing {
     pub requests: Arc<Mutex<Vec<(String, String)>>>,
     pub events: Arc<Mutex<Vec<String>>>,
 }
-impl FakePricing {
-    fn with_events(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            requests: Arc::new(Mutex::new(Vec::new())),
-            events,
-        }
-    }
-}
 
 #[async_trait]
 impl PricingRegistration for FakePricing {
@@ -314,14 +270,6 @@ pub(super) struct LoggedEnvironment {
 pub(super) struct FakeLogging {
     pub updates: Arc<Mutex<Vec<LoggedEnvironment>>>,
     pub events: Arc<Mutex<Vec<String>>>,
-}
-impl FakeLogging {
-    fn with_events(events: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            updates: Arc::new(Mutex::new(Vec::new())),
-            events,
-        }
-    }
 }
 
 impl CompletionLogging for FakeLogging {
@@ -383,11 +331,40 @@ impl Fixture {
         Self {
             args: args_from(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}"#),
             settings: settings_default(),
-            metadata: FakeMetadata::with_events(Arc::clone(&events)),
-            prompt: FakePrompt::with_events(Arc::clone(&events)),
-            bridge: FakeBridge::with_events(Arc::clone(&events)),
-            pricing: FakePricing::with_events(Arc::clone(&events)),
-            logging: FakeLogging::with_events(Arc::clone(&events)),
+            metadata: FakeMetadata {
+                translates_developer_role: false,
+                mapping: None,
+                resolved_model: None,
+                resolved_provider: None,
+                resolved_base: None,
+                dynamic_key: None,
+                events: Arc::clone(&events),
+                lookups: Arc::new(Mutex::new(Vec::new())),
+                parameters: Arc::new(Mutex::new(Vec::new())),
+            },
+            prompt: FakePrompt {
+                should_run: false,
+                outcome: None,
+                seed_value: None,
+                events: Arc::clone(&events),
+                seeded: Arc::new(Mutex::new(Vec::new())),
+                hook_parameters: Arc::new(Mutex::new(Vec::new())),
+            },
+            bridge: FakeBridge {
+                mode: None,
+                gpt5: None,
+                gpt5_4: None,
+                search: None,
+                events: Arc::clone(&events),
+            },
+            pricing: FakePricing {
+                requests: Arc::new(Mutex::new(Vec::new())),
+                events: Arc::clone(&events),
+            },
+            logging: FakeLogging {
+                updates: Arc::new(Mutex::new(Vec::new())),
+                events: Arc::clone(&events),
+            },
             events,
         }
     }
