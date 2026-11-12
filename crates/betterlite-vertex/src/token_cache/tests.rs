@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
     ConfiguredCredentials, decode_vertex_credentials,
@@ -27,6 +27,7 @@ use super::CredentialCache;
 use super::error::{CredentialCacheError, needs_reauthentication};
 use super::executor::{CredentialExecutor, LoadedCredential};
 use super::key::CredentialKey;
+use super::probe::AccessToken;
 use super::record::{CacheRecord, CredentialSnapshot};
 use super::state::TokenState;
 
@@ -243,7 +244,9 @@ enum Scenario {
     MissingToken,
     MissingProject,
     UnrelatedRefreshErrorIsNotRetried,
-    StaleTokenIsReturnedWithoutRefresh,
+    StaleTokenIsRefreshed,
+    ExpiringTokenIsRefreshed,
+    ExpiredFalseWithValidFalseSkipsRefresh,
     FallbackFlagsMarkFresh,
     ResolvedAliasServesExplicitProject,
 }
@@ -262,7 +265,9 @@ enum Scenario {
 #[case::missing_token(Scenario::MissingToken)]
 #[case::missing_project(Scenario::MissingProject)]
 #[case::unrelated_refresh_error(Scenario::UnrelatedRefreshErrorIsNotRetried)]
-#[case::stale_token(Scenario::StaleTokenIsReturnedWithoutRefresh)]
+#[case::stale_token_refreshed(Scenario::StaleTokenIsRefreshed)]
+#[case::expiring_token_refreshed(Scenario::ExpiringTokenIsRefreshed)]
+#[case::expired_false_with_valid_false(Scenario::ExpiredFalseWithValidFalseSkipsRefresh)]
 #[case::fallback_flags(Scenario::FallbackFlagsMarkFresh)]
 #[case::resolved_alias(Scenario::ResolvedAliasServesExplicitProject)]
 #[tokio::test]
@@ -283,8 +288,10 @@ async fn cache_cases(#[case] scenario: Scenario) {
         Scenario::UnrelatedRefreshErrorIsNotRetried => {
             unrelated_refresh_error_is_not_retried().await;
         }
-        Scenario::StaleTokenIsReturnedWithoutRefresh => {
-            stale_token_is_returned_without_refresh().await;
+        Scenario::StaleTokenIsRefreshed => stale_token_is_refreshed().await,
+        Scenario::ExpiringTokenIsRefreshed => expiring_token_is_refreshed().await,
+        Scenario::ExpiredFalseWithValidFalseSkipsRefresh => {
+            expired_false_with_valid_false_skips_refresh().await;
         }
         Scenario::FallbackFlagsMarkFresh => fallback_flags_mark_fresh().await,
         Scenario::ResolvedAliasServesExplicitProject => {
@@ -555,13 +562,61 @@ async fn unrelated_refresh_error_is_not_retried() {
     assert_eq!(executor.refresh_count(), 1);
 }
 
-async fn stale_token_is_returned_without_refresh() {
+// a lookup that finds the cached token due for a refresh must refresh through the executor and serve the new token
+async fn refreshed_access(loaded: LoadedCredential) -> AccessToken {
     let executor = Arc::new(FakeExecutor::scripted(
-        vec![Ok(loaded(
-            "token-stale",
-            TokenState::Stale,
+        vec![Ok(loaded)],
+        vec![RefreshReply::Immediate(Ok(snapshot(
+            Some("token-fresh"),
+            TokenState::Fresh,
             Some("project-p"),
-        ))],
+        )))],
+    ));
+    let cache = cache_with(Arc::clone(&executor));
+    let credentials = credential_text();
+    let access = cache
+        .get_access_token(Some(&credentials), None)
+        .await
+        .unwrap();
+    assert_eq!(executor.refresh_count(), 1);
+    access
+}
+
+async fn stale_token_is_refreshed() {
+    let access =
+        refreshed_access(loaded("token-stale", TokenState::Stale, Some("project-p"))).await;
+    assert_eq!(access.token.expose_secret(), "token-fresh");
+    assert_eq!(access.project, "project-p");
+}
+
+async fn expiring_token_is_refreshed() {
+    let expiring = CredentialSnapshot {
+        token: Some(SecretString::from("token-old")),
+        state: None,
+        expires_at: SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(120)),
+        expired: None,
+        valid: None,
+        quota_project_id: None,
+        project_id: None,
+    };
+    let access = refreshed_access(loaded_from(expiring, Some("project-p"))).await;
+    assert_eq!(access.token.expose_secret(), "token-fresh");
+}
+
+async fn expired_false_with_valid_false_skips_refresh() {
+    let executor = Arc::new(FakeExecutor::scripted(
+        vec![Ok(LoadedCredential {
+            credential: Some(Arc::new(CredentialSnapshot {
+                token: Some(SecretString::from("token-lax")),
+                state: None,
+                expires_at: None,
+                expired: Some(false),
+                valid: Some(false),
+                quota_project_id: None,
+                project_id: None,
+            })),
+            project: Some("project-p".to_owned()),
+        })],
         Vec::new(),
     ));
     let cache = cache_with(Arc::clone(&executor));
@@ -570,7 +625,8 @@ async fn stale_token_is_returned_without_refresh() {
         .get_access_token(Some(&credentials), None)
         .await
         .unwrap();
-    assert_eq!(access.token.expose_secret(), "token-stale");
+    assert_eq!(access.token.expose_secret(), "token-lax");
+    assert_eq!(access.project, "project-p");
     assert_eq!(executor.refresh_count(), 0);
 }
 
@@ -672,6 +728,47 @@ async fn a_waiting_caller_keeps_the_lease_entry() {
     assert_eq!(access.token.expose_secret(), "token-second");
     assert_eq!(executor.refresh_count(), 2);
     assert!(cache.leased_identities().is_empty());
+}
+
+// a reauthentication clears the entry while a waiter still holds the old record, so the refresh must keep its project
+#[tokio::test]
+async fn a_forgotten_entry_keeps_the_project_it_resolved() {
+    let started = Arc::new(Notify::new());
+    let gate = Arc::new(Notify::new());
+    let executor = Arc::new(FakeExecutor::scripted(
+        vec![Ok(loaded(
+            "token-stale",
+            TokenState::Invalid,
+            Some("quota-project"),
+        ))],
+        vec![
+            RefreshReply::Gated {
+                started: Arc::clone(&started),
+                gate: Arc::clone(&gate),
+                reply: Ok(snapshot(Some("token-first"), TokenState::Fresh, None)),
+            },
+            RefreshReply::Immediate(Ok(snapshot(Some("token-second"), TokenState::Fresh, None))),
+        ],
+    ));
+    let cache = Arc::new(cache_with(Arc::clone(&executor)));
+    let credentials = credential_text();
+    let key = CredentialKey::new(Some(&credentials), None);
+    let mut first = Box::pin(cache.get_access_token(Some(&credentials), None));
+    assert!(poll_once(first.as_mut()).is_pending());
+    let mut second = Box::pin(cache.get_access_token(Some(&credentials), None));
+    assert!(poll_once(second.as_mut()).is_pending());
+    gate.notify_one();
+    first.await.unwrap();
+    cache.forget_record(&key);
+    let second_access = second.await.unwrap();
+    assert_eq!(second_access.token.expose_secret(), "token-second");
+    let third = cache
+        .get_access_token(Some(&credentials), None)
+        .await
+        .unwrap();
+    assert_eq!(third.token.expose_secret(), "token-second");
+    assert_eq!(third.project, "quota-project");
+    assert_eq!(executor.refresh_count(), 2);
 }
 
 #[tokio::test]

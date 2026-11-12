@@ -20,7 +20,7 @@ use key::CredentialKey;
 use lease::{LeaseMap, RefreshLease};
 use probe::AccessToken;
 use record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
-use state::{TokenState, token_state};
+use state::needs_refresh;
 
 // VertexBase's credential state: the cached records, their refresh bookkeeping and the injected clock and executor
 pub struct CredentialCache {
@@ -70,8 +70,7 @@ impl CredentialCache {
         retry_reauth: bool,
     ) -> Result<AccessToken, CredentialCacheError> {
         let record = self.cached_or_loaded(credentials, project, key).await?;
-        let (cached, cached_project) = unpack_cached_credentials(Some(&record));
-        let held = Arc::clone(cached.ok_or(CredentialCacheError::MissingCredentials)?);
+        let (_, cached_project) = unpack_cached_credentials(Some(&record));
         let mut resolved_project = project.map(str::to_owned);
         if resolved_project.is_none()
             && let Some(record_project) = cached_project
@@ -84,7 +83,7 @@ impl CredentialCache {
             self.store_record_if_absent(resolved_key, &record);
             resolved_project = Some(record_project.to_owned());
         }
-        let credential = match self.refresh_if_invalid(key, held, retry_reauth).await {
+        let credential = match self.refresh_if_needed(key, &record, retry_reauth).await {
             Ok(credential) => credential,
             Err(RefreshFailure::Reauthenticate(error)) => {
                 return self
@@ -134,32 +133,28 @@ impl CredentialCache {
         Ok(record)
     }
 
-    async fn refresh_if_invalid(
+    async fn refresh_if_needed(
         &self,
         key: &CredentialKey,
-        credential: Arc<CredentialSnapshot>,
+        record: &CacheRecord,
         retry_reauth: bool,
     ) -> Result<Arc<CredentialSnapshot>, RefreshFailure> {
-        if token_state(&credential, self.clock.now()) != TokenState::Invalid {
-            return Ok(credential);
+        if !needs_refresh(record.credential(), self.clock.now()) {
+            return Ok(Arc::clone(record.credential()));
         }
         let lease = self
             .acquire_refresh_lease(key)
             .await
             .map_err(RefreshFailure::Failed)?;
-        let current = self
-            .cached_record(key)
-            .unwrap_or_else(|| CacheRecord::Paired {
-                credential: Arc::clone(&credential),
-                project: None,
-            });
-        let current_credential = Arc::clone(current.credential());
+        // a reauthentication that cleared the entry while this caller waited leaves the caller's record in place
+        let current = self.cached_record(key).unwrap_or_else(|| record.clone());
+        let target = Arc::clone(current.credential());
         // LiteLLM rechecks after taking its refresh lock: another caller may have refreshed already
-        if token_state(&current_credential, self.clock.now()) != TokenState::Invalid {
+        if !needs_refresh(&target, self.clock.now()) {
             drop(lease);
-            return Ok(current_credential);
+            return Ok(target);
         }
-        let refreshed = match self.executor.refresh(&current_credential).await {
+        let refreshed = match self.executor.refresh(&target).await {
             Ok(snapshot) => Arc::new(snapshot),
             Err(error) => {
                 drop(lease);
@@ -170,6 +165,7 @@ impl CredentialCache {
                 });
             }
         };
+        // LiteLLM stores the refreshed credentials with the project the entry resolved, keeping the alias usable
         self.store_record(key.clone(), current.with_credential(Arc::clone(&refreshed)));
         drop(lease);
         Ok(refreshed)

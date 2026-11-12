@@ -7,7 +7,7 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::super::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
-use super::super::state::{TokenState, token_state};
+use super::super::state::{TokenState, needs_refresh, token_state};
 use super::legacy_snapshot;
 
 struct ProjectionCase {
@@ -157,6 +157,59 @@ fn token_state_projects_reported_expiry_and_flags(
         project_id: None,
     };
     assert_eq!(token_state(&credential, now), expected);
+}
+
+struct RefreshCase {
+    expires_in: Option<Duration>,
+    state: Option<TokenState>,
+    expired: Option<bool>,
+}
+
+#[rstest]
+#[case::expiry_far_ahead(RefreshCase { expires_in: Some(Duration::from_secs(3600)), state: None, expired: None }, false)]
+#[case::expiry_just_outside_threshold(RefreshCase { expires_in: Some(Duration::from_secs(226)), state: None, expired: None }, false)]
+#[case::expiry_exactly_threshold(RefreshCase { expires_in: Some(Duration::from_secs(225)), state: None, expired: None }, true)]
+#[case::expiry_inside_threshold(RefreshCase { expires_in: Some(Duration::from_secs(100)), state: None, expired: None }, true)]
+#[case::expiry_reached(RefreshCase { expires_in: Some(Duration::ZERO), state: None, expired: None }, true)]
+#[case::reported_stale(RefreshCase { expires_in: None, state: Some(TokenState::Stale), expired: None }, true)]
+#[case::reported_invalid(RefreshCase { expires_in: None, state: Some(TokenState::Invalid), expired: None }, true)]
+#[case::reported_fresh(RefreshCase { expires_in: None, state: Some(TokenState::Fresh), expired: None }, false)]
+#[case::expired_flag(RefreshCase { expires_in: None, state: None, expired: Some(true) }, true)]
+#[case::expired_false_without_valid(RefreshCase { expires_in: None, state: None, expired: Some(false) }, false)]
+#[case::no_projection(RefreshCase { expires_in: None, state: None, expired: None }, false)]
+fn refresh_is_due_inside_the_threshold_or_on_a_stale_reading(
+    #[case] case: RefreshCase,
+    #[case] expected: bool,
+) {
+    let now = SystemTime::UNIX_EPOCH;
+    let expires_at = case
+        .expires_in
+        .and_then(|remaining| now.checked_add(remaining));
+    let credential = CredentialSnapshot {
+        token: Some(SecretString::from("token")),
+        state: case.state,
+        expires_at,
+        expired: case.expired,
+        valid: None,
+        quota_project_id: None,
+        project_id: None,
+    };
+    assert_eq!(needs_refresh(&credential, now), expected);
+}
+
+#[test]
+fn a_past_expiry_is_due_for_refresh() {
+    let now = SystemTime::UNIX_EPOCH;
+    let credential = CredentialSnapshot {
+        token: Some(SecretString::from("token")),
+        state: None,
+        expires_at: now.checked_sub(Duration::from_secs(5)),
+        expired: None,
+        valid: None,
+        quota_project_id: None,
+        project_id: None,
+    };
+    assert!(needs_refresh(&credential, now));
 }
 
 #[rstest]

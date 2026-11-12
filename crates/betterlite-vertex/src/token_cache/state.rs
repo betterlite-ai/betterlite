@@ -12,6 +12,22 @@ pub enum TokenState {
     Invalid,
 }
 
+// LiteLLM's get_access_token refreshes on credentials.expired, which google-auth derives from the expiry alone
+#[must_use]
+pub fn needs_refresh(credential: &CredentialSnapshot, now: SystemTime) -> bool {
+    let expiry_passed = credential.expires_at.is_some_and(|expires_at| {
+        expires_at
+            .duration_since(now)
+            .map_or(true, |remaining| remaining <= REFRESH_THRESHOLD)
+    });
+    expiry_passed
+        || matches!(
+            credential.state,
+            Some(TokenState::Stale | TokenState::Invalid)
+        )
+        || credential.expired == Some(true)
+}
+
 // LiteLLM's _get_token_state: the reported state, else google-auth's expiry projection, else the expired/valid fallback
 #[must_use]
 pub fn token_state(credential: &CredentialSnapshot, now: SystemTime) -> TokenState {

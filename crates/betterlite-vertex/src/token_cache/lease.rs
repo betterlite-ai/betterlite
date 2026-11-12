@@ -52,11 +52,10 @@ impl LeaseMap {
             return;
         };
         entry.waiters = entry.waiters.saturating_sub(1);
-        if entry.waiters > 0 {
-            return;
-        }
         // LiteLLM drops the lock entry once no caller holds or waits on it
-        entries.remove(key);
+        if entry.waiters == 0 {
+            entries.remove(key);
+        }
     }
 }
 
