@@ -118,7 +118,10 @@ struct Recording {
 impl BaseRerankConfig for Recording {
     type Error = FixtureError;
 
-    fn validate_environment(&self, request: EnvironmentRequest<'_>) -> Result<Headers, Self::Error> {
+    fn validate_environment(
+        &self,
+        request: EnvironmentRequest<'_>,
+    ) -> Result<Headers, Self::Error> {
         Ok(request.headers.clone())
     }
 
@@ -138,9 +141,7 @@ impl BaseRerankConfig for Recording {
             Err(poisoned) => poisoned.into_inner(),
         };
         calls.push(record(&request));
-        Ok(Params::from([
-            ("mapped".to_owned(), Json::Bool(true)),
-        ]))
+        Ok(Params::from([("mapped".to_owned(), Json::Bool(true))]))
     }
 }
 
@@ -176,7 +177,12 @@ fn optional_bool(value: Option<bool>) -> Json {
 
 fn rank_fields(values: Option<&[String]>) -> Json {
     match values {
-        Some(values) => Json::List(values.iter().map(|value| Json::Text(value.clone())).collect()),
+        Some(values) => Json::List(
+            values
+                .iter()
+                .map(|value| Json::Text(value.clone()))
+                .collect(),
+        ),
         None => Json::Null,
     }
 }
@@ -192,7 +198,13 @@ fn record(request: &MapCohereRerankParams<'_>) -> Json {
         ("query".to_owned(), Json::Text(request.query.to_owned())),
         (
             "documents".to_owned(),
-            Json::List(request.documents.iter().map(RerankDocument::as_json).collect()),
+            Json::List(
+                request
+                    .documents
+                    .iter()
+                    .map(RerankDocument::as_json)
+                    .collect(),
+            ),
         ),
         (
             "custom_llm_provider".to_owned(),
@@ -212,10 +224,7 @@ fn record(request: &MapCohereRerankParams<'_>) -> Json {
             "max_tokens_per_doc".to_owned(),
             optional_number(request.max_tokens_per_doc),
         ),
-        (
-            "instruction".to_owned(),
-            optional_text(request.instruction),
-        ),
+        ("instruction".to_owned(), optional_text(request.instruction)),
     ]))
 }
 
@@ -345,12 +354,8 @@ fn base_defaults(params: &DefaultsParams) -> Result<Value, ContractError> {
         .iter()
         .map(|api_base| config.get_complete_url(api_base.as_deref(), "rerank-model", None))
         .collect::<Vec<_>>();
-    let request = config.transform_rerank_request(
-        "rerank-model",
-        &Params::new(),
-        &Headers::new(),
-        None,
-    )?;
+    let request =
+        config.transform_rerank_request("rerank-model", &Params::new(), &Headers::new(), None)?;
     let response = decode_response(&params.response).ok_or(ContractError::Response)?;
     let mut logging = RerankLogging::default();
     let raw_response = RerankProviderResponse {
