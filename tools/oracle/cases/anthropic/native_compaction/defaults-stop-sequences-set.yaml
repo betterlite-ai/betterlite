@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-defaults-stop-sequences-set
+call:
+  b3545: {"function": "defaults", "payload": {"stop_sequences": {"x": 1}}}
+env: {}
+compare:
+  ignore: []

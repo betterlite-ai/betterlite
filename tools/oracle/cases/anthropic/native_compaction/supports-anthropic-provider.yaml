@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-anthropic-provider
+call:
+  b3545: {"function": "supports", "model": "claude-opus-4-7", "custom_llm_provider": "anthropic"}
+env: {}
+compare:
+  ignore: []
