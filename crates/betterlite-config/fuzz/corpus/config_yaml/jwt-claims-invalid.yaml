@@ -1,0 +1,5 @@
+general_settings:
+  litellm_jwtauth:
+    team_id_jwt_field: 5
+    user_id_upsert: "yes"
+    user_email_jwt_field: [email]
