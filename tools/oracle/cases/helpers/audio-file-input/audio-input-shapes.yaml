@@ -1,0 +1,21 @@
+kind: helper
+name: audio-input-shapes
+call:
+  audio_file_input:
+    calls:
+      - {function: process, file: {kind: bytes, content: YWJj}}
+      - {function: process, file: {kind: bytearray, content: YWJj}}
+      - {function: process, file: {kind: bytes, content: ""}}
+      - {function: process, file: {kind: tuple, filename: voice.MP3, content: {kind: bytes, content: YWJj}, mime: audio/custom}}
+      - {function: process, file: {kind: tuple, filename: "", content: {kind: bytes, content: YWJj}}}
+      - {function: process, file: {kind: tuple, filename: null, content: {kind: bytes, content: YWJj}}}
+      - {function: process, file: {kind: tuple, filename: voice, content: {kind: bytearray, content: YWJj}}}
+      - {function: process, file: {kind: tuple, filename: voice.custom, content: {kind: bytes, content: YWJj}}}
+      - {function: process, file: {kind: tuple, filename: archive.tar.wav, content: {kind: bytes, content: YWJj}}}
+      - {function: process, file: {kind: tuple, filename: voice., content: {kind: bytes, content: YWJj}}}
+      - {function: process, file: {kind: stream, name: voice.wav, content: YWJj, position: 1}}
+      - {function: process, file: {kind: path, path: /authorized/audio/clip.wav}, files: {"/authorized/audio/clip.wav": YWJj}}
+      - {function: name, file: {kind: stream, name: voice.wav}}
+      - {function: name, file: {kind: text, content: abc}}
+env: {}
+compare: {ignore: []}

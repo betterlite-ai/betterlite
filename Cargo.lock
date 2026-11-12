@@ -2163,6 +2163,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
+ "hound",
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
