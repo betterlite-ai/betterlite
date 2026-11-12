@@ -4,7 +4,7 @@ call:
   image_input_options:
     calls:
       - function: select
-        supported: [n, user, seed]
+        supported: ["n", "user", "seed"]
         params:
           background: transparent
           input_fidelity: high
@@ -17,7 +17,7 @@ call:
           seed: 0
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params: null
@@ -31,7 +31,7 @@ call:
           seed: 0
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params:
@@ -46,7 +46,7 @@ call:
           seed: 0
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: true
         call_drop_params: false
         additional_drop_params: null
@@ -60,7 +60,7 @@ call:
           seed: 0
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: true
         additional_drop_params: null
@@ -74,7 +74,7 @@ call:
           seed: 0
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params: null
@@ -83,7 +83,7 @@ call:
           user: ""
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params: null
@@ -91,7 +91,7 @@ call:
           mask: m
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params: null
@@ -99,7 +99,7 @@ call:
           quality: low
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: false
         call_drop_params: null
         additional_drop_params: null
@@ -107,7 +107,7 @@ call:
           size: "1024x1024"
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: true
         call_drop_params: false
         additional_drop_params: null
@@ -115,7 +115,7 @@ call:
           mask: m
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: true
         call_drop_params: false
         additional_drop_params: null
@@ -123,7 +123,7 @@ call:
           quality: low
       - function: optional
         model: edit-model
-        supported: [n, user]
+        supported: ["n", "user"]
         global_drop_params: true
         call_drop_params: false
         additional_drop_params: null
