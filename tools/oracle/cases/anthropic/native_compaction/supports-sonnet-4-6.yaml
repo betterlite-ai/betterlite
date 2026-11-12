@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-sonnet-4-6
+call:
+  b3545: {"function": "supports", "model": "claude-sonnet-4-6", "custom_llm_provider": "anthropic"}
+env: {}
+compare:
+  ignore: []
