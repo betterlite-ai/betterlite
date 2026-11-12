@@ -143,11 +143,8 @@ pub fn blocked_chat_stream_usage(original_response: &OriginalResponse) -> (i64, 
     )
 }
 
-#[must_use]
-pub fn blocked_responses_stream_usage(original_response: &OriginalResponse) -> ResponsesUsage {
-    let OriginalResponse::Stream(items) = original_response else {
-        return blocked_responses_api_usage(original_response);
-    };
+// The usage of a Responses stream rides on its response.completed event; no such event leaves the original absent.
+fn completed_response(items: &[StreamItem]) -> OriginalResponse {
     let completed = items.iter().rev().find_map(|item| {
         let finished = matches!(
             stream_item_field(item, "type"),
@@ -158,8 +155,17 @@ pub fn blocked_responses_stream_usage(original_response: &OriginalResponse) -> R
             _ => None,
         }
     });
-    let completed_response = completed.map_or(OriginalResponse::Absent, |response| {
+    completed.map_or(OriginalResponse::Absent, |response| {
         OriginalResponse::Response(response.clone())
-    });
-    blocked_responses_api_usage(&completed_response)
+    })
+}
+
+#[must_use]
+pub fn blocked_responses_stream_usage(original_response: &OriginalResponse) -> ResponsesUsage {
+    match original_response {
+        OriginalResponse::Stream(items) => blocked_responses_api_usage(&completed_response(items)),
+        OriginalResponse::Absent | OriginalResponse::Response(_) => {
+            blocked_responses_api_usage(original_response)
+        }
+    }
 }

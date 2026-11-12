@@ -27,49 +27,50 @@ fn has_type(value: &GuardrailValue, kind: &str) -> bool {
     }
 }
 
+fn array_field<'value>(
+    value: &'value GuardrailValue,
+    key: &str,
+) -> Option<&'value Vec<GuardrailValue>> {
+    match field(value, key) {
+        Some(GuardrailValue::Array(items)) => Some(items),
+        _ => None,
+    }
+}
+
 fn chat_text(response: &GuardrailValue) -> Option<String> {
-    let Some(GuardrailValue::Array(choices)) = field(response, "choices") else {
-        return None;
-    };
-    let message = field(choices.first()?, "message")?;
+    let message = field(array_field(response, "choices")?.first()?, "message")?;
     let text = content_to_text(field(message, "content")?);
     (!text.is_empty()).then_some(text)
 }
 
-fn anthropic_text(response: &GuardrailValue) -> Option<String> {
-    let Some(GuardrailValue::Array(blocks)) = field(response, "content") else {
-        return None;
-    };
+// The non-empty texts of the blocks of one type, joined; none when no block carries text.
+fn joined_texts<'value, Blocks>(blocks: Blocks, kind: &str) -> Option<String>
+where
+    Blocks: Iterator<Item = &'value GuardrailValue>,
+{
     let text: String = blocks
-        .iter()
-        .filter(|block| has_type(block, "text"))
+        .filter(|block| has_type(block, kind))
         .filter_map(|block| non_empty_text(block, "text"))
         .collect();
     (!text.is_empty()).then_some(text)
 }
 
 fn responses_text(response: &GuardrailValue) -> Option<String> {
-    let Some(GuardrailValue::Array(output)) = field(response, "output") else {
-        return None;
-    };
-    let text: String = output
+    let chunks = array_field(response, "output")?
         .iter()
         .filter(|item| has_type(item, "message"))
-        .filter_map(|item| match field(item, "content") {
-            Some(GuardrailValue::Array(chunks)) => Some(chunks),
-            _ => None,
-        })
-        .flatten()
-        .filter(|chunk| has_type(chunk, "output_text"))
-        .filter_map(|chunk| non_empty_text(chunk, "text"))
-        .collect();
-    (!text.is_empty()).then_some(text)
+        .filter_map(|item| array_field(item, "content"))
+        .flatten();
+    joined_texts(chunks, "output_text")
 }
 
 // The first shape that yields text wins: chat choices, then Anthropic content blocks, then Responses output.
 #[must_use]
 pub fn assistant_text_from_response(response: &GuardrailValue) -> Option<String> {
     chat_text(response)
-        .or_else(|| anthropic_text(response))
+        .or_else(|| {
+            let blocks = array_field(response, "content")?;
+            joined_texts(blocks.iter(), "text")
+        })
         .or_else(|| responses_text(response))
 }
