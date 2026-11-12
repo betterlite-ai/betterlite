@@ -71,3 +71,17 @@ path = "fuzz_targets/bedrock_web_identity.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_services_batch_create"
+path = "fuzz_targets/bedrock_services_batch_create.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_batch_status"
+path = "fuzz_targets/bedrock_services_batch_status.rs"
+test = false
+doc = false
+bench = false

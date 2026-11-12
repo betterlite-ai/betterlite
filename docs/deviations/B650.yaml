@@ -1,0 +1,8 @@
+task: B650
+deviations:
+  - what: A timestamp outside the extended grammar betterlite checks parses as None even when CPython's parser takes it; the grammar is YYYY-MM-DD, then T or one space, then HH[:MM[:SS[.fraction]]], then an optional Z, +/-HH, +/-HH:MM or +/-HHMM. Examples are basic and week dates, a date-time separator other than T or a space, Unicode digits, an offset with seconds or with a minute field of 60 and up, a fraction after the hour or minute, an empty fraction, an extra digit or separator after a time field, a lowercase z before an offset, and a fraction after the offset.
+    why: Bedrock emits the extended RFC 3339 form with a T separator, a Z suffix and no offset seconds, so a working retrieval never sends the rejected spellings; betterlite validates the fromisoformat grammar it accepts before handing the value to chrono instead of porting CPython's whole parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L460-L467
+  - what: A record count or epoch value outside the 64-bit integer range is a typed error naming the field instead of Python's arbitrary-precision int.
+    why: the count and epoch records are i64 typed, so a value larger than that cannot be carried; no working setup reports record counts or timestamps in that range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L82-L102
