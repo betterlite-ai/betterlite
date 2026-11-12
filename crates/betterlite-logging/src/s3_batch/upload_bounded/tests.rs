@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, SystemTime};
 
 use betterlite_config::loader::EnvironmentLookup;
-use futures_util::future::join_all;
+use futures_util::future::{join, join_all};
 use tokio::task::yield_now;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use crate::s3_batch::Element;
 use crate::s3_batch::flush::SystemMonotonic;
 use crate::s3_batch::logger::{S3BatchDeps, S3BatchLogger};
-use crate::s3_batch::upload_bounded::{AcquireError, UploadLimiter};
+use crate::s3_batch::upload_bounded::{AcquireError, MAX_WAITERS, UploadLimiter};
 use crate::s3_transport::batch_element::ContentType;
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::signing::Clock;
@@ -311,6 +311,38 @@ async fn halving_with_permits_held_shrinks_the_pool_when_they_return() {
     let second = limiter.acquire(deadline(5)).await;
     assert_eq!(second.err(), Some(AcquireError::DeadlineExceeded));
     drop(first);
+}
+
+#[tokio::test(start_paused = true)]
+async fn waiters_are_capped_and_released() {
+    let limiter = Arc::new(UploadLimiter::new(1, Some(2)).expect("the bounds hold"));
+    let held = limiter
+        .acquire(deadline(60_000))
+        .await
+        .expect("the permit is free");
+    let waiting = repeat_with(|| {
+        let limiter_handle = Arc::clone(&limiter);
+        async move { limiter_handle.acquire(deadline(5_000)).await.err() }
+    })
+    .take(MAX_WAITERS);
+    let overflow = async {
+        yield_now().await;
+        limiter.acquire(deadline(5_000)).await.err()
+    };
+    let (timed_out, rejected) = join(join_all(waiting), overflow).await;
+    assert_eq!(rejected, Some(AcquireError::Overloaded));
+    assert_eq!(timed_out.len(), MAX_WAITERS);
+    assert!(
+        timed_out
+            .iter()
+            .all(|error| *error == Some(AcquireError::DeadlineExceeded))
+    );
+    drop(held);
+    let released = limiter
+        .acquire(deadline(5))
+        .await
+        .expect("the finished waiters released their slots");
+    drop(released);
 }
 
 #[test]
