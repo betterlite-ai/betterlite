@@ -16,7 +16,7 @@ mod tests;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Defaults(DefaultsCase),
+    Defaults(Box<DefaultsCase>),
     ModelOutputCapacity(CapacityCase),
     StopSequenceFilter(StopCase),
     WebSearchContextSize(WebSearchCase),

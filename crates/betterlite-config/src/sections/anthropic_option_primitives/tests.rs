@@ -31,16 +31,14 @@ fn settings(key: &str, value: &str) -> String {
     format!("litellm_settings: {{{key}: {value}}}\n")
 }
 
-fn metadata(value: &str) -> Option<IndexMap<String, Json>> {
-    Some(serde_json::from_str(value).unwrap())
+fn metadata(value: &str) -> IndexMap<String, Json> {
+    serde_json::from_str(value).unwrap()
 }
 
-fn assert_key<T: Debug + PartialEq>(
-    key: &str,
-    deployed: (&str, T),
-    global: (&str, T),
-    read: fn(&OptionValues) -> T,
-) {
+fn assert_key<T>(key: &str, deployed: (&str, &T), global: (&str, &T), read: fn(&OptionValues) -> T)
+where
+    T: Debug + PartialEq,
+{
     let defaults = load("", &[]).unwrap();
     assert_eq!(
         read(&defaults.litellm_settings),
@@ -48,13 +46,13 @@ fn assert_key<T: Debug + PartialEq>(
     );
     assert!(defaults.deployments.is_empty(), "{key}");
     let deployment_only = load(&deployment(key, deployed.0), &[]).unwrap();
-    assert_eq!(read(&deployment_only.deployments[0]), deployed.1, "{key}");
+    assert_eq!(read(&deployment_only.deployments[0]), *deployed.1, "{key}");
     let global_only = load(&settings(key, global.0), &[]).unwrap();
-    assert_eq!(read(&global_only.litellm_settings), global.1, "{key}");
-    let both = format!("{}{}", deployment(key, deployed.0), settings(key, global.0));
-    let both = load(&both, &[]).unwrap();
-    assert_eq!(read(&both.deployments[0]), deployed.1, "{key}");
-    assert_eq!(read(&both.litellm_settings), global.1, "{key}");
+    assert_eq!(read(&global_only.litellm_settings), *global.1, "{key}");
+    let both_source = format!("{}{}", deployment(key, deployed.0), settings(key, global.0));
+    let both = load(&both_source, &[]).unwrap();
+    assert_eq!(read(&both.deployments[0]), *deployed.1, "{key}");
+    assert_eq!(read(&both.litellm_settings), *global.1, "{key}");
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,7 +108,7 @@ fn default_chat_max_tokens_case() {
 }
 
 fn max_tokens_case() {
-    assert_key("max_tokens", ("7", Some(7)), ("9", Some(9)), |values| {
+    assert_key("max_tokens", ("7", &Some(7)), ("9", &Some(9)), |values| {
         values.max_tokens
     });
     for (raw, expected) in [("0", 0), ("os.environ/ANTHROPIC_MAX_TOKENS", 321)] {
@@ -125,8 +123,8 @@ fn stop_sequences_case() {
     let global = Some(vec!["GLOBAL".to_owned()]);
     assert_key(
         "stop_sequences",
-        ("[END, STOP]", deployed),
-        ("[GLOBAL]", global),
+        ("[END, STOP]", &deployed),
+        ("[GLOBAL]", &global),
         |values| values.stop_sequences.clone(),
     );
     let empty = load(&deployment("stop_sequences", "[]"), &[]).unwrap();
@@ -136,8 +134,8 @@ fn stop_sequences_case() {
 fn temperature_case() {
     assert_key(
         "temperature",
-        ("0.5", Some(0.5)),
-        ("0.25", Some(0.25)),
+        ("0.5", &Some(0.5_f64)),
+        ("0.25", &Some(0.25_f64)),
         |values| values.temperature,
     );
     let reference = load(
@@ -145,19 +143,22 @@ fn temperature_case() {
         &[("ANTHROPIC_TEMPERATURE", "0.75")],
     )
     .unwrap();
-    assert_eq!(reference.deployments[0].temperature, Some(0.75));
+    assert_eq!(reference.deployments[0].temperature, Some(0.75_f64));
     let zero = load(&deployment("temperature", "0"), &[]).unwrap();
-    assert_eq!(zero.deployments[0].temperature, Some(0.0));
+    assert_eq!(zero.deployments[0].temperature, Some(0.0_f64));
 }
 
 fn top_p_case() {
-    assert_key("top_p", ("0.9", Some(0.9)), ("0.1", Some(0.1)), |values| {
-        values.top_p
-    });
+    assert_key(
+        "top_p",
+        ("0.9", &Some(0.9_f64)),
+        ("0.1", &Some(0.1_f64)),
+        |values| values.top_p,
+    );
 }
 
 fn top_k_case() {
-    assert_key("top_k", ("40", Some(40)), ("20", Some(20)), |values| {
+    assert_key("top_k", ("40", &Some(40)), ("20", &Some(20)), |values| {
         values.top_k
     });
 }
@@ -167,9 +168,12 @@ fn metadata_case() {
         "metadata",
         (
             "{user_id: deployed}",
-            metadata(r#"{"user_id": "deployed"}"#),
+            &Some(metadata(r#"{"user_id": "deployed"}"#)),
         ),
-        ("{user_id: global}", metadata(r#"{"user_id": "global"}"#)),
+        (
+            "{user_id: global}",
+            &Some(metadata(r#"{"user_id": "global"}"#)),
+        ),
         |values| values.metadata.clone(),
     );
     assert_eq!(
@@ -186,8 +190,8 @@ fn system_case() {
     let global = Some("be global".to_owned());
     assert_key(
         "system",
-        ("\"be deployed\"", deployed),
-        ("\"be global\"", global),
+        ("\"be deployed\"", &deployed),
+        ("\"be global\"", &global),
         |values| values.system.clone(),
     );
     assert_eq!(
@@ -205,10 +209,10 @@ fn unrelated_key_case() {
         matches!(&error, ConfigError::Unsupported { paths } if *paths == ["model_list.0.litellm_params.max_tokens_extra"]),
         "{error}"
     );
-    let error = load("litellm_settings: {max_tokens_extra: 1}\n", &[]).unwrap_err();
+    let global_error = load("litellm_settings: {max_tokens_extra: 1}\n", &[]).unwrap_err();
     assert!(
-        matches!(&error, ConfigError::Unsupported { paths } if *paths == ["litellm_settings.max_tokens_extra"]),
-        "{error}"
+        matches!(&global_error, ConfigError::Unsupported { paths } if *paths == ["litellm_settings.max_tokens_extra"]),
+        "{global_error}"
     );
 }
 
@@ -220,10 +224,10 @@ fn loads_the_anthropic_defaults_corpus_seeds() {
     let seed = OptionValues {
         max_tokens: Some(8192),
         stop_sequences: Some(vec!["END".to_owned()]),
-        temperature: Some(0.4),
-        top_p: Some(0.8),
+        temperature: Some(0.4_f64),
+        top_p: Some(0.8_f64),
         top_k: Some(40),
-        metadata: metadata(r#"{"user_id": "seed"}"#),
+        metadata: Some(metadata(r#"{"user_id": "seed"}"#)),
         system: Some("be brief".to_owned()),
     };
     assert_eq!(loaded.deployments, vec![seed]);
