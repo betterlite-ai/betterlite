@@ -75,15 +75,21 @@ pub(crate) struct CostCall {
     completion_tokens: u32,
 }
 
+impl ServerProvider {
+    const fn environment_names(self) -> (&'static str, &'static str) {
+        match self {
+            Self::DockerModelRunner => (
+                "DOCKER_MODEL_RUNNER_API_BASE",
+                "DOCKER_MODEL_RUNNER_API_KEY",
+            ),
+            Self::Llamafile => ("LLAMAFILE_API_BASE", "LLAMAFILE_API_KEY"),
+            Self::LmStudio => ("LM_STUDIO_API_BASE", "LM_STUDIO_API_KEY"),
+        }
+    }
+}
+
 pub(super) fn provider_value(call: &ProviderCall) -> Value {
-    let (base_name, key_name) = match call.provider {
-        ServerProvider::DockerModelRunner => (
-            "DOCKER_MODEL_RUNNER_API_BASE",
-            "DOCKER_MODEL_RUNNER_API_KEY",
-        ),
-        ServerProvider::Llamafile => ("LLAMAFILE_API_BASE", "LLAMAFILE_API_KEY"),
-        ServerProvider::LmStudio => ("LM_STUDIO_API_BASE", "LM_STUDIO_API_KEY"),
-    };
+    let (base_name, key_name) = call.provider.environment_names();
     let environment = ProviderEnvironment {
         api_base: call.env.get(base_name).cloned(),
         api_key: call.env.get(key_name).cloned().map(SecretString::from),
@@ -121,11 +127,7 @@ pub(super) fn params_value(call: &ParamsCall) -> Value {
     let mut optional = call.preset.clone();
     match call.provider {
         ChatProvider::DockerModelRunner => {
-            let requested: IndexMap<String, Value> = call
-                .params
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone()))
-                .collect();
+            let requested: IndexMap<String, Value> = call.params.clone().into_iter().collect();
             docker_model_runner::ChatConfig { base }.map_openai_params(
                 &call.model,
                 &requested,

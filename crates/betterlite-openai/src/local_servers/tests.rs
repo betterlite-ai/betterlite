@@ -260,9 +260,8 @@ fn docker_map_copies_only_supported_params() {
 }
 
 fn lm_studio_map(model: &str, params: Value) -> Value {
-    let config = lm_studio::ChatConfig {
-        base: base_config(),
-    };
+    let base = base_config();
+    let config = lm_studio::ChatConfig { base };
     let mut optional = Object::new();
     config.map_openai_params(model, &object(params), &mut optional, &no_catalog());
     Value::Object(optional)
