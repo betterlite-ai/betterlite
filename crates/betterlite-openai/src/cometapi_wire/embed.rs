@@ -1,20 +1,15 @@
-use std::str;
-
+use super::error::CometApiError;
+use super::{DEFAULT_API_BASE, EMBEDDING_ENDPOINT};
+use crate::openai_base_config::Headers;
 use betterlite_config::sections::cometapi_embedding_credentials::Settings;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
+use std::str;
 use thiserror::Error;
-
-use crate::openai_base_config::Headers;
-
-use super::error::CometApiError;
-use super::{DEFAULT_API_BASE, EMBEDDING_ENDPOINT};
-
 pub const MAX_REPLY_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 3] = ["dimensions", "encoding_format", "user"];
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CometEmbeddingReply {
     pub model: Option<Json>,
@@ -22,19 +17,16 @@ pub struct CometEmbeddingReply {
     pub object: Option<Json>,
     pub usage: CometEmbeddingUsage,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CometEmbeddingUsage {
     pub prompt_tokens: i64,
     pub total_tokens: i64,
 }
-
 pub struct EmbeddingReplyInput<'body> {
     pub body: &'body [u8],
     pub status: u16,
     pub headers: &'body Headers,
 }
-
 #[derive(Debug, Error)]
 pub enum EmbeddingReplyError {
     #[error(transparent)]
@@ -44,14 +36,12 @@ pub enum EmbeddingReplyError {
     #[error("the CometAPI embedding reply field {field} has an unexpected shape")]
     FieldShape { field: &'static str },
 }
-
 // an absent base takes the default, while any given one is trimmed and still gains /embeddings
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     let base = api_base.map_or(DEFAULT_API_BASE, |base| base.trim_end_matches('/'));
     format!("{base}/{EMBEDDING_ENDPOINT}")
 }
-
 // an absent caller key falls back to COMETAPI_KEY, and a missing one still writes Bearer None
 #[must_use]
 pub fn validate_environment(
@@ -60,12 +50,14 @@ pub fn validate_environment(
     environment: &Settings,
 ) -> Headers {
     let key = api_key.or(environment.api_key.as_ref());
-    let authorization = key.map_or_else(
-        || String::from("Bearer None"),
-        |secret| format!("Bearer {}", secret.expose_secret()),
-    );
     let mut merged = Headers::from([
-        (String::from("Authorization"), authorization),
+        (
+            String::from("Authorization"),
+            key.map_or_else(
+                || String::from("Bearer None"),
+                |secret| format!("Bearer {}", secret.expose_secret()),
+            ),
+        ),
         (String::from("accept"), String::from("application/json")),
         (
             String::from("Content-Type"),
@@ -75,7 +67,6 @@ pub fn validate_environment(
     merged.extend(headers.clone());
     merged
 }
-
 // the embedding adapter copies only the three declared options and honours neither drop_params nor the rest
 pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Object) {
     for (name, value) in non_default_params {
@@ -84,7 +75,6 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
         }
     }
 }
-
 // options sit over input and model, so an option with either name wins exactly as the dict merge does
 #[must_use]
 pub fn transform_embedding_request(model: &str, input: &Json, optional_params: &Object) -> Object {
@@ -95,7 +85,6 @@ pub fn transform_embedding_request(model: &str, input: &Json, optional_params: &
     body.extend(optional_params.clone());
     body
 }
-
 // model, data and object are copied with a nullable get; a missing usage contributes zero counters
 pub fn decode_comet_embedding_reply(
     input: &EmbeddingReplyInput<'_>,
@@ -105,16 +94,16 @@ pub fn decode_comet_embedding_reply(
             size: input.body.len(),
         });
     }
-    let parsed = match serde_json::from_slice::<Json>(input.body) {
-        Ok(parsed) => parsed,
-        Err(_source) => {
-            return Err(EmbeddingReplyError::Api(CometApiError {
-                message: body_text(input.body),
-                status_code: Some(input.status),
-                headers: input.headers.clone(),
-            }));
-        }
-    };
+    let parsed = serde_json::from_slice::<Json>(input.body).map_err(|_source| {
+        EmbeddingReplyError::Api(CometApiError {
+            message: str::from_utf8(input.body).map_or_else(
+                |_source| String::from("the CometAPI embedding reply is not valid JSON"),
+                str::to_owned,
+            ),
+            status_code: Some(input.status),
+            headers: input.headers.clone(),
+        })
+    })?;
     let Json::Object(fields) = parsed else {
         return Err(EmbeddingReplyError::FieldShape { field: "body" });
     };
@@ -125,14 +114,12 @@ pub fn decode_comet_embedding_reply(
         usage: usage_of(&fields)?,
     })
 }
-
 fn nullable(fields: &Object, name: &str) -> Option<Json> {
     match fields.get(name) {
         None | Some(Json::Null) => None,
         Some(value) => Some(value.clone()),
     }
 }
-
 fn usage_of(fields: &Object) -> Result<CometEmbeddingUsage, EmbeddingReplyError> {
     let Some(usage) = fields.get("usage") else {
         return Ok(CometEmbeddingUsage {
@@ -148,7 +135,6 @@ fn usage_of(fields: &Object) -> Result<CometEmbeddingUsage, EmbeddingReplyError>
         total_tokens: counter(usage_fields, "total_tokens")?,
     })
 }
-
 fn counter(usage: &Object, name: &'static str) -> Result<i64, EmbeddingReplyError> {
     match usage.get(name) {
         None | Some(Json::Null) => Ok(0),
@@ -157,11 +143,4 @@ fn counter(usage: &Object, name: &'static str) -> Result<i64, EmbeddingReplyErro
             .ok_or(EmbeddingReplyError::FieldShape { field: name }),
         Some(_) => Err(EmbeddingReplyError::FieldShape { field: name }),
     }
-}
-
-fn body_text(body: &[u8]) -> String {
-    str::from_utf8(body).map_or_else(
-        |_source| String::from("the CometAPI embedding reply is not valid JSON"),
-        str::to_owned,
-    )
 }

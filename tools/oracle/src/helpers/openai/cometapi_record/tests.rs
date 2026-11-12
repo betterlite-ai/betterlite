@@ -45,33 +45,8 @@ fn helper_seeds_select_cometapi_record() {
     assert!(rejected.is_empty(), "{rejected:?}");
 }
 
-fn covers_chat(input: &super::Input) -> bool {
-    input.steps.iter().any(|step| {
-        matches!(
-            step,
-            super::Step::Options { .. }
-                | super::Step::Request { .. }
-                | super::Step::Url { .. }
-                | super::Step::Chunk { .. }
-        )
-    })
-}
-
-fn covers_embedding(input: &super::Input) -> bool {
-    input.steps.iter().any(|step| {
-        matches!(
-            step,
-            super::Step::EmbeddingHeaders { .. }
-                | super::Step::EmbeddingUrl { .. }
-                | super::Step::EmbeddingOptions { .. }
-                | super::Step::EmbeddingRequest { .. }
-                | super::Step::EmbeddingReply { .. }
-        )
-    })
-}
-
 #[test]
-fn helper_seeds_cover_chat_and_embedding_steps() {
+fn helper_seeds_cover_chat_and_embedding_functions() {
     let seeds = seeds();
     assert!(!seeds.is_empty());
     let inputs: Vec<super::Input> = seeds
@@ -80,13 +55,18 @@ fn helper_seeds_cover_chat_and_embedding_steps() {
             serde_json::from_value(case.call.input.clone()).expect("a cometapi_record input")
         })
         .collect();
-    let chat = inputs.iter().filter(|input| covers_chat(input)).count();
-    let embedding = inputs
-        .iter()
-        .filter(|input| covers_embedding(input))
-        .count();
+    assert!(inputs.iter().any(|input| {
+        matches!(
+            input,
+            super::Input::Request { .. } | super::Input::Chunks { .. }
+        )
+    }));
+    assert!(inputs.iter().any(|input| {
+        matches!(
+            input,
+            super::Input::EmbeddingHeaders { .. } | super::Input::EmbeddingReplies { .. }
+        )
+    }));
     let outputs: Vec<HelperOutput> = seeds.iter().map(|(_, case)| invoke(&case.call)).collect();
     assert!(outputs.iter().all(|output| output.ok), "a seed did not run");
-    assert!(chat > 0, "no seed covers a chat step");
-    assert!(embedding > 0, "no seed covers an embedding step");
 }

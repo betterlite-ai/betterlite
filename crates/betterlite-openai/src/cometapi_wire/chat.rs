@@ -1,16 +1,12 @@
-use betterlite_config::loader::EnvironmentLookup;
-use betterlite_prompts::arguments::json::{Json, Object};
-use thiserror::Error;
-
+use super::{CHAT_ENDPOINT, DEFAULT_API_BASE, PROVIDER};
 use crate::chat::ChatMessage;
 use crate::chat_content::{ChatContent, ChatContentError, Mode, UrlDownloader};
 use crate::openai_base_config::ConfigFamily;
-
-use super::{CHAT_ENDPOINT, DEFAULT_API_BASE, PROVIDER};
-
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_prompts::arguments::json::{Json, Object};
+use thiserror::Error;
 // CometAPIConfig extends OpenAIGPTConfig, so the base parameter policy runs without the exact-OpenAI extensions
 pub const CHAT_FAMILY: ConfigFamily = ConfigFamily::Other;
-
 pub struct ChatTransform<'request> {
     pub model: &'request str,
     pub messages: &'request [ChatMessage],
@@ -18,7 +14,6 @@ pub struct ChatTransform<'request> {
     pub environment: &'request dyn EnvironmentLookup,
     pub downloads: &'request dyn UrlDownloader,
 }
-
 #[derive(Debug, Error)]
 pub enum ChatError {
     #[error("the CometAPI extra_body value must be an object")]
@@ -26,7 +21,6 @@ pub enum ChatError {
     #[error(transparent)]
     Content(#[from] ChatContentError),
 }
-
 // the endpoint test is a substring one, so a query value or a longer path that names chat/completions is kept
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
@@ -35,14 +29,16 @@ pub fn complete_url(api_base: Option<&str>) -> String {
         return base.to_owned();
     }
     // LiteLLM looks for /v1 after the first // of the base, so /v10 or a query value counts as versioned
-    let after_scheme = base.split_once("//").map_or(base, |(_, rest)| rest);
-    if after_scheme.contains("/v1") {
+    if base
+        .split_once("//")
+        .map_or(base, |(_, rest)| rest)
+        .contains("/v1")
+    {
         format!("{base}/{CHAT_ENDPOINT}")
     } else {
         format!("{base}/v1/{CHAT_ENDPOINT}")
     }
 }
-
 // CometAPI's transform_request pops extra_body, runs the OpenAI chat transform, then lays the map over the body
 pub fn transform_request(request: &ChatTransform<'_>) -> Result<Object, ChatError> {
     let mut optional_params = request.optional_params.clone();

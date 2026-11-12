@@ -2,17 +2,13 @@ use betterlite_openai::cometapi_wire::chunk::{ChunkError, CometApiChunk, chunk_p
 use betterlite_prompts::arguments::json::Json;
 use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use thiserror::Error;
-
 mod tests;
-
 const DONE_MARKER: &str = "[DONE]";
-
 #[derive(Debug, Error)]
 pub enum CometApiIteratorError {
     #[error(transparent)]
     Chunk(#[from] ChunkError),
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamStep {
     Chunk(Box<CometApiChunk>),
@@ -20,12 +16,10 @@ pub enum StreamStep {
     Blank,
     Done,
 }
-
 #[derive(Debug, Default)]
 pub struct CometApiChatIterator {
     done: bool,
 }
-
 impl CometApiChatIterator {
     // B010's line lifecycle: blank lines are skipped, [DONE] wins, and a stripped line parses to CometAPI's record
     pub fn next_line(&mut self, line: &str) -> Result<StreamStep, CometApiIteratorError> {
@@ -54,7 +48,6 @@ impl CometApiChatIterator {
         };
         Ok(StreamStep::Chunk(Box::new(chunk_parser(&fields)?)))
     }
-
     pub const fn close(&mut self) -> StreamStep {
         self.done = true;
         StreamStep::Done

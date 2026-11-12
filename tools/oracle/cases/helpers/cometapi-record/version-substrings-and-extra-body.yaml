@@ -2,48 +2,34 @@ kind: helper
 name: cometapi-record-version-substrings-and-extra-body
 call:
   cometapi_record:
-    steps:
-      - {kind: url, api_base: null}
-      - {kind: url, api_base: ""}
-      - {kind: url, api_base: "https://api.cometapi.com"}
-      - {kind: url, api_base: "https://api.cometapi.com/"}
-      - {kind: url, api_base: "https://proxy.example/v1"}
-      - {kind: url, api_base: "https://proxy.example/v1/"}
-      - {kind: url, api_base: "https://proxy.example/v10"}
-      - {kind: url, api_base: "https://proxy.example/v1/chat/completions"}
-      - {kind: url, api_base: "https://proxy.example/chat/completions/x"}
-      - {kind: url, api_base: "https://proxy.example/x?q=chat/completions"}
-      - {kind: url, api_base: "https://proxy.example/x?q=/v1"}
-      - {kind: url, api_base: "a//b/v1"}
-      - {kind: url, api_base: "a//b"}
-      - {kind: url, api_base: "//host/v1"}
-      - {kind: url, api_base: "//host"}
-      - kind: options
-        model: gpt-4
-        params: {temperature: 0.5, unknown: 1, user: u}
-        optional_params: {existing: true}
-        catalog: {chat: [gpt-4], text: []}
-      - kind: options
-        model: gpt-3.5-turbo-instruct
-        params: {max_tokens: 5, max_completion_tokens: 6, user: u, stream: true}
-        optional_params: {}
-        catalog: {chat: [], text: [gpt-3.5-turbo-instruct]}
-      - kind: options
-        model: comet-model
-        params: {response_format: {type: json_object}, user: u, temperature: 0.2}
-        optional_params: {}
-        catalog: {chat: [], text: []}
-      - kind: request
+    function: request
+    requests:
+      - {api_base: null, model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://api.cometapi.com", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://api.cometapi.com/", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1/", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v10", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1/chat/completions", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/chat/completions/x", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/x?q=chat/completions", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/x?q=/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "a//b/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "a//b", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "//host/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "//host", model: m, messages: [], optional_params: {}, env: {}}
+      - api_base: null
         model: m
         messages: [{role: user, content: hi}]
         optional_params: {temperature: 0.5, extra_body: {a: 1, model: over, messages: []}}
         env: {}
-      - kind: request
+      - api_base: null
         model: m
         messages: [{role: user, content: hi}]
         optional_params: {temperature: 0.5, extra_body: {}}
         env: {}
-      - kind: request
+      - api_base: null
         model: m
         messages:
           - role: user

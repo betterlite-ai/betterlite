@@ -2,22 +2,15 @@ kind: helper
 name: cometapi-record-embedding-null-fields-and-independent-usage
 call:
   cometapi_record:
-    steps:
-      - kind: embedding_options
-        params: {dimensions: 8, encoding_format: float, user: u, other: 1, prompt: null}
-        optional_params: {existing: true, user: old}
-      - kind: embedding_request
-        model: m
-        input: [hello]
-        optional_params: {dimensions: 8, model: over, input: override}
-      - kind: embedding_reply
-        body: '{"model":"up","data":[{"object":"embedding","embedding":[1,2],"index":0}],"object":"list","usage":{"prompt_tokens":3,"total_tokens":4}}'
+    function: embedding_replies
+    replies:
+      - body: '{"model":"up","data":[{"object":"embedding","embedding":[1,2],"index":0}],"object":"list","usage":{"prompt_tokens":3,"total_tokens":4}}'
         status: 200
         headers: {}
-      - {kind: embedding_reply, body: '{"model":null,"data":null,"object":null}', status: 200, headers: {}}
-      - {kind: embedding_reply, body: '{"usage":{"prompt_tokens":3}}', status: 200, headers: {}}
-      - {kind: embedding_reply, body: '{"usage":{"total_tokens":4}}', status: 200, headers: {}}
-      - {kind: embedding_reply, body: '{"usage":{}}', status: 200, headers: {}}
-      - {kind: embedding_reply, body: 'not json', status: 502, headers: {X-Request-Id: req-1}}
+      - {body: '{"model":null,"data":null,"object":null}', status: 200, headers: {}}
+      - {body: '{"usage":{"prompt_tokens":3}}', status: 200, headers: {}}
+      - {body: '{"usage":{"total_tokens":4}}', status: 200, headers: {}}
+      - {body: '{"usage":{}}', status: 200, headers: {}}
+      - {body: 'not json', status: 502, headers: {X-Request-Id: req-1}}
 env: {}
 compare: {ignore: []}

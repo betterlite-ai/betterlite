@@ -2,9 +2,7 @@ pub mod chat;
 pub mod chunk;
 pub mod embed;
 pub mod error;
-
 mod tests;
-
 pub const PROVIDER: &str = "cometapi";
 pub const DEFAULT_API_BASE: &str = "https://api.cometapi.com/v1";
 pub const CHAT_ENDPOINT: &str = "chat/completions";

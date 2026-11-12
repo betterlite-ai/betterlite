@@ -2,15 +2,16 @@ kind: helper
 name: cometapi-record-stream-error-key-and-missing-fields
 call:
   cometapi_record:
-    steps:
-      - {kind: chunk, chunk: {error: {message: boom, code: 429, choices: []}}}
-      - {kind: chunk, chunk: {error: {message: boom}}}
-      - {kind: chunk, chunk: {error: {code: 500}}}
-      - {kind: chunk, chunk: {error: {}}}
-      - {kind: chunk, chunk: {error: {message: boom, code: null}}}
-      - {kind: chunk, chunk: {id: a, created: 1, model: m}}
-      - {kind: chunk, chunk: {id: a, created: 1, choices: []}}
-      - {kind: chunk, chunk: {id: a, model: m, choices: []}}
-      - {kind: chunk, chunk: {created: 1, model: m, choices: []}}
+    function: chunks
+    chunks:
+      - {error: {message: boom, code: 429, choices: []}}
+      - {error: {message: boom}}
+      - {error: {code: 500}}
+      - {error: {}}
+      - {error: {message: boom, code: null}}
+      - {id: a, created: 1, model: m}
+      - {id: a, created: 1, choices: []}
+      - {id: a, model: m, choices: []}
+      - {created: 1, model: m, choices: []}
 env: {}
 compare: {ignore: []}
