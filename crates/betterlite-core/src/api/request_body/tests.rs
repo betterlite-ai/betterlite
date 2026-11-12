@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     BodyKind, DEFAULT_MAX_REPAIR_BYTES, DecodedJson, MediaTypeKind, ParsedBody, RequestBodyError,
@@ -25,7 +25,7 @@ fn json_input(body: &str) -> RequestBodyInput {
     RequestBodyInput {
         method: "POST".to_owned(),
         route_path: "/v1/chat/completions".to_owned(),
-        headers: [("content-type".to_owned(), "application/json".to_owned())].into(),
+        headers: BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]),
         query_params: BTreeMap::new(),
         body: body.as_bytes().to_vec(),
         client_requested_model: None,
@@ -203,7 +203,7 @@ fn decode_json_body_checks_the_json_cap_first() {
 #[test]
 fn cached_body_hides_keys_merged_after_the_cache_was_set() {
     let cached = ParsedBody {
-        accepted_keys: ["model".to_owned()].into(),
+        accepted_keys: BTreeSet::from(["model".to_owned()]),
         body: object(r#"{"model":"gpt-4o","api_key":"merged"}"#),
     };
     assert_eq!(cached.visible(), object(r#"{"model":"gpt-4o"}"#));
