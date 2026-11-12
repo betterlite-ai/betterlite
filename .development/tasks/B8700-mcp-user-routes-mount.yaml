@@ -17,7 +17,7 @@ description: >-
   revoked token is not served from the per-user token cache afterwards.
 
 
-  env.rs. B4724's state: B4714's merge_user_env_vars and delete for the stored values, the registry for each server's
+  env.rs. B4724's state: B4714's merge_user_env_vars and delete for the stored values, McpIdentity's ServerAccessCheck (B8621), the registry for each server's
   declared names, proxy_base_url from McpCore's normalized PROXY_BASE_URL, and a UserEnvVarsCache whose invalidate
   drops the gateway's per-user env var cache entry for (user_id, server_id) (LiteLLM's
   invalidate_user_env_vars_cache): call B8461's invalidate_user_env on McpState's upstream.clients, the one UpstreamClients that B9654 builds.

@@ -1,0 +1,91 @@
+id: B9950
+title: Mount the /v1/mcp/sessions routes over the live transport's session registry
+description: >-
+  B4725 builds GET and DELETE /v1/mcp/sessions as its session_routes router and stops, and B8723's SessionRegistry
+  implements the report and terminate ports that router declares. In LiteLLM both routes call into server.py, where
+  get_mcp_gateway_sessions_report and terminate_mcp_gateway_sessions read the per session maps and the stateful
+  session manager that the /mcp transport fills. So the report lists the sessions this worker's /mcp clients opened,
+  and terminate closes them. The two ports must be the one SessionRegistry the mounted transport uses: B8728 builds
+  that McpTransport once in McpState::build and stores it in McpState's `transport` field, and B8727's
+  McpTransport::registry() hands out its registry. This task builds the session state over that registry and mounts
+  session_routes through app::mcp::mount, inside the auth layers, since both routes take a key. It was split off
+  B8701, which mounts B4725's toolset_routes without waiting for the transport.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/gateway_sessions.rs and app/mcp/gateway_sessions/ (a tests.rs
+  beside each), plus one line in app::mcp::mount (crates/betterlite-server/src/app/mcp.rs).
+
+
+  Ports. Read the state struct of session_routes for the exact port list. The report and terminate ports are the
+  registry of `McpState::shared(state).transport`, cloned from there; never build a SessionRegistry in this module.
+  The full admin check DELETE runs (LiteLLM's _user_is_full_admin, B4717) goes through the admin predicate adapter
+  B8701 wrote in app::mcp::toolsets. Reuse it, build only what is missing, and leave no port as a fake.
+
+
+  Tests in app::mcp::gateway_sessions:: : the session router builds merged with the other MCP routers, and both
+  routes answer something other than 404 through tower's oneshot. One more test proves the routes and /mcp share
+  the registry. It runs on one ServerState with app::mcp::mount and app::mcp::mount_public both applied and one MCP
+  server registered like the test_srv entry of B8728's transport cases (transport http, a url on a closed local
+  port), since an initialize whose key reaches no server answers 403. GET /v1/mcp/sessions with the master key
+  answers total_sessions 0. An initialize POST to /mcp with the master key answers an mcp-session-id header. GET then
+  answers total_sessions 1 with the first 8 characters of that id as session_id_prefix, DELETE
+  /v1/mcp/sessions?session_id_prefix= with those 8 characters answers terminated_sessions 1, and the next GET answers
+  total_sessions 0. A second SessionRegistry passes the first GET and fails every step after it.
+
+
+  HTTP oracle cases. The session cases B4725 planned through the booted proxy move here, because the routes only
+  answer once this task mounts them. Write each listed case in tools/oracle/cases/http/sessions/ from
+  .development/tasks/B4725-mcp-toolsets-and-sessions.yaml (its description, pitfalls, DoD and case names). Add
+  tools/oracle/cases/http/mcp-wiring-sessions/sessions-empty.yaml: GET /v1/mcp/sessions with the master key and no
+  mcp_servers in the config answers 200 with total_sessions 0 and empty by_client, by_user and sessions, with
+  /worker_pid ignored.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/gateway_sessions.rs
+    - crates/betterlite-server/src/app/mcp/gateway_sessions/**
+    - tools/oracle/cases/http/sessions/**
+    - tools/oracle/cases/http/mcp-wiring-sessions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1449-L1506
+    why: The two session routes, their role checks and selectors, and the calls into server.py.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L609-L642
+    why: The stateful session manager and the per session maps that the /mcp transport fills and the report reads, one set per worker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1289-L1375
+    why: get_mcp_gateway_sessions_report and terminate_mcp_gateway_sessions, which the two ports stand for.
+dod:
+  - text: B4725's session router is merged once inside the auth layers.
+    proof: [session-route-tests, oracle]
+  - text: The report and terminate ports are the SessionRegistry of the McpTransport in McpState, so a session opened on /mcp shows in GET /v1/mcp/sessions and a prefix DELETE closes it.
+    proof: [session-route-tests]
+  - text: The moved B4725 session cases and the empty report match LiteLLM through the booted proxy.
+    proof: [session-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: session-route-tests
+      why: the router is not merged, a route is missing, or the ports read a registry other than the transport's
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::gateway_sessions::/)'
+    - id: session-route-cases
+      why: the session cases were not added, so the oracle compares nothing for /v1/mcp/sessions
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/sessions tools/oracle/cases/http/mcp-wiring-sessions)"
+oracle_cases:
+  - tools/oracle/cases/http/sessions/get-requires-admin-or-view-only.yaml
+  - tools/oracle/cases/http/sessions/delete-requires-full-admin.yaml
+  - tools/oracle/cases/http/sessions/delete-missing-both-selectors-400.yaml
+  - tools/oracle/cases/http/sessions/delete-session-id-prefix-too-short-422.yaml
+  - tools/oracle/cases/http/mcp-wiring-sessions/sessions-empty.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior with its 403, 400 and 422 answers: B4725. The report rows, the grouping order and terminate: B8723. Building and storing the McpTransport: B8728."
+  - "The toolset routes: B8701. A live report and terminate through the booted proxy: B136's session-report-terminate case."
+pitfalls:
+  - A SessionRegistry built in this module compiles and answers the empty report, but it never sees a session /mcp opened and terminate closes nothing; take the one in McpState's transport.
+  - The oracle boots one proxy for all cases with the same config, env and files (group_key in tools/oracle/src/runner.rs), so sessions-empty must not share its config with a B8728 case that sends initialize, or it reports that case's open session.
+  - worker_pid is each side's own process id (os.getpid() in LiteLLM, std::process::id() in B8723), so sessions-empty ignores /worker_pid and compares every other field.
+  - Mount through app::mcp::mount, not mount_public; unlike the /mcp transport, both session routes run user_api_key_auth before the handler, so a call without a key answers 401.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

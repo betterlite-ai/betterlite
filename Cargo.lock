@@ -5076,7 +5076,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d563c7b987f40249c274a4e6a671661df6be2d084f08476dda2f0f931576cfcf"
 dependencies = [
  "async-trait",
- "aws-lc-rs",
  "base64 0.23.1",
  "bytes",
  "google-cloud-gax",
@@ -5084,7 +5083,6 @@ dependencies = [
  "hmac 0.13.0",
  "http 1.5.0",
  "jiff",
- "jsonwebtoken",
  "reqwest",
  "rustc_version",
  "rustls",
