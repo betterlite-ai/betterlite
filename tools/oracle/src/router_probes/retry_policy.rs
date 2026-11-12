@@ -150,8 +150,8 @@ pub(crate) fn run(
             );
         }
         Function::Sleep => {
-            let sleep = require(payload.sleep.as_ref(), "sleep")?;
-            let (delays, retry_afters) = sleep(sleep, random)?;
+            let input = require(payload.sleep.as_ref(), "sleep")?;
+            let (delays, retry_afters) = sleep(input, random)?;
             fields.delays = Some(delays);
             fields.retry_afters = Some(retry_afters);
         }
