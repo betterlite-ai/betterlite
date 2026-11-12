@@ -5,10 +5,6 @@ use async_trait::async_trait;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{ModelDeployment, ProxyTrust};
-use betterlite_core::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
-use betterlite_core::api::vector_store_contracts::router::{
-    RouterEmbeddingExecutor, VectorStoreRouter,
-};
 use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
@@ -25,6 +21,10 @@ use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreEmbeddingError,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_transcribe::vector_store_contracts::executor::DirectEmbeddingExecutor;
+use betterlite_transcribe::vector_store_contracts::router::{
+    RouterEmbeddingExecutor, VectorStoreRouter,
+};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde::Serialize;

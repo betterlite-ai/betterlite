@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-supports-non-anthropic-model
+call:
+  b3545: {"function": "supports", "model": "gpt-4o", "custom_llm_provider": "anthropic"}
+env: {}
+compare:
+  ignore: []

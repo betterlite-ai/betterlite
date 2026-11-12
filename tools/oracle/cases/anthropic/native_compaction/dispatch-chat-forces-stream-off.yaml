@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch-chat-forces-stream-off
+call:
+  b3545: {"function": "dispatch", "protocol": "chat", "payload": {"model": "claude-opus-4-7", "messages": [{"role": "user", "content": "hi"}], "stream": true}, "reply_id": "chat_3"}
+env: {}
+compare:
+  ignore: []
