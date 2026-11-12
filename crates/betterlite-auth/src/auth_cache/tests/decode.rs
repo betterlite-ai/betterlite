@@ -109,6 +109,7 @@ fn literal_fallback_work_is_bounded() {
     assert!(hits_work_limit(hidden.as_bytes()));
     assert!(!hits_work_limit(b"['\\N{}', {'a': 1}]"));
     assert!(!hits_work_limit(b"['\\N{', 1]"));
+    assert!(!hits_work_limit(b"['\\N{'}', 1]"));
     assert!(hits_work_limit(b"['abc"));
     let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
     assert!(!hits_work_limit(siblings));
