@@ -13,6 +13,9 @@ betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+google-cloud-auth = "=1.18.0"
+google-cloud-gax = "=1.15.0"
+google-cloud-speech-v2 = "=1.15.0"
 http = "1.5.0"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true
@@ -23,12 +26,14 @@ serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+google-cloud-wkt = "=1.10.0"
 rstest = "=0.27.0"
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "time"] }
 
 [lints]
 workspace = true
