@@ -1,7 +1,6 @@
 pub mod error;
 pub mod metadata;
 pub mod plan;
-mod records;
 pub mod urls;
 
 mod tests;

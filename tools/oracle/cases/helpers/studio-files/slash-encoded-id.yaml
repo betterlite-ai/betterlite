@@ -3,7 +3,7 @@ name: studio-files-slash-encoded-id
 call:
   studio_files:
     calls:
-      - function: retrieve_target
+      - function: targets
         file_ids:
           - files/files/abc
           - /files/nested/id/
@@ -11,6 +11,7 @@ call:
           - https://h/v1beta/xfiles/abc
           - https://h/v1beta/files/a%20b
           - https://h/v1beta/files/abc;v=1
-        params: {api_key: params-key, api_base: https://studio.example}
+        api_key: params-key
+        api_base: https://studio.example
 env: {}
 compare: {ignore: []}

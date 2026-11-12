@@ -5,16 +5,14 @@ use betterlite_openai::api::file_type_records::{TwoStepFileUploadConfig, UploadD
 use betterlite_openai::files::records::{FileObject, FileStatus};
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
+use betterlite_vertex::studio_files::RequestParams;
 use betterlite_vertex::studio_files::metadata::{MetadataShape, decode_studio_file_metadata};
-use betterlite_vertex::studio_files::plan::{
-    complete_upload_url, create_file_plan, validate_environment,
-};
+use betterlite_vertex::studio_files::plan::create_file_plan;
 use betterlite_vertex::studio_files::urls::{
     FileTarget, decode_delete_response, delete_target, retrieve_target,
 };
-use betterlite_vertex::studio_files::{RequestParams, SUPPORTED_OPENAI_PARAMS};
 use jiff::tz::TimeZone;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -33,58 +31,27 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 enum Call {
-    Supported,
-    Environment {
-        #[serde(default)]
-        headers: BTreeMap<String, String>,
-        api_key: Option<String>,
-        #[serde(default)]
-        environment: BTreeMap<String, String>,
-    },
-    UploadUrl {
-        api_base: Option<String>,
-        api_key: Option<String>,
-        #[serde(default)]
-        params: Params,
-        #[serde(default)]
-        environment: BTreeMap<String, String>,
-    },
     CreatePlan {
         now: i64,
         file: FileInput,
     },
-    CreateReply {
+    Replies {
+        shape: MetadataShape,
         bodies: Vec<String>,
         timezone: String,
     },
-    RetrieveReply {
-        bodies: Vec<String>,
-        timezone: String,
-    },
-    RetrieveTarget {
+    Targets {
+        #[serde(default)]
+        delete: bool,
         file_ids: Vec<String>,
-        #[serde(default)]
-        params: Params,
-        #[serde(default)]
-        environment: BTreeMap<String, String>,
-    },
-    DeleteTarget {
-        file_ids: Vec<String>,
-        #[serde(default)]
-        params: Params,
+        api_key: Option<String>,
+        api_base: Option<String>,
         #[serde(default)]
         environment: BTreeMap<String, String>,
     },
     DeleteReply {
         replies: Vec<DeleteReply>,
     },
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Params {
-    api_key: Option<String>,
-    api_base: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,66 +88,21 @@ impl Helper for Op {
 
 fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::Supported => Ok(json!({ "supported": SUPPORTED_OPENAI_PARAMS })),
-        Call::Environment {
-            headers,
-            api_key,
-            environment,
-        } => environment_view(headers, api_key.as_deref(), environment),
-        Call::UploadUrl {
-            api_base,
-            api_key,
-            params,
-            environment,
-        } => upload_view(api_base.as_deref(), api_key.as_deref(), params, environment),
         Call::CreatePlan { now, file } => plan_view(*now, file),
-        Call::CreateReply { bodies, timezone } => {
-            reply_views(bodies, timezone, MetadataShape::Create)
-        }
-        Call::RetrieveReply { bodies, timezone } => {
-            reply_views(bodies, timezone, MetadataShape::Retrieve)
-        }
-        Call::RetrieveTarget {
+        Call::Replies {
+            shape,
+            bodies,
+            timezone,
+        } => reply_views(bodies, timezone, *shape),
+        Call::Targets {
+            delete,
             file_ids,
-            params,
+            api_key,
+            api_base,
             environment,
-        } => target_views(file_ids, params, environment, TargetKind::Retrieve),
-        Call::DeleteTarget {
-            file_ids,
-            params,
-            environment,
-        } => target_views(file_ids, params, environment, TargetKind::Delete),
+        } => target_views(file_ids, api_key, api_base, environment, *delete),
         Call::DeleteReply { replies } => delete_views(replies),
     }
-}
-
-fn environment_view(
-    headers: &BTreeMap<String, String>,
-    api_key: Option<&str>,
-    environment: &BTreeMap<String, String>,
-) -> Result<Value, Box<HelperError>> {
-    let settings = settings(environment);
-    let explicit = api_key.map(SecretString::from);
-    let resolved = validate_environment(headers, explicit.as_ref(), &settings).or_value_error()?;
-    let exposed: BTreeMap<&str, &str> = resolved
-        .iter()
-        .map(|(name, value)| (name.as_str(), value.expose_secret()))
-        .collect();
-    Ok(json!({ "headers": exposed }))
-}
-
-fn upload_view(
-    api_base: Option<&str>,
-    api_key: Option<&str>,
-    params: &Params,
-    environment: &BTreeMap<String, String>,
-) -> Result<Value, Box<HelperError>> {
-    let settings = settings(environment);
-    let explicit = api_key.map(SecretString::from);
-    let request = request_params(params);
-    let url =
-        complete_upload_url(api_base, explicit.as_ref(), &request, &settings).or_value_error()?;
-    Ok(json!({ "url": url }))
 }
 
 fn plan_view(now: i64, file: &FileInput) -> Result<Value, Box<HelperError>> {
@@ -211,6 +133,31 @@ fn reply_views(
     Ok(json!({ "files": files }))
 }
 
+fn target_views(
+    file_ids: &[String],
+    api_key: Option<&String>,
+    api_base: Option<&String>,
+    environment: &BTreeMap<String, String>,
+    delete: bool,
+) -> Result<Value, Box<HelperError>> {
+    let settings = settings(environment);
+    let params = RequestParams {
+        api_key: api_key.map(SecretString::from),
+        api_base: api_base.cloned(),
+    };
+    let mut targets = Vec::with_capacity(file_ids.len());
+    for file_id in file_ids {
+        let target = if delete {
+            delete_target(file_id, &params, &settings)
+        } else {
+            retrieve_target(file_id, &params, &settings)
+        }
+        .or_value_error()?;
+        targets.push(target_view(&target));
+    }
+    Ok(json!({ "targets": targets }))
+}
+
 fn delete_views(replies: &[DeleteReply]) -> Result<Value, Box<HelperError>> {
     let mut deleted = Vec::with_capacity(replies.len());
     for reply in replies {
@@ -224,32 +171,6 @@ fn delete_views(replies: &[DeleteReply]) -> Result<Value, Box<HelperError>> {
         }));
     }
     Ok(json!({ "replies": deleted }))
-}
-
-#[derive(Clone, Copy)]
-enum TargetKind {
-    Retrieve,
-    Delete,
-}
-
-fn target_views(
-    file_ids: &[String],
-    params: &Params,
-    environment: &BTreeMap<String, String>,
-    kind: TargetKind,
-) -> Result<Value, Box<HelperError>> {
-    let settings = settings(environment);
-    let request = request_params(params);
-    let mut targets = Vec::with_capacity(file_ids.len());
-    for file_id in file_ids {
-        let target = match kind {
-            TargetKind::Retrieve => retrieve_target(file_id, &request, &settings),
-            TargetKind::Delete => delete_target(file_id, &request, &settings),
-        }
-        .or_value_error()?;
-        targets.push(target_view(&target));
-    }
-    Ok(json!({ "targets": targets }))
 }
 
 fn settings(environment: &BTreeMap<String, String>) -> Settings {
@@ -268,13 +189,6 @@ fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> O
         .get(name)
         .map(String::as_str)
         .filter(|value| !value.is_empty())
-}
-
-fn request_params(params: &Params) -> RequestParams {
-    RequestParams {
-        api_key: params.api_key.as_deref().map(SecretString::from),
-        api_base: params.api_base.clone(),
-    }
 }
 
 fn file_data(file: &FileInput) -> FileData {

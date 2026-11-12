@@ -3,8 +3,9 @@ name: studio-files-seed-foreign-host
 call:
   studio_files:
     calls:
-      - function: retrieve_target
+      - function: targets
         file_ids: [https://foreign.example/v1beta/files/seed/id]
-        params: {api_key: seed-key, api_base: "https://studio.example/"}
+        api_key: seed-key
+        api_base: "https://studio.example/"
 env: {}
 compare: {ignore: []}

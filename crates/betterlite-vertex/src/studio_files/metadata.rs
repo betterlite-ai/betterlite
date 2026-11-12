@@ -3,13 +3,13 @@ use betterlite_openai::files::records::{FileKind, FileObject, FileStatus, FilesP
 use serde::Deserialize;
 
 use super::error::StudioFilesError;
-use super::records::FileState;
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 
 pub const METADATA_BODY_LIMIT: usize = 1024 * 1024;
 const MAX_TIMESTAMP_BYTES: usize = 64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MetadataShape {
     Create,
     Retrieve,
@@ -93,7 +93,11 @@ fn decode_create(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject, S
 fn decode_retrieve(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
     let metadata: RetrieveMetadata =
         serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
-    let state = FileState::from_wire(metadata.state.as_deref());
+    let status = match metadata.state.as_deref() {
+        Some("ACTIVE") => FileStatus::Processed,
+        Some("FAILED") => FileStatus::Error,
+        _ => FileStatus::Uploaded,
+    };
     let size = match metadata.size_bytes.as_deref() {
         Some(text) => size_bytes(text)?,
         None => 0,
@@ -105,13 +109,13 @@ fn decode_retrieve(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject,
         filename: metadata.display_name.unwrap_or_default(),
         object: FileKind::File,
         purpose: FilesPurpose::UserData,
-        status: Some(state.status()),
         expires_at: None,
-        status_details: if state == FileState::Failed {
+        status_details: if status == FileStatus::Error {
             Some(error_details(metadata.error.as_ref())?)
         } else {
             None
         },
+        status: Some(status),
     })
 }
 
