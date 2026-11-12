@@ -7,6 +7,7 @@ use opentelemetry::InstrumentationScope;
 use opentelemetry::logs::{Logger as _, LoggerProvider as _};
 use opentelemetry::trace::{Span as _, Tracer as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
+use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLoggerProvider, SimpleLogProcessor};
 use opentelemetry_sdk::metrics::data::ResourceMetrics;
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
@@ -433,6 +434,25 @@ fn enabled_events_build_and_publish_a_logger_provider() {
     assert!(otel.logger_provider.is_some());
     assert!(rig.globals.logger.existing().expect("lookup").is_some());
     assert!(rig.globals.meter.existing().expect("lookup").is_none());
+}
+
+#[test]
+fn an_injected_logger_provider_is_used_and_never_published() {
+    let rig = Rig::new();
+    let exporter = InMemoryLogExporter::default();
+    let injected = SdkLoggerProvider::builder()
+        .with_log_processor(SimpleLogProcessor::new(exporter.clone()))
+        .build();
+    let mut config = in_memory_config();
+    config.signals.enable_events = true;
+    let mut init = plain_init(Some(config));
+    init.injected.logger = Some(injected);
+    let otel = rig.init(init).expect("legacy init");
+    let provider = otel.logger_provider.expect("logger provider");
+    let logger = provider.logger_with_scope(InstrumentationScope::builder("init-test").build());
+    logger.emit(logger.create_log_record());
+    assert_eq!(exporter.get_emitted_logs().expect("logs").len(), 1);
+    assert!(rig.globals.logger.existing().expect("lookup").is_none());
 }
 
 #[test]
