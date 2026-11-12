@@ -185,10 +185,7 @@ def replace_items(step: ReplaceStep) -> list[Json]:
     return ids
 
 
-def final_step(
-    iterator: StreamIterator,
-    step: FinalStep,
-) -> None:
+def final_step(iterator: StreamIterator, step: FinalStep) -> None:
     completion = completion_view(step)
     # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L298
     iterator._queue_final_tool_call_done_events(completion)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L298
