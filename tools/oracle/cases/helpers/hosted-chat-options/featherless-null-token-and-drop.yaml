@@ -1,0 +1,42 @@
+kind: helper
+name: featherless-null-token-and-drop
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {max_tokens: 4, tools: [{type: function}], temperature: 0}
+            params:
+              - [max_completion_tokens, null]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {max_tokens: 4, tools: [{type: function}], temperature: 0}
+            params:
+              - [temperature, null]
+              - [stop, null]
+              - [max_tokens, null]
+              - ["n", null]
+          - op: map
+            host: featherless
+            model: featherless-ai/model
+            config: {max_tokens: 4, tools: [{type: function}], temperature: 0}
+            params:
+              - [max_completion_tokens, 3]
+              - [max_tokens, null]
+      - environment: {FEATHERLESS_AI_API_BASE: "https://primary.example", FEATHERLESS_AI_API_KEY: sk-primary, FEATHERLESS_API_BASE: "https://secondary.example", FEATHERLESS_API_KEY: sk-secondary}
+        calls:
+          - op: info
+            host: featherless
+          - op: info
+            host: featherless
+            api_base: https://explicit.example
+            api_key: sk-explicit
+      - environment: {FEATHERLESS_API_BASE: "https://secondary.example", FEATHERLESS_API_KEY: sk-secondary}
+        calls:
+          - op: info
+            host: featherless
+env: {}
+compare: {ignore: []}

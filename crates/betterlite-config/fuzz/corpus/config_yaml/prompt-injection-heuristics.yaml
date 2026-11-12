@@ -1,0 +1,5 @@
+litellm_settings:
+  prompt_injection_params:
+    heuristics_check: true
+    vector_db_check: false
+    reject_as_response: true

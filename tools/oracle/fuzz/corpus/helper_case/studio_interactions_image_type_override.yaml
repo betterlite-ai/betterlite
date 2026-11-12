@@ -1,0 +1,11 @@
+kind: helper
+name: studio-interactions-image-type-override
+call:
+  studio_interactions:
+    calls:
+      - function: transform_request
+        model: "gemini-2.5-flash-image"
+        optional_params:
+          generation_config: {image_config: {type: "custom", image_size: "1K"}}
+env: {}
+compare: {ignore: []}

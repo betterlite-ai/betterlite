@@ -1,0 +1,12 @@
+kind: helper
+name: explicit-null-options-block-tools-fallback
+call:
+  tool_signals:
+    responses: []
+    file_search_params: []
+    token_counts: []
+    values: []
+    kwargs:
+      - {web_search_options: null, tools: [{type: web_search}]}
+compare: {ignore: []}
+env: {}

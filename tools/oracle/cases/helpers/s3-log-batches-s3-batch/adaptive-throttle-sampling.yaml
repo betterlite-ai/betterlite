@@ -1,0 +1,32 @@
+kind: helper
+name: batch_with_adaptive_throttle
+call:
+  b3994:
+    source:
+      s3_bucket_name: logs
+      s3_region_name: us-east-1
+      s3_endpoint_url: http://127.0.0.1:9000
+      s3_aws_access_key_id: AKIAEXAMPLE
+      s3_aws_secret_access_key: secretKeyEXAMPLE
+      s3_max_concurrent_uploads: 1
+      s3_adaptive_concurrency: true
+      s3_max_adaptive_concurrency: 3
+    now: 1767323045
+    steps:
+      - enqueue:
+          - s3_object_key: 2026-01-02/a.json
+            s3_object_download_filename: a.json
+            payload: {a: 1}
+        replies:
+          - match: a.json
+            responses:
+              - status: 429
+                body: ""
+      - enqueue: []
+        replies:
+          - match: a.json
+            responses:
+              - status: 200
+                body: ""
+env: {}
+compare: {ignore: []}

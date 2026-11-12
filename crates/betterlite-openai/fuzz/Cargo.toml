@@ -35,8 +35,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "audio_duration"
+path = "fuzz_targets/audio_duration.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "auth_record"
 path = "fuzz_targets/auth_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "batch_records"
+path = "fuzz_targets/batch_records.rs"
 test = false
 doc = false
 bench = false
@@ -233,6 +247,13 @@ bench = false
 [[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_image_generation"
+path = "fuzz_targets/openai_image_generation.rs"
 test = false
 doc = false
 bench = false

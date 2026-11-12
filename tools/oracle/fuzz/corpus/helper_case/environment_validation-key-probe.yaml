@@ -1,0 +1,10 @@
+kind: helper
+name: environment_validation-key-probe-seed
+call:
+  b5364:
+    operation: valid_model
+    cases:
+      - {model: plain-model, fails: true}
+      - {model: chat-model, model_sets: {open_ai_chat_completion_models: [chat-model]}, fails: false}
+env: {}
+compare: {ignore: []}
