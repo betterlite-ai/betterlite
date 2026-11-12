@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 pub(crate) struct Op;
 
