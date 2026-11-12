@@ -330,7 +330,10 @@ fn numbered_tool_calls() {
             ("function", value(&[("arguments", text("{"))])),
         ]),
         value(&[("function", value(&[("name", text("f"))]))]),
-        value(&[("function", value(&[("arguments", Value::Null)]))]),
+        value(&[
+            ("id", Value::Null),
+            ("function", value(&[("arguments", Value::Null)])),
+        ]),
         value(&[("index", Value::Null), ("function", value(&[]))]),
         value(&[("custom", value(&[("name", text("n"))]))]),
     ]);
@@ -348,6 +351,10 @@ fn numbered_tool_calls() {
     assert_eq!(calls[2].function.as_ref().unwrap().arguments, "");
     assert!(calls[4].custom.is_some());
     assert_eq!(calls[4].kind, None);
+    let written = serde_json::to_value(calls).unwrap();
+    assert_eq!(written[0]["id"], text("a"));
+    assert!(written[1].get("id").is_none());
+    assert!(written[2]["id"].is_null());
 }
 
 fn invalid_tool_calls() {

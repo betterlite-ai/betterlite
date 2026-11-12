@@ -203,8 +203,13 @@ pub struct DeltaFunctionCall {
 pub struct DeltaToolCall {
     #[serde(default)]
     pub index: Option<i64>,
-    #[serde(default)]
-    pub id: Option<String>,
+    // pydantic leaves an id the provider never sent out of the dump, but keeps an explicit null
+    #[serde(
+        default,
+        with = "serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub id: Option<Option<String>>,
     #[serde(rename = "type", default)]
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
