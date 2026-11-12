@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use secrecy::ExposeSecret;
 
 use crate::azure_urls::{
-    EnvironmentHeadersRequest, get_base_azure_url, url_parts, validate_azure_environment,
+    AzureUrlError, EnvironmentHeadersRequest, get_base_azure_url, url_parts,
+    validate_azure_environment,
 };
 
 use support::{NoSources, credentials, load, token_settings};
@@ -88,6 +89,26 @@ fn azure_urls_secret_safe_failure() {
     .unwrap_err();
     assert!(!format!("{invalid}").contains("fixture-api-key"));
     assert!(!format!("{invalid:?}").contains("fixture-api-key"));
+}
+
+#[test]
+fn azure_urls_api_base_edges() {
+    assert_eq!(
+        get_base_azure_url(Some("/openai/responses"), None, None, "/openai/responses").unwrap(),
+        "/openai/responses"
+    );
+    let relative = get_base_azure_url(Some("/v1"), None, None, "/openai/responses").unwrap_err();
+    assert!(matches!(relative, AzureUrlError::Compose(_)));
+    assert_eq!(
+        get_base_azure_url(
+            Some("https://example.com/a\\b"),
+            None,
+            None,
+            "/openai/responses"
+        )
+        .unwrap(),
+        "https://example.com/a/b/openai/responses"
+    );
 }
 
 #[test]
