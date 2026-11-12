@@ -1,0 +1,41 @@
+kind: helper
+name: deepseek-request-policy-thinking-precedence-and-none
+call:
+  deepseek_request_policy:
+    op: map
+    cases:
+      - model: deepseek-reasoner
+        params:
+          thinking: {type: enabled, budget_tokens: 1024}
+          reasoning_effort: 'none'
+        optional_params: {}
+      - model: deepseek-reasoner
+        params:
+          reasoning_effort: 'none'
+        optional_params: {}
+      - model: deepseek-reasoner
+        params:
+          reasoning_effort: low
+        optional_params: {}
+      - model: deepseek-reasoner
+        params:
+          thinking: {type: auto}
+          reasoning_effort: high
+        optional_params: {}
+      - model: deepseek-reasoner
+        params: {}
+        optional_params:
+          thinking: {type: enabled, budget_tokens: 64}
+          reasoning_effort: 'none'
+      - model: deepseek-reasoner
+        params:
+          thinking: {type: disabled}
+        optional_params: {}
+      - model: deepseek-reasoner
+        params:
+          temperature: 0.5
+          unsupported: true
+        optional_params: {}
+env: {}
+compare:
+  ignore: []
