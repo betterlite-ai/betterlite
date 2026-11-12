@@ -3,18 +3,20 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fs, io};
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::studio_identity::Settings;
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use http::Method;
 use http::header::HeaderMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::decode::{MODEL_LIST_LIMIT, decode_studio_models};
 use super::error::StudioIdentityError;
@@ -518,6 +520,26 @@ async fn model_list_http_reports_a_transport_failure() {
     let error = get_models(&script, None, None, &settings, DEADLINE)
         .await
         .expect_err("the transport closed");
+    assert!(matches!(error, StudioIdentityError::Transport { .. }));
+}
+
+#[tokio::test]
+async fn model_list_http_uses_the_real_client_transport() {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .expect("an empty proxy policy"),
+    );
+    let client = ProxiedClient::outbound(&policy).expect("an outbound client");
+    let settings = settings(Some("environment-key"), None, None);
+    let error = get_models(
+        &client,
+        None,
+        Some("http://127.0.0.1:1"),
+        &settings,
+        DEADLINE,
+    )
+    .await
+    .expect_err("nothing listens on the chosen port");
     assert!(matches!(error, StudioIdentityError::Transport { .. }));
 }
 

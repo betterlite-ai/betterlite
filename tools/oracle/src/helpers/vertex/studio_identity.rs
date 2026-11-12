@@ -100,13 +100,13 @@ fn resolve(call: &Call) -> Value {
         .as_deref()
         .map(SecretString::from)
         .or_else(|| settings.environment_key.clone());
-    let headers = native_headers(
+    let secret_headers = native_headers(
         explicit.as_ref(),
         &native_params(call),
         &settings,
         &call.headers,
     );
-    let headers = headers
+    let revealed_headers = secret_headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
         .collect::<BTreeMap<_, _>>();
@@ -114,7 +114,7 @@ fn resolve(call: &Call) -> Value {
         "api_key": api_key.as_ref().map(ExposeSecret::expose_secret),
         "env_key": settings.environment_key.as_ref().map(ExposeSecret::expose_secret),
         "api_base": call.api_base.as_deref().unwrap_or(&settings.api_base),
-        "headers": headers,
+        "headers": revealed_headers,
         "base_model": call.model.replace("gemini/", ""),
         "model_names": process_model_names(&call.models),
     })
