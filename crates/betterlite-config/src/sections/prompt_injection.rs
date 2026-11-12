@@ -47,9 +47,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             params: None,
-            heuristics_max_threads: MINIMUM_MAX_THREADS,
-            heuristics_timeout: DEFAULT_TIMEOUT,
-            similarity_threshold: DEFAULT_SIMILARITY_THRESHOLD,
+            heuristics_max_threads: 1,
+            heuristics_timeout: Duration::from_secs(30),
+            similarity_threshold: Decimal::from_parts(7, 0, 0, false, 1),
         }
     }
 }
@@ -57,7 +57,7 @@ impl Default for Settings {
 // a bool alias, like GuardrailFlag: clippy's two-bool limit counts the primitive spelling only
 pub type PromptInjectionFlag = bool;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "RawPromptInjectionParams")]
 pub struct PromptInjectionParams {
     pub heuristics_check: PromptInjectionFlag,
@@ -67,20 +67,6 @@ pub struct PromptInjectionParams {
     pub llm_api_system_prompt: Option<String>,
     pub llm_api_fail_call_string: Option<String>,
     pub reject_as_response: Option<bool>,
-}
-
-impl Default for PromptInjectionParams {
-    fn default() -> Self {
-        Self {
-            heuristics_check: false,
-            vector_db_check: false,
-            llm_api_check: false,
-            llm_api_name: None,
-            llm_api_system_prompt: None,
-            llm_api_fail_call_string: None,
-            reject_as_response: Some(false),
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]

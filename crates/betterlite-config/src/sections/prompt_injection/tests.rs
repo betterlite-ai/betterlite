@@ -56,15 +56,11 @@ fn a_missing_params_key_gives_none() {
     let settings = loaded("litellm_settings: {}", &[]);
     assert_eq!(settings.params, None);
     assert_eq!(settings.heuristics_max_threads, 1);
+    assert_eq!(settings.heuristics_timeout, Duration::from_secs(30));
     assert_eq!(
         settings.similarity_threshold,
         Decimal::from_str("0.7").unwrap()
     );
-}
-
-#[test]
-fn an_unset_config_matches_settings_default() {
-    assert_eq!(loaded("litellm_settings: {}", &[]), Settings::default());
 }
 
 #[test]

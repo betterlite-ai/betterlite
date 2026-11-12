@@ -29,7 +29,10 @@ pub(super) fn params(scenario: Scenario) -> PromptInjectionParams {
     let mut params = PromptInjectionParams::default();
     match scenario {
         Scenario::AllFalse => {}
-        Scenario::Heuristics => params.heuristics_check = true,
+        Scenario::Heuristics => {
+            params.heuristics_check = true;
+            params.reject_as_response = Some(false);
+        }
         Scenario::HeuristicsRejectAsResponse => {
             params.heuristics_check = true;
             params.reject_as_response = Some(true);
