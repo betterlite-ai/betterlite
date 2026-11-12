@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::anthropic_beta_config::Settings;
@@ -7,7 +7,6 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use http::header::HeaderMap;
 use indexmap::IndexMap;
-use tokio::sync::{Mutex, MutexGuard};
 use url::Url;
 
 use crate::api::api_boundaries::ApiLimits;
@@ -47,36 +46,39 @@ impl BetaConfigLoader {
             settings,
             limits,
             bundled: BUNDLED_CONFIG,
-            cache: Mutex::const_new(None),
+            cache: Mutex::new(None),
         }
     }
 
     pub async fn matrix(&self) -> Arc<BetaMatrix> {
-        let cache = self.cache.lock().await;
-        if let Some(loaded) = cache.as_ref() {
+        if let Some(loaded) = self
+            .cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
             return Arc::clone(loaded);
         }
-        self.fill(cache).await
+        self.fill().await
     }
 
     pub async fn reload(&self) -> Arc<BetaMatrix> {
-        let mut cache = self.cache.lock().await;
-        *cache = None;
+        *self.cache.lock().unwrap_or_else(PoisonError::into_inner) = None;
         tracing::info!(
             kind = "reloading",
             "Reloading beta headers config (cache cleared)"
         );
-        self.fill(cache).await
+        self.fill().await
     }
 
-    async fn fill(&self, mut cache: MutexGuard<'_, Option<Arc<BetaMatrix>>>) -> Arc<BetaMatrix> {
+    // LiteLLM takes no lock either: calls that race on an empty cache each load, and the last one to finish is cached.
+    async fn fill(&self) -> Arc<BetaMatrix> {
         let loaded = Arc::new(self.load().await);
         tracing::debug!(
             kind = "cache_filled",
             "Loaded and cached beta headers config"
         );
-        *cache = Some(Arc::clone(&loaded));
-        drop(cache);
+        *self.cache.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&loaded));
         loaded
     }
 

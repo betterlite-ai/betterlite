@@ -365,6 +365,18 @@ async fn fetch_timeout_falls_back() {
     assert_eq!(warnings(&logs), ["fetch_failed"]);
 }
 
+#[tokio::test(start_paused = true)]
+async fn stalled_fetch_does_not_block_other_calls() {
+    let (logs, _guard) = capture();
+    let mock = serve(vec![Reply::Stall], logs).await;
+    let beta = loader(false, &mock.url);
+    let started = Instant::now();
+    let (loaded, reloaded) = tokio::join!(beta.matrix(), beta.reload());
+    assert!(started.elapsed() < Duration::from_secs(6));
+    assert_eq!(*loaded, matrix(BUNDLED_CONFIG));
+    assert_eq!(*reloaded, matrix(BUNDLED_CONFIG));
+}
+
 #[rstest]
 #[case::empty_url("")]
 #[case::not_a_url("not a url")]
