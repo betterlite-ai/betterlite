@@ -144,6 +144,15 @@ fn normalise(url: &str) -> String {
     }
 }
 
+// LiteLLM writes bodies with json.dumps and betterlite with serde_json, so the bytes differ while the JSON matches
+fn body_lines(body: &str) -> Vec<Value> {
+    body.split('\n')
+        .map(|line| {
+            serde_json::from_str(line).unwrap_or_else(|_error| Value::String(line.to_owned()))
+        })
+        .collect()
+}
+
 fn fail(class: &str, message: &str) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
@@ -242,7 +251,7 @@ fn step_value(logger: &S3BatchLogger, client: &ScriptedS3) -> Value {
     json!({
         "requests": requests
             .iter()
-            .map(|(url, body)| json!({"url": normalise(url), "body": body}))
+            .map(|(url, body)| json!({"url": normalise(url), "body": body_lines(body)}))
             .collect::<Vec<_>>(),
         "queue": pending
             .entries
@@ -250,7 +259,7 @@ fn step_value(logger: &S3BatchLogger, client: &ScriptedS3) -> Value {
             .map(|element| json!({
                 "key": element.s3_object_key,
                 "retrying_since": element.retrying_since.is_some(),
-                "body": element.body,
+                "body": element.body.as_deref().map(body_lines),
             }))
             .collect::<Vec<Value>>(),
         "requeued_count": pending.requeued_count,

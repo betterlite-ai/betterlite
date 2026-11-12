@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 import time
 from datetime import UTC, datetime, tzinfo
@@ -9,6 +10,7 @@ import litellm
 from litellm.integrations import s3_v2
 from litellm.integrations.adaptive_concurrency import AdaptiveConcurrencyLimiter
 from litellm.integrations.s3_v2 import S3Logger
+from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.types.integrations.s3_v2 import s3BatchLoggingElement
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -94,6 +96,8 @@ def build_logger(
     logger._init_s3_params(params_source=source)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L256
     logger.async_httpx_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L227
     logger.log_queue = []
+    logger.max_queue_size = logger.s3_max_queue_size
+    BaseAWSLLM.__init__(logger)
     logger._requeued_count = 0
     logger._flush_dropped = {}
     logger._flush_retries = 0
@@ -109,6 +113,17 @@ def build_logger(
     else:
         logger._upload_limiter = asyncio.Semaphore(logger.s3_max_concurrent_uploads)
     return logger, limiter
+
+
+def body_lines(body: str) -> list[Json]:
+    lines: list[Json] = []
+    for line in body.split("\n"):
+        try:
+            value: Json = json.loads(line)
+        except json.JSONDecodeError:
+            value = line
+        lines.append(value)
+    return lines
 
 
 def element(item: Element) -> s3BatchLoggingElement:
@@ -152,13 +167,13 @@ async def execute(input_value: Input) -> dict[str, Json]:
                 {
                     "key": item.s3_object_key,
                     "retrying_since": item.retrying_since is not None,
-                    "body": item.body,
+                    "body": None if item.body is None else body_lines(item.body),
                 }
                 for item in logger.log_queue
             ]
             fallback = logger.s3_max_concurrent_uploads
             requests: list[Json] = [
-                {"url": re.sub(r"[0-9a-f]{32}", "ID", url), "body": body}
+                {"url": re.sub(r"[0-9a-f]{32}", "ID", url), "body": body_lines(body)}
                 for url, body in sorted(client.requests)
             ]
             step_results.append(
