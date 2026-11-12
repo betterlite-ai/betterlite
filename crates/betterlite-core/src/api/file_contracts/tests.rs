@@ -4,7 +4,7 @@ use std::io::{Error, Read, Result};
 
 use rstest::rstest;
 
-use super::{is_batch_jsonl_file, is_batch_jsonl_request};
+use super::is_batch_jsonl_file;
 
 struct LazyFile;
 
@@ -73,15 +73,12 @@ fn batch_metadata_predicate(
     #[case] expected: bool,
 ) {
     let (purpose, content_type, file) = scenario;
-    assert_eq!(
-        is_batch_jsonl_request(purpose, content_type, file),
-        expected
-    );
+    assert_eq!(is_batch_jsonl_file(purpose, content_type, file), expected);
 }
 
 #[test]
 fn batch_metadata_lazy_file_is_not_read() {
-    assert!(is_batch_jsonl_request(
+    assert!(is_batch_jsonl_file(
         Some("batch"),
         Some("text/plain"),
         Some(&LazyFile)

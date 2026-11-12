@@ -18,21 +18,12 @@ pub fn valid_content_type(content_type: Option<&str>) -> bool {
 }
 
 #[must_use]
-pub fn is_batch_jsonl_file(
+pub fn is_batch_jsonl_file<Body: ?Sized>(
     purpose: Option<&str>,
     content_type: Option<&str>,
-    content: Option<&[u8]>,
+    body: Option<&Body>,
 ) -> bool {
     purpose.is_some_and(|value| value == "batch")
         && valid_content_type(content_type)
-        && content.is_some()
-}
-
-#[must_use]
-pub fn is_batch_jsonl_request<File>(
-    purpose: Option<&str>,
-    content_type: Option<&str>,
-    file: Option<&File>,
-) -> bool {
-    purpose == Some("batch") && valid_content_type(content_type) && file.is_some()
+        && body.is_some()
 }
