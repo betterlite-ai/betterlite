@@ -19,11 +19,10 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{
-    EmbeddingError, embedding_failure_response, embedding_port_failure, embedding_routes, failure,
-};
+use super::{EmbeddingError, embedding_port_failure, embedding_routes, render};
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
+use betterlite_core::operation::embedding::route_error;
 
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
@@ -44,11 +43,13 @@ fn embedding_failure_returns_bad_request() {
     let error = EmbeddingError::Body {
         source: serde_json::from_str::<String>("not-json").expect_err("invalid JSON"),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-test",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -67,11 +68,13 @@ async fn embedding_provider_failure_preserves_message() {
                 .to_vec(),
         }),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-provider",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     let body = to_bytes(response.into_body(), 4096)
         .await
@@ -142,11 +145,13 @@ async fn embedding_error_classification(
             .into_bytes(),
         }),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-error",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     assert_eq!(response.status().as_u16(), expected_status);
     assert_eq!(
@@ -375,8 +380,11 @@ async fn provider_framework_tests_behavior(
     #[case] error_type: &str,
 ) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let response =
-        embedding_failure_response(embedding_port_failure(error), "call-7", None, &redactor);
+    let response = render(
+        embedding_port_failure(error).route(&redactor),
+        "call-7",
+        None,
+    );
     assert_eq!(response.status().as_u16(), status);
     assert_eq!(
         response.headers().get("x-litellm-call-id").unwrap(),

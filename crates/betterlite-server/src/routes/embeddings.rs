@@ -14,13 +14,12 @@ use betterlite_core::operation::CallResult;
 use betterlite_core::operation::Operation;
 use betterlite_core::operation::embedding::{
     EmbeddingCall, EmbeddingCallInput, EmbeddingFailure,
-    EmbeddingRequest as DispatchEmbeddingRequest, EmbeddingResult,
+    EmbeddingRequest as DispatchEmbeddingRequest, EmbeddingResult, EmbeddingRoute, route_error,
 };
 use betterlite_http::error::HttpError;
 use betterlite_openai::chat::client_mock;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::chat::provider_error::{ErrorBodyKind, ProviderFailure, provider_failure};
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
@@ -49,20 +48,6 @@ struct ErrorObject {
     error_type: String,
     param: Option<String>,
     code: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderErrorBody {
-    error: ProviderErrorFields,
-}
-
-#[derive(serde::Deserialize)]
-struct ProviderErrorFields {
-    message: String,
-    #[serde(rename = "type")]
-    error_type: String,
-    param: Option<String>,
-    code: Option<String>,
 }
 
 pub(crate) fn embedding_routes(executor: Arc<ChatExecutor>) -> Router {
@@ -144,18 +129,26 @@ async fn embeddings(
     let call_id = routed_call_id(&headers);
     let request = match EmbeddingRequest::parse(&body) {
         Ok(request) => request,
-        Err(error) => return failure(&error, &call_id, None, &state.executor.redactor),
+        Err(error) => {
+            return render(
+                route_error(&error, &state.executor.redactor),
+                &call_id,
+                None,
+            );
+        }
     };
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone())
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&state.executor, &model) else {
-        return failure(
-            &EmbeddingError::UnknownModel { model },
+        return render(
+            route_error(
+                &EmbeddingError::UnknownModel { model },
+                &state.executor.redactor,
+            ),
             &call_id,
             None,
-            &state.executor.redactor,
         );
     };
     match run_embedding(&state, request, deployment, &call_id).await {
@@ -218,22 +211,21 @@ fn dispatch_failure(
     redactor: &Redactor,
 ) -> Response {
     match error {
-        DispatchError::Embedding { source } => {
-            embedding_failure_response(source, call_id, deployment, redactor)
-        }
-        DispatchError::MissingDeployment { model_id } => failure(
-            &EmbeddingError::UnknownModel { model: model_id },
+        DispatchError::Embedding { source } => render(source.route(redactor), call_id, deployment),
+        DispatchError::MissingDeployment { model_id } => render(
+            route_error(&EmbeddingError::UnknownModel { model: model_id }, redactor),
             call_id,
             deployment,
-            redactor,
         ),
-        DispatchError::DeadlineExpired { .. } => failure(
-            &EmbeddingError::Http {
-                source: HttpError::Timeout,
-            },
+        DispatchError::DeadlineExpired { .. } => render(
+            route_error(
+                &EmbeddingError::Http {
+                    source: HttpError::Timeout,
+                },
+                redactor,
+            ),
             call_id,
             deployment,
-            redactor,
         ),
         DispatchError::Rules { source } => {
             internal_message(&source.to_string(), call_id, deployment, redactor)
@@ -255,24 +247,23 @@ fn dispatch_failure(
     }
 }
 
-fn embedding_failure_response(
-    source: EmbeddingFailure,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-    redactor: &Redactor,
-) -> Response {
-    match source {
-        EmbeddingFailure::Route(route) => failure(&route, call_id, deployment, redactor),
-        EmbeddingFailure::Internal { message } => {
-            internal_message(&message, call_id, deployment, redactor)
-        }
-        EmbeddingFailure::Mismatched => internal_message(
-            "the provider answered a different operation",
-            call_id,
-            deployment,
-            redactor,
-        ),
-    }
+fn render(route: EmbeddingRoute, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
+    let status_code =
+        StatusCode::from_u16(route.failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let body = ErrorBody {
+        error: ErrorObject {
+            message: route.message,
+            error_type: route.failure.error_type,
+            param: route.failure.param,
+            code: route.failure.status.to_string(),
+        },
+    };
+    (
+        status_code,
+        failure_headers(None, route.upstream_headers.as_ref(), call_id, deployment),
+        Json(body),
+    )
+        .into_response()
 }
 
 fn internal_message(
@@ -281,20 +272,11 @@ fn internal_message(
     deployment: Option<&ChatDeployment>,
     redactor: &Redactor,
 ) -> Response {
-    let body = ErrorBody {
-        error: ErrorObject {
-            message: redactor.redact_internal_details(message),
-            error_type: String::from("internal_server_error"),
-            param: None,
-            code: StatusCode::INTERNAL_SERVER_ERROR.as_u16().to_string(),
-        },
-    };
-    (
-        StatusCode::INTERNAL_SERVER_ERROR,
-        failure_headers(None, None, call_id, deployment),
-        Json(body),
+    render(
+        EmbeddingRoute::internal(redactor.redact_internal_details(message)),
+        call_id,
+        deployment,
     )
-        .into_response()
 }
 
 async fn embed(
@@ -328,120 +310,4 @@ fn embedding_mocks_resolve(
         None,
     );
     Ok(resolved.and_then(|plan| plan.response).is_some())
-}
-
-fn failure(
-    error: &EmbeddingError,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-    redactor: &Redactor,
-) -> Response {
-    let failure = embedding_failure(error, redactor);
-    let response_headers = failure_headers_for_embedding(error, call_id, deployment);
-    respond(failure, route_message(error), response_headers)
-}
-
-fn route_message(error: &EmbeddingError) -> String {
-    match error {
-        EmbeddingError::Provider { response } => {
-            provider_message(response.status, &response.body, error)
-        }
-        EmbeddingError::Body { .. }
-        | EmbeddingError::Unsupported { .. }
-        | EmbeddingError::Encode { .. }
-        | EmbeddingError::Decode { .. }
-        | EmbeddingError::Http { .. }
-        | EmbeddingError::UnknownModel { .. }
-        | EmbeddingError::UnsupportedProvider { .. }
-        | EmbeddingError::MissingApiKey
-        | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => error.to_string(),
-    }
-}
-
-fn respond(failure: ProviderFailure, message: String, headers: HeaderMap) -> Response {
-    let status_code =
-        StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let body = ErrorBody {
-        error: ErrorObject {
-            message,
-            error_type: failure.error_type,
-            param: failure.param,
-            code: failure.status.to_string(),
-        },
-    };
-    (status_code, headers, Json(body)).into_response()
-}
-
-fn embedding_failure(error: &EmbeddingError, redactor: &Redactor) -> ProviderFailure {
-    match error {
-        EmbeddingError::Provider { response } => {
-            provider_failure(response, redactor, ErrorBodyKind::MessageOnly)
-        }
-        EmbeddingError::UnknownModel { .. }
-        | EmbeddingError::Body { .. }
-        | EmbeddingError::Unsupported { .. } => ProviderFailure {
-            status: 400,
-            error_type: String::from("invalid_request_error"),
-            param: None,
-        },
-        EmbeddingError::MissingApiKey => ProviderFailure {
-            status: 401,
-            error_type: String::from("authentication_error"),
-            param: None,
-        },
-        EmbeddingError::UnsupportedProvider { .. } => ProviderFailure {
-            status: 501,
-            error_type: String::from("internal_server_error"),
-            param: None,
-        },
-        EmbeddingError::Http { .. }
-        | EmbeddingError::Decode { .. }
-        | EmbeddingError::Encode { .. }
-        | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => ProviderFailure {
-            status: 500,
-            error_type: String::from("internal_server_error"),
-            param: None,
-        },
-    }
-}
-
-fn failure_headers_for_embedding(
-    error: &EmbeddingError,
-    call_id: &str,
-    deployment: Option<&ChatDeployment>,
-) -> HeaderMap {
-    let upstream = match error {
-        EmbeddingError::Provider { response } => Some(&response.headers),
-        EmbeddingError::Body { .. }
-        | EmbeddingError::Unsupported { .. }
-        | EmbeddingError::Encode { .. }
-        | EmbeddingError::Decode { .. }
-        | EmbeddingError::Http { .. }
-        | EmbeddingError::UnknownModel { .. }
-        | EmbeddingError::UnsupportedProvider { .. }
-        | EmbeddingError::MissingApiKey
-        | EmbeddingError::Endpoint { .. }
-        | EmbeddingError::Mock { .. } => None,
-    };
-    failure_headers(None, upstream, call_id, deployment)
-}
-
-fn provider_message(status: u16, body: &[u8], fallback: &EmbeddingError) -> String {
-    if let Ok(parsed) = serde_json::from_slice::<ProviderErrorBody>(body) {
-        let error = parsed.error;
-        return format!(
-            "Error code: {status} - {{'error': {{'message': '{}', 'type': '{}', 'param': {}, 'code': {}}}}}",
-            error.message,
-            error.error_type,
-            error
-                .param
-                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
-            error
-                .code
-                .map_or_else(|| String::from("None"), |value| format!("'{value}'")),
-        );
-    }
-    fallback.to_string()
 }

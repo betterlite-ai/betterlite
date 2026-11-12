@@ -19,7 +19,6 @@ use serde_json::Number;
 use uuid::Uuid;
 
 use crate::dispatch::Entry;
-use crate::dispatch::error::DispatchError;
 use crate::dispatch::log::{CallLog, CallOutcome, CallRecord};
 use crate::operation::chat::{
     ChatCall, ChatCallInput, ChatCompletionAnswer, ChatFailure, ChatRequest, ChatStreamAnswer,
@@ -60,7 +59,6 @@ pub(crate) struct RecordedCall {
     pub(crate) outcome: CallOutcome,
     pub(crate) billing: BillingPolicy,
     pub(crate) privacy: bool,
-    pub(crate) expected: bool,
     pub(crate) message: Option<String>,
 }
 
@@ -102,9 +100,6 @@ impl CallLog for RecordingLog {
                 outcome: record.outcome,
                 billing: record.billing,
                 privacy: record.privacy,
-                expected: record
-                    .error
-                    .is_some_and(DispatchError::expected_client_failure),
                 message: record
                     .message
                     .map(str::to_owned)

@@ -71,38 +71,3 @@ pub enum ChatFailure {
     #[error("the provider answered a different operation than the one sent")]
     Mismatched,
 }
-
-impl ChatFailure {
-    // the status the failure answers with, for the expected-client-error classification
-    pub(crate) fn status(&self) -> u16 {
-        match self {
-            Self::Route(route) => route_status(route),
-            Self::Internal { .. } | Self::Mismatched => 500,
-            Self::InvalidControl { .. } => 400,
-        }
-    }
-
-    pub(crate) const fn provider_originated(&self) -> bool {
-        match self {
-            Self::Route(ChatError::Provider { .. }) => true,
-            Self::Route(_)
-            | Self::Internal { .. }
-            | Self::InvalidControl { .. }
-            | Self::Mismatched => false,
-        }
-    }
-}
-
-fn route_status(error: &ChatError) -> u16 {
-    match error {
-        ChatError::UnknownModel { .. } | ChatError::Request { .. } => 400,
-        ChatError::UnsupportedProvider { .. } | ChatError::Streaming => 501,
-        ChatError::MissingApiKey => 401,
-        ChatError::Timeout => 408,
-        ChatError::Provider { response } => response.status,
-        ChatError::Http { .. }
-        | ChatError::Encode { .. }
-        | ChatError::Decode { .. }
-        | ChatError::TooLarge => 500,
-    }
-}

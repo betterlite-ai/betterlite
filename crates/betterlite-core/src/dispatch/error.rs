@@ -1,6 +1,3 @@
-use betterlite_models::call_helpers::expected_error::{ClientErrorFacts, is_expected_client_error};
-use betterlite_models::decisions::Json;
-use serde_json::Number;
 use thiserror::Error;
 
 use crate::operation::chat::ChatFailure;
@@ -47,50 +44,4 @@ pub enum DispatchError {
         code: String,
         message: String,
     },
-}
-
-impl DispatchError {
-    fn status(&self) -> u16 {
-        match self {
-            Self::Chat { source } => source.status(),
-            Self::Embedding { source } => source.status(),
-            Self::MissingDeployment { .. } => 400,
-            Self::DeadlineExpired { .. } => 408,
-            Self::Rejected { status, .. } => *status,
-            Self::NotBuilt { .. }
-            | Self::UnknownOperation { .. }
-            | Self::MismatchedOperation { .. }
-            | Self::Rules { .. } => 500,
-        }
-    }
-
-    const fn provider_originated(&self) -> bool {
-        match self {
-            Self::Chat { source } => source.provider_originated(),
-            Self::Embedding { source } => source.provider_originated(),
-            Self::NotBuilt { .. }
-            | Self::UnknownOperation { .. }
-            | Self::MismatchedOperation { .. }
-            | Self::MissingDeployment { .. }
-            | Self::DeadlineExpired { .. }
-            | Self::Rules { .. }
-            | Self::Rejected { .. } => false,
-        }
-    }
-
-    // LiteLLM logs a client error without the traceback a provider failure gets
-    #[must_use]
-    pub fn expected_client_failure(&self) -> bool {
-        let facts = ClientErrorFacts {
-            code: None,
-            status_code: Some(Json::Number(Number::from(u64::from(self.status())))),
-            llm_provider: self
-                .provider_originated()
-                .then_some(String::from("provider")),
-            category: None,
-            http_exception: false,
-            base_llm_exception: false,
-        };
-        is_expected_client_error(Some(&facts))
-    }
 }

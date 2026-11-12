@@ -46,12 +46,5 @@ fn log_failure(record: &CallRecord<'_>, entry: &str, call_id: &str) {
         .map(str::to_owned)
         .or_else(|| record.error.map(ToString::to_string))
         .unwrap_or_default();
-    if record
-        .error
-        .is_some_and(DispatchError::expected_client_failure)
-    {
-        tracing::error!(entry, call_id, message, "call failed");
-    } else {
-        tracing::error!(entry, call_id, error = message, "call failed");
-    }
+    tracing::error!(entry, call_id, error = message, "call failed");
 }

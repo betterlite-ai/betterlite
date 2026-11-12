@@ -88,7 +88,6 @@ async fn lifecycle_order() {
     assert!(!calls.seen()[0].stream);
     let recorded = log.calls();
     assert!(!recorded[0].privacy);
-    assert!(!recorded[0].expected);
 }
 
 async fn rejected_rule() {
@@ -114,7 +113,6 @@ async fn rejected_rule() {
     assert!(calls.seen().is_empty());
     let recorded = log.calls();
     assert_eq!(recorded.len(), 1);
-    assert!(!recorded[0].expected);
     assert!(
         recorded[0]
             .message
@@ -190,7 +188,6 @@ async fn missing_deployment() {
     assert!(matches!(error, DispatchError::MissingDeployment { .. }));
     assert_eq!(trace.steps(), ["failure"]);
     assert!(calls.seen().is_empty());
-    assert!(log.calls()[0].expected);
 }
 
 async fn invalid_control() {
