@@ -665,6 +665,40 @@ fn explicit_cache_counters_become_cached_prompt_tokens() {
     );
 }
 
+#[test]
+fn explicit_cache_creation_counter_is_billed_at_the_creation_rate() {
+    let entry = r#"{"input_cost_per_token": 0.001, "output_cost_per_token": 0.002, "cache_creation_input_token_cost": 0.002}"#;
+    let rig = rig(&[("model-a", entry)]);
+    let request = CallPriceInput {
+        custom_llm_provider: Some("openai"),
+        prompt_tokens: 10,
+        cache_creation_input_tokens: Some(4),
+        ..input("model-a")
+    };
+    assert_eq!(
+        costs(rig.price(&request).unwrap()),
+        (dec("0.014"), dec("0"))
+    );
+}
+
+#[rstest]
+#[case::anthropic("anthropic", vec!["priced model-a anthropic", "info model-a anthropic"])]
+#[case::bedrock("bedrock", vec!["priced model-a bedrock"])]
+#[case::azure_ai("azure_ai", vec!["priced model-a azure_ai"])]
+fn native_providers_skip_the_declared_rate_probe(
+    #[case] provider: &str,
+    #[case] expected: Vec<&str>,
+) {
+    let rig = rig(&[("model-a", PRICED)]);
+    let request = CallPriceInput {
+        custom_llm_provider: Some(provider),
+        prompt_tokens: 10,
+        ..input("model-a")
+    };
+    rig.price(&request).unwrap();
+    assert_eq!(rig.catalog_calls(), expected);
+}
+
 #[rstest]
 #[case::input_rate(r#"{"input_cost_per_token": 0.001, "output_cost_per_token": 0}"#, true)]
 #[case::output_rate_only(r#"{"input_cost_per_token": 0, "output_cost_per_token": 0.002}"#, true)]
