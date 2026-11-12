@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-usage-fallback-to-zero
+call:
+  b3663: {"function": "blocked_usage", "shape": "responses_api", "original": {"kind": "absent"}}
+env: {}
+compare: {ignore: []}

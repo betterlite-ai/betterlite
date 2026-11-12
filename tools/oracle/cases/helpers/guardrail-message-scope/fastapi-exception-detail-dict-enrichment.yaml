@@ -1,0 +1,6 @@
+kind: helper
+name: fastapi-exception-detail-dict-enrichment
+call:
+  b3663: {"function": "enrich_exception", "fastapi": "installed", "raised": "http", "detail": {"error": "blocked", "guardrail_name": "kept"}, "guardrail_name": "pii", "event_hook": "pre_call"}
+env: {}
+compare: {ignore: []}
