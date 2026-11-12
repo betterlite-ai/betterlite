@@ -124,8 +124,9 @@ fn data_rejection(call: &DataRejectCall) -> HelperResult {
 }
 
 fn tags_result(call: &TagsCall) -> HelperResult {
-    let body = object(&call.request_body)?;
-    Ok(serde_json::to_value(tags_from_request_body(&body))?)
+    Ok(serde_json::to_value(tags_from_request_body(&object(
+        &call.request_body,
+    )?))?)
 }
 
 fn populate_result(call: &PopulateCall) -> HelperResult {

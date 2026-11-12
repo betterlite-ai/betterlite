@@ -1,9 +1,8 @@
-use std::fmt;
-
 use betterlite_config::sections::provider_url_destination::pattern::AllowedDestination;
 use betterlite_http::url_policy::destination::{candidates, destination_allowed};
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
+use strum::Display;
 
 use crate::api::request_destination::RequestData;
 use crate::api::request_destination::error::RequestDestinationError;
@@ -14,21 +13,12 @@ pub const URL_DESTINATION_FIELDS: [(DestinationField, &str); 2] = [
     (DestinationField::FileId, "file_id"),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum DestinationField {
     Model,
     FileId,
-}
-
-impl fmt::Display for DestinationField {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let name = match self {
-            Self::Model => "model",
-            Self::FileId => "file_id",
-        };
-        f.write_str(name)
-    }
 }
 
 // a comma part or the text after its first slash may smuggle a URL into a provider-prefixed model
