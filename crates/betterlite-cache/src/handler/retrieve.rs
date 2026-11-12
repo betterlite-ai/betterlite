@@ -2,10 +2,12 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
 
 use crate::cache_key::derive::get_cache_key;
+use crate::cache_key::request::CacheKeyRequest;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::envelope::facade::ResponseCache;
 use crate::envelope::request::EnvelopeRequest;
 use crate::types::call_type::CachingSupportedCallType;
+use crate::types::control::DynamicCacheControl;
 use crate::types::embedding::CachedEmbedding;
 
 use super::HandlerError;
@@ -123,8 +125,18 @@ where
     let mut results = Vec::with_capacity(items.len());
     for item in &items {
         let key = embedding_entry_key(source.cache, &handler.request_kwargs, item)?;
-        let mut request = envelope_request(&handler.request_kwargs)?;
-        request.cache_key = Some(key);
+        // LiteLLM's embedding read passes only cache_key and the dynamic cache, so use-cache and s-maxage never reach the read
+        let mut request = EnvelopeRequest {
+            cache_key: Some(key),
+            key: CacheKeyRequest {
+                params: Vec::new(),
+                metadata: None,
+                litellm_metadata: None,
+                litellm_params: None,
+                cache_control: None,
+            },
+            control: DynamicCacheControl::default(),
+        };
         let cached = read_from_cache(handler, source, &mut request).await;
         results.push(cached.and_then(|value| current_format_embedding_entry(&value)));
     }

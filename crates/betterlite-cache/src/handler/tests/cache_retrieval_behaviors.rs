@@ -5,14 +5,15 @@ use rstest::rstest;
 
 use super::support::{
     MODEL, Read, ReadKind, ReadSupport, RecordingBackend, TestCache, cache as build_cache,
-    cache_object, cache_text, cached_embedding, chat_kwargs, embedding_kwargs, envelope, handler,
-    handler_named, integer, key_request_of, kwargs, object, source, text,
+    cache_object, cache_text, cache_with_mode, cached_embedding, chat_kwargs, embedding_kwargs,
+    envelope, handler, handler_named, integer, key_request_of, kwargs, object, source, text,
 };
 use crate::cache_key::derive::get_cache_key;
 use crate::cache_key::value::{KeyObject, KeyValue};
 use crate::handler::HandlerError;
 use crate::handler::embedding::embedding_entry_key;
 use crate::handler::retrieve::{AsyncSupport, Retrieval, retrieve_from_cache};
+use crate::types::cache_type::CacheMode;
 use crate::types::call_type::CachingSupportedCallType;
 
 fn expected_key(entries: &[(&str, KeyValue)]) -> String {
@@ -467,11 +468,109 @@ async fn embedding_token_list_input_is_read_by_its_own_key() {
     }
 }
 
+#[tokio::test]
+async fn flat_token_array_input_is_read_as_one_input() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = build_cache(Arc::clone(&backend));
+    let tokens = KeyValue::Array(vec![integer(1), integer(2)]);
+    let request_kwargs = kwargs(&[
+        ("model", text("text-embedding-3-small")),
+        ("input", tokens.clone()),
+    ]);
+    seed_embedding_input(
+        &cache,
+        &backend,
+        &request_kwargs,
+        &tokens,
+        cached_embedding(2),
+    );
+    let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await
+    .expect("the retrieval runs");
+    match result {
+        Retrieval::Embeddings(items) => {
+            assert_eq!(items.len(), 1);
+            assert!(items[0].is_some());
+        }
+        Retrieval::Miss | Retrieval::Hit(_) => panic!("expected one token embedding hit"),
+    }
+    assert_eq!(backend.reads().len(), 1);
+}
+
+#[tokio::test]
+async fn embedding_read_ignores_s_maxage() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = build_cache(Arc::clone(&backend));
+    let request_kwargs = kwargs(&[
+        ("model", text("text-embedding-3-small")),
+        ("input", text("alpha")),
+        ("cache", object(&[("s-maxage", integer(1))])),
+    ]);
+    seed_embedding_input(
+        &cache,
+        &backend,
+        &request_kwargs,
+        &text("alpha"),
+        cached_embedding(2),
+    );
+    let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await
+    .expect("the retrieval runs");
+    match result {
+        Retrieval::Embeddings(items) => assert!(items[0].is_some()),
+        Retrieval::Miss | Retrieval::Hit(_) => panic!("expected the stale entry to hit"),
+    }
+}
+
+#[tokio::test]
+async fn embedding_read_ignores_use_cache_in_default_off() {
+    let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
+    let cache = cache_with_mode(Arc::clone(&backend), CacheMode::DefaultOff);
+    let request_kwargs = kwargs(&[
+        ("model", text("text-embedding-3-small")),
+        ("input", text("alpha")),
+        ("cache", object(&[("use-cache", KeyValue::Bool(true))])),
+    ]);
+    seed_embedding_input(
+        &cache,
+        &backend,
+        &request_kwargs,
+        &text("alpha"),
+        cached_embedding(2),
+    );
+    let mut handler = handler_named("aembedding", &["model", "input"], request_kwargs.clone());
+    let result = retrieve_from_cache(
+        &mut handler,
+        Some(&source(&cache, AsyncSupport::Supported)),
+        CachingSupportedCallType::Aembedding,
+        &request_kwargs,
+        &[],
+    )
+    .await
+    .expect("the retrieval runs");
+    assert_eq!(result, Retrieval::Miss);
+    assert!(backend.reads().is_empty());
+}
+
 #[rstest]
 #[case::missing_input(kwargs(&[("model", text("text-embedding-3-small"))]))]
 #[case::number_input(kwargs(&[("model", text("text-embedding-3-small")), ("input", integer(5))]))]
 #[case::object_input(kwargs(&[("model", text("text-embedding-3-small")), ("input", object(&[("text", text("alpha"))]))]))]
-#[case::array_of_numbers(kwargs(&[("model", text("text-embedding-3-small")), ("input", KeyValue::Array(vec![integer(5)]))]))]
+#[case::array_of_strings_and_numbers(kwargs(&[("model", text("text-embedding-3-small")), ("input", KeyValue::Array(vec![text("alpha"), integer(5)]))]))]
 #[tokio::test]
 async fn malformed_embedding_input_is_rejected(#[case] request_kwargs: KeyObject) {
     let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));

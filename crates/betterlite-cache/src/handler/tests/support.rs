@@ -183,10 +183,16 @@ pub(crate) fn key_settings() -> CacheKeySettings {
 }
 
 pub(crate) fn cache(backend: Arc<RecordingBackend>) -> TestCache {
+    cache_with_mode(backend, CacheMode::DefaultOn)
+}
+
+pub(crate) fn cache_with_mode(backend: Arc<RecordingBackend>, mode: CacheMode) -> TestCache {
     let clock: Clock = Arc::new(|| FIXTURE_NOW);
+    let mut settings = key_settings();
+    settings.mode = mode;
     ResponseCache {
         backend,
-        key_settings: key_settings(),
+        key_settings: settings,
         settings: EnvelopeSettings {
             ttl: None,
             redis_flush_size: None,

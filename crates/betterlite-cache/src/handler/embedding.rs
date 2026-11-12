@@ -19,6 +19,8 @@ pub fn input_items(kwargs: &KeyObject) -> Result<Vec<KeyValue>, HandlerError> {
         Some(KeyValue::Array(items)) => {
             if items.iter().all(is_embedding_input) {
                 Ok(items.clone())
+            } else if is_token_array(items) {
+                Ok(vec![KeyValue::Array(items.clone())])
             } else {
                 Err(input_error())
             }
@@ -90,11 +92,15 @@ const fn input_error() -> HandlerError {
 fn is_embedding_input(value: &KeyValue) -> bool {
     match value {
         KeyValue::String(_) => true,
-        KeyValue::Array(items) => items.iter().all(
-            |item| matches!(item, KeyValue::Number(number) if number.is_i64() || number.is_u64()),
-        ),
+        KeyValue::Array(items) => is_token_array(items),
         KeyValue::Null | KeyValue::Bool(_) | KeyValue::Number(_) | KeyValue::Object(_) => false,
     }
+}
+
+fn is_token_array(items: &[KeyValue]) -> bool {
+    items
+        .iter()
+        .all(|item| matches!(item, KeyValue::Number(number) if number.is_i64() || number.is_u64()))
 }
 
 struct Rejected;
