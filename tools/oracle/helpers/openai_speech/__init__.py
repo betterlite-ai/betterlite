@@ -1,7 +1,8 @@
 import asyncio
 import json
+import os
 from collections.abc import AsyncIterator, Awaitable, Iterator
-from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import cast
 
 import httpx
 import litellm
@@ -12,47 +13,7 @@ from litellm.llms.openai.openai import OpenAIChatCompletion
 from litellm.types.llms.openai import HttpxBinaryResponseContent
 from typing_extensions import override
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Fields: TypeAlias = dict[str, Json]
-CallOutcome: TypeAlias = tuple[
-    HttpxBinaryResponseContent | None,
-    openai.APIStatusError | None, openai.OpenAI | openai.AsyncOpenAI
-]
-
-
-class ClientSpec(TypedDict):
-    timeout: int
-    max_retries: int
-    api_key: NotRequired[str]
-    api_base: NotRequired[str]
-    organization: NotRequired[str]
-    project: NotRequired[str]
-    aspeech: NotRequired[bool]
-    supplied: NotRequired[Literal["sync", "async"]]
-    shared_session: NotRequired[bool]
-
-
-class Request(TypedDict):
-    model: str
-    input: str
-    voice: str
-    response_format: NotRequired[str]
-    speed: NotRequired[float]
-    instructions: NotRequired[str]
-    extra_headers: NotRequired[dict[str, Json]]
-
-
-class Reply(TypedDict, total=False):
-    status: int
-    headers: list[list[str]]
-    chunks: list[list[int]]
-    text: str
-
-
-class Input(TypedDict):
-    client: ClientSpec
-    request: Request
-    reply: NotRequired[Reply]
+from .types import CallOutcome, ClientSpec, Fields, Input, Json, Reply, Request
 
 
 class ReplyBody(httpx.AsyncByteStream, httpx.SyncByteStream):
@@ -151,6 +112,7 @@ def supplied_client(
             api_key="sk-supplied",
             base_url="https://supplied.test/v1",
             organization="org-supplied",
+            project="proj-supplied",
             timeout=45.0,
             max_retries=1,
             http_client=httpx.AsyncClient(transport=transport),
@@ -159,6 +121,7 @@ def supplied_client(
         api_key="sk-supplied",
         base_url="https://supplied.test/v1",
         organization="org-supplied",
+        project="proj-supplied",
         timeout=45.0,
         max_retries=1,
         http_client=httpx.Client(transport=transport),
@@ -238,17 +201,22 @@ def request_view(upstream: Upstream, request: Request) -> Json:
     extra = request.get("extra_headers")
     if extra is None:
         extra = {}
-    viewed: Fields = {name: sent.headers[name] for name in extra}
+    flat = dict(sent.headers)
+    viewed: Fields = {name: flat[name] for name in extra}
     method = sent.method
     url = str(sent.url)
-    accept = sent.headers["accept"]
-    authorization = sent.headers["authorization"]
+    accept = flat["accept"]
+    authorization = flat["authorization"]
+    organization = flat.get("openai-organization")
+    project = flat.get("openai-project")
     body = cast("Json", json.loads(sent.content))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/json/__init__.pyi#L79
     return {
         "method": method,
         "url": url,
         "accept": accept,
         "authorization": authorization,
+        "organization": organization,
+        "project": project,
         "extra_headers": viewed,
         "body": body,
     }
@@ -286,6 +254,12 @@ def outcome_view(
 def run(input_value: Input) -> Json:
     spec = input_value["client"]
     request = input_value["request"]
+    environment_organization = spec.get("environment_organization")
+    if environment_organization is not None:
+        os.environ["OPENAI_ORG_ID"] = environment_organization
+    environment_project = spec.get("environment_project")
+    if environment_project is not None:
+        os.environ["OPENAI_PROJECT_ID"] = environment_project
     upstream = Upstream(input_value.get("reply"))
     supplied = supplied_client(spec, httpx.MockTransport(upstream.handle))
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(upstream.handle))

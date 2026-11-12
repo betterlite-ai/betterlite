@@ -7,9 +7,6 @@ use crate::speech::error::SpeechError;
 
 const DEFAULT_API_BASE: &str = "https://api.openai.com/v1";
 
-// the OpenAI SDK's default request timeout, kept when the call names none
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientKind {
     Sync,
@@ -39,6 +36,7 @@ pub struct SuppliedClient {
     pub timeout: Duration,
     pub max_retries: u32,
     pub organization: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +47,7 @@ pub struct SpeechClient {
     pub timeout: Duration,
     pub max_retries: u32,
     pub organization: Option<String>,
+    pub project: Option<String>,
     pub shared_session: Option<SharedSession>,
 }
 
@@ -61,6 +60,8 @@ pub struct SpeechConnection {
     pub max_retries: u32,
     pub organization: Option<String>,
     pub project: Option<String>,
+    pub environment_organization: Option<String>,
+    pub environment_project: Option<String>,
     pub client: Option<SuppliedClient>,
     pub shared_session: Option<SharedSession>,
 }
@@ -96,7 +97,8 @@ pub fn select_client(
             base_url,
             timeout: connection.timeout,
             max_retries: connection.max_retries,
-            organization: None,
+            organization: connection.environment_organization.clone(),
+            project: connection.environment_project.clone(),
             shared_session,
         });
     };
@@ -113,6 +115,7 @@ pub fn select_client(
         timeout: supplied.timeout,
         max_retries: connection.max_retries,
         organization: supplied.organization.clone(),
+        project: supplied.project.clone(),
         shared_session: None,
     })
 }

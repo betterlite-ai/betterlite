@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -14,9 +15,9 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use crate::files::transport::{FileTransport, StreamReply};
 use crate::speech::client::SpeechConnection;
 use crate::speech::logging::{SpeechLogRecord, SpeechLogger};
-use crate::speech::result::{SpeechReply, SpeechTransport};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Reply {
@@ -79,26 +80,50 @@ impl Fixture {
         self.sends.load(Ordering::Relaxed)
     }
 
-    fn result(&self) -> Result<SpeechReply, TransportError> {
+    fn stream_reply(&self) -> Result<StreamReply, TransportError> {
         if self.broken {
             return Err(TransportError::Closed);
         }
-        Ok(SpeechReply {
+        Ok(StreamReply {
             status: self.reply.status,
             headers: self.headers.clone(),
             body: stream::iter(self.reply.chunks.clone().into_iter().map(Ok)).boxed(),
         })
     }
+
+    fn buffered_reply(&self) -> Result<UpstreamResponse, TransportError> {
+        if self.broken {
+            return Err(TransportError::Closed);
+        }
+        let mut body = Vec::new();
+        for chunk in &self.reply.chunks {
+            body.extend_from_slice(chunk);
+        }
+        Ok(UpstreamResponse {
+            status: self.reply.status,
+            headers: self.headers.clone(),
+            body,
+        })
+    }
 }
 
-impl SpeechTransport for Fixture {
-    fn send(
+impl FileTransport for Fixture {
+    fn send_buffered(
         &self,
         request: OutboundRequest,
-    ) -> impl Future<Output = Result<SpeechReply, TransportError>> + Send {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         drop(self.seen.set(request));
         let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
-        ready(self.result())
+        ready(self.buffered_reply())
+    }
+
+    fn send_stream(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
+        drop(self.seen.set(request));
+        let _previous = self.sends.fetch_add(1, Ordering::Relaxed);
+        ready(self.stream_reply())
     }
 }
 
@@ -133,6 +158,8 @@ pub(super) fn connection() -> SpeechConnection {
         max_retries: 4,
         organization: Some(String::from("org-not-forwarded")),
         project: Some(String::from("project-not-forwarded")),
+        environment_organization: None,
+        environment_project: None,
         client: None,
         shared_session: None,
     }

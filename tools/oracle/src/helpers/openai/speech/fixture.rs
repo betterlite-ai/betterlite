@@ -1,12 +1,13 @@
 use std::future::{Future, ready};
 use std::sync::OnceLock;
 
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
+use betterlite_openai::files::transport::{FileTransport, StreamReply};
 use betterlite_openai::speech::logging::{SpeechLogRecord, SpeechLogger};
-use betterlite_openai::speech::result::{SpeechReply, SpeechTransport};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
@@ -65,13 +66,29 @@ impl Fixture {
     }
 }
 
-impl SpeechTransport for Fixture {
-    fn send(
+impl FileTransport for Fixture {
+    fn send_buffered(
         &self,
         request: OutboundRequest,
-    ) -> impl Future<Output = Result<SpeechReply, TransportError>> + Send {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         drop(self.seen.set(request));
-        ready(Ok(SpeechReply {
+        let mut body = Vec::new();
+        for chunk in &self.chunks {
+            body.extend_from_slice(chunk);
+        }
+        ready(Ok(UpstreamResponse {
+            status: self.status,
+            headers: self.headers.clone(),
+            body,
+        }))
+    }
+
+    fn send_stream(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
+        drop(self.seen.set(request));
+        ready(Ok(StreamReply {
             status: self.status,
             headers: self.headers.clone(),
             body: stream::iter(self.chunks.clone().into_iter().map(Ok)).boxed(),
@@ -99,6 +116,8 @@ pub(super) fn request_view(fixture: &Fixture, extra_headers: &IndexMap<String, S
         "url": request.url.as_str(),
         "accept": header("accept"),
         "authorization": header("authorization"),
+        "organization": header("openai-organization"),
+        "project": header("openai-project"),
         "extra_headers": extra,
         "body": body_json(request),
     })

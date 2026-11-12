@@ -32,7 +32,11 @@ pub(crate) struct ClientSpec {
     #[serde(default)]
     pub(crate) project: Option<String>,
     #[serde(default)]
-    pub(crate) aspeech: Option<bool>,
+    pub(crate) environment_organization: Option<String>,
+    #[serde(default)]
+    pub(crate) environment_project: Option<String>,
+    #[serde(default)]
+    pub(crate) aspeech: bool,
     #[serde(default)]
     pub(crate) supplied: Option<SuppliedKind>,
     #[serde(default)]
@@ -92,6 +96,7 @@ pub(super) fn connection(spec: &ClientSpec) -> Result<SpeechConnection, SpeechEr
             timeout: Duration::from_secs(45),
             max_retries: 1,
             organization: Some(String::from("org-supplied")),
+            project: Some(String::from("proj-supplied")),
         }),
         None => None,
     };
@@ -102,6 +107,8 @@ pub(super) fn connection(spec: &ClientSpec) -> Result<SpeechConnection, SpeechEr
         max_retries: spec.max_retries,
         organization: spec.organization.clone(),
         project: spec.project.clone(),
+        environment_organization: spec.environment_organization.clone(),
+        environment_project: spec.environment_project.clone(),
         client: supplied,
         shared_session: spec.shared_session.then_some(SharedSession),
     })

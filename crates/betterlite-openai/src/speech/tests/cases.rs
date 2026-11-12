@@ -54,7 +54,7 @@ async fn call(
     fixture: &Fixture,
     options: &SpeechOptions,
     connection: SpeechConnection,
-    aspeech: Option<bool>,
+    aspeech: bool,
     input: &str,
 ) -> (Result<SpeechResponse, SpeechError>, Recorder) {
     let mut recorder = Recorder::default();
@@ -105,6 +105,8 @@ fn assert_wire_request(fixture: &Fixture, deadline: Duration) {
         header(fixture, "content-type").as_deref(),
         Some("application/json")
     );
+    assert_eq!(header(fixture, "openai-organization"), None);
+    assert_eq!(header(fixture, "openai-project"), None);
     assert_eq!(fixture.request().deadline, deadline);
 }
 
@@ -116,7 +118,7 @@ async fn voice_and_format() {
         instructions: None,
         extra_headers: IndexMap::from([(String::from("x-trace"), String::from("trace-1"))]),
     };
-    let (first, recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
+    let (first, recorder) = call(&fixture, &options, connection(), false, "Hello speech").await;
     let response = first.expect("the 200 reply is a success");
     assert_eq!(response.content_type.as_deref(), Some("audio/mpeg"));
     assert_eq!(
@@ -136,14 +138,7 @@ async fn voice_and_format() {
 
     // an omitted response_format stays omitted: the SDK default is not written by this wrapper
     let plain = audio_ok(vec![vec![1]]);
-    let (second, _) = call(
-        &plain,
-        &SpeechOptions::default(),
-        connection(),
-        Some(false),
-        "Hi",
-    )
-    .await;
+    let (second, _) = call(&plain, &SpeechOptions::default(), connection(), false, "Hi").await;
     second.expect("the 200 reply is a success");
     assert_eq!(
         sent_body(&plain),
@@ -159,7 +154,7 @@ async fn speed_and_instructions() {
         instructions: Some(String::from("calm and clear")),
         extra_headers: IndexMap::new(),
     };
-    let (first, recorder) = call(&fixture, &options, connection(), None, "Hi").await;
+    let (first, recorder) = call(&fixture, &options, connection(), false, "Hi").await;
     first.expect("the 200 reply is a success");
     let body = sent_body(&fixture);
     assert_eq!(body["speed"].to_string(), "1.234567890123456789");
@@ -186,7 +181,7 @@ async fn binary_body() {
         &fixture,
         &SpeechOptions::default(),
         connection(),
-        None,
+        false,
         "Hi",
     )
     .await;
@@ -219,7 +214,7 @@ async fn chunked_binary_body() {
         &fixture,
         &SpeechOptions::default(),
         connection(),
-        None,
+        false,
         "Hi",
     )
     .await;
@@ -230,7 +225,7 @@ async fn chunked_binary_body() {
     );
 
     let over = Fixture::new(Reply::ok("audio/wav", chunks));
-    let (second, _) = call(&over, &SpeechOptions::default(), connection(), None, "Hi").await;
+    let (second, _) = call(&over, &SpeechOptions::default(), connection(), false, "Hi").await;
     let limited = second.expect("the 200 reply is a success");
     assert!(matches!(
         limited.content(5).await,
@@ -252,7 +247,7 @@ async fn speech_error() {
         &fixture,
         &SpeechOptions::default(),
         connection(),
-        None,
+        false,
         "Hi",
     )
     .await;
@@ -268,7 +263,14 @@ async fn speech_error() {
 
     // a transport failure reaches the caller untouched
     let broken = Fixture::broken();
-    let (second, _) = call(&broken, &SpeechOptions::default(), connection(), None, "Hi").await;
+    let (second, _) = call(
+        &broken,
+        &SpeechOptions::default(),
+        connection(),
+        false,
+        "Hi",
+    )
+    .await;
     assert!(matches!(second, Err(SpeechError::Transport { .. })));
 }
 
@@ -276,6 +278,7 @@ async fn speech_client_options() {
     assert_eq!(ClientKind::Sync.label(), "sync");
     assert_eq!(ClientKind::Async.label(), "async");
     assert_built_client_options();
+    assert_environment_client_options().await;
     assert_supplied_client_options().await;
     assert_async_supplied_client().await;
 }
@@ -288,11 +291,13 @@ fn assert_built_client_options() {
     assert_eq!(sync.timeout, Duration::from_secs(30));
     assert_eq!(sync.max_retries, 4);
     assert_eq!(sync.organization, None);
+    assert_eq!(sync.project, None);
     assert!(sync.shared_session.is_none());
     let async_client =
         select_client(&settings, ClientKind::Async).expect("the async client resolves");
     assert_eq!(async_client.kind, ClientKind::Async);
     assert_eq!(async_client.organization, None);
+    assert_eq!(async_client.project, None);
     assert!(async_client.shared_session.is_none());
 
     let mut shared = connection();
@@ -304,6 +309,27 @@ fn assert_built_client_options() {
     assert!(sync_shared.shared_session.is_none());
 }
 
+async fn assert_environment_client_options() {
+    let mut settings = connection();
+    settings.environment_organization = Some(String::from("org-env"));
+    settings.environment_project = Some(String::from("proj-env"));
+    let built = select_client(&settings, ClientKind::Sync).expect("the env client resolves");
+    assert_eq!(built.organization.as_deref(), Some("org-env"));
+    assert_eq!(built.project.as_deref(), Some("proj-env"));
+
+    let fixture = audio_ok(vec![vec![1]]);
+    let (first, _) = call(&fixture, &SpeechOptions::default(), settings, false, "Hi").await;
+    first.expect("the env client serves the call");
+    assert_eq!(
+        header(&fixture, "openai-organization").as_deref(),
+        Some("org-env")
+    );
+    assert_eq!(
+        header(&fixture, "openai-project").as_deref(),
+        Some("proj-env")
+    );
+}
+
 fn supplied_settings(kind: ClientKind) -> SpeechConnection {
     let mut settings = connection();
     settings.client = Some(SuppliedClient {
@@ -313,6 +339,7 @@ fn supplied_settings(kind: ClientKind) -> SpeechConnection {
         timeout: Duration::from_secs(45),
         max_retries: 1,
         organization: Some(String::from("org-supplied")),
+        project: Some(String::from("proj-supplied")),
     });
     settings
 }
@@ -324,13 +351,14 @@ async fn assert_supplied_client_options() {
     assert_eq!(kept.timeout, Duration::from_secs(45));
     assert_eq!(kept.max_retries, 4);
     assert_eq!(kept.organization.as_deref(), Some("org-supplied"));
+    assert_eq!(kept.project.as_deref(), Some("proj-supplied"));
     assert!(matches!(
         select_client(&settings, ClientKind::Async),
         Err(SpeechError::ClientKind { .. })
     ));
 
     let fixture = audio_ok(vec![vec![1]]);
-    let (first, _) = call(&fixture, &SpeechOptions::default(), settings, None, "Hi").await;
+    let (first, _) = call(&fixture, &SpeechOptions::default(), settings, false, "Hi").await;
     first.expect("the supplied client serves the call");
     assert_eq!(
         fixture.request().url.as_str(),
@@ -341,6 +369,14 @@ async fn assert_supplied_client_options() {
         header(&fixture, "authorization").as_deref(),
         Some("Bearer sk-supplied")
     );
+    assert_eq!(
+        header(&fixture, "openai-organization").as_deref(),
+        Some("org-supplied")
+    );
+    assert_eq!(
+        header(&fixture, "openai-project").as_deref(),
+        Some("proj-supplied")
+    );
 }
 
 async fn assert_async_supplied_client() {
@@ -349,7 +385,7 @@ async fn assert_async_supplied_client() {
         &fixture,
         &SpeechOptions::default(),
         supplied_settings(ClientKind::Async),
-        Some(true),
+        true,
         "Hi",
     )
     .await;
@@ -364,7 +400,7 @@ async fn speech_logging_projection() {
         instructions: None,
         extra_headers: IndexMap::from([(String::from("x-trace"), String::from("trace-1"))]),
     };
-    let (first, mut recorder) = call(&fixture, &options, connection(), None, "Hello speech").await;
+    let (first, mut recorder) = call(&fixture, &options, connection(), false, "Hello speech").await;
     first.expect("the 200 reply is a success");
     let record = recorder.records.remove(0);
     assert_logged_projection(&record);
@@ -430,7 +466,7 @@ async fn wired_logging(options: &SpeechOptions) -> (Json, Json) {
                     options,
                 },
                 connection: connection(),
-                aspeech: None,
+                aspeech: false,
             },
             &mut PrePostLogger {
                 state: &mut state,

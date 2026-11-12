@@ -79,7 +79,7 @@ async fn result_view(response: SpeechResponse, limit: usize) -> Result<Value, Sp
 
 fn client_view(input: &Input) -> Result<Value, SpeechError> {
     let connection = input::connection(&input.client)?;
-    let kind = if input.client.aspeech == Some(true) {
+    let kind = if input.client.aspeech {
         ClientKind::Async
     } else {
         ClientKind::Sync
