@@ -8,7 +8,6 @@ use betterlite_core::api::responses_tool_results::input_call::input_function_cal
 use betterlite_core::api::responses_tool_results::outbound_call::{
     ApplyPatchOperation, CallIdentity, FunctionToolCall, apply_patch_tool_call,
 };
-use betterlite_core::api::responses_tool_results::records::ResultMessage;
 use betterlite_core::api::responses_tool_results::tool_output::tool_call_output_messages;
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
