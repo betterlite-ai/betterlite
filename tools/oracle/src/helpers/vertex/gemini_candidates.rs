@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
@@ -47,57 +47,53 @@ impl Helper for Op {
             },
             now: input.now,
         };
-        if input.streaming {
-            streamed(&input.body, context, uuid)
-        } else {
-            complete(&input.body, context, uuid)
+        if let Some(answer) = blocked(input, context.cumulative_tool_call_index)? {
+            return Ok(answer);
         }
+        let candidates = input.body.candidates.as_deref().unwrap_or_default();
+        let mode = if input.streaming {
+            Mode::Streaming
+        } else {
+            Mode::Complete
+        };
+        let kept = process_candidates(candidates, mode, context, &mut || uuid).or_value_error()?;
+        let extension = metadata(&kept.metadata);
+        Ok(if input.streaming {
+            json!({"choices": kept.choices, "metadata": extension, "next_tool_call_index": kept.next_tool_call_index})
+        } else {
+            json!({"choices": kept.choices, "usage": null, "metadata": extension})
+        })
     }
 }
 
-fn complete(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
+fn blocked(input: &Input, next_tool_call_index: u32) -> Result<Option<Value>, Box<HelperError>> {
+    let body = &input.body;
+    if input.streaming {
+        let flagged = stream_block(body.prompt_feedback.as_ref());
+        return Ok(flagged.map(|choice| {
+            json!({"choices": [choice], "metadata": null, "next_tool_call_index": next_tool_call_index})
+        }));
+    }
     let candidates = body.candidates.as_deref().unwrap_or_default();
-    let blocked = complete_block(
+    let found = complete_block(
         body.prompt_feedback.as_ref(),
         candidates,
         body.usage_metadata.as_ref(),
     )
     .or_value_error()?;
-    if let Some(found) = blocked {
-        return Ok(json!({
-            "choices": [found.choice],
+    Ok(found.map(|block| {
+        json!({
+            "choices": [block.choice],
             "usage": {
-                "prompt_tokens": found.usage.prompt_tokens,
-                "completion_tokens": found.usage.completion_tokens,
-                "total_tokens": found.usage.total_tokens,
-                "prompt_tokens_details": found.usage.prompt_tokens_details.map(|_| "present"),
-                "completion_tokens_details": found.usage.completion_tokens_details.map(|_| "present"),
+                "prompt_tokens": block.usage.prompt_tokens,
+                "completion_tokens": block.usage.completion_tokens,
+                "total_tokens": block.usage.total_tokens,
+                "prompt_tokens_details": block.usage.prompt_tokens_details.map(|_| "present"),
+                "completion_tokens_details": block.usage.completion_tokens_details.map(|_| "present"),
             },
             "metadata": null,
-        }));
-    }
-    let processed =
-        process_candidates(candidates, Mode::Complete, context, &mut || uuid).or_value_error()?;
-    Ok(
-        json!({"choices": processed.choices, "usage": null, "metadata": metadata(&processed.metadata)}),
-    )
-}
-
-fn streamed(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
-    let block = stream_block(body.prompt_feedback.as_ref());
-    let candidates = body.candidates.as_deref().unwrap_or_default();
-    let Some(choice) = block else {
-        let processed = process_candidates(candidates, Mode::Streaming, context, &mut || uuid)
-            .or_value_error()?;
-        return Ok(json!({
-            "choices": processed.choices,
-            "metadata": metadata(&processed.metadata),
-            "next_tool_call_index": processed.next_tool_call_index,
-        }));
-    };
-    Ok(
-        json!({"choices": [choice], "metadata": null, "next_tool_call_index": context.cumulative_tool_call_index}),
-    )
+        })
+    }))
 }
 
 fn metadata(extension: &MetadataExtension) -> Value {
