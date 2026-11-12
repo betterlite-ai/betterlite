@@ -11,7 +11,11 @@ pub(super) fn reject_unsupported(
     let Some(param) = unsupported_param(non_default_params, supported, dropped) else {
         return Ok(());
     };
-    Err(rejection(request, param))
+    Err(EmbeddingParamsError::Unsupported {
+        provider: request.custom_llm_provider.to_owned(),
+        model: request.model.to_owned(),
+        param: param.to_owned(),
+    })
 }
 
 pub(super) fn unsupported_param<'params>(
@@ -27,12 +31,4 @@ pub(super) fn unsupported_param<'params>(
         .keys()
         .find(|key| !known.contains(key))
         .map(String::as_str)
-}
-
-fn rejection(request: &EmbeddingRequest<'_>, param: &str) -> EmbeddingParamsError {
-    EmbeddingParamsError::Unsupported {
-        provider: request.custom_llm_provider.to_owned(),
-        model: request.model.to_owned(),
-        param: param.to_owned(),
-    }
 }
