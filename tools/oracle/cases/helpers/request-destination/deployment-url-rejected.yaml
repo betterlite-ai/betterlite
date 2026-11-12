@@ -1,0 +1,32 @@
+kind: helper
+name: request-destination-deployment-url-rejected
+call:
+  request_destination:
+    calls:
+      - {function: reject_url_valued_destination, field: model, value: gpt-4, allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: file_id, value: files/abc123, allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "https://attacker.example/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: file_id, value: "https://attacker.example/v1beta/files/abc", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "http://10.0.0.1:8080/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "http:///no-host", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "huggingface/https://attacker.example/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "gpt-4,huggingface/https://attacker.example/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "huggingface/HTTPS://evil.example/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "huggingface/BAAI/bge-small-en", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "gpt-4,huggingface/BAAI/bge-small-en", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: model, value: "https://trusted.example/v1", allowed_hosts: [trusted.example]}
+      - {function: reject_url_valued_destination, field: model, value: "https://trusted.example/v1", allowed_hosts: ["https://trusted.example"]}
+      - {function: reject_url_valued_destination, field: model, value: "http://trusted.example/v1", allowed_hosts: ["https://trusted.example"]}
+      - {function: reject_url_valued_destination, field: model, value: "https://trusted.example:8443/v1", allowed_hosts: ["trusted.example:8443"]}
+      - {function: reject_url_valued_destination, field: model, value: "https://trusted.example/v1", allowed_hosts: ["trusted.example:8443"]}
+      - {function: reject_url_valued_destination, field: model, value: "https://user:pass@trusted.example/v1", allowed_hosts: [trusted.example]}
+      - {function: reject_url_valued_destination, field: model, value: "HTTPS://TRUSTED.EXAMPLE./v1", allowed_hosts: [trusted.example]}
+      - {function: reject_url_valued_destinations, data: {model: gpt-4, file_id: files/abc123}, allowed_hosts: []}
+      - {function: reject_url_valued_destinations, data: {messages: [{role: user}]}, allowed_hosts: []}
+      - {function: reject_url_valued_destinations, data: {model: "https://one.example/v1", file_id: "https://two.example/v1"}, allowed_hosts: []}
+      - {function: reject_url_valued_destinations, data: {file_id: "https://two.example/v1"}, allowed_hosts: []}
+      - {function: reject_url_valued_destinations, data: {model: 42, file_id: [a, b]}, allowed_hosts: []}
+      - {function: reject_url_valued_destinations, data: {model: "https://trusted.example/v1"}, allowed_hosts: [trusted.example]}
+env: {}
+compare: {ignore: []}

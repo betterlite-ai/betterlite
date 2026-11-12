@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-stream-state-usage
+call:
+  anthropic_stream_state:
+    json_mode: null
+    speed: null
+    sync_stream: false
+    tool_name_reverse_map: {old: new}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: usage, usage: {input_tokens: 4, output_tokens: 2}}
+      - {function: usage, usage: {output_tokens: 6, speed: slow}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: end_turn}, usage: {output_tokens: 6}}}
+      - {function: setup, fields: {converted_response_format_tool: true}}
+      - {function: message_delta, chunk: {type: message_delta, delta: {stop_reason: max_tokens}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

@@ -423,3 +423,10 @@ bench = false
 name = "comet_embedding_reply"
 path = "fuzz_targets/comet_embedding_reply.rs"
 test = false
+
+[[bin]]
+name = "openai_response_params"
+path = "fuzz_targets/openai_response_params.rs"
+test = false
+doc = false
+bench = false

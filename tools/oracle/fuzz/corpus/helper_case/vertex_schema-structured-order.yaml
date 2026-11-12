@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-schema-structured-order
+call:
+  vertex_schema:
+    mode: build_vertex_schema
+    schema:
+      type: object
+      properties:
+        z: {type: string}
+        a: {type: integer}
+    add_property_ordering: true
+    settings: {}
+env: {}
+compare: {ignore: []}

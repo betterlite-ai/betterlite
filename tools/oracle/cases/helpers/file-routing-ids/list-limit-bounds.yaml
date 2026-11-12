@@ -1,0 +1,13 @@
+kind: helper
+name: file-routing-ids-list-limit-bounds
+call:
+  file_routing_ids:
+    calls:
+      - {"function": "validate_limit", "limit": null}
+      - {"function": "validate_limit", "limit": 1}
+      - {"function": "validate_limit", "limit": -1}
+      - {"function": "validate_limit", "limit": 0}
+      - {"function": "validate_limit", "limit": 10000}
+      - {"function": "validate_limit", "limit": 10001}
+env: {}
+compare: {ignore: []}

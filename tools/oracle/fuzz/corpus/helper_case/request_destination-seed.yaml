@@ -1,0 +1,15 @@
+kind: helper
+name: request-destination-seed
+call:
+  request_destination:
+    calls:
+      - {function: resolve_inference_model, body_model: body, settings: {completion_model: default}, cli_model: cli, endpoint_model: path, kind: completion}
+      - {function: resolve_inference_model, body_model: null, settings: {}, cli_model: null, endpoint_model: null, kind: path}
+      - {function: reject_url_valued_destination, field: model, value: "https://attacker.example/v1", allowed_hosts: []}
+      - {function: reject_url_valued_destination, field: file_id, value: "files/abc", allowed_hosts: [trusted.example]}
+      - {function: reject_url_valued_destinations, data: {model: gpt-4, file_id: "https://attacker.example/v1"}, allowed_hosts: []}
+      - {function: tags_from_request_body, request_body: {metadata: {tags: [a, 1]}, tags: [b]}}
+      - {function: populate_request_parameters, request_data: {vector_store_ids: [a]}, path_params: {vector_store_id: b}, route_path: "/x"}
+      - {function: populate_request_parameters, request_data: {}, route_path: "/v1/vector_stores/vs_1/files"}
+env: {}
+compare: {ignore: []}
