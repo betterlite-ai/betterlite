@@ -149,6 +149,10 @@ fn validate_environment_requires_a_key(
     )
     .expect_err("no key resolves");
     assert!(matches!(failure, StudioFilesError::MissingSettingsKey));
+    assert_eq!(
+        failure.to_string(),
+        "GEMINI_API_KEY is required for Google AI Studio file operations"
+    );
 }
 
 #[rstest]
