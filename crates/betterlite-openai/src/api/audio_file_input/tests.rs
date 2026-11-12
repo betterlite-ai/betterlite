@@ -148,7 +148,7 @@ impl AudioStream for Stream {
         let outcome = match self.flaw {
             Flaw::SeekMissing => return None,
             Flaw::SeekFails => Err(io::Error::other("seek failed")),
-            _ => Ok(()),
+            Flaw::Sound | Flaw::ReadFails | Flaw::ReadReturnsNone | Flaw::TellMissing => Ok(()),
         };
         if outcome.is_ok() {
             self.position = usize::try_from(position).unwrap();
