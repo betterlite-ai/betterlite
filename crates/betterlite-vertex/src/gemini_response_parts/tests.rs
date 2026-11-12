@@ -270,6 +270,10 @@ fn a_second_data_segment_after_the_marker_fails_the_split() {
         {"toolResponse":{"toolType":"search","id":"one","response":{"ok":true}}}]"#,
     r#"[{"tool_type":"search","id":"one","args":{"q":"x"},"response":{"ok":true}}]"#
 )]
+#[case::matched_response_without_a_response_field_is_null(
+    r#"[{"toolCall":{"id":"one"}},{"toolResponse":{"id":"one"}}]"#,
+    r#"[{"tool_type":null,"id":"one","args":null,"response":null}]"#
+)]
 #[case::unmatched_call_has_no_response_key(
     r#"[{"toolCall":{"toolType":"maps","id":"missing"}}]"#,
     r#"[{"tool_type":"maps","id":"missing","args":null}]"#

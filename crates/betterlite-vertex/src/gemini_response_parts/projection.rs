@@ -17,7 +17,7 @@ pub struct Part {
     pub function_call: Option<FunctionCall>,
     pub tool_call: Option<ServerTool>,
     pub tool_response: Option<ServerTool>,
-    pub thought: Option<bool>,
+    pub thought: bool,
     pub thought_signature: Option<String>,
 }
 #[derive(Debug, Clone, Default, Deserialize)]

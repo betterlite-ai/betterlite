@@ -24,7 +24,7 @@ pub(crate) fn assistant_content(parts: &[Part]) -> (Option<String>, Option<Strin
         let Some(text) = piece.filter(|text| !text.is_empty()) else {
             continue;
         };
-        if part.thought == Some(true) {
+        if part.thought {
             reasoning.push_str(&text);
         } else {
             content.push_str(&text);
@@ -38,7 +38,7 @@ pub(crate) fn assistant_content(parts: &[Part]) -> (Option<String>, Option<Strin
 pub(crate) fn thinking_blocks(parts: &[Part]) -> Vec<ThinkingBlock> {
     parts
         .iter()
-        .filter(|part| part.thought == Some(true))
+        .filter(|part| part.thought)
         .map(|part| ThinkingBlock::Thinking {
             thinking: part.text.clone().unwrap_or_default(),
             signature: part.thought_signature.clone(),
