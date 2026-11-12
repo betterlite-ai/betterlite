@@ -46,14 +46,15 @@ pub(crate) fn audio_part(
     parts
         .iter()
         .find_map(|part| {
-            if let Some(text) = &part.text {
-                audio_uri(text).map(str::to_owned)
-            } else {
-                part.inline_data
-                    .as_ref()
-                    .filter(|inline| inline.mime_type.starts_with("audio/"))
-                    .map(|inline| inline.data.clone())
-            }
+            part.text.as_ref().map_or_else(
+                || {
+                    part.inline_data
+                        .as_ref()
+                        .filter(|inline| inline.mime_type.starts_with("audio/"))
+                        .map(|inline| inline.data.clone())
+                },
+                |text| audio_uri(text).map(str::to_owned),
+            )
         })
         .map(|data| {
             Ok(AudioPart {

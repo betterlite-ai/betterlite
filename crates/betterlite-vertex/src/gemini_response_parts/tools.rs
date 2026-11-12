@@ -75,10 +75,7 @@ pub(crate) fn transform(
                     format!("call_{}", simple.chars().take(28).collect::<String>())
                 });
                 tools.push(ToolCallChunk {
-                    id: match &part.thought_signature {
-                        Some(signature) => encode_tool_call_id(&id, Some(signature)),
-                        None => id,
-                    },
+                    id: encode_tool_call_id(&id, part.thought_signature.as_deref()),
                     kind: "function",
                     function: chunk,
                     index,
@@ -102,7 +99,9 @@ pub(crate) fn invocations(parts: &[Part]) -> Option<Vec<ServerToolInvocation>> {
     for part in parts {
         if let Some(call) = &part.tool_call {
             calls.insert(call.id.clone().unwrap_or_default(), entry(part, call, true));
-        } else if let Some(response) = &part.tool_response {
+            continue;
+        }
+        if let Some(response) = &part.tool_response {
             let key = response.id.clone().unwrap_or_default();
             responses.insert(key, entry(part, response, false));
         }
@@ -116,7 +115,8 @@ pub(crate) fn invocations(parts: &[Part]) -> Option<Vec<ServerToolInvocation>> {
         merged.push(call);
     }
     for (_, mut response) in responses {
-        response.response_thought_signature = response.thought_signature.clone();
+        let signature = response.thought_signature.clone();
+        response.response_thought_signature = signature;
         merged.push(response);
     }
     (!merged.is_empty()).then_some(merged)
