@@ -75,6 +75,12 @@ pub(crate) enum Input {
 }
 
 #[derive(Serialize)]
+struct PaddedOutcome {
+    wrapper_kept: bool,
+    chars: usize,
+}
+
+#[derive(Serialize)]
 struct Choices {
     request: Vec<Json>,
     response: Vec<Json>,
@@ -142,7 +148,10 @@ fn argument_strings(case: &StringsCase) -> crate::helpers::HelperResult {
         .iter()
         .map(|pad| {
             let wrapped = format!(r#"{{"content":"{}"}}"#, pad.fill.repeat(pad.count));
-            unwrap_custom_arguments(wrapped.as_bytes(), limits)
+            unwrap_custom_arguments(wrapped.as_bytes(), limits).map(|text| PaddedOutcome {
+                wrapper_kept: text.starts_with(r#"{"content""#),
+                chars: text.chars().count(),
+            })
         })
         .collect::<Result<Vec<_>, _>>()
         .or_value_error()?;

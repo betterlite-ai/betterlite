@@ -106,10 +106,13 @@ def run(input_value: Input) -> Json:
                 unwrap_custom_tool_arguments(text) for text in input_value["arguments"]
             ],
             "padded": [
-                unwrap_custom_tool_arguments(
-                    '{"content":"' + case["fill"] * case["count"] + '"}'
+                {"wrapper_kept": text.startswith('{"content"'), "chars": len(text)}
+                for text in (
+                    unwrap_custom_tool_arguments(
+                        '{"content":"' + case["fill"] * case["count"] + '"}'
+                    )
+                    for case in input_value["padded"]
                 )
-                for case in input_value["padded"]
             ],
             "ids": [
                 openai_shaped_tool_call_item_id(case["item_type"], case["tool_id"])
