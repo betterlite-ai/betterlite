@@ -1,0 +1,44 @@
+kind: helper
+name: refresh-fallback
+call:
+  azure_credentials:
+    token:
+      steps:
+        - cache: []
+          params: {azure_scope: explicit-scope}
+          refresh: true
+        - cache: []
+          environment: {AZURE_SCOPE: environment-scope}
+          refresh: true
+        - cache: []
+          environment: {AZURE_SCOPE: ""}
+          refresh: true
+        - cache: []
+          refresh: true
+        - cache: []
+          params: {azure_ad_token: oidc/assertion, client_id: client, tenant_id: tenant}
+          provider: {outcome: token, token: caller-token}
+        - cache: []
+          params: {azure_ad_token: oidc/assertion, client_id: client, tenant_id: tenant}
+        - cache: []
+          params: {azure_ad_token: oidc/assertion, client_id: client}
+        - cache: []
+          refresh: true
+          sources: {sdk_refresh: {outcome: raise, class_name: ValueError, message: invalid-credential}}
+        - cache: []
+          params: {azure_ad_token: static-token}
+          refresh: true
+          sources: {sdk_refresh: {outcome: raise, class_name: ValueError, message: invalid-credential}}
+        - cache: []
+          refresh: true
+          sources: {sdk_refresh: {outcome: raise, class_name: KeyError, message: AZURE_CLIENT_ID}}
+        - cache: []
+          refresh: true
+          sources: {sdk_refresh: {outcome: token, token: refresh-token}}
+        - cache: [scope-a, scope-a, scope-b]
+          sources: {}
+        - cache: [evict-0,evict-1,evict-2,evict-3,evict-4,evict-5,evict-6,evict-7,evict-8,evict-9,evict-10,evict-11,evict-12,evict-13,evict-14,evict-15,evict-16,evict-17,evict-18,evict-19,evict-20,evict-21,evict-22,evict-23,evict-24,evict-25,evict-26,evict-27,evict-28,evict-29,evict-30,evict-31,evict-32,evict-33,evict-34,evict-35,evict-36,evict-37,evict-38,evict-39,evict-40,evict-41,evict-42,evict-43,evict-44,evict-45,evict-46,evict-47,evict-48,evict-49,evict-50,evict-51,evict-52,evict-53,evict-54,evict-55,evict-56,evict-57,evict-58,evict-59,evict-60,evict-61,evict-62,evict-63,evict-64,evict-65,evict-66,evict-67,evict-68,evict-69,evict-70,evict-71,evict-72,evict-73,evict-74,evict-75,evict-76,evict-77,evict-78,evict-79,evict-80,evict-81,evict-82,evict-83,evict-84,evict-85,evict-86,evict-87,evict-88,evict-89,evict-90,evict-91,evict-92,evict-93,evict-94,evict-95,evict-96,evict-97,evict-98,evict-99,evict-100,evict-101,evict-102,evict-103,evict-104,evict-105,evict-106,evict-107,evict-108,evict-109,evict-110,evict-111,evict-112,evict-113,evict-114,evict-115,evict-116,evict-117,evict-118,evict-119,evict-120,evict-121,evict-122,evict-123,evict-124,evict-125,evict-126,evict-127,evict-128
+]
+          sources: {}
+env: {}
+compare: {ignore: []}

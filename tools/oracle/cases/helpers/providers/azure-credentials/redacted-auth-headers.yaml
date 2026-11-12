@@ -1,0 +1,10 @@
+kind: helper
+name: redacted-auth-headers
+call:
+  azure_credentials:
+    redact_headers:
+      steps:
+        - headers: {Api-Key: key-value, AUTHORIZATION: "Bearer token", X-Other: value}
+        - headers: {}
+env: {}
+compare: {ignore: []}

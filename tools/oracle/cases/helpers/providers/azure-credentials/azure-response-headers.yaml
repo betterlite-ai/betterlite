@@ -1,0 +1,18 @@
+kind: helper
+name: azure-response-headers
+call:
+  azure_credentials:
+    response_headers:
+      steps:
+        - source: dict
+          headers: {x-ratelimit-limit-requests: "12", x-ratelimit-remaining-requests: "11", x-ratelimit-limit-tokens: "10", x-ratelimit-remaining-tokens: "9", Content-Type: application/json}
+        - source: dict
+          headers: {X-Ratelimit-Limit-Requests: "12"}
+        - source: httpx
+          headers: {X-Ratelimit-Limit-Requests: "12"}
+        - source: httpx
+          headers: {X-Other: value}
+        - source: httpx
+          headers: {x-ratelimit-limit-tokens: "10", Authorization: "Bearer token"}
+env: {}
+compare: {ignore: []}
