@@ -14,7 +14,7 @@ pub type PoolFuture<'borrowed, T, E> =
 pub type TransactionFuture<'borrowed, E> =
     Pin<Box<dyn Future<Output = Result<(), E>> + Send + 'borrowed>>;
 
-// LiteLLM's recreate passes only a datasource URL, so pool sizing is the one transport knob a caller overrides.
+// LiteLLM forwards http= only when the caller passes an http_client, so each override stays optional.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PoolTransport {
     pub max_size: Option<usize>,
