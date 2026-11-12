@@ -1,0 +1,17 @@
+kind: helper
+name: response-fallback
+call:
+  response_id_codecs:
+    operation: response_fallback
+    ids:
+      - "resp_!"
+      - "resp_b25lO3R3bw=="
+      - "resp_aGVsbG8"
+      - "resp_/w=="
+      - "resp_YWJjZGVm"
+      - "resp_YTtiO2M="
+      - "resp_resp_YTtiO2M="
+      - "resp_é"
+env: {}
+compare:
+  ignore: []

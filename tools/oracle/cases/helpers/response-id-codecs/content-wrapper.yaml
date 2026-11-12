@@ -1,0 +1,21 @@
+kind: helper
+name: content-wrapper
+call:
+  response_id_codecs:
+    operation: content_wrapper
+    contents:
+      - encrypted_content: "cipher;a"
+        model_id: dep_a
+      - encrypted_content: plain
+        model_id: m1
+    ids:
+      - "litellm_enc:bW9kZWxfaWQ6ZGVwX2E;cipher;a"
+      - "plain-cipher"
+      - "litellm_enc:bW9kZWxfaWQ6ZGVwX2E="
+      - "litellm_enc:/w==;cipher"
+      - "litellm_enc:a;cipher"
+      - "litellm_enc:;cipher"
+      - "litellm_enc:bW9kZWxfaWQ6YW1vZGVsX2lkOmI=;c"
+env: {}
+compare:
+  ignore: []
