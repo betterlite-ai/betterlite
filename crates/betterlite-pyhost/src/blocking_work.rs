@@ -71,7 +71,18 @@ impl WorkTracker {
         F: for<'py> FnOnce(Python<'py>) -> T + Send + 'static,
     {
         let job = Arc::new(self.accept()?);
-        if let Ok(result) = timeout(deadline, self.execute(host, &job, task)).await {
+        let attempt = async {
+            job.begin(
+                Arc::clone(&self.state.permits)
+                    .acquire_owned()
+                    .await
+                    .map_err(|source| WorkError::Closed { source })?,
+            );
+            let blocking_host = host.clone();
+            let blocking_job = Arc::clone(&job);
+            run_blocking(blocking_host, blocking_job, task).await
+        };
+        if let Ok(result) = timeout(deadline, attempt).await {
             drop(job);
             return result;
         }
@@ -145,36 +156,23 @@ impl WorkTracker {
             permit: Mutex::new(None),
         })
     }
+}
 
-    async fn execute<T, F>(
-        &self,
-        host: &PythonHost,
-        job: &Arc<TrackedJob>,
-        task: F,
-    ) -> Result<T, WorkError>
-    where
-        T: Send + 'static,
-        F: for<'py> FnOnce(Python<'py>) -> T + Send + 'static,
-    {
-        job.begin(
-            Arc::clone(&self.state.permits)
-                .acquire_owned()
-                .await
-                .map_err(|source| WorkError::Closed { source })?,
-        );
-        let blocking_host = host.clone();
-        let blocking_job = Arc::clone(job);
-        let mut tasks = JoinSet::new();
-        tasks.spawn_blocking(move || {
-            // The job owns the pool permit, so it has to outlive the Python call.
-            let _job = blocking_job;
-            blocking_host.attach(task)
-        });
-        match tasks.join_next().await {
-            Some(Ok(value)) => Ok(value),
-            Some(Err(error)) => Err(join_failure(error)),
-            None => Err(WorkError::Cancelled),
-        }
+async fn run_blocking<T, F>(host: PythonHost, job: Arc<TrackedJob>, task: F) -> Result<T, WorkError>
+where
+    T: Send + 'static,
+    F: for<'py> FnOnce(Python<'py>) -> T + Send + 'static,
+{
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || {
+        // The job owns the pool permit, so it has to outlive the Python call.
+        let _job = job;
+        host.attach(task)
+    });
+    match tasks.join_next().await {
+        Some(Ok(value)) => Ok(value),
+        Some(Err(error)) => Err(join_failure(error)),
+        None => Err(WorkError::Cancelled),
     }
 }
 
