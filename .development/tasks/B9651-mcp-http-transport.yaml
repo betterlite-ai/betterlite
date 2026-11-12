@@ -42,7 +42,6 @@ scope:
     - crates/betterlite-mcp/src/client/tools/tests/**
     - crates/betterlite-mcp/src/credentials.rs
     - crates/betterlite-mcp/src/credentials_tests/**
-    - crates/betterlite-core/src/api/mcp_client_resources/tests/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/client_credentials.py#L341-L376
