@@ -133,6 +133,7 @@ fn client_secret_response_requires_a_value_and_accepts_an_empty_one() {
 #[case::neither("{}", None)]
 #[case::empty_nested_object(r#"{"input_audio_transcription":{}}"#, None)]
 #[case::missing_nested_model(r#"{"input_audio_transcription":{"language":"en"}}"#, None)]
+#[case::non_string_nested_model(r#"{"input_audio_transcription":{"model":1}}"#, None)]
 fn transcription_resolved_model(#[case] text: &str, #[case] expected: Option<&str>) {
     let RealtimeContract::TranscriptionRequest(request) =
         decode(RealtimeContractKind::TranscriptionRequest, text)
@@ -646,6 +647,27 @@ fn contract_decoder_names_the_field_that_does_not_match() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("value"), "{error}");
+}
+
+#[rstest]
+#[case::expiry(1, RealtimeContractKind::Expiry)]
+#[case::session(2, RealtimeContractKind::Session)]
+#[case::client_secret_request(3, RealtimeContractKind::ClientSecretRequest)]
+#[case::client_secret_response(4, RealtimeContractKind::ClientSecretResponse)]
+#[case::transcription_request(5, RealtimeContractKind::TranscriptionRequest)]
+#[case::transcription_response(6, RealtimeContractKind::TranscriptionResponse)]
+fn kind_bytes_name_their_record(#[case] byte: u8, #[case] expected: RealtimeContractKind) {
+    assert_eq!(RealtimeContractKind::try_from(byte).unwrap(), expected);
+}
+
+#[rstest]
+#[case::zero(0)]
+#[case::past_the_last(7)]
+fn unknown_kind_bytes_are_refused(#[case] byte: u8) {
+    assert!(matches!(
+        RealtimeContractKind::try_from(byte),
+        Err(RealtimeContractError::UnknownKind(found)) if found == byte
+    ));
 }
 
 fn replay(bytes: &[u8]) {

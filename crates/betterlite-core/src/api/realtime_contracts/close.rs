@@ -65,20 +65,10 @@ pub fn realtime_error_event(
 }
 #[must_use]
 pub fn websocket_close_reason(message: &str, fallback: &str) -> String {
-    let encoded = message.as_bytes();
-    if encoded.is_empty() {
+    if message.is_empty() {
         return fallback.to_owned();
     }
-    if encoded.len() <= CLOSE_REASON_MAX_BYTES {
-        return message.to_owned();
-    }
-    let mut end = CLOSE_REASON_MAX_BYTES;
-    while encoded
-        .get(end)
-        .is_some_and(|byte| byte & 0b1100_0000 == 0b1000_0000)
-    {
-        end = end.saturating_sub(1);
-    }
+    let end = message.floor_char_boundary(CLOSE_REASON_MAX_BYTES);
     message.get(..end).unwrap_or_default().to_owned()
 }
 const EXTERNAL_CLOSE_CODES: [u16; 12] = [
