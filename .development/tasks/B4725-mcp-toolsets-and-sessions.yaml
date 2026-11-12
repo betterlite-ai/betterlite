@@ -1,7 +1,7 @@
 id: B4725
 title: MCP toolset management and gateway session controls
 description: >-
-  Build five toolset routes and two session routes to manage MCP tool collections and report/terminate gateway sessions.
+  Build five toolset routes and two session routes to manage MCP tool collections and report/terminate gateway sessions. Expose them as two routers, each over its own state and port trait: toolset_routes for the five toolset routes and session_routes for GET and DELETE /v1/mcp/sessions (the report and terminate ports and the full admin predicate), so B8701 mounts the toolset routes before the live transport exists and B9950 mounts the session routes over its SessionRegistry.
 
   The two gateway session routes are read/write: GET `/v1/mcp/sessions` returns `MCPGatewaySessionsResponse` with a report of live sessions on this proxy worker, grouped by AI client and by user, and DELETE `/v1/mcp/sessions` with optional session_id_prefix and user_id query params returns `MCPGatewaySessionsTerminateResponse`. GET requires PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY role; DELETE requires full proxy admin and at least one selector (status 400 if both null). GET calls `get_mcp_gateway_sessions_report()` with no arguments; DELETE validates session_id_prefix with min_length=8 (MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH), returns 422 if too short, calls `terminate_mcp_gateway_sessions(session_id_prefix=..., user_id=...)` and uses `_user_is_full_admin` for authorization.
 
@@ -34,7 +34,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1483-L1485
     why: DELETE /v1/mcp/sessions validates both session_id_prefix and user_id null, returns 400 if both absent.
 dod:
-  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8701 mounts the routes and proves the items below over HTTP with the cases that moved there.
+  - text: The handlers are tested with tower's oneshot over this module's two routers and fake ports; B8701 mounts toolset_routes and B9950 mounts session_routes, and each proves the items below over HTTP with the cases that moved there.
     proof: [route-tests]
   - text: >-
       Cases session_get_requires_admin_view, session_delete_requires_full_admin, session_delete_no_selectors_400,

@@ -40,7 +40,11 @@ description: >-
   key auth from its result. WriteChecks.admit_write runs B766's is_virtual_key_allowed_to_call_route and then B1221's
   common checks with empty request data, as B4666's text orders them; the team and organization reads those checks need
   come from B883 and B877 where B4666 names them. Build B4666's BridgePrep and CredentialWrites with these ports,
-  ActiveSubjects and B4672's ContextServers.
+  ActiveSubjects and B4672's ContextServers. In access.rs also implement B4731's ServerAccessCheck as
+  LiveServerAccess and keep it on McpIdentity: can_access(auth, server_id) is B4672's UiSession::can_access_mcp_server(auth,
+  server_id, lister) with that same ContextServers as the lister (LiteLLM passes
+  global_mcp_server_manager.get_allowed_mcp_servers), the UiSession built from McpAccess and B4672's LiveSessionReads, and
+  Error is UiSessionError.
 
 
   Access (access.rs). B4671's McpAccess with LiveAccessReads over B737's team read, B887 and B752's budget checks, and
@@ -76,7 +80,8 @@ references:
 dod:
   - text: The four settings structs are filled from config and mcp_gateway_env with LiteLLM's defaults.
     proof: [identity-tests]
-  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591 has a production implementation over its owning crate.
+  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591, and B4731's ServerAccessCheck, has a production
+      implementation over its owning crate.
     proof: [identity-tests]
   - text: McpIdentity builds once from McpCore and Shared with no global.
     proof: [identity-tests]
