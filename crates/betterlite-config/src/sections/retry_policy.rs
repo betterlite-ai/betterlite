@@ -12,11 +12,15 @@ mod tests;
 const DEFAULT_INITIAL_RETRY_DELAY: f64 = 0.5;
 const DEFAULT_MAX_RETRY_DELAY: f64 = 8.0;
 const DEFAULT_JITTER: f64 = 0.75;
+// Router.__init__ falls back to openai.DEFAULT_MAX_RETRIES, which the pinned openai sets to 2
+const DEFAULT_NUM_RETRIES: i64 = 2;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
     router_settings: RawRouter,
+    #[serde(default)]
+    litellm_settings: RawLiteLlm,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -25,6 +29,11 @@ struct RawRouter {
     model_group_retry_policy: Option<BTreeMap<String, RawPolicy>>,
     num_retries: Option<RawNumber>,
     retry_after: Option<RawNumber>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawLiteLlm {
+    num_retries: Option<RawNumber>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -79,7 +88,7 @@ impl Default for Settings {
         Self {
             retry_policy: None,
             model_group_retry_policy: BTreeMap::new(),
-            num_retries: 0,
+            num_retries: DEFAULT_NUM_RETRIES,
             retry_after: 0.0,
             initial_retry_delay: DEFAULT_INITIAL_RETRY_DELAY,
             max_retry_delay: DEFAULT_MAX_RETRY_DELAY,
@@ -95,7 +104,11 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let router = self.router_settings;
+        let Self {
+            router_settings: router,
+            litellm_settings: litellm,
+        } = self;
+        let num_retries = resolve_retries(router.num_retries, litellm.num_retries, lookup)?;
         let initial_retry_delay = {
             let text = lookup.lookup("INITIAL_RETRY_DELAY").unwrap_or_default();
             betterlite_env::number::<f64>("INITIAL_RETRY_DELAY", &text)?
@@ -116,13 +129,7 @@ impl Section for Raw {
                 .map(|policy| policy.resolve("router_settings.retry_policy", lookup))
                 .transpose()?,
             model_group_retry_policy: group_policies(router.model_group_retry_policy, lookup)?,
-            num_retries: resolve_number(
-                router.num_retries,
-                "router_settings.num_retries",
-                lookup,
-                parse_retries,
-            )?
-            .unwrap_or(0),
+            num_retries,
             retry_after: resolve_number(
                 router.retry_after,
                 "router_settings.retry_after",
@@ -193,6 +200,28 @@ where
             parse_retries,
         )
     })
+}
+
+fn resolve_retries<L>(
+    router: Option<RawNumber>,
+    litellm: Option<RawNumber>,
+    lookup: &L,
+) -> Result<i64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    if let Some(value) =
+        resolve_number(router, "router_settings.num_retries", lookup, parse_retries)?
+    {
+        return Ok(value);
+    }
+    let fallback = resolve_number(
+        litellm,
+        "litellm_settings.num_retries",
+        lookup,
+        parse_retries,
+    )?;
+    Ok(fallback.unwrap_or(DEFAULT_NUM_RETRIES))
 }
 
 fn group_policies<L>(

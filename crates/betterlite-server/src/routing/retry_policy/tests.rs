@@ -53,7 +53,7 @@ fn an_empty_config_resolves_to_the_litellm_defaults() {
     let resolved = settings("router_settings: {}", &[]);
     assert_eq!(resolved.policies.global, None);
     assert!(resolved.policies.model_group.is_empty());
-    assert_eq!(resolved.num_retries, 0);
+    assert_eq!(resolved.num_retries, 2);
     assert_eq!(fixed(resolved.backoff.initial_retry_delay), "0.500000");
     assert_eq!(fixed(resolved.backoff.max_retry_delay), "8.000000");
     assert_eq!(fixed(resolved.backoff.jitter), "0.750000");

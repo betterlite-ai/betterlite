@@ -40,7 +40,7 @@ fn fixed(value: f64) -> String {
 fn an_empty_config_takes_the_declaration_defaults() {
     let loaded = settings("router_settings: {}", &[]).unwrap();
     assert_eq!(loaded, Settings::default());
-    assert_eq!(loaded.num_retries, 0);
+    assert_eq!(loaded.num_retries, 2);
     assert_eq!(fixed(loaded.retry_after), "0.000000");
     assert_eq!(fixed(loaded.initial_retry_delay), "0.500000");
     assert_eq!(fixed(loaded.max_retry_delay), "8.000000");
@@ -223,6 +223,22 @@ router_settings:
 fn num_retries_is_read_as_an_integer(#[case] value: &str, #[case] expected: i64) {
     let source = format!("router_settings:\n  num_retries: {value}\n");
     let loaded = settings(&source, &[]).unwrap();
+    assert_eq!(loaded.num_retries, expected);
+}
+
+#[rstest]
+#[case::absent("router_settings: {}\n", 2)]
+#[case::litellm_only("router_settings: {}\nlitellm_settings:\n  num_retries: 3\n", 3)]
+#[case::router_only("router_settings:\n  num_retries: 3\n", 3)]
+#[case::router_beats_litellm(
+    "router_settings:\n  num_retries: 4\nlitellm_settings:\n  num_retries: 3\n",
+    4
+)]
+fn the_retry_count_reads_router_then_litellm_then_the_default(
+    #[case] source: &str,
+    #[case] expected: i64,
+) {
+    let loaded = settings(source, &[]).unwrap();
     assert_eq!(loaded.num_retries, expected);
 }
 
