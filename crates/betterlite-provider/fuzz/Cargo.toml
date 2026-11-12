@@ -85,3 +85,10 @@ path = "fuzz_targets/ollama_chat_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "langflow_chat_reply"
+path = "fuzz_targets/langflow_chat_reply.rs"
+test = false
+doc = false
+bench = false

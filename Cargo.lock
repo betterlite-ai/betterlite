@@ -2497,6 +2497,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",

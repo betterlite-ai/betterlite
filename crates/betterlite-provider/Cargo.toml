@@ -18,6 +18,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 chrono.workspace = true
