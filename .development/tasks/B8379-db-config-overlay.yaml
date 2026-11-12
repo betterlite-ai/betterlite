@@ -15,7 +15,8 @@ description: >-
   keeps the serving pass_through_endpoints), overlay the database rows when a database is connected and
   store_model_in_db is true, build the resolved config (each section from its store, with
   pass_through_endpoints merged so database entries win by path and file entries with other paths follow), resolve
-  os.environ/ values, apply runtime values to the stores, and store the snapshot.
+  os.environ/ values, apply runtime values to the stores, store the snapshot and return that config, owned, in the
+  type B8380's save_config takes as new_config (get_config returns _ConfigWithBaseline(config)).
 
   `overlay_db_rows(state, db)` ports _update_config_from_db: fetch all four rows at once through B8397's
   get_config_param; for each present row, prepare its values and apply them to that store (litellm_settings goes
@@ -53,6 +54,31 @@ description: >-
   cache size, store_model_in_db, retention and SSRF effects, as the raised error does in LiteLLM. Tests for this step
   are named `pass_through_effect_*` and use a recording installer.
 
+  Server port. B8595, B1656, B1657 and the other settings routes in betterlite-server call reload_config and
+  serve_pass_through_endpoints, and betterlite-server cannot depend on this crate, so this task also fills
+  crates/betterlite-server/src/config_overlay_port.rs
+  (declared by the skeleton) with `ConfigOverlayPort`, a Send + Sync async trait (async_trait) with two methods:
+  `reload_config(&self)` returns a Result of the config type B8380's save_config takes as new_config (what
+  reload_config returns) or ConfigOverlayPortError, and
+  `serve_pass_through_endpoints(&self, db_endpoints: &[JsonValue]) -> Result<(), ConfigOverlayPortError>`.
+  ConfigOverlayPortError is a thiserror enum with the unit variants DatabaseUnavailable, Reload and PassThrough. The
+  callers answer DatabaseUnavailable with B1217's 503 projection and the other two with 500, as LiteLLM's
+  unhandled-error handler does (proxy_server.py L2049-L2080), so a unit is enough and the adapter logs the cause, as
+  with EndpointInstallError. `OverlayPortAdapter` in db_config_overlay/port.rs implements it. It has one public field
+  per argument the two functions take besides the endpoint list (the Arc<ProxyConfigState>, the config source, the
+  database handle, the environment and the `Arc<dyn PassThroughInstaller>`), and each method calls its function with
+  those fields. On an OverlayError it logs the error with its source at error level. It returns DatabaseUnavailable
+  when the failure is a database read whose store error, a `betterlite_db::postgres_store::errors::DbError` that
+  OverlayError keeps as the source of its database variant, passes
+  `betterlite_db::database_faults::native::is_native_transport_error` (B872's native outage check: no database
+  connected, a pool timeout or close, a closed or I/O driver connection, or a connection SQLSTATE). Any other failure
+  is Reload from reload_config and PassThrough from serve_pass_through_endpoints. Tests for the port are named
+  `port_*` and call through an `Arc<dyn ConfigOverlayPort>` over the adapter: reload returns the same config a direct
+  reload_config call with the same inputs returns, a config file path that does not exist gives Reload, a list of
+  objects reaches the recording installer in stored order, and a non-object entry gives PassThrough with nothing
+  installed. Tests named `port_database_unavailable_*` fail the config row read with the store's
+  DbError::NoDbConnected and get DatabaseUnavailable, and fail it with DbError::CreateNull and get Reload.
+
   Tests run the overlay against an in-memory config repository and assert store contents, scrub results, warning
   lines and the side-effect order. Helper cases (operation b8379 with an `operation:` field) compare
   scrub_remote_modules output for each refused field. The worker writes them under tools/oracle/cases/helpers/db-config-overlay/.
@@ -60,6 +86,7 @@ scope:
   paths:
     - crates/betterlite/src/db_config_overlay.rs
     - crates/betterlite/src/db_config_overlay/**
+    - crates/betterlite-server/src/config_overlay_port.rs
     - tools/oracle/cases/helpers/db-config-overlay/**
     - tools/oracle/helpers/b8379.py
     - tools/oracle/helpers/b8379/**
@@ -78,7 +105,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3345-L3411
     why: initialize_pass_through_endpoints, the call behind the installer port; it appends the config list itself, so the port takes only the database list.
 dod:
-  - text: reload_config reads bucket or file, overlays database rows only with store_model_in_db, merges pass-through endpoints by path and stores the snapshot.
+  - text: reload_config reads bucket or file, overlays database rows only with store_model_in_db, merges pass-through endpoints by path, stores the snapshot and returns that config.
     proof: [overlay-tests]
   - text: Database values that load s3:// or gcs:// modules are refused field by field with LiteLLM's warnings.
     proof: [overlay-tests, oracle, helper-python]
@@ -88,6 +115,8 @@ dod:
     proof: [overlay-tests]
   - text: A database pass-through list is published, checked and handed to the installer port in stored order, and a non-object entry or an install error stops the effects after it.
     proof: [pass-through-effect]
+  - text: ConfigOverlayPort in betterlite-server works as an Arc<dyn ConfigOverlayPort>, and OverlayPortAdapter answers reload_config and serve_pass_through_endpoints through it, logging an OverlayError and returning DatabaseUnavailable for a store error is_native_transport_error accepts, else Reload or PassThrough.
+    proof: [overlay-port]
 checks:
   optional: []
   commands:
@@ -99,6 +128,10 @@ checks:
       why: The pass-through effect skips the publish, hands the installer the wrong list or keeps running later effects after a refused entry or failed install
       run: >-
         cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::.*::pass_through_effect_/)'
+    - id: overlay-port
+      why: The server port is not dyn-compatible, or its adapter returns another config, skips the installer, loses which step failed or misses a database outage
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::.*::port_/)'
     - id: helper-python
       why: The strict oracle adapter for the overlay cases fails lint or type checks
       run: >-
@@ -116,6 +149,7 @@ out_of_scope:
   - "ProxyConfig.load_config and the config file read itself: B002's loader and B4142's includes, with each key in its config section task."
   - "Secret manager init from the raw config (_initialize_secret_manager_from_raw_config): B8873. reload_config calls it on the parsed config before the whole-file reference resolution (B4412 only builds the KMS clients)."
   - "Registering pass-through routes (initialize_pass_through_endpoints): B3616. The PassThroughInstaller adapter over it and B8614's PassThroughState, with no config file path: B8613. Passing that port into apply_general_settings_row: B8381's DeploymentSync."
+  - "Building OverlayPortAdapter once at startup and carrying it as Arc<dyn ConfigOverlayPort>: B8613. The Shared field: B8610. The callers of the port: B8595, B1656, B1657, B1650, B1658, B1661, B1662, B1663 and B850."
 pitfalls:
   - The cache size hook needs whether the key came from the database before the row is applied, so read it first.
   - Pass-through endpoints merge by path with database entries first; a file entry whose path the database also has is dropped.

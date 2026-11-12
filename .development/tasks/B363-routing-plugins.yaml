@@ -26,7 +26,8 @@ description: 'Implement typed routing-context input/output and wire the ordered 
   instead of separate ports. Bound the plugin_json outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
   path).
-  B016 registers RouteStage::RoutingPlugins as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/routing_plugins.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
+  B016 registers RouteStage::RoutingPlugins as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/routing_plugins.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.
+  The plugins arrive loaded. B8613 resolves router_settings.plugins at startup with B8587''s resolve_routing_plugins and hands the B165 handles to the router-level plugin list this task defines, in config order, and B8613 resolves the complexity-tier plugins with B8587''s resolve_complexity_plugins. So this task runs the handles it is given and never imports a dotted path itself; give the list a public field or setter on the router parts that B8613 can fill.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_plugins.rs
