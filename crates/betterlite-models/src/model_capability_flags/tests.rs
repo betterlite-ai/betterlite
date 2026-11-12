@@ -51,9 +51,9 @@ impl CapabilityPredicates for Recorder {
     fn is_explicitly_disabled_factory(
         &mut self,
         _request: &CapabilityRequest<'_>,
-        capability: &str,
+        key: &str,
     ) -> impl Future<Output = bool> + Send {
-        self.disabled_for_vision = capability == "supports_vision";
+        self.disabled_for_vision = key == "supports_vision";
         ready(self.disabled_for_vision)
     }
 
