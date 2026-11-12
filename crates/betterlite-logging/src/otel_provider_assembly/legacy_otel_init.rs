@@ -129,10 +129,7 @@ fn init_tracing(
 fn init_metrics(
     parts: &ProviderParts<'_>,
     injected: Option<SdkMeterProvider>,
-) -> Result<Option<MetricsSignal>, LegacyExporterError> {
-    if !parts.config.signals.enable_metrics {
-        return Ok(None);
-    }
+) -> Result<MetricsSignal, LegacyExporterError> {
     let meter_provider = get_or_create_provider(
         &parts.globals.meter,
         injected,
@@ -149,17 +146,16 @@ fn init_metrics(
         },
     )?;
     let instruments = create_instruments(&meter_provider.meter(METER_NAME));
-    Ok(Some(MetricsSignal {
+    Ok(MetricsSignal {
         meter_provider,
         instruments,
-    }))
+    })
 }
 
 fn new_tracer_cache(
     parts: &ProviderParts<'_>,
     max_providers: usize,
-    clients: HttpClients,
-    shared_exporter: InMemorySpanExporter,
+    environment: &LegacyOtelEnvironment<'_>,
 ) -> DynamicTracerCache {
     DynamicTracerCache::new(
         CacheSettings {
@@ -169,7 +165,10 @@ fn new_tracer_cache(
             tracer_name: legacy_tracer_name(parts.env),
             max_providers,
         },
-        LegacyExporterBuilder::new(clients, shared_exporter),
+        LegacyExporterBuilder::new(
+            environment.clients.clone(),
+            environment.shared_exporter.clone(),
+        ),
     )
 }
 
@@ -177,8 +176,11 @@ fn new_tracer_cache(
 fn init_logs(
     parts: &ProviderParts<'_>,
     injected: Option<SdkLoggerProvider>,
-) -> Result<SdkLoggerProvider, LegacyExporterError> {
-    get_or_create_provider(
+) -> Result<Option<SdkLoggerProvider>, LegacyExporterError> {
+    if !parts.config.signals.enable_events {
+        return Ok(None);
+    }
+    let provider = get_or_create_provider(
         &parts.globals.logger,
         injected,
         parts.skip_set_global,
@@ -192,7 +194,8 @@ fn init_logs(
                     .build(),
             )
         },
-    )
+    )?;
+    Ok(Some(provider))
 }
 
 fn resolve_config(
@@ -224,7 +227,7 @@ fn register_on_proxy_if_installed(proxy: Option<&ProxyRegistry>, callback_name: 
 
 pub fn init_legacy_otel(
     init: LegacyOtelInit<'_>,
-    environment: LegacyOtelEnvironment<'_>,
+    environment: &LegacyOtelEnvironment<'_>,
 ) -> Result<LegacyOtel, LegacyExporterError> {
     let env = environment.env;
     let config = resolve_config(init.config, &init.overrides, env);
@@ -244,18 +247,13 @@ pub fn init_legacy_otel(
         skip_set_global: config.skip_set_global || callback_name.as_deref() == Some(LANGFUSE_OTEL),
     };
     let (tracer_provider, tracer) = init_tracing(&parts, init.injected.tracer)?;
-    let tracer_cache = new_tracer_cache(
-        &parts,
-        init.max_dynamic_tracer_providers,
-        environment.clients,
-        environment.shared_exporter,
-    );
-    let metrics = init_metrics(&parts, init.injected.meter)?;
-    let logger_provider = if config.signals.enable_events {
-        Some(init_logs(&parts, init.injected.logger)?)
+    let tracer_cache = new_tracer_cache(&parts, init.max_dynamic_tracer_providers, environment);
+    let metrics = if config.signals.enable_metrics {
+        Some(init_metrics(&parts, init.injected.meter)?)
     } else {
         None
     };
+    let logger_provider = init_logs(&parts, init.injected.logger)?;
     register_on_proxy_if_installed(environment.proxy, callback_name.clone());
     Ok(LegacyOtel {
         capture_policy: CapturePolicy::from_init_state(&config, env),

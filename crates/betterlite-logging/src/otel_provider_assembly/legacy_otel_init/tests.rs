@@ -99,7 +99,7 @@ impl Rig {
     fn init(&self, init: LegacyOtelInit<'_>) -> Result<LegacyOtel, LegacyExporterError> {
         init_legacy_otel(
             init,
-            LegacyOtelEnvironment {
+            &LegacyOtelEnvironment {
                 env: &self.env,
                 clients: clients(),
                 shared_exporter: self.exporter.clone(),
@@ -238,7 +238,7 @@ fn a_new_tracer_provider_is_published_and_the_next_logger_reuses_it() {
     let other_exporter = InMemorySpanExporter::default();
     let second = init_legacy_otel(
         plain_init(Some(in_memory_config())),
-        LegacyOtelEnvironment {
+        &LegacyOtelEnvironment {
             env: &rig.env,
             clients: clients(),
             shared_exporter: other_exporter.clone(),
@@ -470,7 +470,7 @@ fn init_without_a_proxy_registry_still_succeeds() {
     let rig = Rig::new();
     let otel = init_legacy_otel(
         plain_init(Some(in_memory_config())),
-        LegacyOtelEnvironment {
+        &LegacyOtelEnvironment {
             env: &rig.env,
             clients: clients(),
             shared_exporter: rig.exporter.clone(),
