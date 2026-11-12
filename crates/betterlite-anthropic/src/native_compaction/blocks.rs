@@ -24,17 +24,16 @@ fn objects<'response>(
     Ok(found)
 }
 
-const fn object<'response>(
-    value: Option<&'response Json>,
+fn member<'response>(
+    parent: &'response Mapping,
     field: &'static str,
 ) -> Result<Option<&'response Mapping>, NativeCompactionError> {
-    if let Some(Json::Object(found)) = value {
-        return Ok(Some(found));
-    }
-    if matches!(value, None | Some(Json::Null)) {
-        Ok(None)
-    } else {
-        Err(NativeCompactionError::NotAnObject { field })
+    match parent.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(found)) => Ok(Some(found)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(NativeCompactionError::NotAnObject { field })
+        }
     }
 }
 
@@ -55,14 +54,10 @@ pub fn native_blocks(
     let [choice] = choices.as_slice() else {
         return Ok(Vec::new());
     };
-    let Some(message) = object(choice.get("message"), "message")? else {
+    let Some(message) = member(choice, "message")? else {
         return Ok(Vec::new());
     };
-    let Some(fields) = object(
-        message.get("provider_specific_fields"),
-        "provider_specific_fields",
-    )?
-    else {
+    let Some(fields) = member(message, "provider_specific_fields")? else {
         return Ok(Vec::new());
     };
     objects(fields.get("compaction_blocks"), "compaction_blocks")
