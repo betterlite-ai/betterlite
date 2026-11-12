@@ -126,94 +126,104 @@ fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
             headers,
             api_key,
             environment,
-        } => {
-            let settings = settings(environment);
-            let explicit = api_key.as_deref().map(SecretString::from);
-            let resolved =
-                validate_environment(headers, explicit.as_ref(), &settings).or_value_error()?;
-            let exposed: BTreeMap<&str, &str> = resolved
-                .iter()
-                .map(|(name, value)| (name.as_str(), value.expose_secret()))
-                .collect();
-            Ok(json!({ "headers": exposed }))
-        }
+        } => environment_view(headers, api_key.as_deref(), environment),
         Call::UploadUrl {
             api_base,
             api_key,
             params,
             environment,
-        } => {
-            let settings = settings(environment);
-            let explicit = api_key.as_deref().map(SecretString::from);
-            let params = request_params(params);
-            let url =
-                complete_upload_url(api_base.as_deref(), explicit.as_ref(), &params, &settings)
-                    .or_value_error()?;
-            Ok(json!({ "url": url }))
-        }
-        Call::CreatePlan { now, file } => {
-            let plan = create_file_plan(Some(&file_data(file)), "", *now).or_value_error()?;
-            let (text, bytes) = plan_parts(&plan)?;
-            let initial: Value = serde_json::from_str(text).or_value_error()?;
-            Ok(json!({
-                "headers": plan.initial_request.headers,
-                "data": initial,
-                "upload_headers": plan.upload_request.headers,
-                "upload_data": bytes,
-            }))
-        }
+        } => upload_view(api_base.as_deref(), api_key.as_deref(), params, environment),
+        Call::CreatePlan { now, file } => plan_view(*now, file),
         Call::CreateReply { bodies, timezone } => {
-            let zone = TimeZone::get(timezone).or_value_error()?;
-            let context = LocalTimeContext { zone };
-            let mut files = Vec::with_capacity(bodies.len());
-            for body in bodies {
-                let file =
-                    decode_studio_file_metadata(body.as_bytes(), MetadataShape::Create, &context)
-                        .or_value_error()?;
-                files.push(file_view(&file));
-            }
-            Ok(json!({ "files": files }))
+            reply_views(bodies, timezone, MetadataShape::Create)
         }
         Call::RetrieveReply { bodies, timezone } => {
-            let zone = TimeZone::get(timezone).or_value_error()?;
-            let context = LocalTimeContext { zone };
-            let mut files = Vec::with_capacity(bodies.len());
-            for body in bodies {
-                let file =
-                    decode_studio_file_metadata(body.as_bytes(), MetadataShape::Retrieve, &context)
-                        .or_value_error()?;
-                files.push(file_view(&file));
-            }
-            Ok(json!({ "files": files }))
+            reply_views(bodies, timezone, MetadataShape::Retrieve)
         }
         Call::RetrieveTarget {
             file_ids,
             params,
             environment,
-        } => targets(file_ids, params, environment, TargetKind::Retrieve),
+        } => target_views(file_ids, params, environment, TargetKind::Retrieve),
         Call::DeleteTarget {
             file_ids,
             params,
             environment,
-        } => targets(file_ids, params, environment, TargetKind::Delete),
-        Call::DeleteReply { replies } => {
-            let mut deleted = Vec::with_capacity(replies.len());
-            for reply in replies {
-                let result = decode_delete_response(
-                    reply.status,
-                    reply.url.as_deref(),
-                    reply.body.as_bytes(),
-                )
-                .or_value_error()?;
-                deleted.push(json!({
-                    "id": result.id,
-                    "object": "file",
-                    "deleted": result.deleted,
-                }));
-            }
-            Ok(json!({ "replies": deleted }))
-        }
+        } => target_views(file_ids, params, environment, TargetKind::Delete),
+        Call::DeleteReply { replies } => delete_views(replies),
     }
+}
+
+fn environment_view(
+    headers: &BTreeMap<String, String>,
+    api_key: Option<&str>,
+    environment: &BTreeMap<String, String>,
+) -> Result<Value, Box<HelperError>> {
+    let settings = settings(environment);
+    let explicit = api_key.map(SecretString::from);
+    let resolved = validate_environment(headers, explicit.as_ref(), &settings).or_value_error()?;
+    let exposed: BTreeMap<&str, &str> = resolved
+        .iter()
+        .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect();
+    Ok(json!({ "headers": exposed }))
+}
+
+fn upload_view(
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    params: &Params,
+    environment: &BTreeMap<String, String>,
+) -> Result<Value, Box<HelperError>> {
+    let settings = settings(environment);
+    let explicit = api_key.map(SecretString::from);
+    let request = request_params(params);
+    let url =
+        complete_upload_url(api_base, explicit.as_ref(), &request, &settings).or_value_error()?;
+    Ok(json!({ "url": url }))
+}
+
+fn plan_view(now: i64, file: &FileInput) -> Result<Value, Box<HelperError>> {
+    let plan = create_file_plan(Some(&file_data(file)), "", now).or_value_error()?;
+    let (text, bytes) = plan_parts(&plan)?;
+    let initial: Value = serde_json::from_str(text).or_value_error()?;
+    Ok(json!({
+        "headers": plan.initial_request.headers,
+        "data": initial,
+        "upload_headers": plan.upload_request.headers,
+        "upload_data": bytes,
+    }))
+}
+
+fn reply_views(
+    bodies: &[String],
+    timezone: &str,
+    shape: MetadataShape,
+) -> Result<Value, Box<HelperError>> {
+    let zone = TimeZone::get(timezone).or_value_error()?;
+    let context = LocalTimeContext { zone };
+    let mut files = Vec::with_capacity(bodies.len());
+    for body in bodies {
+        let file =
+            decode_studio_file_metadata(body.as_bytes(), shape, &context).or_value_error()?;
+        files.push(file_view(&file));
+    }
+    Ok(json!({ "files": files }))
+}
+
+fn delete_views(replies: &[DeleteReply]) -> Result<Value, Box<HelperError>> {
+    let mut deleted = Vec::with_capacity(replies.len());
+    for reply in replies {
+        let result =
+            decode_delete_response(reply.status, reply.url.as_deref(), reply.body.as_bytes())
+                .or_value_error()?;
+        deleted.push(json!({
+            "id": result.id,
+            "object": "file",
+            "deleted": result.deleted,
+        }));
+    }
+    Ok(json!({ "replies": deleted }))
 }
 
 #[derive(Clone, Copy)]
@@ -222,19 +232,19 @@ enum TargetKind {
     Delete,
 }
 
-fn targets(
+fn target_views(
     file_ids: &[String],
     params: &Params,
     environment: &BTreeMap<String, String>,
     kind: TargetKind,
 ) -> Result<Value, Box<HelperError>> {
     let settings = settings(environment);
-    let params = request_params(params);
+    let request = request_params(params);
     let mut targets = Vec::with_capacity(file_ids.len());
     for file_id in file_ids {
         let target = match kind {
-            TargetKind::Retrieve => retrieve_target(file_id, &params, &settings),
-            TargetKind::Delete => delete_target(file_id, &params, &settings),
+            TargetKind::Retrieve => retrieve_target(file_id, &request, &settings),
+            TargetKind::Delete => delete_target(file_id, &request, &settings),
         }
         .or_value_error()?;
         targets.push(target_view(&target));

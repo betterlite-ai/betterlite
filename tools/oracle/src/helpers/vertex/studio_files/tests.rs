@@ -61,7 +61,7 @@ fn oracle_extracted_headers_override_the_start_headers() {
             "X-Goog-Upload-Command": "upload, finalize",
         })
     );
-    assert_eq!(call["upload_data"], json!([104, 105]));
+    assert_eq!(call["upload_data"], json!([104_u8, 105_u8]));
 }
 
 #[test]
@@ -131,14 +131,14 @@ fn oracle_create_reply_uses_the_uri_and_the_supplied_timezone() {
         files[0]["id"],
         "https://generativelanguage.googleapis.com/v1beta/files/uri-id"
     );
-    assert_eq!(files[0]["bytes"], 12);
-    assert_eq!(files[0]["created_at"], 1_704_164_645);
+    assert_eq!(files[0]["bytes"], 12_i64);
+    assert_eq!(files[0]["created_at"], 1_704_164_645_i64);
     assert_eq!(files[0]["filename"], "report.pdf");
     assert_eq!(files[0]["purpose"], "user_data");
     assert_eq!(files[0]["status"], "uploaded");
     assert_eq!(files[0]["status_details"], Value::Null);
     assert_eq!(files[1]["id"], "uri-only");
-    assert_eq!(files[1]["created_at"], 1_704_164_645);
+    assert_eq!(files[1]["created_at"], 1_704_164_645_i64);
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn oracle_retrieve_reply_maps_states_and_renders_details() {
     assert_eq!(files[2]["status"], "error");
     assert_eq!(files[2]["status_details"], "");
     assert_eq!(files[2]["id"], "");
-    assert_eq!(files[2]["bytes"], 0);
+    assert_eq!(files[2]["bytes"], 0_i64);
     assert_eq!(files[2]["filename"], "");
     assert_eq!(files[3]["status"], "uploaded");
     assert_eq!(files[4]["status"], "uploaded");

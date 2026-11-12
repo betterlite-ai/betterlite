@@ -94,13 +94,13 @@ fn decode_retrieve(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject,
     let metadata: RetrieveMetadata =
         serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
     let state = FileState::from_wire(metadata.state.as_deref());
-    let bytes = match metadata.size_bytes.as_deref() {
+    let size = match metadata.size_bytes.as_deref() {
         Some(text) => size_bytes(text)?,
         None => 0,
     };
     Ok(FileObject {
         id: metadata.uri.unwrap_or_default(),
-        bytes,
+        bytes: size,
         created_at: decode_created_at(&metadata.create_time, local)?,
         filename: metadata.display_name.unwrap_or_default(),
         object: FileKind::File,

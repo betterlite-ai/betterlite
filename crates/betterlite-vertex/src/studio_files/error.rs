@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 use betterlite_http::error::HttpError;
 use betterlite_prompts::media_metadata::error::MediaMetadataError;
 use thiserror::Error;
@@ -31,7 +33,7 @@ pub enum StudioFilesError {
     #[error("the file reply sizeBytes is not an integer")]
     SizeBytes {
         #[source]
-        source: std::num::ParseIntError,
+        source: ParseIntError,
     },
     #[error("the file timestamp is {size} bytes, over the {limit} byte limit")]
     TimestampTooLong { size: usize, limit: usize },
