@@ -1,4 +1,3 @@
-use std::any::type_name;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -13,8 +12,11 @@ use super::WriteOptions;
 use super::backend::{AuthCacheTier, PreCall};
 use super::decode::decode_auth_payload;
 use super::keys::{Partition, partition};
-use super::payload::{self, PayloadError, ReadOperation, log_decode_miss};
+use super::payload::{self, PayloadError, ReadOperation};
 use crate::resolved_key::auth::{AuthError, UserAPIKeyAuth};
+
+type AuthResult<T> = Result<Option<T>, AuthError>;
+type PayloadResult<T> = Result<Option<T>, PayloadError>;
 
 impl<T: AuthCacheTier> AuthCache<T> {
     pub(crate) fn tier(&self, key: &str) -> &T {
@@ -68,62 +70,38 @@ impl<T: AuthCacheTier> AuthCache<T> {
         }
     }
 
-    pub fn get_typed<Model>(
-        &self,
-        key: &str,
-        local_only: bool,
-    ) -> Result<Option<Model>, PayloadError>
+    pub fn get_typed<Model>(&self, key: &str, local_only: bool) -> PayloadResult<Model>
     where
         Model: DeserializeOwned,
     {
-        let Some(cached) = self.get(key, local_only) else {
-            return Ok(None);
-        };
-        let decoded = payload::decode::<Model>(&cached)?;
-        if decoded.is_none() {
-            log_decode_miss(ReadOperation::Get, type_name::<Model>());
-        }
-        Ok(decoded)
+        self.get(key, local_only).map_or(Ok(None), |cached| {
+            payload::decode_typed::<Model>(&cached, ReadOperation::Get)
+        })
     }
 
-    pub async fn async_get_typed<Model>(
-        &self,
-        key: &str,
-        local_only: bool,
-    ) -> Result<Option<Model>, PayloadError>
+    pub async fn async_get_typed<Model>(&self, key: &str, local_only: bool) -> PayloadResult<Model>
     where
         Model: DeserializeOwned,
     {
-        let Some(cached) = self.async_get(key, local_only).await else {
+        let fetched = self.async_get(key, local_only).await;
+        let Some(cached) = fetched else {
             return Ok(None);
         };
-        let decoded = payload::decode::<Model>(&cached)?;
-        if decoded.is_none() {
-            log_decode_miss(ReadOperation::AsyncGet, type_name::<Model>());
-        }
-        Ok(decoded)
+        payload::decode_typed::<Model>(&cached, ReadOperation::AsyncGet)
     }
 
-    pub fn get_auth(
-        &self,
-        key: &str,
-        local_only: bool,
-    ) -> Result<Option<UserAPIKeyAuth>, AuthError> {
-        let Some(cached) = self.get(key, local_only) else {
-            return Ok(None);
-        };
-        decode_auth_payload(&cached, ReadOperation::Get)
+    pub fn get_auth(&self, key: &str, local_only: bool) -> AuthResult<UserAPIKeyAuth> {
+        self.get(key, local_only).map_or(Ok(None), |cached| {
+            decode_auth_payload(&cached, ReadOperation::Get)
+        })
     }
 
-    pub async fn async_get_auth(
-        &self,
-        key: &str,
-        local_only: bool,
-    ) -> Result<Option<UserAPIKeyAuth>, AuthError> {
-        let Some(cached) = self.async_get(key, local_only).await else {
-            return Ok(None);
-        };
-        decode_auth_payload(&cached, ReadOperation::AsyncGet)
+    pub async fn async_get_auth(&self, key: &str, local_only: bool) -> AuthResult<UserAPIKeyAuth> {
+        self.async_get(key, local_only)
+            .await
+            .map_or(Ok(None), |cached| {
+                decode_auth_payload(&cached, ReadOperation::AsyncGet)
+            })
     }
 
     pub fn set<Value>(
@@ -135,9 +113,13 @@ impl<T: AuthCacheTier> AuthCache<T> {
     where
         Value: Serialize,
     {
-        let payload = payload::encode(value)?;
-        let target = key.map_or(&self.ordinary, |name| self.tier(name));
-        target.set(key, &payload, options.cache_options());
+        let encoded = payload::encode(value)?;
+        if let Some(name) = key {
+            self.tier(name)
+                .set(Some(name), &encoded, options.cache_options());
+        } else {
+            self.ordinary.set(None, &encoded, options.cache_options());
+        }
         Ok(())
     }
 
@@ -150,9 +132,15 @@ impl<T: AuthCacheTier> AuthCache<T> {
     where
         Value: Serialize + Sync,
     {
-        let payload = payload::encode(value)?;
-        self.async_write_payload(key, &payload, options).await?;
-        Ok(())
+        let encoded = payload::encode(value)?;
+        let Some(name) = key else {
+            // a null key still serialized, and reaches the ordinary partition here
+            self.ordinary
+                .async_set(None, &encoded, options.cache_options())
+                .await;
+            return Ok(());
+        };
+        self.async_write_named(name, &encoded, options).await
     }
 
     pub async fn async_set_payload<Model>(
@@ -165,33 +153,25 @@ impl<T: AuthCacheTier> AuthCache<T> {
         Model: DeserializeOwned + Serialize + Sync,
     {
         let encoded = payload::encode_validated::<Model>(payload)?;
-        self.async_write_payload(Some(key), &encoded, options)
-            .await?;
+        self.async_write_named(key, &encoded, options).await?;
         Ok(())
     }
 
-    async fn async_write_payload(
+    async fn async_write_named(
         &self,
-        key: Option<&str>,
+        key: &str,
         payload: &Json,
         options: WriteOptions,
     ) -> Result<(), AuthCacheError> {
-        let Some(name) = key else {
-            // a null key still serialized, and reaches the ordinary partition here
-            self.ordinary
-                .async_set(None, payload, options.cache_options())
-                .await;
-            return Ok(());
-        };
-        let target = self.tier(name);
+        let target = self.tier(key);
         if !options.local_only && !options.refresh_ttl {
-            let queued = target.set_pre_call(name, payload, options.ttl.map(|ttl| ttl.seconds))?;
+            let queued = target.set_pre_call(key, payload, options.ttl.map(|ttl| ttl.seconds))?;
             if matches!(queued, PreCall::Queued) {
                 return Ok(());
             }
         }
         target
-            .async_set(Some(name), payload, options.cache_options())
+            .async_set(Some(key), payload, options.cache_options())
             .await;
         Ok(())
     }

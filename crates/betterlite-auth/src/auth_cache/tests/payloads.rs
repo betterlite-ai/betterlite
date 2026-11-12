@@ -71,6 +71,43 @@ fn matching_model_identity_retained() {
     assert_eq!(stored, json("{\"model\":\"gpt-4o\",\"max_budget\":10.5}"));
 }
 
+#[tokio::test]
+async fn async_typed_read_decodes_the_cached_row() {
+    let cache = local_cache(Some(60.0_f64));
+    let row = BudgetRow {
+        model: "gpt-4o".to_owned(),
+        limit: Some(10.5_f64),
+    };
+    cache
+        .set(Some("tag:row"), &row, WriteOptions::default())
+        .unwrap();
+    let decoded = cache
+        .async_get_typed::<BudgetRow>("tag:row", false)
+        .await
+        .unwrap();
+    assert_eq!(decoded, Some(row));
+}
+
+#[tokio::test]
+async fn validated_dict_write_dumps_and_rejects_invalid() {
+    let cache = local_cache(Some(60.0_f64));
+    let valid = json("{\"model\":\"gpt-4o\",\"max_budget\":10.5}");
+    cache
+        .async_set_payload::<BudgetRow>("tag:valid", &valid, WriteOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        cache.get("tag:valid", false),
+        Some(json("{\"model\":\"gpt-4o\",\"max_budget\":10.5}"))
+    );
+    let invalid = json("{\"max_budget\":\"ten\"}");
+    let result = cache
+        .async_set_payload::<BudgetRow>("tag:bad", &invalid, WriteOptions::default())
+        .await;
+    assert!(matches!(result, Err(AuthCacheError::Payload(_))));
+    assert_eq!(cache.get("tag:bad", false), None);
+}
+
 #[test]
 fn malformed_dict_warning_then_error() {
     let cache = local_cache(Some(60.0_f64));

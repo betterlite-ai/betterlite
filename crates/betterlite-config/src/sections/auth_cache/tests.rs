@@ -27,19 +27,23 @@ fn error_category(source: &str) -> &'static str {
 
 #[test]
 fn fallback_env_default_60() {
-    assert_eq!(load("", &[]).unwrap().management_object_ttl, 60.0_f64);
+    assert_eq!(
+        (load("", &[]).unwrap().management_object_ttl).to_bits(),
+        60.0_f64.to_bits()
+    );
 }
 
 #[test]
 fn fallback_env_override() {
     assert_eq!(
-        load(
+        (load(
             "",
             &[("DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL", "45")]
         )
         .unwrap()
-        .management_object_ttl,
-        45.0_f64
+        .management_object_ttl)
+            .to_bits(),
+        45.0_f64.to_bits()
     );
 }
 
@@ -64,68 +68,76 @@ fn fallback_env_bad_or_empty_fails_startup(#[case] value: &str) {
 #[test]
 fn fallback_env_zero_negative_kept() {
     assert_eq!(
-        load(
+        (load(
             "",
             &[("DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL", "0")]
         )
         .unwrap()
-        .management_object_ttl,
-        0.0_f64
+        .management_object_ttl)
+            .to_bits(),
+        0.0_f64.to_bits()
     );
     assert_eq!(
-        load(
+        (load(
             "",
             &[("DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL", "-5")]
         )
         .unwrap()
-        .management_object_ttl,
-        -5.0_f64
+        .management_object_ttl)
+            .to_bits(),
+        (-5.0_f64).to_bits()
     );
 }
 
 #[test]
 fn gateway_memory_ttl_default_60() {
     let settings = load("", &[]).unwrap();
-    assert_eq!(settings.gateway_memory_ttl, 60.0_f64);
+    assert_eq!((settings.gateway_memory_ttl).to_bits(), 60.0_f64.to_bits());
     assert_eq!(settings.gateway_redis_ttl, None);
     let explicit_null = load("general_settings:\n  user_api_key_cache_ttl: null\n", &[]).unwrap();
-    assert_eq!(explicit_null.gateway_memory_ttl, 60.0_f64);
+    assert_eq!(
+        (explicit_null.gateway_memory_ttl).to_bits(),
+        60.0_f64.to_bits()
+    );
     assert_eq!(explicit_null.gateway_redis_ttl, None);
 }
 
 #[test]
 fn user_ttl_updates_both_tiers() {
     let settings = load("general_settings:\n  user_api_key_cache_ttl: 30\n", &[]).unwrap();
-    assert_eq!(settings.gateway_memory_ttl, 30.0_f64);
+    assert_eq!((settings.gateway_memory_ttl).to_bits(), 30.0_f64.to_bits());
     assert_eq!(settings.gateway_redis_ttl, Some(30.0_f64));
     let fractional = load("general_settings:\n  user_api_key_cache_ttl: 30.5\n", &[]).unwrap();
-    assert_eq!(fractional.gateway_memory_ttl, 30.5_f64);
+    assert_eq!(
+        (fractional.gateway_memory_ttl).to_bits(),
+        30.5_f64.to_bits()
+    );
     assert_eq!(fractional.gateway_redis_ttl, Some(30.5_f64));
     let text = load("general_settings:\n  user_api_key_cache_ttl: \"30\"\n", &[]).unwrap();
-    assert_eq!(text.gateway_memory_ttl, 30.0_f64);
+    assert_eq!((text.gateway_memory_ttl).to_bits(), 30.0_f64.to_bits());
     assert_eq!(text.gateway_redis_ttl, Some(30.0_f64));
 }
 
 #[test]
 fn user_ttl_none_leaves_defaults() {
     let settings = load("general_settings:\n  user_api_key_cache_ttl: null\n", &[]).unwrap();
-    assert_eq!(settings.gateway_memory_ttl, 60.0_f64);
+    assert_eq!((settings.gateway_memory_ttl).to_bits(), 60.0_f64.to_bits());
     assert_eq!(settings.gateway_redis_ttl, None);
 }
 
 #[test]
 fn user_ttl_zero_negative_fractional() {
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: 0\n").unwrap(),
-        0.0_f64
+        (ttl("general_settings:\n  user_api_key_cache_ttl: 0\n").unwrap()).to_bits(),
+        0.0_f64.to_bits()
     );
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: -2.5\n").unwrap(),
-        -2.5_f64
+        (ttl("general_settings:\n  user_api_key_cache_ttl: -2.5\n").unwrap()).to_bits(),
+        (-2.5_f64).to_bits()
     );
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: 0.25\n").unwrap(),
-        0.25_f64
+        (ttl("general_settings:\n  user_api_key_cache_ttl: 0.25\n").unwrap()).to_bits(),
+        0.25_f64.to_bits()
     );
 }
 

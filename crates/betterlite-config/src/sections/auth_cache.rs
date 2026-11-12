@@ -119,6 +119,29 @@ fn seconds_from_integer(path: &str, parsed: i64) -> Result<f64, ConfigError> {
         })
 }
 
+// the YAML scalar reduced to the value a cache setting reads, with bools and non-scalars rejected
+enum NumericScalar {
+    Whole(i64),
+    Fractional(f64),
+    Written(String),
+}
+
+fn numeric_scalar(raw: RawScalar, path: &str) -> Result<NumericScalar, ConfigError> {
+    match raw {
+        RawScalar::Integer(value) => Ok(NumericScalar::Whole(value)),
+        RawScalar::Float(value) => Ok(NumericScalar::Fractional(value)),
+        RawScalar::Text(text) => Ok(NumericScalar::Written(text)),
+        RawScalar::Boolean(value) => Err(ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value,
+        }),
+        RawScalar::Other(_) => Err(ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: false,
+        }),
+    }
+}
+
 fn parse_ttl(raw: RawScalar) -> Result<f64, ConfigError> {
     let seconds = match raw {
         RawScalar::Integer(value) => seconds_from_integer(TTL_PATH, value)?,
@@ -155,32 +178,26 @@ fn checked_seconds(seconds: f64) -> Result<f64, ConfigError> {
 }
 
 fn parse_max_size(raw: RawScalar) -> Result<usize, ConfigError> {
-    let value = match raw {
-        RawScalar::Integer(value) => value,
-        RawScalar::Float(value) => integral_float(value)
-            .ok_or_else(|| setting_error(MAX_SIZE_PATH, &SettingError::MaxSize))?,
-        RawScalar::Text(text) => {
+    let scalar = numeric_scalar(raw, MAX_SIZE_PATH)?;
+    let whole = whole_size(scalar)?;
+    positive_size(whole)
+}
+
+// the scalar reduced to a whole number, so only a positive one becomes a cache size
+fn whole_size(scalar: NumericScalar) -> Result<i64, ConfigError> {
+    match scalar {
+        NumericScalar::Whole(value) => Ok(value),
+        NumericScalar::Fractional(value) => integral_float(value)
+            .ok_or_else(|| setting_error(MAX_SIZE_PATH, &SettingError::MaxSize)),
+        NumericScalar::Written(text) => {
             text.trim()
                 .parse::<i64>()
                 .map_err(|source| ConfigError::InvalidInteger {
                     path: MAX_SIZE_PATH.to_owned(),
                     source,
-                })?
+                })
         }
-        RawScalar::Boolean(value) => {
-            return Err(ConfigError::InvalidScalar {
-                path: MAX_SIZE_PATH.to_owned(),
-                value,
-            });
-        }
-        RawScalar::Other(_) => {
-            return Err(ConfigError::InvalidScalar {
-                path: MAX_SIZE_PATH.to_owned(),
-                value: false,
-            });
-        }
-    };
-    positive_size(value)
+    }
 }
 
 fn positive_size(value: i64) -> Result<usize, ConfigError> {

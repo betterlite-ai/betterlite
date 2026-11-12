@@ -422,6 +422,28 @@ async fn single_delete_partition_and_result() {
     );
 }
 
+#[test]
+fn single_pre_call_delete_partition_and_result() {
+    let fixture = recording_cache();
+    let queued = fixture.cache.delete_pre_call(&hex_key("g")).unwrap();
+    assert!(queued.is_none());
+    assert_eq!(fixture.operations(), ["key:delete_pre_call"]);
+    let ordinary_key = CacheKey::Tag("gone").render();
+    let ordinary = fixture.cache.delete_pre_call(&ordinary_key).unwrap();
+    assert!(ordinary.is_none());
+    assert_eq!(
+        fixture.operations(),
+        ["key:delete_pre_call", "ordinary:delete_pre_call"]
+    );
+}
+
+#[test]
+fn delete_pre_call_without_batch_returns_none() {
+    let cache = local_cache(Some(60.0_f64));
+    let queued = cache.delete_pre_call("tag:gone").unwrap();
+    assert!(queued.is_none());
+}
+
 #[tokio::test]
 async fn batch_delete_attempts_both_empty_groups() {
     let fixture = recording_cache();

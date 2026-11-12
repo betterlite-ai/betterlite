@@ -1,3 +1,5 @@
+use std::any::type_name;
+
 use betterlite_cache::codec::{CacheCodec, CodecError};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
@@ -68,4 +70,19 @@ where
     let wire = serde_json::to_value(payload).map_err(PayloadError::Json)?;
     let value = serde_json::from_value::<CacheValue>(wire).map_err(PayloadError::Json)?;
     Ok(CacheCodec::decode(Some(&value)))
+}
+
+// the wrapper logs one error line when a nonnull hit decodes to a miss, after the codec's own warning
+pub(super) fn decode_typed<Model>(
+    payload: &Json,
+    operation: ReadOperation,
+) -> Result<Option<Model>, PayloadError>
+where
+    Model: DeserializeOwned,
+{
+    let decoded = decode::<Model>(payload)?;
+    if decoded.is_none() {
+        log_decode_miss(operation, type_name::<Model>());
+    }
+    Ok(decoded)
 }

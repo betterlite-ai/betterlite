@@ -104,11 +104,11 @@ async fn accept(listener: TcpListener, commands: Arc<Mutex<Vec<Command>>>) {
             return;
         };
         let recorded = Arc::clone(&commands);
-        connections.spawn(async move { serve(stream, recorded).await });
+        connections.spawn(async move { serve(stream, &recorded).await });
     }
 }
 
-async fn serve(stream: TcpStream, commands: Arc<Mutex<Vec<Command>>>) {
+async fn serve(stream: TcpStream, commands: &Mutex<Vec<Command>>) {
     let (read_half, mut write_half) = split(stream);
     let mut reader = BufReader::new(read_half);
     while let Some(args) = read_command(&mut reader).await {
@@ -116,7 +116,7 @@ async fn serve(stream: TcpStream, commands: Arc<Mutex<Vec<Command>>>) {
             return;
         };
         let argument_count = args.len();
-        lock(&commands).push(Command {
+        lock(commands).push(Command {
             name: name.clone(),
             args,
         });
