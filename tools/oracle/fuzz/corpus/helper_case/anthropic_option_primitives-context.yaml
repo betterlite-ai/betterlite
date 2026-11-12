@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-option-primitives-context
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: context_compaction_edit
+        values:
+          - {edits: null}
+          - [{type: compaction, compact_threshold: 200000}]
+env: {}
+compare: {ignore: []}
