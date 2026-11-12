@@ -42,6 +42,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "batch_records"
+path = "fuzz_targets/batch_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bytez_reply"
 path = "fuzz_targets/bytez_reply.rs"
 test = false

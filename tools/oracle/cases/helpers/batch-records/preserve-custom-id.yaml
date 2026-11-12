@@ -1,0 +1,9 @@
+kind: helper
+name: preserve-custom-id
+call:
+  batch_records:
+    function: replace_model
+    file: {kind: utf8, text: "{\"custom_id\": \"req-\u2013-123\", \"body\": {\"model\": \"alias\"}}\n"}
+    new_model_name: gpt-4o-mini
+env: {}
+compare: {ignore: []}
