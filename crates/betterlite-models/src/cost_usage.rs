@@ -8,6 +8,7 @@ pub mod error;
 mod field;
 pub mod interactions;
 pub mod modality_projection;
+pub mod server_tool_projection;
 mod token_count;
 pub mod transcription;
 
