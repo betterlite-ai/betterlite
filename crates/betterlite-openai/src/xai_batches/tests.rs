@@ -392,6 +392,9 @@ fn creation_times_parse_rfc3339_and_date_only(#[case] create_time: &str, #[case]
 
 #[rstest]
 #[case::invalid("not-a-date")]
+#[case::seconds("1704153600")]
+#[case::milliseconds("1704153600000")]
+#[case::basic_date("20240102")]
 #[case::empty("")]
 fn an_unparsable_creation_time_is_zero(#[case] create_time: &str) {
     let source = format!(r#"{{"batch_id":"b","create_time":"{create_time}"}}"#);
@@ -402,6 +405,7 @@ fn an_unparsable_creation_time_is_zero(#[case] create_time: &str) {
 #[rstest]
 #[case::missing(r#"{"batch_id":"b"}"#)]
 #[case::invalid(r#"{"batch_id":"b","create_time":"nope","expire_time":"later"}"#)]
+#[case::numeric(r#"{"batch_id":"b","create_time":"1704153600","expire_time":"1704153600000"}"#)]
 fn a_missing_or_invalid_date_is_zero_for_creation_and_null_elsewhere(#[case] source: &str) {
     let projected = to_litellm_batch(&batch(source), DEFAULT_BATCH_ENDPOINT);
     assert_eq!(projected.created_at, 0);

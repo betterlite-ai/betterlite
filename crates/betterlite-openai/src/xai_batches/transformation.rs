@@ -200,7 +200,9 @@ fn to_unix_timestamp(value: Option<&str>) -> Option<i64> {
     if let Ok(moment) = DateTime::parse_str_rfc3339(text) {
         return Some(moment.timestamp_tz());
     }
-    Date::parse_str(text).ok().map(|date| date.timestamp())
+    Date::parse_str_rfc3339(text)
+        .ok()
+        .map(|date| date.timestamp())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
