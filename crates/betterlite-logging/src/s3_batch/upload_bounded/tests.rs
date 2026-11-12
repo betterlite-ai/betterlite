@@ -31,6 +31,8 @@ struct ScriptedClient {
     replies: Mutex<VecDeque<(u16, String)>>,
     observed_uploads: Mutex<Vec<bool>>,
     watcher: Mutex<Option<Weak<S3BatchLogger>>>,
+    in_flight: AtomicUsize,
+    peak: AtomicUsize,
 }
 
 impl ScriptedClient {
@@ -44,6 +46,8 @@ impl ScriptedClient {
             ),
             observed_uploads: Mutex::new(Vec::new()),
             watcher: Mutex::new(None),
+            in_flight: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
         })
     }
 
@@ -81,7 +85,15 @@ impl S3HttpClient for ScriptedClient {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or((200, String::new()));
+        let running = self
+            .in_flight
+            .fetch_add(1, Ordering::SeqCst)
+            .saturating_add(1);
+        self.peak.fetch_max(running, Ordering::SeqCst);
         Box::pin(async move {
+            yield_now().await;
+            yield_now().await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
             Ok(S3Response {
                 status: reply.0,
                 body: reply.1.into_bytes(),
@@ -203,6 +215,29 @@ async fn bounded_by_limit() {
     .take(6);
     join_all(uploads).await;
     assert_eq!(peak.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn flush_uploads_are_bounded_by_the_window() {
+    let client = ScriptedClient::with_replies(&[]);
+    let logger = logger(
+        &source(r#","s3_max_concurrent_uploads":2"#),
+        Arc::clone(&client),
+        None,
+    );
+    logger
+        .queue
+        .state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .entries
+        .extend(["a", "b", "c", "d", "e", "f"].map(element));
+    logger
+        .flush_queue()
+        .await
+        .expect("every upload is delivered");
+    assert_eq!(client.observed_uploads().len(), 6);
+    assert_eq!(client.peak.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
