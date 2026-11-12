@@ -226,11 +226,15 @@ fn vector_store_call(call: &VectorStoreCall, prices: &ToolPrices) -> Fee {
 fn computer_use_call(call: &ComputerUseCall, prices: &ToolPrices) -> Fee {
     let info = optional_info(call.model_info.as_ref())?;
     let provider = call.provider.as_deref();
-    let tokens = TokenCounts {
-        input_tokens: call.input_tokens,
-        output_tokens: call.output_tokens,
-    };
-    outcome(computer_use_fee(tokens, provider, info.as_ref(), prices))
+    outcome(computer_use_fee(
+        TokenCounts {
+            input_tokens: call.input_tokens,
+            output_tokens: call.output_tokens,
+        },
+        provider,
+        info.as_ref(),
+        prices,
+    ))
 }
 
 fn code_interpreter_call(call: &CodeInterpreterCall) -> Fee {
