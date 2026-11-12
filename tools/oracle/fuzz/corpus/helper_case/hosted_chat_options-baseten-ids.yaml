@@ -4,7 +4,8 @@ call:
   hosted_chat_options:
     scenarios:
       - calls:
-          - op: baseten_models
-            models: [baseten/abcd1234, baseten/abcd123, baseten/baseten/1234abcd]
+          - {op: map, host: baseten, model: baseten/abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd123, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/baseten/1234abcd, config: {}, params: []}
 env: {}
 compare: {ignore: []}

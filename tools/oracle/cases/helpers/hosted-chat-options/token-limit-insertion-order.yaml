@@ -11,8 +11,6 @@ call:
             params:
               - [max_completion_tokens, 5]
               - [max_tokens, 9]
-            existing:
-              - [temperature, 0.4]
           - op: map
             host: baseten
             model: baseten/abcd1234

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
 pub const SUPPORTED_PARAMS: &[&str] = &[
     "max_tokens",
     "max_completion_tokens",
@@ -17,7 +16,6 @@ pub const SUPPORTED_PARAMS: &[&str] = &[
     "frequency_penalty",
     "stream_options",
 ];
-
 // B668's class snapshot: every constructor field starts absent and only a supplied non-null value is kept
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]

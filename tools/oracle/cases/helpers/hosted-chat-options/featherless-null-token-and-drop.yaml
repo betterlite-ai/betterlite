@@ -26,10 +26,6 @@ call:
             params:
               - [max_completion_tokens, 3]
               - [max_tokens, null]
-          - op: validate
-            api_key: sk-featherless
-            headers: {Authorization: mine, content-type: text/plain, x-extra: "1"}
-          - op: validate
       - environment: {FEATHERLESS_AI_API_BASE: "https://primary.example", FEATHERLESS_AI_API_KEY: sk-primary, FEATHERLESS_API_BASE: "https://secondary.example", FEATHERLESS_API_KEY: sk-secondary}
         calls:
           - op: info

@@ -4,21 +4,19 @@ call:
   hosted_chat_options:
     scenarios:
       - calls:
-          - op: baseten_models
-            models:
-              - baseten/abcd1234
-              - abcd1234
-              - baseten/ABCD1234
-              - baseten/abc1234
-              - baseten/abcd12345
-              - baseten/abcd-123
-              - baseten/abcd_123
-              - baseten/
-              - ""
-              - baseten/baseten/abcd1234
-              - abcd1234xyz
-              - baseten/абвг1234
-              - "12345678"
-              - baseten/1234abcd
+          - {op: map, host: baseten, model: baseten/abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/ABCD1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abc1234, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd12345, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd-123, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/abcd_123, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/, config: {}, params: []}
+          - {op: map, host: baseten, model: "", config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/baseten/abcd1234, config: {}, params: []}
+          - {op: map, host: baseten, model: abcd1234xyz, config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/абвг1234, config: {}, params: []}
+          - {op: map, host: baseten, model: "12345678", config: {}, params: []}
+          - {op: map, host: baseten, model: baseten/1234abcd, config: {}, params: []}
 env: {}
 compare: {ignore: []}

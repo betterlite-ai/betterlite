@@ -1,15 +1,26 @@
-use betterlite_config::sections::hosted_chat_settings::Settings as HostedSettings;
+use crate::openai_base_config::Headers;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-use crate::openai_base_config::Headers;
-
-use super::error::HostedChatOptionsError;
-
-pub const DEFAULT_API_BASE: &str = "https://api.featherless.ai/v1";
-
+use thiserror::Error;
+#[derive(Debug, Error)]
+pub enum HostedChatOptionsError {
+    #[error("Featherless AI does not support the {name} parameter")]
+    UnsupportedParam { name: String },
+    #[error("Missing Featherless AI API Key")]
+    MissingApiKey,
+}
+impl HostedChatOptionsError {
+    // UnsupportedParamsError carries 400; the pinned missing-key check raises a bare ValueError with no status
+    #[must_use]
+    pub const fn status_code(&self) -> Option<u16> {
+        match self {
+            Self::UnsupportedParam { .. } => Some(400),
+            Self::MissingApiKey => None,
+        }
+    }
+}
 pub const SUPPORTED_PARAMS: &[&str] = &[
     "stream",
     "frequency_penalty",
@@ -24,7 +35,6 @@ pub const SUPPORTED_PARAMS: &[&str] = &[
     "temperature",
     "top_p",
 ];
-
 // B668's class snapshot: every constructor field starts absent and only a supplied non-null value is kept
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -44,14 +54,12 @@ pub struct FeatherlessSettings {
     pub tool_choice: Option<Value>,
     pub tools: Option<Value>,
 }
-
 // LiteLLM drops rejected tool options only when the call argument or the loaded global is exactly true
 #[derive(Debug, Clone, Copy)]
 pub struct DropParams {
     pub argument: bool,
     pub global: bool,
 }
-
 pub fn map_openai_params(
     non_default: &IndexMap<String, Value>,
     existing: &mut IndexMap<String, Value>,
@@ -79,44 +87,6 @@ pub fn map_openai_params(
     }
     Ok(())
 }
-
-// LiteLLM chains the explicit value, each environment alias, then the default, skipping an empty one at every step
-#[must_use]
-pub fn resolve_provider_info(
-    settings: &HostedSettings,
-    api_base: Option<&str>,
-    api_key: Option<&SecretString>,
-) -> (String, Option<SecretString>) {
-    let environment_base = settings
-        .featherless_ai_api_base
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .or_else(|| {
-            settings
-                .featherless_api_base
-                .as_deref()
-                .filter(|value| !value.is_empty())
-        });
-    let base = api_base
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-        .or_else(|| environment_base.map(str::to_owned))
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
-    let environment_key = settings
-        .featherless_ai_api_key
-        .as_ref()
-        .filter(|key| !key.expose_secret().is_empty())
-        .or(settings
-            .featherless_api_key
-            .as_ref()
-            .filter(|key| !key.expose_secret().is_empty()));
-    let key = api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .cloned()
-        .or_else(|| environment_key.cloned());
-    (base, key)
-}
-
 pub fn validate_environment(
     api_key: Option<&SecretString>,
     headers: Option<Headers>,

@@ -10,12 +10,11 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::aiml;
 use super::aliases::CompatibleChatAlias;
 use super::baseten::{self, BasetenSettings};
 use super::cerebras::{self, CerebrasSettings};
-use super::error::HostedChatOptionsError;
-use super::featherless::{self, DropParams, FeatherlessSettings};
+use super::featherless::{self, DropParams, FeatherlessSettings, HostedChatOptionsError};
+use super::identity;
 use super::map_renaming_token_limit;
 use crate::base_helpers::provider_config;
 use crate::openai_base_config::Headers;
@@ -465,8 +464,7 @@ fn featherless_resolves_its_identity_chain(
 ) {
     let settings = hosted(entries);
     let key_override = explicit_key.map(secret);
-    let (base, key) =
-        featherless::resolve_provider_info(&settings, explicit_base, key_override.as_ref());
+    let (base, key) = identity::featherless(&settings, explicit_base, key_override.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
@@ -557,7 +555,7 @@ fn aiml_resolves_its_chat_identity(
 ) {
     let settings = hosted(entries);
     let explicit_key = explicit_base.map(|_| secret("sk-explicit"));
-    let (base, key) = aiml::resolve_provider_info(&settings, explicit_base, explicit_key.as_ref());
+    let (base, key) = identity::aiml(&settings, explicit_base, explicit_key.as_ref());
     assert_eq!(base, expected_base);
     assert_eq!(
         key.as_ref().map(|secret| secret.expose_secret().to_owned()),
@@ -593,8 +591,8 @@ fn compatible_aliases_share_the_b1425_identity(
         ("OPENAI_LIKE_API_BASE", "https://like.example/v1"),
         ("OPENAI_LIKE_API_KEY", "sk-like"),
     ]);
-    let (tag, base, key) = alias.provider_info(&settings, None, None);
-    assert_eq!(tag, provider);
+    let (base, key) = settings.resolve(None, None);
+    assert_eq!(alias.provider(), provider);
     assert_eq!(base.as_deref(), Some("https://like.example/v1"));
     assert_eq!(key.expose_secret(), "sk-like");
 }

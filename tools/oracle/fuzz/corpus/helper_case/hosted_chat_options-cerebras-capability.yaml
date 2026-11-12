@@ -4,10 +4,12 @@ call:
   hosted_chat_options:
     scenarios:
       - calls:
-          - op: supported
+          - op: map
             host: cerebras
             model: seed-capability-model
             supports_reasoning: true
+            config: {reasoning_effort: low}
+            params: []
           - op: map
             host: cerebras
             model: seed-capability-model
