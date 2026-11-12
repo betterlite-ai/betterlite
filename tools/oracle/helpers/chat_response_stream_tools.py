@@ -30,6 +30,8 @@ class DeltaFields(TypedDict):
     content: NotRequired[str | None]
     reasoning_content: NotRequired[str | None]
     thinking_blocks: NotRequired[Json]
+    function_call: NotRequired[dict[str, Json] | None]
+    tool_calls: NotRequired[list[dict[str, Json]] | None]
 
 
 class ChoiceFields(TypedDict):
@@ -134,6 +136,8 @@ def delta_view(fields: DeltaFields) -> Delta:
     return Delta(
         content=fields.get("content"),
         reasoning_content=fields.get("reasoning_content"),
+        function_call=fields.get("function_call"),
+        tool_calls=fields.get("tool_calls"),
         thinking_blocks=blocks,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L192
     )
 

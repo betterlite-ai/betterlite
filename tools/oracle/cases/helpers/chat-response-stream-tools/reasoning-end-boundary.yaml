@@ -19,8 +19,8 @@ call:
           - {choices: [{delta: {thinking_blocks: x}}]}
           - {choices: [{delta: {content: hi}}]}
           - {choices: [{delta: {content: ""}}]}
-          - {choices: [{delta: {function_call: {name: f}}}]}
-          - {choices: [{delta: {tool_calls: [{id: c}]}}]}
+          - {choices: [{delta: {function_call: {name: f, arguments: ""}}}]}
+          - {choices: [{delta: {tool_calls: [{id: c, function: {name: f, arguments: ""}}]}}]}
           - {choices: [{delta: {tool_calls: []}}]}
           - {choices: [{delta: {}, finish_reason: ""}]}
           - {choices: [{delta: {}, finish_reason: null}]}
