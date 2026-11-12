@@ -1,0 +1,93 @@
+kind: helper
+name: file-routing-ids-batch-response-encoding
+call:
+  file_routing_ids:
+    calls:
+      - function: encode_batch_response
+        model: m
+        response:
+          id: b
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: o
+          error_file_id: e
+      - function: encode_batch_response
+        model: m
+        response:
+          id: ""
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: o
+          error_file_id: e
+      - function: encode_batch_response
+        model: m
+        response:
+          id: b
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: null
+          error_file_id: null
+      - function: encode_batch_response
+        model: m
+        response:
+          id: b
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: ""
+          error_file_id: ""
+      - function: encode_batch_response
+        model: m
+        response:
+          id: b
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: ""
+          object: batch
+          status: completed
+          output_file_id: o
+          error_file_id: e
+      - function: encode_batch_response
+        model: m
+        response:
+          id: b
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: o
+          error_file_id: e
+          metadata:
+            k: v
+      - function: encode_batch_response
+        model: m
+        response:
+          id: batch_bGl0ZWxsbTpiO21vZGVsLG0
+          completion_window: 24h
+          created_at: 1
+          endpoint: /v1/chat/completions
+          input_file_id: i
+          object: batch
+          status: completed
+          output_file_id: o
+          error_file_id: e
+env: {}
+compare: {ignore: []}

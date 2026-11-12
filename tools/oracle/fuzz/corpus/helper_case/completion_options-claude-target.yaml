@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-target-seed
+call:
+  b5650: {function: claude_target, custom_llm_provider: bedrock, model: "arn:aws:bedrock:us-east-1:1:provisioned-model/x"}
+env: {}
+compare: {ignore: []}

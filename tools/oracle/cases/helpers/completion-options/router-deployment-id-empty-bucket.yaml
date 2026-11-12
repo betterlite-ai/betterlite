@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-router-deployment-id-empty-bucket
+call:
+  b5650: {function: deployment_id, kwargs: {litellm_metadata: [], metadata: {model_info: 0, other: 1}}}
+env: {}
+compare: {ignore: []}

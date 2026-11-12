@@ -163,6 +163,14 @@ fn assert_slot_and_empty_behavior() {
     assert!(empty_client.auth_headers().is_empty());
 }
 
+#[tokio::test]
+async fn after_unauthorized_defaults_to_false() {
+    let auth = TestAuth {
+        close_count: Arc::new(AtomicUsize::new(0)),
+    };
+    assert!(!auth.after_unauthorized().await);
+}
+
 struct TestAuth {
     close_count: Arc<AtomicUsize>,
 }
