@@ -1,14 +1,14 @@
 id: B5363
 milestone: M12 python
 title: Embedding optional params
-status: todo
+status: done
 depends_on: [B171, B206, B5362]
 file: tasks/B5363-embedding-optional-params.yaml
 covers:
   - "litellm/utils.py"
 parent: B157
 split_from: B157
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1351
