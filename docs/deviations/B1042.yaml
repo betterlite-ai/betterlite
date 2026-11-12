@@ -1,0 +1,18 @@
+task: B1042
+deviations:
+  - what: >-
+      canonical_provider_batch_id returns the input unchanged when a decoded managed id carries the
+      llm_batch_id or generic_response_id marker text without the marker and its colon.
+    why: >-
+      LiteLLM raises IndexError on that marker split, which the post-call hook turns into a 500 on a
+      provider batch id no working setup produces. The canonical id is only the reservation record key,
+      so the unchanged input keeps the save and pop lookups symmetric.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L177
+  - what: >-
+      The Redis reserve fallback warning is always logged at WARNING, including for a Redis circuit-breaker-open
+      error and for repeated Redis timeouts.
+    why: >-
+      LiteLLM's log_redis_failure drops a circuit-breaker-open error to DEBUG and throttles repeated timeout
+      failures; betterlite's transport error is opaque, so this slice cannot classify the failure, and B126
+      owns the Redis breaker and its failure classification.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L497

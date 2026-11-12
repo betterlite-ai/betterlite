@@ -38,8 +38,7 @@ pub fn resolve_enqueued_scopes(principal: &BatchEnqueuedPrincipal) -> Vec<BatchE
 
 // the source reads a positive int through a pydantic adapter and disables the scope, with a warning, on anything else
 fn read_metadata_limit(metadata: Option<&BTreeMap<String, JsonData>>) -> Option<i64> {
-    let values = metadata.filter(|values| !values.is_empty())?;
-    let raw = values.get(BATCH_ENQUEUED_LIMIT_KEY)?;
+    let raw = metadata?.get(BATCH_ENQUEUED_LIMIT_KEY)?;
     match raw {
         JsonData::Null => None,
         JsonData::Number(number) => match number.as_i64() {
