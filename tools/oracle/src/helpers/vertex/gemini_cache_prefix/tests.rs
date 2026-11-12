@@ -26,9 +26,9 @@ fn helper_seeds_select_gemini_cache_prefix() {
             .iter()
             .all(|seed| seed.call.operation == "gemini_cache_prefix")
     );
-    let decoded: Vec<Input> = seeds
-        .iter()
-        .map(|seed| serde_json::from_value(seed.call.input.clone()).unwrap())
-        .collect();
-    assert_eq!(decoded.len(), seeds.len());
+    assert!(
+        seeds
+            .iter()
+            .all(|seed| { serde_json::from_value::<Input>(seed.call.input.clone()).is_ok() })
+    );
 }
