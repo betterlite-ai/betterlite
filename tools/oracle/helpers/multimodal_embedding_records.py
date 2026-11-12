@@ -81,6 +81,7 @@ def answer_entry(answer: EmbeddingResponse) -> Json:
         usage.prompt_tokens_details,
     )
     seconds = None if details is None else details.get("video_length_seconds")
+    video_length = None if seconds is None else format(Decimal(str(seconds)).normalize(), "f")
     return {
         "model": answer.model,
         "data": records,
@@ -91,9 +92,7 @@ def answer_entry(answer: EmbeddingResponse) -> Json:
             "prompt_tokens_details": {
                 "character_count": None if details is None else details.get("character_count"),
                 "image_count": None if details is None else details.get("image_count"),
-                "video_length_seconds": (
-                    None if seconds is None else format(Decimal(str(seconds)).normalize(), "f")
-                ),
+                "video_length_seconds": video_length,
             },
         },
     }
