@@ -63,7 +63,7 @@ async fn call(
         voice: "alloy",
         options,
     };
-    let outcome = audio_speech(
+    let prepared = audio_speech(
         SpeechCall {
             request,
             connection,
@@ -71,8 +71,11 @@ async fn call(
         },
         &mut recorder,
         fixture,
-    )
-    .await;
+    );
+    let outcome = match prepared {
+        Ok(pending) => pending.await,
+        Err(error) => Err(error),
+    };
     (outcome, recorder)
 }
 
@@ -392,7 +395,7 @@ async fn speech_logging_projection() {
         voice: "alloy",
         options: &options,
     };
-    let outcome = audio_speech(
+    let prepared = audio_speech(
         SpeechCall {
             request,
             connection: connection(),
@@ -403,8 +406,8 @@ async fn speech_logging_projection() {
             env: &env,
         },
         &wired_fixture,
-    )
-    .await;
+    );
+    let outcome = prepared.expect("the logging hook accepts the call").await;
     outcome.expect("the 200 reply is a success");
     let recorded = state
         .model_call_details

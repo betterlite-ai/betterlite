@@ -56,7 +56,7 @@ async fn exercise(
         connection: input::connection(&input.client)?,
         aspeech: input.client.aspeech,
     };
-    match audio_speech(call, recorder, fixture).await {
+    match audio_speech(call, recorder, fixture)?.await {
         Ok(response) => result_view(response, BODY_LIMIT).await,
         Err(error) => Ok(failure_view(&error)),
     }

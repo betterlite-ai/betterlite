@@ -64,9 +64,6 @@ impl Fixture {
         })
     }
 
-    pub(super) fn request(&self) -> Option<&OutboundRequest> {
-        self.seen.get()
-    }
 }
 
 impl SpeechTransport for Fixture {
@@ -84,7 +81,7 @@ impl SpeechTransport for Fixture {
 }
 
 pub(super) fn request_view(fixture: &Fixture, extra_headers: &IndexMap<String, String>) -> Value {
-    let Some(request) = fixture.request() else {
+    let Some(request) = fixture.seen.get() else {
         return Value::Null;
     };
     let header = |name: &str| {

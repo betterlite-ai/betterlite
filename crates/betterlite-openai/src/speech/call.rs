@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use http::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
@@ -59,35 +61,46 @@ fn outbound_request(
 }
 
 // LiteLLM's audio_speech plus async_audio_speech: aspeech is True picks the async client, every other value the sync one.
-pub async fn audio_speech<T: SpeechTransport>(
+// The returned future holds no logging borrow, so it stays Send for the request task that awaits it.
+pub fn audio_speech<'call, T>(
     call: SpeechCall<'_>,
     log: &mut dyn SpeechLogger,
-    transport: &T,
-) -> Result<SpeechResponse, SpeechError> {
-    let kind = if call.aspeech == Some(true) {
+    transport: &'call T,
+) -> Result<impl Future<Output = Result<SpeechResponse, SpeechError>> + Send + 'call, SpeechError>
+where
+    T: SpeechTransport,
+{
+    let SpeechCall {
+        request,
+        connection,
+        aspeech,
+    } = call;
+    let kind = if aspeech == Some(true) {
         ClientKind::Async
     } else {
         ClientKind::Sync
     };
-    let client = select_client(&call.connection, kind)?;
-    let request = outbound_request(&client, &call.request)?;
-    let body = logged_body(&call.request)?;
+    let client = select_client(&connection, kind)?;
+    let outbound = outbound_request(&client, &request)?;
+    let body = logged_body(&request)?;
     log.pre_call(SpeechLogRecord {
-        input: call.request.input,
+        input: request.input,
         api_base: client.base_url.as_str(),
         body,
     })
     .map_err(|source| SpeechError::Logging { source })?;
-    let reply = transport
-        .send(request)
-        .await
-        .map_err(|source| SpeechError::Transport { source })?;
-    if !(200..300).contains(&reply.status) {
-        let body = read_error_body(reply.body).await;
-        return Err(SpeechError::Status(Box::new(StatusError::from_response(
-            reply.status,
-            &body,
-        ))));
-    }
-    Ok(SpeechResponse::from(reply))
+    Ok(async move {
+        let reply = transport
+            .send(outbound)
+            .await
+            .map_err(|source| SpeechError::Transport { source })?;
+        if !(200..300).contains(&reply.status) {
+            let error_body = read_error_body(reply.body).await;
+            return Err(SpeechError::Status(Box::new(StatusError::from_response(
+                reply.status,
+                &error_body,
+            ))));
+        }
+        Ok(SpeechResponse::from(reply))
+    })
 }

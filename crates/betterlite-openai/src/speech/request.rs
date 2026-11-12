@@ -34,7 +34,7 @@ impl SpeechFormat {
 }
 
 // The optional parameters LiteLLM hands audio.speech.create unchanged; extra_headers is an SDK kwarg, not a body field.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SpeechOptions {
     #[serde(skip_serializing_if = "Option::is_none")]

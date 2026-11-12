@@ -30,7 +30,7 @@ pub trait SpeechTransport: Sync {
 
 impl SpeechTransport for ProxiedClient {
     async fn send(&self, request: OutboundRequest) -> Result<SpeechReply, TransportError> {
-        let response = ProxiedClient::send_following(self, request).await?;
+        let response = Self::send_following(self, request).await?;
         Ok(SpeechReply {
             status: response.response.status().as_u16(),
             headers: response.response.headers().clone(),
@@ -45,7 +45,7 @@ pub struct SpeechResponse {
     pub content_type: Option<String>,
     pub headers: IndexMap<String, String>,
     pub additional_headers: AdditionalHeaders,
-    body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
+    pub body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
 }
 
 impl From<SpeechReply> for SpeechResponse {
@@ -68,14 +68,14 @@ impl SpeechResponse {
     pub async fn content(mut self, limit: usize) -> Result<Vec<u8>, SpeechError> {
         let mut collected = Vec::new();
         while let Some(chunk) = self.body.next().await {
-            let chunk = chunk.map_err(|source| SpeechError::Body { source })?;
-            let Some(total) = collected.len().checked_add(chunk.len()) else {
+            let bytes = chunk.map_err(|source| SpeechError::Body { source })?;
+            let Some(total) = collected.len().checked_add(bytes.len()) else {
                 return Err(SpeechError::TooLarge);
             };
             if total > limit {
                 return Err(SpeechError::TooLarge);
             }
-            collected.extend_from_slice(&chunk);
+            collected.extend_from_slice(&bytes);
         }
         Ok(collected)
     }
