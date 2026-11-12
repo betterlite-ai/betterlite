@@ -1,0 +1,38 @@
+kind: helper
+name: tool-choices
+call:
+  responses_codex_tools:
+    operation: tool_choices
+    choices:
+      - null
+      - none
+      - auto
+      - required
+      - sometimes
+      - 3
+      - {type: auto}
+      - {type: none}
+      - {type: required}
+      - {type: tool}
+      - {type: any}
+      - {type: auto, function: {name: f}, extra: 1}
+      - {type: function, name: f, extra: 1}
+      - {type: function}
+      - {type: function, name: ""}
+      - {type: function, function: {name: ""}}
+      - {type: custom, name: top, custom: {name: inner}}
+      - {type: custom, custom: {name: inner}}
+      - {type: custom, name: "", custom: {name: inner}}
+      - {type: custom}
+      - {type: custom, name: edit}
+      - {type: function, function: {name: f}}
+      - {type: custom, function: {name: edit}}
+      - {type: tool, function: {name: f}}
+      - {type: mystery, a: 1}
+      - {a: 1}
+      - {type: file_search, extra: true}
+      - {type: mcp, server_label: s}
+      - {type: mcp}
+env: {}
+compare:
+  ignore: []
