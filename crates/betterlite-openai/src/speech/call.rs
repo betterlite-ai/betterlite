@@ -8,12 +8,11 @@ use url::Url;
 
 use crate::files::error::StatusError;
 use crate::files::stream::read_error_body;
-use crate::files::transport::FileTransport;
 use crate::speech::client::{ClientKind, SpeechClient, SpeechConnection, select_client};
 use crate::speech::error::SpeechError;
 use crate::speech::logging::{SpeechLogRecord, SpeechLogger};
 use crate::speech::request::{SpeechRequest, logged_body, wire_body};
-use crate::speech::result::SpeechResponse;
+use crate::speech::result::{SpeechResponse, SpeechTransport};
 
 pub struct SpeechCall<'call> {
     pub request: SpeechRequest<'call>,
@@ -83,7 +82,7 @@ pub fn audio_speech<'call, T>(
     transport: &'call T,
 ) -> Result<impl Future<Output = Result<SpeechResponse, SpeechError>> + Send + 'call, SpeechError>
 where
-    T: FileTransport,
+    T: SpeechTransport,
 {
     let SpeechCall {
         request,
@@ -106,7 +105,7 @@ where
     .map_err(|source| SpeechError::Logging { source })?;
     Ok(async move {
         let reply = transport
-            .send_stream(outbound)
+            .send(outbound)
             .await
             .map_err(|source| SpeechError::Transport { source })?;
         if !(200..300).contains(&reply.status) {

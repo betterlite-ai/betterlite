@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
@@ -15,9 +14,10 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::files::transport::{FileTransport, StreamReply};
+use crate::files::transport::StreamReply;
 use crate::speech::client::SpeechConnection;
 use crate::speech::logging::{SpeechLogRecord, SpeechLogger};
+use crate::speech::result::SpeechTransport;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Reply {
@@ -95,34 +95,10 @@ impl Fixture {
             body: stream::iter(self.reply.chunks.clone().into_iter().map(Ok)).boxed(),
         })
     }
-
-    fn buffered_reply(&self) -> Result<UpstreamResponse, TransportError> {
-        if self.broken {
-            return Err(TransportError::Closed);
-        }
-        let mut body = Vec::new();
-        for chunk in &self.reply.chunks {
-            body.extend_from_slice(chunk);
-        }
-        Ok(UpstreamResponse {
-            status: self.reply.status,
-            headers: self.headers.clone(),
-            body,
-        })
-    }
 }
 
-impl FileTransport for Fixture {
-    fn send_buffered(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.record(request);
-        let reply = self.buffered_reply();
-        async move { reply }
-    }
-
-    fn send_stream(
+impl SpeechTransport for Fixture {
+    fn send(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {

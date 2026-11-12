@@ -1,13 +1,13 @@
 use std::future::{Future, ready};
 use std::sync::OnceLock;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
-use betterlite_openai::files::transport::{FileTransport, StreamReply};
+use betterlite_openai::files::transport::StreamReply;
 use betterlite_openai::speech::logging::{SpeechLogRecord, SpeechLogger};
+use betterlite_openai::speech::result::SpeechTransport;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
@@ -66,24 +66,8 @@ impl Fixture {
     }
 }
 
-impl FileTransport for Fixture {
-    fn send_buffered(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        drop(self.seen.set(request));
-        let mut body = Vec::new();
-        for chunk in &self.chunks {
-            body.extend_from_slice(chunk);
-        }
-        ready(Ok(UpstreamResponse {
-            status: self.status,
-            headers: self.headers.clone(),
-            body,
-        }))
-    }
-
-    fn send_stream(
+impl SpeechTransport for Fixture {
+    fn send(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
