@@ -190,19 +190,15 @@ fn heuristics_timeout<L>(lookup: &L) -> Result<Duration, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let Some(text) = lookup.lookup(TIMEOUT_VARIABLE) else {
-        return Ok(DEFAULT_TIMEOUT);
-    };
-    let Some(seconds) = betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)? else {
-        return Ok(DEFAULT_TIMEOUT);
-    };
-    if seconds <= Decimal::ZERO {
-        return Err(invalid_timeout());
+    let text = lookup.lookup(TIMEOUT_VARIABLE).unwrap_or_default();
+    match betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)? {
+        None => Ok(DEFAULT_TIMEOUT),
+        Some(seconds) if seconds > Decimal::ZERO => seconds
+            .to_f64()
+            .and_then(|value| Duration::try_from_secs_f64(value).ok())
+            .ok_or_else(invalid_timeout),
+        Some(_) => Err(invalid_timeout()),
     }
-    seconds
-        .to_f64()
-        .and_then(|value| Duration::try_from_secs_f64(value).ok())
-        .ok_or_else(invalid_timeout)
 }
 
 fn invalid_timeout() -> ConfigError {
