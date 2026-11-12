@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-blocks-chat-no-fields
+call:
+  b3545: {"function": "blocks", "protocol": "chat", "response": {"choices": [{"message": {}}]}}
+env: {}
+compare:
+  ignore: []
