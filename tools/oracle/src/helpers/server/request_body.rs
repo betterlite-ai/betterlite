@@ -168,14 +168,18 @@ fn read_facts(request: &WireRequest, max_repair_bytes: Option<u64>) -> HelperRes
     let facts = request.clone().into_input()?;
     let settings = Settings { max_repair_bytes };
     match read_request_body(&facts, &settings, &ApiLimits::default()) {
-        Ok(result) => Ok(serde_json::to_value(ReadFacts {
-            body: result.body,
-            body_read: result.body_read,
-            cached: result.cached_body(),
-            raw: result
+        Ok(result) => {
+            let cached = result.cached_body();
+            let raw = result
                 .raw_json_body(&facts)
-                .map(|bytes| STANDARD.encode(bytes)),
-        })?),
+                .map(|bytes| STANDARD.encode(bytes));
+            Ok(serde_json::to_value(ReadFacts {
+                body: result.body,
+                body_read: result.body_read,
+                cached,
+                raw,
+            })?)
+        }
         Err(error) => Ok(serde_json::to_value(error.facts())?),
     }
 }

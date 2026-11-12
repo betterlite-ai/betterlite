@@ -44,7 +44,7 @@ fn loads_settings_accepts_the_key_in_a_config_file() {
         config
             .environment_variables
             .get(VARIABLE)
-            .map(|value| value.is_some()),
+            .map(Option::is_some),
         Some(true)
     );
     assert_eq!(config.sections.request_body.max_repair_bytes, DEFAULT_BYTES);

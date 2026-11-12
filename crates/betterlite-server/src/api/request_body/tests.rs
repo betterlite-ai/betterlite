@@ -20,7 +20,7 @@ fn request(content_type: &str, route_path: &str, body: Vec<u8>) -> RequestBodyIn
     RequestBodyInput {
         method: "POST".to_owned(),
         route_path: route_path.to_owned(),
-        headers: [("content-type".to_owned(), content_type.to_owned())].into(),
+        headers: BTreeMap::from([("content-type".to_owned(), content_type.to_owned())]),
         query_params: BTreeMap::new(),
         body,
         client_requested_model: None,
@@ -229,13 +229,10 @@ fn a_binary_media_type_keeps_json_bodies() {
 #[test]
 fn a_form_body_is_lifted_with_its_metadata() {
     let input = RequestBodyInput {
-        form_fields: Some(
-            [
-                ("model".to_owned(), "gpt-4o".to_owned()),
-                ("metadata".to_owned(), r#"{"team":"a"}"#.to_owned()),
-            ]
-            .into(),
-        ),
+        form_fields: Some(BTreeMap::from([
+            ("model".to_owned(), "gpt-4o".to_owned()),
+            ("metadata".to_owned(), r#"{"team":"a"}"#.to_owned()),
+        ])),
         ..request(
             "multipart/form-data; boundary=x",
             "/v1/audio/transcriptions",
@@ -271,10 +268,12 @@ fn an_empty_json_body_is_cached_as_an_empty_object() {
 #[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_body");
-    let replayed = fs::read_dir(corpus)
+    let seeds: Vec<Vec<u8>> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| fs::read(entry.unwrap().path()).unwrap())
-        .map(|bytes| decode_request_body(&bytes, &ApiLimits::default()).map(drop))
-        .count();
-    assert!(replayed >= 6);
+        .collect();
+    for seed in &seeds {
+        drop(decode_request_body(seed, &ApiLimits::default()));
+    }
+    assert!(seeds.len() >= 6);
 }
