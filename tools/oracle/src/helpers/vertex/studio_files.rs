@@ -1,9 +1,331 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
+use betterlite_openai::api::file_type_records::{TwoStepFileUploadConfig, UploadData};
+use betterlite_openai::files::records::{FileObject, FileStatus};
+use betterlite_prompts::media_metadata::{FileBody, FileData};
+use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
+use betterlite_vertex::studio_files::metadata::{MetadataShape, decode_studio_file_metadata};
+use betterlite_vertex::studio_files::plan::{
+    complete_upload_url, create_file_plan, validate_environment,
+};
+use betterlite_vertex::studio_files::urls::{
+    FileTarget, decode_delete_response, delete_target, retrieve_target,
+};
+use betterlite_vertex::studio_files::{RequestParams, SUPPORTED_OPENAI_PARAMS};
+use jiff::tz::TimeZone;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+
+mod tests;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    calls: Vec<Call>,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("studio_files")
+#[derive(Debug, Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+enum Call {
+    Supported,
+    Environment {
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        api_key: Option<String>,
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    },
+    UploadUrl {
+        api_base: Option<String>,
+        api_key: Option<String>,
+        #[serde(default)]
+        params: Params,
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    },
+    CreatePlan {
+        now: i64,
+        file: FileInput,
+    },
+    CreateReply {
+        bodies: Vec<String>,
+        timezone: String,
+    },
+    RetrieveReply {
+        bodies: Vec<String>,
+        timezone: String,
+    },
+    RetrieveTarget {
+        file_ids: Vec<String>,
+        #[serde(default)]
+        params: Params,
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    },
+    DeleteTarget {
+        file_ids: Vec<String>,
+        #[serde(default)]
+        params: Params,
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    },
+    DeleteReply {
+        replies: Vec<DeleteReply>,
+    },
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Params {
+    api_key: Option<String>,
+    api_base: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileInput {
+    data: Vec<u8>,
+    filename: Option<String>,
+    content_type: Option<String>,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeleteReply {
+    status: u16,
+    url: Option<String>,
+    #[serde(default)]
+    body: String,
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        let calls = input
+            .calls
+            .iter()
+            .map(resolve)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(json!({ "calls": calls }))
     }
+}
+
+fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
+    match call {
+        Call::Supported => Ok(json!({ "supported": SUPPORTED_OPENAI_PARAMS })),
+        Call::Environment {
+            headers,
+            api_key,
+            environment,
+        } => {
+            let settings = settings(environment);
+            let explicit = api_key.as_deref().map(SecretString::from);
+            let resolved =
+                validate_environment(headers, explicit.as_ref(), &settings).or_value_error()?;
+            let exposed: BTreeMap<&str, &str> = resolved
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.expose_secret()))
+                .collect();
+            Ok(json!({ "headers": exposed }))
+        }
+        Call::UploadUrl {
+            api_base,
+            api_key,
+            params,
+            environment,
+        } => {
+            let settings = settings(environment);
+            let explicit = api_key.as_deref().map(SecretString::from);
+            let params = request_params(params);
+            let url =
+                complete_upload_url(api_base.as_deref(), explicit.as_ref(), &params, &settings)
+                    .or_value_error()?;
+            Ok(json!({ "url": url }))
+        }
+        Call::CreatePlan { now, file } => {
+            let plan = create_file_plan(Some(&file_data(file)), "", *now).or_value_error()?;
+            let (text, bytes) = plan_parts(&plan)?;
+            let initial: Value = serde_json::from_str(text).or_value_error()?;
+            Ok(json!({
+                "headers": plan.initial_request.headers,
+                "data": initial,
+                "upload_headers": plan.upload_request.headers,
+                "upload_data": bytes,
+            }))
+        }
+        Call::CreateReply { bodies, timezone } => {
+            let zone = TimeZone::get(timezone).or_value_error()?;
+            let context = LocalTimeContext { zone };
+            let mut files = Vec::with_capacity(bodies.len());
+            for body in bodies {
+                let file =
+                    decode_studio_file_metadata(body.as_bytes(), MetadataShape::Create, &context)
+                        .or_value_error()?;
+                files.push(file_view(&file));
+            }
+            Ok(json!({ "files": files }))
+        }
+        Call::RetrieveReply { bodies, timezone } => {
+            let zone = TimeZone::get(timezone).or_value_error()?;
+            let context = LocalTimeContext { zone };
+            let mut files = Vec::with_capacity(bodies.len());
+            for body in bodies {
+                let file =
+                    decode_studio_file_metadata(body.as_bytes(), MetadataShape::Retrieve, &context)
+                        .or_value_error()?;
+                files.push(file_view(&file));
+            }
+            Ok(json!({ "files": files }))
+        }
+        Call::RetrieveTarget {
+            file_ids,
+            params,
+            environment,
+        } => targets(file_ids, params, environment, TargetKind::Retrieve),
+        Call::DeleteTarget {
+            file_ids,
+            params,
+            environment,
+        } => targets(file_ids, params, environment, TargetKind::Delete),
+        Call::DeleteReply { replies } => {
+            let mut deleted = Vec::with_capacity(replies.len());
+            for reply in replies {
+                let result = decode_delete_response(
+                    reply.status,
+                    reply.url.as_deref(),
+                    reply.body.as_bytes(),
+                )
+                .or_value_error()?;
+                deleted.push(json!({
+                    "id": result.id,
+                    "object": "file",
+                    "deleted": result.deleted,
+                }));
+            }
+            Ok(json!({ "replies": deleted }))
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TargetKind {
+    Retrieve,
+    Delete,
+}
+
+fn targets(
+    file_ids: &[String],
+    params: &Params,
+    environment: &BTreeMap<String, String>,
+    kind: TargetKind,
+) -> Result<Value, Box<HelperError>> {
+    let settings = settings(environment);
+    let params = request_params(params);
+    let mut targets = Vec::with_capacity(file_ids.len());
+    for file_id in file_ids {
+        let target = match kind {
+            TargetKind::Retrieve => retrieve_target(file_id, &params, &settings),
+            TargetKind::Delete => delete_target(file_id, &params, &settings),
+        }
+        .or_value_error()?;
+        targets.push(target_view(&target));
+    }
+    Ok(json!({ "targets": targets }))
+}
+
+fn settings(environment: &BTreeMap<String, String>) -> Settings {
+    Settings {
+        environment_key: non_empty(environment, "GOOGLE_API_KEY")
+            .or_else(|| non_empty(environment, "GEMINI_API_KEY"))
+            .map(SecretString::from),
+        generic_api_key: None,
+        api_base: non_empty(environment, "GEMINI_API_BASE")
+            .map_or_else(|| DEFAULT_API_BASE.to_owned(), str::to_owned),
+    }
+}
+
+fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
+    environment
+        .get(name)
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+fn request_params(params: &Params) -> RequestParams {
+    RequestParams {
+        api_key: params.api_key.as_deref().map(SecretString::from),
+        api_base: params.api_base.clone(),
+    }
+}
+
+fn file_data(file: &FileInput) -> FileData {
+    FileData::Tuple4 {
+        filename: file.filename.clone(),
+        content: FileBody::Bytes(file.data.clone()),
+        content_type: file.content_type.clone(),
+        headers: file.headers.clone(),
+    }
+}
+
+fn plan_parts(plan: &TwoStepFileUploadConfig) -> Result<(&str, &[u8]), Box<HelperError>> {
+    let UploadData::Text(text) = &plan.initial_request.data else {
+        return Err(value_error(
+            "the start request does not carry metadata text",
+        ));
+    };
+    let UploadData::Bytes(bytes) = &plan.upload_request.data else {
+        return Err(value_error("the upload request does not carry bytes"));
+    };
+    Ok((text.as_str(), bytes.as_slice()))
+}
+
+fn file_view(file: &FileObject) -> Value {
+    json!({
+        "id": file.id,
+        "bytes": file.bytes,
+        "created_at": file.created_at,
+        "filename": file.filename,
+        "object": "file",
+        "purpose": "user_data",
+        "status": file.status.map(status_name),
+        "status_details": file.status_details,
+    })
+}
+
+const fn status_name(status: FileStatus) -> &'static str {
+    match status {
+        FileStatus::Uploaded => "uploaded",
+        FileStatus::Processed => "processed",
+        FileStatus::Error => "error",
+        FileStatus::Pending => "pending",
+    }
+}
+
+fn target_view(target: &FileTarget) -> Value {
+    let query: Vec<[&str; 2]> = target
+        .query
+        .iter()
+        .map(|(name, value)| [name.as_str(), value.as_str()])
+        .collect();
+    json!({ "url": target.url, "query": query })
+}
+
+fn value_error(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: message.to_owned(),
+    })
 }

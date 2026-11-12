@@ -1,0 +1,15 @@
+kind: helper
+name: studio-files-failed-status-details
+call:
+  studio_files:
+    calls:
+      - function: retrieve_reply
+        timezone: UTC
+        bodies:
+          - '{"uri":"files/active","sizeBytes":"3","createTime":"2024-01-02T03:04:05.1Z","displayName":"a.txt","state":"ACTIVE"}'
+          - '{"uri":"files/failed","sizeBytes":"4","createTime":"2024-01-02T03:04:05.1Z","displayName":"b.txt","state":"FAILED"}'
+          - '{"createTime":"2024-01-02T03:04:05.1Z","state":"FAILED"}'
+          - '{"uri":"files/processing","createTime":"2024-01-02T03:04:05.1Z","state":"PROCESSING"}'
+          - '{"createTime":"2024-01-02T03:04:05.1Z"}'
+env: {}
+compare: {ignore: []}

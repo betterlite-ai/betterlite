@@ -1,0 +1,19 @@
+kind: helper
+name: studio-files-foreign-host-identifier
+call:
+  studio_files:
+    calls:
+      - function: retrieve_target
+        file_ids:
+          - https://generativelanguage.googleapis.com/v1beta/files/abc123
+          - http://files.foreign.example/v1beta/files/nested/id
+          - files/abc123
+        params: {api_base: "https://studio.example///"}
+        environment: {GOOGLE_API_KEY: google-key}
+      - function: delete_target
+        file_ids:
+          - https://foreign.example/v1beta/files/abc123?alt=json
+        params: {api_base: "https://studio.example/"}
+        environment: {GEMINI_API_KEY: gemini-key}
+env: {}
+compare: {ignore: []}
