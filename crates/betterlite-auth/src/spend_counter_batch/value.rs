@@ -6,6 +6,9 @@ use thiserror::Error;
 
 use crate::model_budget_values::amount_text::amount_from_text;
 
+// serde_json's arbitrary_precision feature hands a bare JSON float to a derived untagged enum as this map
+const ARBITRARY_PRECISION_NUMBER: &str = "$serde_json::private::Number";
+
 #[derive(Debug, Error)]
 pub(super) enum CounterValueError {
     #[error("a counter value was {kind}, not a number or null")]
@@ -37,8 +40,20 @@ fn cached_counter(value: &CachedValue) -> Result<Option<Decimal>, CounterValueEr
         CachedValue::Boolean(flag) => Ok(Some(Decimal::from(u8::from(*flag)))),
         CachedValue::Number(number) => number_counter(number),
         CachedValue::Text(text) => text_counter(text),
-        CachedValue::Object(_) => Err(CounterValueError::NotNumeric { kind: "an object" }),
+        CachedValue::Object(entries) => object_counter(entries),
         CachedValue::Array(_) => Err(CounterValueError::NotNumeric { kind: "an array" }),
+    }
+}
+
+fn object_counter(
+    entries: &BTreeMap<String, CachedValue>,
+) -> Result<Option<Decimal>, CounterValueError> {
+    let Some((key, value)) = entries.first_key_value() else {
+        return Err(CounterValueError::NotNumeric { kind: "an object" });
+    };
+    match (entries.len(), key.as_str(), value) {
+        (1, ARBITRARY_PRECISION_NUMBER, CachedValue::Text(text)) => text_counter(text),
+        _ => Err(CounterValueError::NotNumeric { kind: "an object" }),
     }
 }
 

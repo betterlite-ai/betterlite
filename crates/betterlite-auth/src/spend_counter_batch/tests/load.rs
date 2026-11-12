@@ -204,7 +204,7 @@ async fn numeric_string_and_bool_counter_values() {
     server.script_mget(Reply::Array(vec![
         Reply::Bulk("true".to_owned()),
         Reply::Bulk("null".to_owned()),
-        Reply::Bulk("2".to_owned()),
+        Reply::Bulk("2.5".to_owned()),
         Reply::Bulk("\"1.5\"".to_owned()),
     ]));
     assert_eq!(
@@ -217,7 +217,7 @@ async fn numeric_string_and_bool_counter_values() {
     );
     assert_eq!(
         batch.read("spend:key:number").await.unwrap(),
-        Some(CounterValue::Amount(decimal("2")))
+        Some(CounterValue::Amount(decimal("2.5")))
     );
     assert_eq!(
         batch.read("spend:key:text").await.unwrap(),

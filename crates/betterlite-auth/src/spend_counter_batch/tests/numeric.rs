@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::request_batch::lock;
 use rstest::rstest;
 use tokio::task::JoinSet;
 
 use crate::spend_counter_batch::batch::{CounterValue, PendingSpendIncrement, SpendCounterBatch};
-use crate::spend_counter_batch::value::decimal_map;
 
 use super::support::{DebugEvents, FakeRedis, Reply, allow_cache, decimal, keys};
 
@@ -14,27 +12,31 @@ async fn open_batch(server: &FakeRedis) -> Arc<SpendCounterBatch> {
     SpendCounterBatch::new(allow_cache(server).await)
 }
 
-#[test]
-fn number_text_keeps_every_digit() {
-    let key = "spend:key:number".to_owned();
-    let value = Some(CachedValue::Number(
-        serde_json::Number::from_f64(0.300_000_000_000_000_04).expect("a finite float"),
-    ));
-    let converted = decimal_map([(&key, &value)].into_iter()).expect("the number converts");
+#[tokio::test]
+async fn float_counter_keeps_every_digit() {
+    let server = FakeRedis::start().await;
+    let batch = open_batch(&server).await;
+    batch.bind(&keys(&["spend:key:a"]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk(
+        "0.30000000000000004".to_owned(),
+    )]));
     assert_eq!(
-        converted.get("spend:key:number"),
-        Some(&Some(decimal("0.30000000000000004")))
+        batch.read("spend:key:a").await.unwrap(),
+        Some(CounterValue::Amount(decimal("0.30000000000000004")))
     );
 }
 
-#[test]
-fn long_numeric_string_keeps_cents() {
-    let key = "spend:key:spend".to_owned();
-    let value = Some(CachedValue::Text("12345678901234567.89".to_owned()));
-    let converted = decimal_map([(&key, &value)].into_iter()).expect("the string converts");
+#[tokio::test]
+async fn long_numeric_string_keeps_cents() {
+    let server = FakeRedis::start().await;
+    let batch = open_batch(&server).await;
+    batch.bind(&keys(&["spend:key:a"]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk(
+        "\"12345678901234567.89\"".to_owned(),
+    )]));
     assert_eq!(
-        converted.get("spend:key:spend"),
-        Some(&Some(decimal("12345678901234567.89")))
+        batch.read("spend:key:a").await.unwrap(),
+        Some(CounterValue::Amount(decimal("12345678901234567.89")))
     );
 }
 
@@ -55,7 +57,7 @@ async fn exact_decimal_counter_merge() {
     let batch = open_batch(&server).await;
     batch.bind(&keys(&["spend:key:a"]));
     server.script_mget(Reply::Array(vec![Reply::Bulk(
-        "\"0.30000000000000004\"".to_owned(),
+        "0.30000000000000004".to_owned(),
     )]));
     let mut held = server.hold_next_mget();
     let mut tasks = JoinSet::new();
@@ -91,7 +93,7 @@ async fn nonfinite_map_debug_fallback(#[case] payload: &str) {
 
 #[rstest]
 #[case::exponent_overflow("\"1e400\"")]
-#[case::beyond_decimal_max("\"1e300\"")]
+#[case::beyond_decimal_max("1e300")]
 #[tokio::test]
 async fn out_of_range_map_debug_fallback(#[case] payload: &str) {
     let server = FakeRedis::start().await;
