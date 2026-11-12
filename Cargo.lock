@@ -2653,7 +2653,10 @@ dependencies = [
 name = "betterlite-pyhost"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "pyo3",
+ "rstest",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tokio",
