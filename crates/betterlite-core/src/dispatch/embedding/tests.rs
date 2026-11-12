@@ -113,7 +113,11 @@ async fn deadline_caps_timeout() {
     let context = context(Some(deadline), SystemTime::UNIX_EPOCH);
     dispatch
         .execute(
-            Operation::Embedding(embedding_request("embed-3", MODEL_ID, Arc::clone(&calls))),
+            Operation::Embedding(embedding_request(
+                "embed-3",
+                MODEL_ID,
+                Arc::<FakeEmbedding>::clone(&calls),
+            )),
             &context,
         )
         .await
@@ -137,7 +141,11 @@ async fn refused_before_transport(
     let context = context(deadline, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            Operation::Embedding(embedding_request("embed-4", model_id, Arc::clone(&calls))),
+            Operation::Embedding(embedding_request(
+                "embed-4",
+                model_id,
+                Arc::<FakeEmbedding>::clone(&calls),
+            )),
             &context,
         )
         .await

@@ -329,10 +329,10 @@ where
     }
 }
 
-pub(crate) fn embedding_request<Calls: EmbeddingCall + 'static>(
+pub(crate) fn embedding_request(
     call_id: &str,
     model_id: &str,
-    calls: Arc<Calls>,
+    calls: Arc<dyn EmbeddingCall>,
 ) -> EmbeddingRequest {
     let request = ClientEmbeddingRequest::parse(EMBEDDING).expect("embedding request");
     EmbeddingRequest {
