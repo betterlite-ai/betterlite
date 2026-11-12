@@ -20,7 +20,7 @@ fn a_raw_zero_count_projects_a_repaired_usage() {
     assert_eq!(output["responses"][0]["file_search"], json!(false));
     assert_eq!(output["responses"][0]["count"], json!(1_i64));
     assert_eq!(
-        output["responses"][0]["usage"]["server_tool_use"]["web_search_requests"],
+        output["responses"][0]["usage"]["server_tool_use"],
         json!(0_i64)
     );
 }
