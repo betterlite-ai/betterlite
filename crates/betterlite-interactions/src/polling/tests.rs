@@ -3,13 +3,14 @@
 use std::collections::VecDeque;
 use std::future::ready;
 use std::io::{Result as IoResult, Write};
+use std::iter::repeat_with;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Barrier, Mutex, PoisonError};
+use std::thread;
 use std::time::Duration;
 
 use rstest::rstest;
 use secrecy::SecretString;
-use tokio::sync::Barrier;
 use tokio::task::{JoinSet, yield_now};
 use tokio::time::sleep;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -393,29 +394,31 @@ fn claim_settlement_succeeds_once_for_a_single_claimer() {
     assert!(!flag.claim_settlement());
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn settlement_is_claimed_by_exactly_one_of_two_racers() {
+const RACE_ROUNDS: usize = 10_000;
+const RACERS: usize = 2;
+
+#[test]
+fn settlement_is_claimed_by_exactly_one_of_two_racers() {
+    (0..RACE_ROUNDS).for_each(|_| run_settlement_race());
+}
+
+fn run_settlement_race() {
     let flag = SettlementFlag::default();
-    let barrier = Arc::new(Barrier::new(3));
-    let mut tasks = JoinSet::new();
-    let first = flag.clone();
-    let first_barrier = Arc::clone(&barrier);
-    tasks.spawn(async move {
-        first_barrier.wait().await;
-        first.claim_settlement()
+    let barrier = Barrier::new(RACERS);
+    let claims: usize = thread::scope(|scope| {
+        let handles: Vec<_> = repeat_with(|| {
+            scope.spawn(|| {
+                barrier.wait();
+                flag.claim_settlement()
+            })
+        })
+        .take(RACERS)
+        .collect();
+        handles
+            .into_iter()
+            .map(|handle| usize::from(handle.join().expect("the racing claimer joins")))
+            .sum()
     });
-    let second = flag.clone();
-    let second_barrier = Arc::clone(&barrier);
-    tasks.spawn(async move {
-        second_barrier.wait().await;
-        second.claim_settlement()
-    });
-    barrier.wait().await;
-    let mut claims = 0_u8;
-    while let Some(result) = tasks.join_next().await {
-        let claimed = result.expect("the claim task joins");
-        claims = claims.saturating_add(u8::from(claimed));
-    }
     assert_eq!(claims, 1);
     assert!(flag.settled.load(Ordering::Acquire));
 }
@@ -845,4 +848,38 @@ async fn shutdown_cancels_running_polls() {
     sleep(Duration::from_secs(61)).await;
     assert_eq!(script.calls(), 0);
     assert!(registry.active_poll("interaction-1").is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_schedule_reaps_finished_polls_so_the_task_set_stays_bounded() {
+    let mut registry = BackgroundPollRegistry::default();
+    let first = Script::with_answers(vec![Ok(answer("completed", true))]);
+    assert!(registry.schedule(context(FakeHost::default(), 5, 10, 30), first.fetch()));
+    yield_now().await;
+    sleep(Duration::from_secs(6)).await;
+    assert_eq!(first.calls(), 1);
+    let second = Script::with_answers(Vec::new());
+    assert!(registry.schedule(context(FakeHost::default(), 60, 60, 3600), second.fetch()));
+    assert_eq!(registry.tasks.len(), 1);
+    registry.shutdown().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_panicked_poll_is_logged_when_the_next_schedule_reaps_it() {
+    let (logs, _guard) = capture_logs();
+    let mut registry = BackgroundPollRegistry::default();
+    let panicking: FetchInteraction<FakeHost, FakeError> =
+        Arc::new(|_context| -> FetchFuture<FakeError> {
+            Box::pin(async { panic!("the poll panicked") })
+        });
+    assert!(registry.schedule(context(FakeHost::default(), 5, 10, 30), panicking));
+    yield_now().await;
+    sleep(Duration::from_secs(6)).await;
+    let second = Script::with_answers(Vec::new());
+    assert!(registry.schedule(context(FakeHost::default(), 60, 60, 3600), second.fetch()));
+    assert!(
+        logs.contents()
+            .contains("background interaction poll ended with an error")
+    );
+    registry.shutdown().await;
 }

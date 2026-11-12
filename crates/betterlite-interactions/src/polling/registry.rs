@@ -15,7 +15,8 @@ use super::poll::poll_background_cost;
 use super::status::is_pollable_status;
 
 pub struct BackgroundPollRegistry<Host> {
-    tasks: JoinSet<()>,
+    // a finished poll keeps its handle until the next schedule reaps it, so tests watch this set's size
+    pub(crate) tasks: JoinSet<()>,
     active: Arc<Mutex<HashMap<String, ActivePoll<Host>>>>,
     next_token: u64,
 }
@@ -78,6 +79,7 @@ impl<Host> BackgroundPollRegistry<Host> {
         if Handle::try_current().is_err() {
             return false;
         }
+        self.reap_finished_polls();
         let token = self.next_token;
         self.next_token = self.next_token.wrapping_add(1);
         let interaction_id = context.interaction_id.clone();
@@ -116,11 +118,21 @@ impl<Host> BackgroundPollRegistry<Host> {
     }
 
     pub async fn shutdown(&mut self) {
+        self.reap_finished_polls();
         self.tasks.shutdown().await;
         self.active
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
+    }
+
+    // a finished task stays in the JoinSet, handle and result included, until it is joined
+    fn reap_finished_polls(&mut self) {
+        while let Some(result) = self.tasks.try_join_next() {
+            if let Err(source) = result {
+                tracing::error!(error = %source, "background interaction poll ended with an error");
+            }
+        }
     }
 }
 

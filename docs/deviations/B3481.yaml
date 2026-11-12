@@ -1,8 +1,8 @@
 task: B3481
 deviations:
-  - what: The active-poll registry is a struct the server owns, holding a tokio JoinSet and a map of interaction id to poll context, and shutdown aborts every poll; LiteLLM keeps a process-global dict of asyncio tasks and relies on the Python GC.
-    why: Rule inject-dependencies and async-hygiene bar globals and detached tasks, and the server must drain its polls on shutdown.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L241
+  - what: The active-poll registry is a struct the server owns, holding a tokio JoinSet and a map of interaction id to poll context, and shutdown aborts every poll; each schedule reaps the JoinSet's finished polls, logging a poll that panicked or was cancelled, and shutdown reaps before it aborts. LiteLLM keeps a process-global dict of asyncio tasks, drops a finished task's entry in _discard_poll, and relies on the GC.
+    why: Rule inject-dependencies and async-hygiene bar globals and detached tasks; a finished task stays in a JoinSet, handle and result included, until it is joined, so reaping keeps that set bounded by the active polls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L241-L248
   - what: Polling intervals and the timeout are Duration fields injected into InteractionPollContext, not globals read from litellm.constants when the module imports.
     why: Dependencies come in through constructors; betterlite reads configuration once and passes it to the poll.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1831-L1843
