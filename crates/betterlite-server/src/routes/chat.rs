@@ -20,9 +20,7 @@ use betterlite_core::operation::chat::{
 };
 use betterlite_core::operation::{CallResult, Operation};
 use betterlite_error::envelope::EnvelopeError;
-use betterlite_error::normalize::class::Class;
-use betterlite_error::normalize::provider::provider_facts;
-use betterlite_error::normalize::{ErrorFacts, Normalizer};
+use betterlite_error::normalize::{ErrorFacts, Normalizer, class::Class, provider::provider_facts};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::{ChatRequest, RequestError};
@@ -83,6 +81,35 @@ impl ErrorLayer {
             redactor,
             normalizer,
         })
+    }
+
+    pub(crate) fn log_normalized_error(&self, error: &ChatError, message: &str, status: u16) {
+        let facts = if let ChatError::Provider { response } = error {
+            provider_facts(response.status, &response.body, &self.redactor)
+        } else {
+            let class = match error {
+                ChatError::Timeout => Class::Timeout,
+                ChatError::Http { .. } => Class::APIConnectionError,
+                ChatError::UnknownModel { .. }
+                | ChatError::Request { .. }
+                | ChatError::Streaming
+                | ChatError::UnsupportedProvider { .. }
+                | ChatError::MissingApiKey
+                | ChatError::Provider { .. }
+                | ChatError::Encode { .. }
+                | ChatError::Decode { .. }
+                | ChatError::TooLarge => Class::Other,
+            };
+            ErrorFacts {
+                proxy_type: None,
+                message: message.to_owned(),
+                class,
+                status_code: Some(status),
+                rate_limit_type: None,
+            }
+        };
+        let normalized_error = self.normalizer.normalize(Some(&facts));
+        tracing::warn!(normalized_error, "chat request failed");
     }
 }
 
@@ -269,40 +296,6 @@ fn internal_failure(
         ("internal_server_error", None),
         redacted,
     )
-}
-
-pub(crate) fn log_normalized_error(
-    error: &ChatError,
-    message: &str,
-    status: u16,
-    layer: &ErrorLayer,
-) {
-    let facts = if let ChatError::Provider { response } = error {
-        provider_facts(response.status, &response.body, &layer.redactor)
-    } else {
-        let class = match error {
-            ChatError::Timeout => Class::Timeout,
-            ChatError::Http { .. } => Class::APIConnectionError,
-            ChatError::UnknownModel { .. }
-            | ChatError::Request { .. }
-            | ChatError::Streaming
-            | ChatError::UnsupportedProvider { .. }
-            | ChatError::MissingApiKey
-            | ChatError::Provider { .. }
-            | ChatError::Encode { .. }
-            | ChatError::Decode { .. }
-            | ChatError::TooLarge => Class::Other,
-        };
-        ErrorFacts {
-            proxy_type: None,
-            message: message.to_owned(),
-            class,
-            status_code: Some(status),
-            rate_limit_type: None,
-        }
-    };
-    let normalized_error = layer.normalizer.normalize(Some(&facts));
-    tracing::warn!(normalized_error, "chat request failed");
 }
 
 mod tests;

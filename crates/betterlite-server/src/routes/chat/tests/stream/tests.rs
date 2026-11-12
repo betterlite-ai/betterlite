@@ -17,7 +17,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-use crate::routes::chat::{ErrorLayer, chat_routes_with_call_id, log_normalized_error};
+use crate::routes::chat::{ErrorLayer, chat_routes_with_call_id};
 use crate::server::chat_setup::chat_executor;
 use betterlite_error::normalize::Normalizer;
 use betterlite_openai::chat::execution::ChatError;
@@ -162,7 +162,7 @@ fn error_normalization_tests_behavior(
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
     };
     with_default(subscriber, || {
-        log_normalized_error(&error, "private-message", status, &layer);
+        layer.log_normalized_error(&error, "private-message", status);
     });
     let output = read_to_string(log.path()).unwrap();
     assert!(output.contains(&format!("normalized_error=\"{code}\"")));

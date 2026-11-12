@@ -7,7 +7,6 @@ use crate::middleware::request_stack;
 use crate::routes::chat::CallContext;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
-use crate::routes::chat::log_normalized_error;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
@@ -251,7 +250,8 @@ pub(crate) fn failure(
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let redactor = &call.errors.redactor;
     let message = redactor.redact_internal_details(&error.to_string());
-    log_normalized_error(error, &message, status.as_u16(), call.errors);
+    call.errors
+        .log_normalized_error(error, &message, status.as_u16());
     let provider_specific_fields =
         matches!(error, ChatError::UnknownModel { .. }).then(|| RouterErrorFields {
             error: message.clone(),

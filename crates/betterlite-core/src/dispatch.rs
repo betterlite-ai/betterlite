@@ -86,6 +86,7 @@ impl Dispatch {
     }
 
     // one arm per entry; the futures are boxed so every entry keeps its own type
+    #[must_use]
     #[rustfmt::skip]
     pub fn execute<'call, Metadata, Client>(
         &'call self,
