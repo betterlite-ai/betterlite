@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-dispatch-messages-keeps-stream
+call:
+  b3545: {"function": "dispatch", "protocol": "messages", "payload": {"model": "claude-opus-4-7", "max_tokens": 64, "stream": true}, "reply_id": "msg_2"}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-protocol
+call:
+  b3545: {"function": "request_kwargs"}
+env: {}
+compare:
+  ignore: []

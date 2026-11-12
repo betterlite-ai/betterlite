@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-summary-two-blocks-messages
+call:
+  b3545: {"function": "summary", "protocol": "messages", "response": {"stop_reason": "compaction", "content": [{"type": "compaction", "signature": "sig", "content": "the summary"}, {"type": "compaction", "signature": "sig", "content": "other"}]}}
+env: {}
+compare:
+  ignore: []

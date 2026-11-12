@@ -1,0 +1,7 @@
+kind: helper
+name: native-compaction-other-block-type-chat
+call:
+  b3545: {"function": "summary", "protocol": "chat", "response": {"choices": [{"message": {"provider_specific_fields": {"compaction_blocks": [{"type": "text", "signature": "sig", "content": "the summary"}]}}}]}}
+env: {}
+compare:
+  ignore: []

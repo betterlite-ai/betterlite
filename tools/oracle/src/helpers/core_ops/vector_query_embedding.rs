@@ -1,6 +1,3 @@
-use betterlite_core::api::vector_query_embedding::query::{
-    SelectedExecutor, query_embedding_executor,
-};
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::vector_query_embedding::query::{
     QueryEmbeddingConfig as _, QuerySearchRequest, embedding_configuration,
@@ -9,6 +6,9 @@ use betterlite_provider::api::vector_query_embedding::query::{
 use betterlite_provider::api::vector_store_contracts::config::{
     Params, SearchQuery, SearchRequest, VectorStoreConfig as _, VectorStoreEmbeddingExecutor,
     VectorStoreLogging, VectorStoreResponse,
+};
+use betterlite_transcribe::vector_query_embedding::query::{
+    SelectedExecutor, query_embedding_executor,
 };
 use fixtures::{DirectFixture, ExplicitExecutor, QueryFixture, RouterFixture, direct_executor};
 use serde::Deserialize;
