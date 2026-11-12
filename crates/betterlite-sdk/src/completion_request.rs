@@ -8,13 +8,28 @@ use self::args::{CompletionArgs, CompletionSettings, JsonObject};
 use self::call::{FallbackCall, PreparedCall, PreparedCompletion};
 use self::error::{CompletionRequestError, RequestResult};
 use self::ports::CompletionPorts;
-use self::steps::Preparation;
 use crate::completion_options::control::resolve_control_options;
+use betterlite_core::message_utilities::validators::StopSequences;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
 use betterlite_router::routing_timeouts::seconds::Seconds;
 use std::time::Duration;
 use tokio::time::sleep;
+pub(crate) struct Preparation<'request> {
+    pub args: &'request CompletionArgs,
+    pub settings: &'request CompletionSettings,
+    pub ports: &'request CompletionPorts<'request>,
+    pub call: PreparedCall,
+    pub kwargs: JsonObject,
+    pub non_default: JsonObject,
+    pub snapshot: CompletionArgs,
+    pub tool_choice: Option<Json>,
+    pub stop: Option<StopSequences>,
+    pub thinking: Option<Json>,
+    pub skip_bridge: bool,
+    pub control: ControlOptions,
+    pub acompletion: bool,
+}
 pub async fn prepare_completion<'call, 'ports>(
     args: &'call CompletionArgs,
     settings: &'call CompletionSettings,
@@ -140,7 +155,7 @@ fn timeout_duration(timeout: &Json) -> RequestResult<Duration> {
 fn working_args(head: &Preparation<'_>, args: &CompletionArgs) -> RequestResult<CompletionArgs> {
     let mut working = args.clone();
     working.model = Some(head.call.model.clone());
-    working.messages = steps::messages::messages_as_json(head)?;
+    working.messages = steps::convert::convert(&head.call.messages)?;
     working.tools.clone_from(&head.call.tools);
     working.kwargs.clone_from(&head.non_default);
     working

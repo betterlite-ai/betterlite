@@ -1,6 +1,5 @@
-use super::Preparation;
 use super::messages::{optional, text_of};
-use crate::completion_request::args::JsonObject;
+use crate::completion_request::Preparation;
 use crate::completion_request::call::{MockCall, PreparedCompletion};
 use crate::completion_request::error::RequestResult;
 use crate::completion_request::ports::EnvironmentUpdate;
@@ -33,32 +32,23 @@ pub(crate) fn should_use_mcp_gateway(tools: Option<&[Json]>) -> bool {
             || proxy_path_mcp_name(tool).is_some()
     })
 }
-fn admission_prompt_tokens(kwargs: &JsonObject) -> Option<i64> {
-    for name in ["litellm_metadata", "metadata"] {
-        let Some(Json::Object(metadata)) = kwargs.get(name) else {
-            continue;
-        };
-        let Some(Json::Object(reservation)) = metadata.get("user_api_key_budget_reservation")
-        else {
-            continue;
-        };
-        if let Some(Json::Number(raw)) = reservation.get("input_tokens")
-            && let Some(tokens) = raw.as_i64()
-        {
-            return Some(tokens);
-        }
-    }
-    None
-}
-fn mock_value(kwargs: &JsonObject, name: &str) -> Json {
-    kwargs.get(name).cloned().unwrap_or(Json::Null)
-}
 fn should_run_mock(state: &Preparation<'_>) -> bool {
-    should_run_mock_completion(
-        &mock_value(&state.kwargs, "mock_response"),
-        &mock_value(&state.kwargs, "mock_tool_calls"),
-        &mock_value(&state.kwargs, "mock_timeout"),
-    )
+    let response = state
+        .kwargs
+        .get("mock_response")
+        .cloned()
+        .unwrap_or(Json::Null);
+    let tool_calls = state
+        .kwargs
+        .get("mock_tool_calls")
+        .cloned()
+        .unwrap_or(Json::Null);
+    let timeout = state
+        .kwargs
+        .get("mock_timeout")
+        .cloned()
+        .unwrap_or(Json::Null);
+    should_run_mock_completion(&response, &tool_calls, &timeout)
 }
 pub(crate) fn litellm_params(state: &mut Preparation<'_>) -> RequestResult<()> {
     let request = RequestCall {
@@ -98,7 +88,6 @@ pub(crate) fn mock_or_bridge(state: &mut Preparation<'_>) -> RequestResult<Prepa
             call: state.call.clone(),
             acompletion: state.acompletion,
             mock_delay: state.kwargs.get("mock_delay").cloned(),
-            prompt_tokens: admission_prompt_tokens(&state.kwargs),
         }));
     }
     if super::bridge::late(state)? {

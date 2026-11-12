@@ -1,9 +1,6 @@
-use super::Preparation;
-use super::convert::{
-    builtin_messages, json_from_messages, json_of, messages_from_builtin, messages_from_json,
-    typed_from,
-};
+use super::convert::{builtin_messages, convert, messages_from_builtin, typed_from};
 use crate::completion_options::tool_keys::{drop_anthropic_only_tool_keys, is_claude_tool_target};
+use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
 use crate::completion_request::error::{CompletionRequestError, RequestResult};
 use betterlite_core::message_utilities::validators::{
@@ -43,30 +40,6 @@ pub(crate) fn take_flag(kwargs: &mut JsonObject, name: &'static str) -> RequestR
         }),
     }
 }
-fn stop_sequences(value: &Json) -> RequestResult<StopSequences> {
-    match value {
-        Json::Text(text) => Ok(StopSequences::One(text.clone())),
-        Json::List(items) => items
-            .iter()
-            .map(|item| match item {
-                Json::Text(text) => Ok(text.clone()),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(CompletionRequestError::FieldType {
-                        field: "stop",
-                        expected: "a string or a list of strings",
-                    })
-                }
-            })
-            .collect::<RequestResult<Vec<_>>>()
-            .map(StopSequences::Many),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => {
-            Err(CompletionRequestError::FieldType {
-                field: "stop",
-                expected: "a string or a list of strings",
-            })
-        }
-    }
-}
 pub(crate) fn validate(state: &mut Preparation<'_>) -> RequestResult<()> {
     let Some(model) = state.args.model.clone() else {
         return Err(CompletionRequestError::ModelNotPassed);
@@ -81,7 +54,7 @@ pub(crate) fn validate(state: &mut Preparation<'_>) -> RequestResult<()> {
         .transpose()?;
     let stop = match &state.args.stop {
         Some(value) => validate_optional_params(
-            Some(stop_sequences(value)?),
+            Some(typed_from::<StopSequences>(value, "stop")?),
             state.settings.flags.disable_stop_sequence_limit,
         ),
         None => None,
@@ -92,13 +65,13 @@ pub(crate) fn validate(state: &mut Preparation<'_>) -> RequestResult<()> {
         .as_ref()
         .and_then(|value| fix_thinking_param(value, state.settings.medium_thinking_budget));
     state.call.model = model;
-    state.call.messages = messages_from_json(&validated)?;
+    state.call.messages = convert(&validated)?;
     state.call.tools.clone_from(&tools);
     let mut snapshot = state.args.clone();
     snapshot.messages = validated;
     snapshot.tools = tools;
     snapshot.tool_choice.clone_from(&tool_choice);
-    snapshot.stop = stop.as_ref().map(json_of).transpose()?;
+    snapshot.stop = stop.as_ref().map(convert).transpose()?;
     snapshot.thinking.clone_from(&thinking);
     state.snapshot = snapshot;
     state.tool_choice = tool_choice;
@@ -170,7 +143,4 @@ pub(crate) fn drop_tool_keys(state: &mut Preparation<'_>) {
         return;
     }
     state.call.tools = drop_anthropic_only_tool_keys(state.call.tools.as_deref());
-}
-pub(crate) fn messages_as_json(state: &Preparation<'_>) -> RequestResult<Vec<Json>> {
-    json_from_messages(&state.call.messages)
 }

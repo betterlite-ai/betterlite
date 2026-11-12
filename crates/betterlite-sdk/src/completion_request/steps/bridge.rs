@@ -1,7 +1,7 @@
-use super::Preparation;
-use super::convert::{json_from_value, json_value, typed_from};
+use super::convert::{convert, typed_from};
 use super::messages::text_of;
 use super::params::provider_name;
+use crate::completion_request::Preparation;
 use crate::completion_request::error::RequestResult;
 use betterlite_context::non_default_params::reasoning_aliases::{
     peek_reasoning_summary_aliases, strip_reasoning_aliases,
@@ -13,9 +13,6 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 const RESPONSES_MODE: &str = "responses";
-fn mode<'state>(state: &'state Preparation<'_>) -> Option<&'state str> {
-    state.call.model_info.get("mode").and_then(text_of)
-}
 fn reasoning_effort(state: &Preparation<'_>) -> RequestResult<Option<ReasoningEffort>> {
     match &state.args.reasoning_effort {
         Some(value) => Ok(Some(typed_from::<ReasoningEffort>(
@@ -36,14 +33,13 @@ fn run_check(
         .iter()
         .map(serde_json::to_value)
         .collect::<Result<Vec<_>, _>>()?;
-    let web_search = match &state.args.web_search_options {
-        Some(options) => Some(serde_json::to_value(options)?),
-        None => None,
-    };
-    let summary_value = match summary {
-        Some(value) => Some(serde_json::to_value(value)?),
-        None => None,
-    };
+    let web_search = state
+        .args
+        .web_search_options
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()?;
+    let summary_value = summary.map(serde_json::to_value).transpose()?;
     let request = BridgeRequest {
         model: &state.call.model,
         custom_llm_provider: &provider_name(state),
@@ -52,7 +48,7 @@ fn run_check(
         reasoning_effort: effort,
         reasoning_summary: summary_value.as_ref(),
         api_base: state.call.api_base.as_deref(),
-        route_all_openai_to_responses: state.settings.route_all_chat_openai_to_responses,
+        route_all_openai_to_responses: state.settings.route_all_to_responses,
     };
     Ok(responses_api_bridge_check(&request, state.ports.bridge))
 }
@@ -64,7 +60,10 @@ fn store(state: &mut Preparation<'_>, check: BridgeCheck) -> RequestResult<()> {
 }
 pub(crate) fn early(state: &mut Preparation<'_>) -> RequestResult<()> {
     let check = run_check(state, None, None, None)?;
-    store(state, check)
+    let value = serde_json::to_value(check.model_info)?;
+    state.call.model_info = serde_json::from_value(value)?;
+    state.call.model = check.model;
+    Ok(())
 }
 fn place_effort(state: &mut Preparation<'_>, effort: JsonValue) {
     state
@@ -76,7 +75,7 @@ fn place_effort(state: &mut Preparation<'_>, effort: JsonValue) {
 fn strip_aliases(state: &mut Preparation<'_>) -> RequestResult<Option<Json>> {
     let (stripped, summary) = strip_reasoning_aliases(&state.call.options.params);
     state.call.options.params = stripped;
-    summary.as_ref().map(json_from_value).transpose()
+    summary.as_ref().map(convert).transpose()
 }
 fn merged_effort(current: Option<JsonValue>, summary: JsonValue) -> JsonValue {
     match current {
@@ -102,7 +101,7 @@ fn bridge_effort(state: &mut Preparation<'_>) -> RequestResult<()> {
     );
     if object_with_summary {
         if let Some(effort) = &state.args.reasoning_effort {
-            place_effort(state, json_value(effort)?);
+            place_effort(state, convert::<JsonValue, _>(effort)?);
         }
         return Ok(());
     }
@@ -110,7 +109,7 @@ fn bridge_effort(state: &mut Preparation<'_>) -> RequestResult<()> {
         return Ok(());
     };
     let fallback = match &state.args.reasoning_effort {
-        Some(effort) => Some(json_value(effort)?),
+        Some(effort) => Some(convert::<JsonValue, _>(effort)?),
         None => None,
     };
     let current = state
@@ -120,14 +119,17 @@ fn bridge_effort(state: &mut Preparation<'_>) -> RequestResult<()> {
         .get("reasoning_effort")
         .cloned()
         .or(fallback);
-    place_effort(state, merged_effort(current, json_value(&alias)?));
+    place_effort(
+        state,
+        merged_effort(current, convert::<JsonValue, _>(&alias)?),
+    );
     Ok(())
 }
 pub(crate) fn late(state: &mut Preparation<'_>) -> RequestResult<bool> {
-    if mode(state) != Some(RESPONSES_MODE) {
+    if state.call.model_info.get("mode").and_then(text_of) != Some(RESPONSES_MODE) {
         let effort = reasoning_effort(state)?;
         let summary = peek_reasoning_summary_aliases(&state.call.options.params)
-            .map(json_from_value)
+            .map(convert)
             .transpose()?;
         let check = run_check(
             state,
@@ -137,7 +139,9 @@ pub(crate) fn late(state: &mut Preparation<'_>) -> RequestResult<bool> {
         )?;
         store(state, check)?;
     }
-    if mode(state) == Some(RESPONSES_MODE) && !state.skip_bridge {
+    if state.call.model_info.get("mode").and_then(text_of) == Some(RESPONSES_MODE)
+        && !state.skip_bridge
+    {
         bridge_effort(state)?;
         return Ok(true);
     }

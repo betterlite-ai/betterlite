@@ -1,10 +1,7 @@
-use super::Preparation;
-use super::convert::{
-    builtin_messages, json_from_value, messages_from_builtin, object_from_params,
-    params_from_object, typed_from,
-};
+use super::convert::{builtin_messages, convert, messages_from_builtin, typed_from};
 use super::messages::optional;
 use super::params::{drop_params_flag, provider_name};
+use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
 use crate::completion_request::error::{CompletionRequestError, RequestResult};
 use crate::completion_request::ports::ParameterMappingRequest;
@@ -61,8 +58,8 @@ struct MappingInputs {
 impl MappingInputs {
     fn new(state: &Preparation<'_>) -> RequestResult<Self> {
         Ok(Self {
-            named: params_from_object(&named_arguments(state)?)?,
-            extra: params_from_object(&state.non_default)?,
+            named: convert::<Params, _>(&named_arguments(state)?)?,
+            extra: convert::<Params, _>(&state.non_default)?,
             additional_drop: optional::<Vec<String>>(&state.kwargs, "additional_drop_params")?
                 .unwrap_or_default(),
             provider: provider_name(state),
@@ -80,7 +77,7 @@ fn parameter_policy(state: &Preparation<'_>) -> RequestResult<ParameterPolicy> {
     })
 }
 fn chat_parameters(params: &Params) -> RequestResult<ChatParameters> {
-    let object = object_from_params(params)?;
+    let object = convert::<JsonObject, _>(params)?;
     let encoded = serde_json::to_value(&object)?;
     serde_json::from_value(encoded).map_err(|source| CompletionRequestError::Field {
         field: "parameters",
@@ -99,7 +96,7 @@ fn apply_function_fallback(
         return Ok(());
     };
     let functions: Vec<Field> =
-        typed_from(&json_from_value(&given)?, "functions_unsupported_model")?;
+        typed_from(&convert::<Json, _>(&given)?, "functions_unsupported_model")?;
     let messages = builtin_messages(&state.call.messages)?;
     state.call.messages = messages_from_builtin(&function_call_prompt(&messages, &functions)?)?;
     Ok(())
@@ -162,7 +159,7 @@ fn processed_non_default(
             add_provider_specific_params: true,
         },
     )?;
-    object_from_params(&processed)
+    convert::<JsonObject, _>(&processed)
 }
 pub(crate) fn assemble(state: &mut Preparation<'_>) -> RequestResult<()> {
     let inputs = MappingInputs::new(state)?;

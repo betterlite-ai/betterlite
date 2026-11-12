@@ -1,9 +1,9 @@
-use super::Preparation;
 use super::convert::typed_from;
 use super::messages::optional;
 use crate::completion_options::headers::merge_request_headers;
+use crate::completion_request::Preparation;
 use crate::completion_request::args::JsonObject;
-use crate::completion_request::error::{CompletionRequestError, RequestResult};
+use crate::completion_request::error::RequestResult;
 use betterlite_models::decisions::Json;
 use betterlite_models::headers::affinity::{
     AffinityParams, SessionMetadata, add_provider_affinity_header,
@@ -13,16 +13,7 @@ use betterlite_models::headers::provider_specific::{
 };
 use indexmap::IndexMap;
 pub(crate) fn merge(state: &mut Preparation<'_>) -> RequestResult<()> {
-    let headers = match state.kwargs.get("headers") {
-        None | Some(Json::Null) => None,
-        Some(Json::Object(entries)) => Some(entries.clone()),
-        Some(_) => {
-            return Err(CompletionRequestError::FieldType {
-                field: "headers",
-                expected: "an object",
-            });
-        }
-    };
+    let headers = optional::<JsonObject>(&state.kwargs, "headers")?;
     state.call.headers = merge_request_headers(
         headers.as_ref(),
         state.args.extra_headers.as_ref(),
@@ -30,27 +21,25 @@ pub(crate) fn merge(state: &mut Preparation<'_>) -> RequestResult<()> {
     );
     Ok(())
 }
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum HeaderEntries {
+    One(ProviderSpecificHeader),
+    Many(Vec<ProviderSpecificHeader>),
+}
 fn provider_header_entries(
     state: &Preparation<'_>,
 ) -> RequestResult<Option<Vec<ProviderSpecificHeader>>> {
-    match state.kwargs.get("provider_specific_header") {
-        None | Some(Json::Null) => Ok(None),
-        Some(value @ Json::Object(_)) => Ok(Some(vec![typed_from::<ProviderSpecificHeader>(
-            value,
-            "provider_specific_header",
-        )?])),
-        Some(Json::List(items)) => Ok(Some(
-            items
-                .iter()
-                .map(|item| typed_from::<ProviderSpecificHeader>(item, "provider_specific_header"))
-                .collect::<RequestResult<Vec<_>>>()?,
-        )),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_)) => {
-            Err(CompletionRequestError::FieldType {
-                field: "provider_specific_header",
-                expected: "an object or a list of objects",
-            })
-        }
+    let Some(value) = state
+        .kwargs
+        .get("provider_specific_header")
+        .filter(|value| !matches!(value, Json::Null))
+    else {
+        return Ok(None);
+    };
+    match typed_from::<HeaderEntries>(value, "provider_specific_header")? {
+        HeaderEntries::One(entry) => Ok(Some(vec![entry])),
+        HeaderEntries::Many(entries) => Ok(Some(entries)),
     }
 }
 pub(crate) fn provider_specific(state: &mut Preparation<'_>) -> RequestResult<()> {

@@ -41,7 +41,8 @@ pub struct CompletionArgs {
     pub logprobs: Option<bool>,
     pub top_logprobs: Option<u64>,
     pub web_search_options: Option<JsonObject>,
-    pub include_server_side_tool_invocations: Option<bool>,
+    #[serde(rename = "include_server_side_tool_invocations")]
+    pub include_side_tool_invocations: Option<bool>,
     pub deployment_id: Option<String>,
     pub extra_headers: Option<AdditionalHeaders>,
     pub safety_identifier: Option<String>,
@@ -67,7 +68,7 @@ pub struct CompletionSettings {
     pub request_timeout: Option<Seconds>,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
-    pub route_all_chat_openai_to_responses: bool,
+    pub route_all_to_responses: bool,
     pub proxy_headers: AdditionalHeaders,
     pub optional: OptionalParams,
     pub flags: CompletionFlags,

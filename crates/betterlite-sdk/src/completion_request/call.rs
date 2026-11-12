@@ -48,7 +48,6 @@ pub struct MockCall {
     pub call: PreparedCall,
     pub acompletion: bool,
     pub mock_delay: Option<Json>,
-    pub prompt_tokens: Option<i64>,
 }
 #[derive(Clone, Debug)]
 pub enum PreparedCompletion {
