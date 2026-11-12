@@ -103,7 +103,7 @@ pub(crate) fn hosted_search_message(
     fields: &IndexMap<String, Json>,
 ) -> Result<Value, WebSearchError> {
     let call = HostedCall {
-        id: text(fields, "id")?,
+        id: optional_text(fields, "id")?.ok_or(WebSearchError::Missing { field: "id" })?,
         action: action(fields.get("action"))?,
         status: status(fields.get("status"))?,
         kind: "web_search_call",
@@ -142,9 +142,10 @@ fn action(value: Option<&Json>) -> Result<Action<'_>, WebSearchError> {
             extra: extras(fields, &OPEN_PAGE_FIELDS)?,
         })),
         "find_in_page" => Ok(Action::Find(FindAction {
-            pattern: text(fields, "pattern")?,
+            pattern: optional_text(fields, "pattern")?
+                .ok_or(WebSearchError::Missing { field: "pattern" })?,
             kind: "find_in_page",
-            url: text(fields, "url")?,
+            url: optional_text(fields, "url")?.ok_or(WebSearchError::Missing { field: "url" })?,
             extra: extras(fields, &FIND_FIELDS)?,
         })),
         _ => Err(WebSearchError::ActionType),
@@ -176,7 +177,7 @@ fn source(value: &Json) -> Result<SourceAction<'_>, WebSearchError> {
     }
     Ok(SourceAction {
         kind: "url",
-        url: text(fields, "url")?,
+        url: optional_text(fields, "url")?.ok_or(WebSearchError::Missing { field: "url" })?,
         extra: extras(fields, &SOURCE_FIELDS)?,
     })
 }
@@ -191,26 +192,13 @@ fn status(value: Option<&Json>) -> Result<&str, WebSearchError> {
     Ok(status)
 }
 
-fn text<'fields>(
-    fields: &'fields IndexMap<String, Json>,
-    name: &'static str,
-) -> Result<&'fields str, WebSearchError> {
-    match fields.get(name) {
-        Some(Json::Text(text)) => Ok(text),
-        None => Err(WebSearchError::Missing { field: name }),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(WebSearchError::NotText { field: name })
-        }
-    }
-}
-
 fn optional_text<'fields>(
     fields: &'fields IndexMap<String, Json>,
     name: &'static str,
 ) -> Result<Option<&'fields str>, WebSearchError> {
     match fields.get(name) {
-        None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Null) | None => Ok(None),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(WebSearchError::NotText { field: name })
         }
@@ -221,22 +209,25 @@ fn text_list<'fields>(
     fields: &'fields IndexMap<String, Json>,
     name: &'static str,
 ) -> Result<Option<Vec<&'fields str>>, WebSearchError> {
-    match fields.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::List(items)) => items
-            .iter()
-            .map(|item| match item {
-                Json::Text(text) => Ok(text.as_str()),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(WebSearchError::NotList { field: name })
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(Some),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            Err(WebSearchError::NotList { field: name })
-        }
+    let Some(value) = fields.get(name) else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Null) {
+        return Ok(None);
     }
+    let Json::List(items) = value else {
+        return Err(WebSearchError::NotList { field: name });
+    };
+    let texts = items
+        .iter()
+        .map(|item| match item {
+            Json::Text(text) => Ok(text.as_str()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                Err(WebSearchError::NotList { field: name })
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(texts))
 }
 
 fn extras(
