@@ -113,16 +113,20 @@ async fn fallback_gates() {
     assert!(!schemaless.contains(&"response_format"));
 }
 
-async fn resolved_gate() {
-    let mut fixture = Fixture::new(&["o3"], O3_OPEN);
+async fn resolved_supported(catalog_json: &str) -> Vec<&'static str> {
+    let mut fixture = Fixture::new(&["o3"], catalog_json);
     let catalog = fixture.catalog.clone();
-    let supported = o_series::supported_params(
+    o_series::supported_params(
         &mut fixture,
         &mut Resolver(Some(resolved_o3())),
         "openai/o3",
         &catalog,
     )
-    .await;
+    .await
+}
+
+async fn resolved_gate() {
+    let supported = resolved_supported(O3_OPEN).await;
     assert!(supported.contains(&"reasoning_effort"));
     assert!(!supported.contains(&"user"));
     assert!(supported.contains(&"tools"));
@@ -130,15 +134,7 @@ async fn resolved_gate() {
 }
 
 async fn closed_gate() {
-    let mut closed = Fixture::new(&["o3"], O3_CLOSED);
-    let catalog = closed.catalog.clone();
-    let limited = o_series::supported_params(
-        &mut closed,
-        &mut Resolver(Some(resolved_o3())),
-        "openai/o3",
-        &catalog,
-    )
-    .await;
+    let limited = resolved_supported(O3_CLOSED).await;
     assert!(!limited.contains(&"tools"));
     assert!(!limited.contains(&"parallel_tool_calls"));
     assert!(!limited.contains(&"response_format"));
