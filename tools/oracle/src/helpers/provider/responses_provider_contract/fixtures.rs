@@ -57,10 +57,10 @@ impl ResponsesProviderConfig for Fixture {
         api_base: Option<&str>,
         _litellm_params: &Params,
     ) -> Result<String, FixtureError> {
-        let base = api_base_or_required(api_base)?;
         if let Ok(mut calls) = self.complete_url_calls.lock() {
             *calls = calls.saturating_add(1);
         }
+        let base = api_base_or_required(api_base)?;
         Ok(base.to_owned())
     }
 
