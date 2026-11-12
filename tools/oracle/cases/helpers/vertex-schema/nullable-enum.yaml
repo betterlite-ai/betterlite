@@ -10,6 +10,7 @@ call:
         number: {type: integer, enum: [1, 2]}
         upper: {type: STRING, enum: [a]}
         branchy: {anyOf: [{type: string}, {type: integer}], enum: [x]}
+        branch: {anyOf: [{type: integer, enum: [1, 2]}, {type: string}]}
     add_property_ordering: false
     settings: {}
 env: {}

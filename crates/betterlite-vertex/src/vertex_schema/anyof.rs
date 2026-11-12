@@ -7,7 +7,7 @@ use super::recursion::Recursion;
 pub(crate) fn convert_anyof_null_to_nullable(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     if let Some(Json::List(branches)) = schema.get_mut("anyOf") {

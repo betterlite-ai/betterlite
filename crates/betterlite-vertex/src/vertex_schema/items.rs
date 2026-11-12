@@ -6,7 +6,7 @@ use super::recursion::Recursion;
 pub(crate) fn process_items(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     let is_array = schema
@@ -32,7 +32,7 @@ pub(crate) fn process_items(
 fn process_object_list(
     items: &mut [Json],
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     for item in items {
         if let Json::Object(child) = item {

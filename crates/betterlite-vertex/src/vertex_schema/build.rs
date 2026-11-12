@@ -40,7 +40,7 @@ pub fn shape_parameters(
 fn build_response_schema(
     mut parameters: Object,
     add_property_ordering: bool,
-    max_depth: usize,
+    max_depth: i64,
 ) -> Result<Object, VertexSchemaError> {
     let definitions = match parameters.shift_remove("$defs") {
         None => Object::new(),

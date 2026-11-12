@@ -7,7 +7,7 @@ use super::recursion::Recursion;
 pub(crate) fn fix_enum_types(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     if matches!(schema.get("enum"), Some(Json::List(_))) && !enum_survives(schema) {

@@ -15,7 +15,7 @@ use super::ordering::set_schema_property_ordering;
 use super::recursion::Recursion;
 use super::type_arrays::convert_schema_types;
 
-const DEFAULT_DEPTH: usize = 100;
+const DEFAULT_DEPTH: i64 = 100;
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("fixture literal is valid JSON")
@@ -30,7 +30,7 @@ fn object(text: &str) -> Object {
     }
 }
 
-fn settings(max_recurse_depth: usize) -> Settings {
+fn settings(max_recurse_depth: i64) -> Settings {
     Settings { max_recurse_depth }
 }
 
@@ -180,16 +180,19 @@ fn an_empty_branch_object_becomes_an_object_type() {
 )]
 #[case::object_and_array_branches(
     r#"{"type": ["object", "array"], "properties": {"a": {"type": "string"}},
-        "items": {"type": "string"}, "minItems": 1, "required": ["a"], "additionalProperties": false}"#,
+        "items": {"type": "string"}, "minItems": 1, "maxItems": 3, "minProperties": 1,
+        "maxProperties": 4, "required": ["a"], "additionalProperties": false}"#,
     r#"{"anyOf": [
         {"type": "object", "items": {"type": "string"}, "required": ["a"],
-         "properties": {"a": {"type": "string"}}, "minItems": 1},
+         "properties": {"a": {"type": "string"}}, "minItems": 1, "maxItems": 3,
+         "minProperties": 1, "maxProperties": 4},
         {"type": "object", "items": {"type": "string"}, "required": ["a"],
-         "properties": {"a": {"type": "string"}}, "minItems": 1}]}"#
+         "properties": {"a": {"type": "string"}}, "minItems": 1, "maxItems": 3,
+         "minProperties": 1, "maxProperties": 4}]}"#
 )]
 #[case::array_union(
-    r#"{"type": ["array", "null"], "items": {"type": "string"}, "minItems": 1}"#,
-    r#"{"anyOf": [{"type": "array", "items": {"type": "string"}, "minItems": 1}, {"type": "null"}]}"#
+    r#"{"type": ["array", "null"], "items": {"type": "string"}, "minItems": 1, "maxItems": 3}"#,
+    r#"{"anyOf": [{"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 3}, {"type": "null"}]}"#
 )]
 #[case::primitive_branch_keeps_no_object_fields(
     r#"{"type": ["string", "object"], "properties": {"a": {"type": "string"}}, "required": ["a"]}"#,
@@ -264,6 +267,10 @@ fn an_empty_enum_string_becomes_null(#[case] text: &str, #[case] expected: &str)
     r#"{"anyOf": [{"type": "integer"}, {"type": "number"}], "enum": [1, 2]}"#,
     r#"{"anyOf": [{"type": "integer"}, {"type": "number"}]}"#
 )]
+#[case::inside_an_anyof_branch(
+    r#"{"anyOf": [{"type": "integer", "enum": [1, 2]}]}"#,
+    r#"{"anyOf": [{"type": "integer"}]}"#
+)]
 fn an_enum_on_a_non_string_type_is_removed(#[case] text: &str, #[case] expected: &str) {
     assert_shaped(text, expected);
 }
@@ -322,6 +329,10 @@ fn array_types_without_items_receive_object_items(#[case] text: &str, #[case] ex
 
 #[rstest]
 #[case::empty_properties(r#"{"properties": {}}"#, r#"{"type": "object"}"#)]
+#[case::empty_properties_drop_required(
+    r#"{"properties": {}, "required": ["a"]}"#,
+    r#"{"type": "object"}"#
+)]
 #[case::null_required_is_dropped(
     r#"{"properties": {"a": {"type": "string"}}, "required": null}"#,
     r#"{"properties": {"a": {"type": "string"}}, "type": "object"}"#
@@ -352,6 +363,20 @@ fn only_the_schema_fields_survive_the_filter() {
         r#"{"type": "object", "properties": {"a": {"type": "string"}},
             "default": {"x": 1}, "example": 5}"#,
     );
+}
+
+#[rstest]
+#[case::dropped_keys_inside_items(
+    r#"{"type": "array", "items": {"type": "string", "format": "email",
+        "additionalProperties": false, "$schema": "x"}}"#,
+    r#"{"type": "array", "items": {"type": "string"}}"#
+)]
+#[case::anyof_inside_items_collapses(
+    r#"{"type": "array", "items": {"anyOf": [{"type": "string"}], "title": "inner", "$schema": "x"}}"#,
+    r#"{"type": "array", "items": {"anyOf": [{"type": "string", "title": "inner"}]}}"#
+)]
+fn items_objects_are_filtered_too(#[case] text: &str, #[case] expected: &str) {
+    assert_shaped(text, expected);
 }
 
 #[test]
@@ -428,7 +453,7 @@ fn without_the_flag_only_a_caller_supplied_property_ordering_survives() {
 const NESTED_PROPERTIES: &str =
     r#"{"properties": {"a": {"properties": {"b": {"type": "string"}}}}}"#;
 
-type SchemaPass = fn(&mut Object, Recursion, usize) -> Result<(), VertexSchemaError>;
+type SchemaPass = fn(&mut Object, Recursion, i64) -> Result<(), VertexSchemaError>;
 
 #[rstest]
 #[case::null_pass(convert_anyof_null_to_nullable)]
@@ -464,7 +489,7 @@ fn the_items_pass_counts_the_properties_mapping_as_a_level() {
 #[rstest]
 #[case::configured_limit_is_used(2, true)]
 #[case::deep_enough(4, false)]
-fn the_pipeline_stops_at_the_configured_depth(#[case] max_depth: usize, #[case] fails: bool) {
+fn the_pipeline_stops_at_the_configured_depth(#[case] max_depth: i64, #[case] fails: bool) {
     let result = shape_parameters(
         object(NESTED_PROPERTIES),
         SchemaFormat::ResponseSchema,
@@ -497,5 +522,20 @@ fn a_primitive_union_keeps_the_fields_the_items_pass_walks() {
     assert!(matches!(
         error,
         VertexSchemaError::DepthLimitExceeded { limit: 3 }
+    ));
+}
+
+#[test]
+fn a_negative_depth_limit_fails_at_the_root() {
+    let error = shape_parameters(
+        object(r#"{"type": "object"}"#),
+        SchemaFormat::ResponseSchema,
+        false,
+        &settings(-1),
+    )
+    .expect_err("every depth is past a negative limit");
+    assert!(matches!(
+        error,
+        VertexSchemaError::DepthLimitExceeded { limit: -1 }
     ));
 }

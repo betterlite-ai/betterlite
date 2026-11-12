@@ -7,7 +7,7 @@ use super::recursion::Recursion;
 pub(crate) fn set_schema_property_ordering(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     let names: Option<Vec<String>> = match schema.get("properties") {

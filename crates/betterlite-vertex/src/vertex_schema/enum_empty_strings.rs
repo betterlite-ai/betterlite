@@ -7,7 +7,7 @@ use super::recursion::Recursion;
 pub(crate) fn fix_enum_empty_strings(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     if let Some(Json::List(values)) = schema.get_mut("enum") {

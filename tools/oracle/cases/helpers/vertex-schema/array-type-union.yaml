@@ -14,6 +14,9 @@ call:
           items: {type: string}
           required: [a]
           minItems: 1
+          maxItems: 3
+          minProperties: 1
+          maxProperties: 4
     add_property_ordering: true
     settings: {}
 env: {}

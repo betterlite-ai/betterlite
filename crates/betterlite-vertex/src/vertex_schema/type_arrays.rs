@@ -19,7 +19,7 @@ const TYPE_SPECIFIC_FIELDS: [&str; 8] = [
 pub(crate) fn convert_schema_types(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     recursion.check(depth)?;
     if let Some(type_value) = schema.get("type").cloned() {
@@ -76,7 +76,7 @@ fn branch_for_type(schema: &Object, name: &str) -> Object {
 fn recurse_children(
     schema: &mut Object,
     recursion: Recursion,
-    depth: usize,
+    depth: i64,
 ) -> Result<(), VertexSchemaError> {
     let child_depth = depth.saturating_add(1);
     if let Some(Json::Object(properties)) = schema.get_mut("properties") {

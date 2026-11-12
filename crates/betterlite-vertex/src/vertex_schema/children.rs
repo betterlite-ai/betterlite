@@ -5,11 +5,11 @@ use super::error::VertexSchemaError;
 // Every recursive pass walks the same two child schemas in this order, so one visitor keeps their depths equal
 pub(crate) fn visit_properties_and_items<F>(
     schema: &mut Object,
-    depth: usize,
+    depth: i64,
     visit: &mut F,
 ) -> Result<(), VertexSchemaError>
 where
-    F: FnMut(&mut Object, usize) -> Result<(), VertexSchemaError>,
+    F: FnMut(&mut Object, i64) -> Result<(), VertexSchemaError>,
 {
     let child_depth = depth.saturating_add(1);
     if let Some(Json::Object(properties)) = schema.get_mut("properties") {
