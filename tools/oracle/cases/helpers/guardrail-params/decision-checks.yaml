@@ -1,0 +1,18 @@
+kind: helper
+name: guardrail-params-decision-checks
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: decision_model
+      mode: pre_call
+      decision_model: judge
+      checks:
+        - name: pii
+          instructions: Flag personal data
+        - name: secrets
+          instructions: Flag credentials
+          threshold: 0.25
+          action: log
+env: {}
+compare: {ignore: []}

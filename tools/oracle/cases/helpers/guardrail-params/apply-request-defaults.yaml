@@ -1,0 +1,10 @@
+kind: helper
+name: guardrail-params-apply-request-defaults
+call:
+  b3662:
+    function: apply_request
+    body:
+      guardrail_name: g
+      text: hello
+env: {}
+compare: {ignore: []}

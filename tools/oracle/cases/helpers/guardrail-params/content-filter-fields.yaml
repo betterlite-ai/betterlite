@@ -1,0 +1,23 @@
+kind: helper
+name: guardrail-params-content-filter-fields
+call:
+  b3662:
+    function: content_filter
+    body:
+      patterns:
+        - pattern_type: regex
+          pattern: "[0-9]+"
+          name: digits
+          action: MASK
+        - pattern_type: prebuilt
+          pattern_name: us_ssn
+          action: BLOCK
+      blocked_words:
+        - keyword: secret
+          action: BLOCK
+          description: internal
+      severity_threshold: high
+      pattern_redaction_format: "[{pattern_name}]"
+      keyword_redaction_tag: "[X]"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: openai-response-params-provider-capabilities
+call:
+  openai_response_params:
+    provider_capabilities:
+      probes:
+      - {provider: openai, body: {id: resp_1, object: response, deleted: false}}
+      - {provider: azure, body: {error: {message: bad, type: invalid_request_error, param: top_p}}}
+      - {provider: openai, body: {}}
+env: {}
+compare: {ignore: []}

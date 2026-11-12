@@ -1,0 +1,11 @@
+kind: helper
+name: azure-urls-query-api-version-wins-seed
+call:
+  azure_urls:
+    query_api_version_wins:
+      - params: {api_base: "https://seed.example/openai/responses?api-version=seed", api_version: seed-version}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+env: {}
+compare: {ignore: []}

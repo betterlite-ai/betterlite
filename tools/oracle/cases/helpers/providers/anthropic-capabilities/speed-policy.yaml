@@ -1,0 +1,31 @@
+kind: helper
+name: speed-policy
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        claude-opus-4-8: {litellm_provider: anthropic, supports_speed: true}
+        claude-opus-4-7: {litellm_provider: anthropic, supports_speed: false}
+        claude-opus-4-6: {litellm_provider: anthropic, supports_fast_mode: true}
+        anthropic/claude-opus-4-5: {litellm_provider: anthropic, supports_speed: true}
+      packaged:
+        claude-packaged: {supports_speed: true}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: model_supports_speed_param, model: claude-opus-4-8, custom_llm_provider: null}
+      - {function: model_supports_speed_param, model: claude-opus-4-8, custom_llm_provider: anthropic}
+      - {function: model_supports_speed_param, model: claude-opus-4-8, custom_llm_provider: bedrock}
+      - {function: model_supports_speed_param, model: claude-opus-4-8, custom_llm_provider: vertex_ai}
+      - {function: model_supports_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic}
+      - {function: model_supports_speed_param, model: claude-opus-4-6, custom_llm_provider: anthropic}
+      - {function: model_supports_speed_param, model: claude-opus-4-5, custom_llm_provider: anthropic}
+      - {function: model_supports_speed_param, model: claude-packaged, custom_llm_provider: anthropic}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {}, drop_params: false, global_drop_params: false}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-8, custom_llm_provider: anthropic, params: {speed: fast}, drop_params: false, global_drop_params: false}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {speed: fast}, drop_params: false, global_drop_params: false}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {speed: null}, drop_params: false, global_drop_params: false}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {temperature: 1, speed: fast}, drop_params: false, global_drop_params: true}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {speed: fast}, drop_params: true, global_drop_params: false}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-8, custom_llm_provider: bedrock, params: {speed: fast}, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

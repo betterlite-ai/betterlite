@@ -1,0 +1,42 @@
+kind: helper
+name: v1-latest-preview
+call:
+  azure_urls:
+    v1_latest_preview:
+      - params: {api_base: https://example.openai.azure.com, api_version: v1}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com, api_version: latest}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com, api_version: preview}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com, api_version: V1}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+        default_api_version: v1
+      - params: {api_base: https://example.openai.azure.com, api_version: ""}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+        default_api_version: v1
+      - params: {api_base: "https://example.openai.azure.com/openai/v1", api_version: v1}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+        default_api_version: 2024-02-01
+env: {}
+compare: {ignore: []}
