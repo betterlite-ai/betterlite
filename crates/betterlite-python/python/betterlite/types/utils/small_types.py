@@ -5,10 +5,7 @@ from typing import ClassVar, Literal, TypeAlias
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.media import (
-    TranscriptionUsageDurationObject,
-    TranscriptionUsageTokensObject,
-)
+from betterlite.types.utils.text_completion import GraderContent, content_item
 from betterlite.types.utils.usage import Usage
 from betterlite.types.utils.values import (
     JsonValue,
@@ -61,9 +58,13 @@ class DpoMethod(ResponseObject):
 
 
 class GraderInput(ResponseObject):
-    content: JsonValue
+    content: GraderContent
     role: Literal["user", "assistant", "system", "developer"]
     type: Literal["message"] | None
+
+    @field_validator("content", mode="before")
+    def pick_content(self, value: StoredValue) -> StoredValue:
+        return content_item(value)
 
 
 class SamplingParams(ResponseObject):
@@ -196,21 +197,6 @@ class WandbIntegration(ResponseObject):
 class WandbIntegrationObject(ResponseObject):
     type: Literal["wandb"]
     wandb: WandbIntegration
-
-
-class TranscriptionResponse(ResponseObject):
-    text: str | None
-    # ast-grep-ignore: no-long-names
-    usage: TranscriptionUsageDurationObject | TranscriptionUsageTokensObject | None
-    _hidden_params: dict[str, StoredValue]
-    _response_headers: dict[str, StoredValue] | None
-    defaults: ClassVar[dict[str, StoredValue]] = {
-        "_hidden_params": {}, "_response_headers": None,
-    }
-
-    @override
-    def __init__(self, text: str | None = None) -> None:
-        super().__init__(text=text)
 
 
 class LiteLLMFineTuningJob(ResponseObject):

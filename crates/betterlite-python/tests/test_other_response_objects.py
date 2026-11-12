@@ -745,6 +745,25 @@ def test_small_types_method() -> None:
     score_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=score_method)
     score_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=score_method)
     assert_same("fine tuning score grader", score_reference, score_ours)
+    content_grader: dict[str, JsonValue] = {
+        "type": "score_model",
+        "name": "g",
+        "model": "gpt-4o",
+        "input": [{
+            "role": "user",
+            "content": [
+                {"type": "input_image", "image_url": "u"},
+                {"type": "input_text", "text": "t"},
+            ],
+        }],
+    }
+    content_method: dict[str, JsonValue] = {
+        "type": "reinforcement",
+        "reinforcement": {"grader": content_grader},
+    }
+    content_reference = litellm_utils.LiteLLMFineTuningJob(**job, method=content_method)
+    content_ours = betterlite_utils.LiteLLMFineTuningJob(**job, method=content_method)
+    assert_same("fine tuning image content", content_reference, content_ours)
     multi_grader: dict[str, JsonValue] = {
         "type": "multi",
         "name": "g",

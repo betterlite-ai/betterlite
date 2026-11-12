@@ -15,9 +15,6 @@ from betterlite.types.utils.media import (
     ImageResponse,
     ImageUsage,
     ImageUsageInputTokensDetails,
-    TranscriptionUsageDurationObject,
-    TranscriptionUsageInputTokenDetailsObject,
-    TranscriptionUsageTokensObject,
 )
 from betterlite.types.utils.message import Delta, Message, add_provider_specific_fields
 from betterlite.types.utils.response import (
@@ -35,12 +32,15 @@ from betterlite.types.utils.small_types import (
     LiteLLMFineTuningJob,
     LiteLLMLoggingBaseClass,
     LiteLLMRealtimeStreamLoggingObject,
-    TranscriptionResponse,
 )
 from betterlite.types.utils.text_completion import (
     Logprobs,
     TextChoices,
     TextCompletionResponse,
+    TranscriptionResponse,
+    TranscriptionUsageDurationObject,
+    TranscriptionUsageInputTokenDetailsObject,
+    TranscriptionUsageTokensObject,
 )
 from betterlite.types.utils.tool_calls import (
     ChatCompletionAudioResponse,
