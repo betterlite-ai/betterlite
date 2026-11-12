@@ -1,0 +1,18 @@
+kind: helper
+name: langflow-flow-id-in-params
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: flow
+    provider:
+      api_base: null
+      api_key: null
+      environment: {}
+    urls:
+      - {model: "langflow/abc", options: {flow_id: other}, api_base: "http://host:7860"}
+      - {model: "abc", options: {flow_id: ""}, api_base: "http://host:7860"}
+      - {model: "abc", options: {flow_id: 0}, api_base: "http://host:7860"}
+      - {model: "abc", options: {flow_id: {x: 1}}, api_base: "http://host:7860"}
+      - {model: "abc", options: {flow_id: null}, api_base: "http://host:7860"}
+    validate: []

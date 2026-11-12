@@ -1,0 +1,11 @@
+kind: helper
+name: azure-default-chain-provider-seed
+call:
+  azure_default_chain:
+    provider:
+      steps:
+        - environment: {AZURE_CLIENT_ID: seed-client, AZURE_CLIENT_SECRET: seed-secret, AZURE_TENANT_ID: seed-tenant}
+          credential: ClientSecretCredential
+          scope: null
+env: {}
+compare: {ignore: []}

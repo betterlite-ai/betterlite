@@ -1,0 +1,10 @@
+kind: helper
+name: provider-alias-resolution-no-table
+call:
+  anthropic_beta_config:
+    function: provider_name
+    matrix: {anthropic: {}}
+    provider: vertex_ai_beta
+env: {}
+compare:
+  ignore: []

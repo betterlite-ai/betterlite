@@ -1,0 +1,1 @@
+{"predictions": [{"textEmbedding": [0.1, 0.2]}, {"imageEmbedding": [0.3]}], "model": "multimodalembedding@001"}
