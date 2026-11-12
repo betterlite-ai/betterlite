@@ -105,14 +105,24 @@ fn literal_fallback_work_is_bounded() {
         at_eight.saturating_add(1)
     )));
     assert!(hits_work_limit(&wrapped("None", 24)));
-    let hidden = format!("['\\N{{'}}', {}None{}]", "[".repeat(22), "]".repeat(22));
+    assert!(hits_work_limit(b"['abc"));
+    let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
+    assert!(!hits_work_limit(siblings));
+}
+
+#[test]
+fn literal_name_escapes_follow_the_quote_kind() {
+    let nested = format!("{}None{}", "[".repeat(22), "]".repeat(22));
+    let hidden = format!("['\\N{{'}}', {nested}]");
     assert!(hits_work_limit(hidden.as_bytes()));
     assert!(!hits_work_limit(b"['\\N{}', {'a': 1}]"));
     assert!(!hits_work_limit(b"['\\N{', 1]"));
     assert!(!hits_work_limit(b"['\\N{'}', 1]"));
-    assert!(hits_work_limit(b"['abc"));
-    let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
-    assert!(!hits_work_limit(siblings));
+    let bytes = format!("[b'\\N{{', {nested}, '}}']");
+    assert!(hits_work_limit(bytes.as_bytes()));
+    let upper = format!("[B\"\\N{{\", {nested}, '}}']");
+    assert!(hits_work_limit(upper.as_bytes()));
+    assert!(!hits_work_limit(b"[b'\\N{}', 1]"));
 }
 
 #[rstest]
