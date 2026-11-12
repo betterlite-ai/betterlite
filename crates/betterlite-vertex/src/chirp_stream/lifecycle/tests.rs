@@ -188,20 +188,51 @@ fn scripting_stream(
     )
 }
 
-async fn relayed(
+async fn join_relay(mut tasks: JoinSet<SignedDuration>) -> SignedDuration {
+    timeout(Duration::from_secs(5), tasks.join_next())
+        .await
+        .expect("the relay finishes")
+        .expect("the relay task finishes")
+        .expect("the relay does not panic")
+}
+
+fn start_relay(
     stream: &Arc<RecognizeStream>,
     billed_before: f64,
-) -> (SignedDuration, mpsc::Receiver<OutboxItem>) {
+) -> (mpsc::Receiver<OutboxItem>, JoinSet<SignedDuration>) {
     let (outbox_tx, outbox_rx) = mpsc::channel(OUTBOX_SIZE);
     let relayed = Arc::clone(stream);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move { relayed.relay(outbox_tx, billed_before).await });
-    let billed = timeout(Duration::from_secs(5), tasks.join_next())
-        .await
-        .expect("the relay finishes")
-        .expect("the relay task finishes")
-        .expect("the relay does not panic");
+    (outbox_rx, tasks)
+}
+
+async fn expect_turn(outbox_rx: &mut mpsc::Receiver<OutboxItem>) {
+    assert!(matches!(
+        outbox_rx.recv().await,
+        Some(OutboxItem::TurnResult { .. })
+    ));
+}
+
+async fn relayed(
+    stream: &Arc<RecognizeStream>,
+    billed_before: f64,
+) -> (SignedDuration, mpsc::Receiver<OutboxItem>) {
+    let (outbox_rx, tasks) = start_relay(stream, billed_before);
+    let billed = join_relay(tasks).await;
     (billed, outbox_rx)
+}
+
+async fn script_response(
+    responses_tx: &Scripted,
+    event: SpeechEventType,
+    seconds: i64,
+    nanos: i32,
+) {
+    responses_tx
+        .send(Some(Ok(billing_response(event, seconds, nanos))))
+        .await
+        .expect("the response is scripted");
 }
 
 async fn fill_queue(stream: &Arc<RecognizeStream>) {
@@ -282,27 +313,11 @@ async fn cancelling_a_running_relay_stops_it() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
     let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
-    let (outbox_tx, mut outbox_rx) = mpsc::channel(OUTBOX_SIZE);
-    let relayed = Arc::clone(&stream);
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move { relayed.relay(outbox_tx, 0.0).await });
-    responses_tx
-        .send(Some(Ok(billing_response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response is scripted");
-    let first = outbox_rx.recv().await.expect("the first result");
-    let (_, event) = turn_result(first);
-    assert_eq!(event.billed_seconds.to_bits(), 0.25_f64.to_bits());
+    let (mut outbox_rx, tasks) = start_relay(&stream, 0.0);
+    script_response(&responses_tx, SpeechEventType::Unspecified, 0, 250_000_000).await;
+    expect_turn(&mut outbox_rx).await;
     stream.halt.cancel();
-    let billed = timeout(Duration::from_secs(5), tasks.join_next())
-        .await
-        .expect("the relay stops after the cancel")
-        .expect("the relay task finishes")
-        .expect("the relay does not panic");
+    let billed = join_relay(tasks).await;
     assert_eq!(billed, SignedDuration::new(0, 250_000_000));
     assert_eq!(
         outbox_rx
@@ -324,10 +339,7 @@ async fn the_client_closes_only_after_the_response_stream_ends() {
     let half_closed = Arc::new(Notify::new());
     let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
     stream.half_close().await.expect("the terminator is queued");
-    let (outbox_tx, mut outbox_rx) = mpsc::channel(OUTBOX_SIZE);
-    let relayed = Arc::clone(&stream);
-    let mut tasks = JoinSet::new();
-    tasks.spawn(async move { relayed.relay(outbox_tx, 0.0).await });
+    let (mut outbox_rx, tasks) = start_relay(&stream, 0.0);
     timeout(Duration::from_secs(5), half_closed.notified())
         .await
         .expect("the request side half-closes");
@@ -336,25 +348,11 @@ async fn the_client_closes_only_after_the_response_stream_ends() {
         0,
         "half-close must not close a stream that still has responses"
     );
-    responses_tx
-        .send(Some(Ok(billing_response(
-            SpeechEventType::Unspecified,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the response arrives after the half-close");
-    assert!(matches!(
-        outbox_rx.recv().await,
-        Some(OutboxItem::TurnResult { .. })
-    ));
+    script_response(&responses_tx, SpeechEventType::Unspecified, 0, 250_000_000).await;
+    expect_turn(&mut outbox_rx).await;
     assert_eq!(recorder.closed.load(Ordering::SeqCst), 0);
     drop(responses_tx);
-    let billed = timeout(Duration::from_secs(5), tasks.join_next())
-        .await
-        .expect("the relay finishes")
-        .expect("the relay task finishes")
-        .expect("the relay does not panic");
+    let billed = join_relay(tasks).await;
     assert_eq!(billed, SignedDuration::new(0, 250_000_000));
     assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
 }
@@ -458,31 +456,61 @@ async fn a_stream_that_cannot_open_enqueues_the_reason_and_closes() {
 }
 
 #[tokio::test]
-async fn activity_events_track_the_final_state() {
+async fn a_begin_makes_the_stream_active() {
     let recorder = Arc::new(Recorder::default());
     let half_closed = Arc::new(Notify::new());
-    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 4, Fault::None);
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
     stream.half_close().await.expect("the terminator is queued");
-    responses_tx
-        .send(Some(Ok(billing_response(
-            SpeechEventType::SpeechActivityBegin,
-            1,
-            250_000_000,
-        ))))
-        .await
-        .expect("the begin is scripted");
-    responses_tx
-        .send(Some(Ok(billing_response(
-            SpeechEventType::SpeechActivityEnd,
-            0,
-            250_000_000,
-        ))))
-        .await
-        .expect("the end is scripted");
+    let (mut outbox_rx, tasks) = start_relay(&stream, 0.5);
+    script_response(
+        &responses_tx,
+        SpeechEventType::SpeechActivityBegin,
+        1,
+        250_000_000,
+    )
+    .await;
+    expect_turn(&mut outbox_rx).await;
+    assert!(
+        stream.speech_active.load(Ordering::SeqCst),
+        "a begin makes the stream active"
+    );
     drop(responses_tx);
-    let (billed, _events) = relayed(&stream, 0.5).await;
+    let billed = join_relay(tasks).await;
     assert_eq!(billed, SignedDuration::new(1, 250_000_000));
-    assert!(!stream.speech_active.load(Ordering::SeqCst));
+    assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn an_end_makes_the_stream_inactive() {
+    let recorder = Arc::new(Recorder::default());
+    let half_closed = Arc::new(Notify::new());
+    let (stream, responses_tx) = scripting_stream(&recorder, &half_closed, 1, Fault::None);
+    stream.half_close().await.expect("the terminator is queued");
+    let (mut outbox_rx, tasks) = start_relay(&stream, 0.0);
+    script_response(
+        &responses_tx,
+        SpeechEventType::SpeechActivityBegin,
+        1,
+        250_000_000,
+    )
+    .await;
+    expect_turn(&mut outbox_rx).await;
+    assert!(stream.speech_active.load(Ordering::SeqCst));
+    script_response(
+        &responses_tx,
+        SpeechEventType::SpeechActivityEnd,
+        0,
+        500_000_000,
+    )
+    .await;
+    expect_turn(&mut outbox_rx).await;
+    assert!(
+        !stream.speech_active.load(Ordering::SeqCst),
+        "an end makes the stream inactive"
+    );
+    drop(responses_tx);
+    let billed = join_relay(tasks).await;
+    assert_eq!(billed, SignedDuration::new(1, 250_000_000));
     assert_eq!(recorder.closed.load(Ordering::SeqCst), 1);
 }
 
