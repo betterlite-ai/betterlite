@@ -36,7 +36,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use crate::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
+use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 
 use super::executor::DirectEmbeddingExecutor;
 use super::filters::{requested_create_params, requested_search_params};

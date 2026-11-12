@@ -1,0 +1,17 @@
+kind: helper
+name: responses-provider-signing-passthrough
+call:
+  responses_provider_contract:
+    action: signing_passthrough
+    model: m
+    headers: {Authorization: Bearer test}
+    optional_params: {stream: true}
+    request_data: {input: hi}
+    api_base: https://example.test
+    api_key: null
+    stream: true
+    fake_stream: false
+    extra_body: {custom: 7}
+    request: {input: hi}
+env: {}
+compare: {ignore: []}

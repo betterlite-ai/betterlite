@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-dispatch-contract-invoke-plan
+call:
+  bedrock_dispatch_contract:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    cases:
+      - model: "anthropic.claude-3-haiku-20240307-v1:0"
+        aws_region_name: "us-east-1"
+      - model: "bedrock/anthropic.claude-3-haiku-20240307-v1:0"
+        aws_region_name: "eu-west-1"
+      - model: "arn:aws:bedrock:eu-west-3:123456789012:inference-profile/global.anthropic.claude"
+        api_base: "https://bedrock-proxy.example"
+        settings:
+          aws_region_name: "eu-north-1"
+      - model: "anthropic.claude-3-haiku-20240307-v1:0"
+        model_id: "arn:aws:bedrock:us-east-2:123456789012:inference-profile/global.anthropic.claude"
+        settings:
+          aws_region_name: "eu-north-1"
+      - model: "meta.llama3-70b-instruct-v1:0"
+        aws_region_name: "ap-south-1"
+        api_base: "https://bedrock-proxy.example"
+        aws_bedrock_runtime_endpoint: "https://runtime.example"
+      - model: "amazon.nova-lite-v1:0"
+        aws_region_name: "ca-central-1"
+env:
+  AWS_REGION_NAME: "eu-north-1"
+compare: {ignore: []}

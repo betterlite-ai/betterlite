@@ -1,0 +1,10 @@
+kind: helper
+name: accessor-field-other-error
+call:
+  responses_tool_repair:
+    operation: field
+    target: {__object__: {attrs: {k: 1}, get: {raises: other}}}
+    key: k
+env: {}
+compare:
+  ignore: []
