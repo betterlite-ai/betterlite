@@ -1,0 +1,10 @@
+kind: helper
+name: base-defaults
+call:
+  file_contracts:
+    function: base_defaults
+    response_body: '{"has_more": true}'
+    optional_params: {after: f}
+    litellm_params: {cursor: c}
+env: {}
+compare: {ignore: []}
