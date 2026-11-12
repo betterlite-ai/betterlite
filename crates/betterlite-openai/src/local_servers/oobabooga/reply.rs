@@ -19,7 +19,7 @@ struct ChatBody {
     #[serde(default)]
     error: Field<Value>,
     choices: Option<Vec<Choice>>,
-    usage: Option<ChatUsage>,
+    usage: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,7 +112,9 @@ pub fn transform_response(
         Field::Null => None,
         Field::Present(text) => Some(text),
     };
-    let usage = body.usage.ok_or(ReplyError::Missing { field: "usage" })?;
+    // LiteLLM reads usage last, so a bad usage never hides a missing choice
+    let raw_usage = body.usage.ok_or(ReplyError::Missing { field: "usage" })?;
+    let usage = ChatUsage::deserialize(raw_usage).map_err(|source| ReplyError::Shape { source })?;
     Ok(ChatReply {
         model: model.to_owned(),
         created,
