@@ -1,11 +1,12 @@
 use rstest::rstest;
 
 use super::{Case, Variable, assert_unrelated_key_rejected, assert_variable};
+use crate::sections::anthropic_capability_catalog::BEDROCK_MIN_THINKING_BUDGET;
 
 #[rstest]
 #[case::loads_bedrock_min_thinking_budget_tokens(Case::Loads {
     name: "BEDROCK_MIN_THINKING_BUDGET_TOKENS",
-    default: super::super::BEDROCK_MIN_THINKING_BUDGET,
+    default: BEDROCK_MIN_THINKING_BUDGET,
     variable: Variable::BedrockMin,
 })]
 #[case::rejects_unrelated_key(Case::UnrelatedKey)]

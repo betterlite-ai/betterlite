@@ -40,13 +40,10 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let disabled = params
-        .thinking
-        .as_ref()
-        .and_then(object_fields)
-        .and_then(|fields| text_field(fields, "type"))
-        == Some("disabled");
-    if !disabled {
+    let Some(Json::Object(thinking)) = params.thinking.as_ref() else {
+        return false;
+    };
+    if !matches!(thinking.get("type"), Some(Json::Text(kind)) if kind == "disabled") {
         return false;
     }
     if !supports_model_capability(
@@ -100,10 +97,10 @@ where
     {
         return Ok(());
     }
-    let Some(thinking) = params.thinking.as_ref().and_then(object_fields) else {
+    let Some(Json::Object(thinking)) = params.thinking.as_ref() else {
         return Ok(());
     };
-    if text_field(thinking, "type") != Some("enabled") {
+    if !matches!(thinking.get("type"), Some(Json::Text(kind)) if kind == "enabled") {
         return Ok(());
     }
     let effort_request = EffortRequest {
@@ -113,23 +110,33 @@ where
         thresholds: request.thresholds,
     };
     let effort = legacy_budget_to_effort(&effort_request, environment, catalogs).await;
+    params.output_config = Some(overlay_output_config(effort, params.output_config.as_ref()));
+    params.thinking = Some(adaptive_thinking(thinking.get("display")));
+    Ok(())
+}
+
+// A summarized or omitted display carries over; any other display value is dropped.
+fn adaptive_thinking(requested: Option<&Json>) -> Json {
     let mut adaptive = IndexMap::new();
     adaptive.insert("type".to_owned(), Json::Text("adaptive".to_owned()));
-    if let Some(Json::Text(display)) = thinking.get("display")
+    if let Some(Json::Text(display)) = requested
         && (display == "summarized" || display == "omitted")
     {
         adaptive.insert("display".to_owned(), Json::Text(display.clone()));
     }
-    params.thinking = Some(Json::Object(adaptive));
+    Json::Object(adaptive)
+}
+
+// The caller's output_config overlays the inferred effort, so even effort=None wins.
+fn overlay_output_config(effort: &str, existing: Option<&Json>) -> Json {
     let mut config = IndexMap::new();
     config.insert("effort".to_owned(), Json::Text(effort.to_owned()));
-    if let Some(Json::Object(fields)) = params.output_config.as_ref() {
+    if let Some(Json::Object(fields)) = existing {
         for (key, value) in fields {
             config.insert(key.clone(), value.clone());
         }
     }
-    params.output_config = Some(Json::Object(config));
-    Ok(())
+    Json::Object(config)
 }
 
 #[must_use]
@@ -178,12 +185,6 @@ where
     let Some(params) = optional_params else {
         return false;
     };
-    if params.reasoning_effort.is_none()
-        && params.thinking.is_none()
-        && params.output_config.is_none()
-    {
-        return false;
-    }
     let adaptive = !model.is_empty()
         && supports_model_capability(
             model,
@@ -208,20 +209,6 @@ where
         return true;
     }
     false
-}
-
-const fn object_fields(value: &Json) -> Option<&IndexMap<String, Json>> {
-    match value {
-        Json::Object(fields) => Some(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-fn text_field<'fields>(fields: &'fields IndexMap<String, Json>, key: &str) -> Option<&'fields str> {
-    match fields.get(key) {
-        Some(Json::Text(text)) => Some(text),
-        Some(_) | None => None,
-    }
 }
 
 // Python's int(thinking.get("budget_tokens") or 0): absent and null read as 0, floats truncate.

@@ -19,9 +19,12 @@ const XHIGH_ENV: &str = "DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET";
 const MAX_ENV: &str = "DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET";
 const BEDROCK_MIN_ENV: &str = "BEDROCK_MIN_THINKING_BUDGET_TOKENS";
 
-// This section reads no YAML key; every budget comes from the process environment.
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    // LiteLLM reads every budget only from the environment, so this section owns no YAML key
+    #[serde(skip)]
+    _no_yaml_keys: (),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {

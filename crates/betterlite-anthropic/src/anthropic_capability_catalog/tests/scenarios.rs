@@ -6,6 +6,7 @@ use crate::anthropic_capability_catalog::forced_tool::{
     DROP_FORCED_TOOL_WARNING, ForcedToolChoiceError, apply_forced_tool_choice,
     forced_tool_use_downgraded, forced_tool_use_unsupported,
 };
+use crate::anthropic_capability_catalog::sampling::SamplingParam::{Temperature, TopK, TopP};
 use crate::anthropic_capability_catalog::sampling::{
     SamplingError, SamplingParam, SamplingRequest, apply_sampling_param, supports_sampling_params,
 };
@@ -13,7 +14,9 @@ use crate::anthropic_capability_catalog::thinking::{
     DROP_DISABLED_THINKING_WARNING, EffortRequest, ThinkingError, ThinkingRequest, is_effort_used,
     legacy_budget_to_effort, maybe_drop_disabled_thinking, translate_legacy_thinking,
 };
-use crate::anthropic_capability_catalog::{DropParams, EffortThresholds, OptionalParams};
+use crate::anthropic_capability_catalog::{
+    CatalogSources, DropParams, EffortThresholds, OptionalParams,
+};
 
 const CATALOG_MODELS: &str = r#"{
     "anthropic/claude-x": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
@@ -204,6 +207,15 @@ async fn display_translation(fixture: &Fixture) {
         Some(json(r#"{"type": "adaptive", "display": "summarized"}"#))
     );
     assert_eq!(displayed.output_config, Some(json(r#"{"effort": "high"}"#)));
+    let mut omitted =
+        params(r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "omitted"}}"#);
+    translate(fixture, "claude-opus-4-7", &mut omitted)
+        .await
+        .expect("translation");
+    assert_eq!(
+        omitted.thinking,
+        Some(json(r#"{"type": "adaptive", "display": "omitted"}"#))
+    );
     let mut updated =
         params(r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "updates"}}"#);
     translate(fixture, "claude-opus-4-7", &mut updated)
@@ -291,28 +303,34 @@ async fn budget_edges(fixture: &Fixture) {
     assert_eq!(float.output_config, Some(json(r#"{"effort": "high"}"#)));
 }
 
+const NO_DROP: DropParams = DropParams {
+    global: false,
+    call: false,
+};
+const GLOBAL_DROP: DropParams = DropParams {
+    global: true,
+    call: false,
+};
+const CALL_DROP: DropParams = DropParams {
+    global: false,
+    call: true,
+};
+
 pub(super) fn forced_tool_downgrade() {
     let fixture = Fixture::new(FORCED_MODELS, "{}");
     let catalogs = fixture.catalogs();
     assert!(forced_tool_use_unsupported("claude-fable-5-1", &catalogs));
     assert!(!forced_tool_use_unsupported("claude-sonnet-4-5", &catalogs));
-    let refused = forced_tool_use_downgraded("claude-fable-5-1", DropParams::default(), &catalogs)
+    let refused = forced_tool_use_downgraded("claude-fable-5-1", NO_DROP, &catalogs)
         .expect_err("no drop_params");
     assert_eq!(refused.status_code(), Some(400));
     assert_eq!(
-        forced_tool_use_downgraded("claude-sonnet-4-5", DropParams::default(), &catalogs),
+        forced_tool_use_downgraded("claude-sonnet-4-5", NO_DROP, &catalogs),
         Ok(false)
     );
     let (guard, warnings) = capture_warnings();
     assert_eq!(
-        forced_tool_use_downgraded(
-            "claude-fable-5-1",
-            DropParams {
-                global: true,
-                call: false
-            },
-            &catalogs
-        ),
+        forced_tool_use_downgraded("claude-fable-5-1", GLOBAL_DROP, &catalogs),
         Ok(true)
     );
     assert_eq!(
@@ -320,66 +338,55 @@ pub(super) fn forced_tool_downgrade() {
         [DROP_FORCED_TOOL_WARNING.replacen("%s", "claude-fable-5-1", 1)]
     );
     drop(guard);
+    forced_tool_choices(&catalogs);
+}
+
+fn forced_tool_choices(catalogs: &CatalogSources<'_>) {
     let any = json(r#"{"type": "any"}"#);
     assert_eq!(
-        apply_forced_tool_choice("claude-sonnet-4-5", &any, DropParams::default(), &catalogs),
+        apply_forced_tool_choice("claude-sonnet-4-5", &any, NO_DROP, catalogs),
         Ok(any.clone())
     );
     assert_eq!(
-        apply_forced_tool_choice("claude-fable-5-1", &any, DropParams::default(), &catalogs),
+        apply_forced_tool_choice("claude-fable-5-1", &any, NO_DROP, catalogs),
         Err(ForcedToolChoiceError::Unsupported {
             model: "claude-fable-5-1".to_owned()
         })
     );
     let named = json(r#"{"type": "tool", "name": "lookup", "disable_parallel_tool_use": false}"#);
     let (guard, warnings) = capture_warnings();
-    let downgraded = apply_forced_tool_choice(
-        "claude-fable-5-1",
-        &named,
-        DropParams {
-            global: false,
-            call: true,
-        },
-        &catalogs,
-    )
-    .expect("downgrade");
+    let downgraded = apply_forced_tool_choice("claude-fable-5-1", &named, CALL_DROP, catalogs);
     assert_eq!(
         downgraded,
-        json(r#"{"type": "auto", "disable_parallel_tool_use": false}"#),
+        Ok(json(
+            r#"{"type": "auto", "disable_parallel_tool_use": false}"#
+        )),
         "the name is dropped and false parallel use is kept"
     );
     assert_eq!(warnings.messages().len(), 1);
     drop(guard);
     let null_parallel = json(r#"{"type": "any", "disable_parallel_tool_use": null}"#);
-    let drop = DropParams {
-        global: true,
-        call: false,
-    };
     assert_eq!(
-        apply_forced_tool_choice("claude-fable-5-1", &null_parallel, drop, &catalogs),
+        apply_forced_tool_choice("claude-fable-5-1", &null_parallel, GLOBAL_DROP, catalogs),
         Ok(json(r#"{"type": "auto"}"#))
     );
+    other_tool_choices(catalogs);
+}
+
+fn other_tool_choices(catalogs: &CatalogSources<'_>) {
     let none = json(r#"{"type": "none"}"#);
     assert_eq!(
-        apply_forced_tool_choice("claude-fable-5-1", &none, DropParams::default(), &catalogs),
+        apply_forced_tool_choice("claude-fable-5-1", &none, NO_DROP, catalogs),
         Ok(none.clone())
     );
+    let nameless = json(r#"{"name": "lookup"}"#);
     assert_eq!(
-        apply_forced_tool_choice(
-            "claude-fable-5-1",
-            &json(r#"{"name": "lookup"}"#),
-            DropParams::default(),
-            &catalogs
-        ),
+        apply_forced_tool_choice("claude-fable-5-1", &nameless, NO_DROP, catalogs),
         Err(ForcedToolChoiceError::MissingType)
     );
+    let text = json(r#""auto""#);
     assert_eq!(
-        apply_forced_tool_choice(
-            "claude-fable-5-1",
-            &json(r#""auto""#),
-            DropParams::default(),
-            &catalogs
-        ),
+        apply_forced_tool_choice("claude-fable-5-1", &text, NO_DROP, catalogs),
         Err(ForcedToolChoiceError::NotAnObject)
     );
 }
@@ -393,94 +400,53 @@ pub(super) fn sampling_capability() {
 
 fn sampling_flags(fixture: &Fixture) {
     let catalogs = fixture.catalogs();
-    assert!(supports_sampling_params("claude-sonnet-4-5", &catalogs));
-    assert!(supports_sampling_params("claude-opus-4-6", &catalogs));
-    assert!(!supports_sampling_params("claude-opus-4-7", &catalogs));
-    assert!(supports_sampling_params("claude-fable-lite", &catalogs));
-    assert!(!supports_sampling_params("claude-fable-5", &catalogs));
-    assert!(!supports_sampling_params("CLAUDE-FABLE-5", &catalogs));
-    assert!(!supports_sampling_params("claude-opus-4-8", &catalogs));
-    assert!(!supports_sampling_params("claude-opus_4_8", &catalogs));
-    assert!(!supports_sampling_params("claude-opus-4.8", &catalogs));
-    assert!(!supports_sampling_params("claude-opus_4.8", &catalogs));
-    assert!(!supports_sampling_params("claude-opus-4.7", &catalogs));
-    assert!(!supports_sampling_params("claude-opus_4.7", &catalogs));
+    for model in ["claude-sonnet-4-5", "claude-opus-4-6", "claude-fable-lite"] {
+        assert!(supports_sampling_params(model, &catalogs), "{model}");
+    }
+    for model in [
+        "claude-opus-4-7",
+        "claude-fable-5",
+        "CLAUDE-FABLE-5",
+        "claude-opus_4_7",
+        "claude-opus-4.7",
+        "claude-opus_4.7",
+        "claude-opus-4-8",
+        "claude-opus_4_8",
+        "claude-opus-4.8",
+        "claude-opus_4.8",
+    ] {
+        assert!(!supports_sampling_params(model, &catalogs), "{model}");
+    }
 }
 
 fn sampling_forwarding(fixture: &Fixture) {
-    let half = json("0.5");
-    assert_eq!(
-        sampling(
-            fixture,
+    let cases = [
+        (
             "claude-sonnet-4-5",
-            SamplingParam::Temperature,
-            &half,
-            DropParams::default()
-        )
-        .expect("supported"),
-        Some(half.clone())
-    );
-    assert_eq!(
-        sampling(
-            fixture,
+            Temperature,
+            "0.5",
+            NO_DROP,
+            Some("0.5"),
+        ),
+        ("claude-opus-4-8", Temperature, "1", NO_DROP, Some("1")),
+        ("claude-opus-4-8", Temperature, "1.0", NO_DROP, Some("1.0")),
+        (
             "claude-opus-4-8",
-            SamplingParam::Temperature,
-            &json("1"),
-            DropParams::default()
-        )
-        .expect("temperature 1"),
-        Some(json("1"))
-    );
-    assert_eq!(
-        sampling(
-            fixture,
-            "claude-opus-4-8",
-            SamplingParam::Temperature,
-            &json("1.0"),
-            DropParams::default()
-        )
-        .expect("float temperature 1"),
-        Some(json("1.0"))
-    );
-    assert_eq!(
-        sampling(
-            fixture,
-            "claude-opus-4-8",
-            SamplingParam::Temperature,
-            &json("true"),
-            DropParams::default()
-        )
-        .expect("bool temperature 1"),
-        Some(json("true"))
-    );
-    assert_eq!(
-        sampling(
-            fixture,
-            "claude-opus-4-8",
-            SamplingParam::TopP,
-            &half,
-            DropParams {
-                global: true,
-                call: false
-            }
-        )
-        .expect("global drop"),
-        None
-    );
-    assert_eq!(
-        sampling(
-            fixture,
-            "claude-opus-4-8",
-            SamplingParam::TopK,
-            &json("5"),
-            DropParams {
-                global: false,
-                call: true
-            }
-        )
-        .expect("call drop"),
-        None
-    );
+            Temperature,
+            "true",
+            NO_DROP,
+            Some("true"),
+        ),
+        ("claude-opus-4-8", TopP, "0.5", GLOBAL_DROP, None),
+        ("claude-opus-4-8", TopK, "5", CALL_DROP, None),
+    ];
+    for (model, param, value, drop, expected) in cases {
+        assert_eq!(
+            sampling(fixture, model, param, &json(value), drop).expect("allowed"),
+            expected.map(json),
+            "{model} {param:?} {value}"
+        );
+    }
 }
 
 fn sampling_refusals(fixture: &Fixture) {
@@ -491,14 +457,8 @@ fn sampling_refusals(fixture: &Fixture) {
 fn temperature_refusal(fixture: &Fixture) {
     let half = json("0.5");
     let (guard, warnings) = capture_warnings();
-    let temperature = sampling(
-        fixture,
-        "claude-opus-4-8",
-        SamplingParam::Temperature,
-        &half,
-        DropParams::default(),
-    )
-    .expect_err("no drop_params");
+    let temperature = sampling(fixture, "claude-opus-4-8", Temperature, &half, NO_DROP)
+        .expect_err("no drop_params");
     assert_eq!(temperature.status_code(), Some(400));
     let message = temperature.to_string();
     assert!(message.contains("claude-opus-4-8 does not support temperature=0.5."));
@@ -510,28 +470,16 @@ fn temperature_refusal(fixture: &Fixture) {
 
 fn other_refusals(fixture: &Fixture) {
     let half = json("0.5");
-    let top_p = sampling(
-        fixture,
-        "claude-opus-4-8",
-        SamplingParam::TopP,
-        &half,
-        DropParams::default(),
-    )
-    .expect_err("no drop_params");
+    let top_p =
+        sampling(fixture, "claude-opus-4-8", TopP, &half, NO_DROP).expect_err("no drop_params");
     assert_eq!(top_p.status_code(), Some(400));
     assert!(
         !top_p
             .to_string()
             .contains("Only temperature=1 is supported.")
     );
-    let top_k = sampling(
-        fixture,
-        "claude-opus-4-8",
-        SamplingParam::TopK,
-        &json("5"),
-        DropParams::default(),
-    )
-    .expect_err("no drop_params");
+    let top_k = sampling(fixture, "claude-opus-4-8", TopK, &json("5"), NO_DROP)
+        .expect_err("no drop_params");
     assert_eq!(top_k.status_code(), Some(400));
     assert!(top_k.to_string().contains("does not support top_k=5."));
 }
@@ -539,71 +487,36 @@ fn other_refusals(fixture: &Fixture) {
 pub(super) async fn legacy_budget_effort() {
     let fixture = Fixture::new(EFFORT_MODELS, "{}");
     let defaults = EffortThresholds::default();
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 8192, defaults).await,
-        "xhigh"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 0x4000, defaults).await,
-        "xhigh"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-sonnet-4-6", 0x4000, defaults).await,
-        "high",
-        "there is no max result even past the max threshold"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 8191, defaults).await,
-        "high"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 4096, defaults).await,
-        "high"
-    );
-    let defaults = EffortThresholds::default();
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 4095, defaults).await,
-        "medium"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 2048, defaults).await,
-        "medium"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 2047, defaults).await,
-        "low"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 0, defaults).await,
-        "low"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", -5, defaults).await,
-        "low"
-    );
     let custom = EffortThresholds {
         medium: 10,
         high: 20,
         xhigh: 30,
     };
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 30, custom).await,
-        "xhigh"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-sonnet-4-6", 30, custom).await,
-        "high",
-        "xhigh needs the model's supports_xhigh_reasoning_effort"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 20, custom).await,
-        "high"
-    );
-    assert_eq!(
-        effort(&fixture, "claude-opus-4-6", 10, custom).await,
-        "medium"
-    );
-    assert_eq!(effort(&fixture, "claude-opus-4-6", 9, custom).await, "low");
+    // claude-sonnet-4-6 lacks supports_xhigh_reasoning_effort, so it never reaches xhigh or max
+    let cases = [
+        ("claude-opus-4-6", 8192, defaults, "xhigh"),
+        ("claude-opus-4-6", 0x4000, defaults, "xhigh"),
+        ("claude-sonnet-4-6", 0x4000, defaults, "high"),
+        ("claude-opus-4-6", 8191, defaults, "high"),
+        ("claude-opus-4-6", 4096, defaults, "high"),
+        ("claude-opus-4-6", 4095, defaults, "medium"),
+        ("claude-opus-4-6", 2048, defaults, "medium"),
+        ("claude-opus-4-6", 2047, defaults, "low"),
+        ("claude-opus-4-6", 0, defaults, "low"),
+        ("claude-opus-4-6", -5, defaults, "low"),
+        ("claude-opus-4-6", 30, custom, "xhigh"),
+        ("claude-sonnet-4-6", 30, custom, "high"),
+        ("claude-opus-4-6", 20, custom, "high"),
+        ("claude-opus-4-6", 10, custom, "medium"),
+        ("claude-opus-4-6", 9, custom, "low"),
+    ];
+    for (model, budget, thresholds, expected) in cases {
+        assert_eq!(
+            effort(&fixture, model, budget, thresholds).await,
+            expected,
+            "{model} with budget {budget}"
+        );
+    }
 }
 
 pub(super) async fn disabled_thinking_warning() {
@@ -637,50 +550,52 @@ async fn other_thinking_values(fixture: &Fixture) {
     assert_eq!(absent.thinking, None);
 }
 
+const EFFORT_CASES: [(&str, &str, bool); 14] = [
+    ("claude-sonnet-4-5", "{}", false),
+    (
+        "claude-opus-4-7",
+        r#"{"output_config": {"effort": "high"}}"#,
+        false,
+    ),
+    ("claude-opus-4-7", r#"{"reasoning_effort": "high"}"#, false),
+    ("claude-opus-4-5", r#"{"reasoning_effort": "high"}"#, true),
+    ("claude-opus_4_5", r#"{"reasoning_effort": "low"}"#, true),
+    ("claude-opus-4-5", r#"{"reasoning_effort": ""}"#, false),
+    ("claude-opus-4-5", r#"{"reasoning_effort": 5}"#, false),
+    (
+        "claude-sonnet-4-5",
+        r#"{"reasoning_effort": "high"}"#,
+        false,
+    ),
+    (
+        "claude-sonnet-4-5",
+        r#"{"output_config": {"effort": "medium"}}"#,
+        true,
+    ),
+    (
+        "claude-sonnet-4-5",
+        r#"{"output_config": {"effort": ""}}"#,
+        false,
+    ),
+    (
+        "claude-sonnet-4-5",
+        r#"{"output_config": {"effort": 5}}"#,
+        false,
+    ),
+    ("claude-sonnet-4-5", r#"{"output_config": "plain"}"#, false),
+    ("claude-sonnet-4-5", r#"{"output_config": {}}"#, false),
+    ("", r#"{"output_config": {"effort": "high"}}"#, true),
+];
+
 pub(super) async fn effort_beta_gate() {
     let fixture = Fixture::new(ADAPTIVE_MODELS, "{}");
     assert!(!effort_used(&fixture, "claude-sonnet-4-5", None).await);
-    assert!(
-        !effort_used(&fixture, "claude-sonnet-4-5", Some(&params("{}"))).await,
-        "absent or empty options return false"
-    );
-    assert!(
-        !effort_used(
-            &fixture,
-            "claude-opus-4-7",
-            Some(&params(r#"{"output_config": {"effort": "high"}}"#))
-        )
-        .await,
-        "an adaptive model suppresses the effort beta"
-    );
-    assert!(
-        !effort_used(
-            &fixture,
-            "claude-opus-4-7",
-            Some(&params(r#"{"reasoning_effort": "high"}"#))
-        )
-        .await
-    );
-    let high = params(r#"{"reasoning_effort": "high"}"#);
-    assert!(effort_used(&fixture, "claude-opus-4-5", Some(&high)).await);
-    let low = params(r#"{"reasoning_effort": "low"}"#);
-    assert!(effort_used(&fixture, "claude-opus_4_5", Some(&low)).await);
-    let empty = params(r#"{"reasoning_effort": ""}"#);
-    assert!(!effort_used(&fixture, "claude-opus-4-5", Some(&empty)).await);
-    let number = params(r#"{"reasoning_effort": 5}"#);
-    assert!(!effort_used(&fixture, "claude-opus-4-5", Some(&number)).await);
-    assert!(
-        !effort_used(&fixture, "claude-sonnet-4-5", Some(&high)).await,
-        "reasoning_effort needs the opus-4-5 name"
-    );
-    let medium = params(r#"{"output_config": {"effort": "medium"}}"#);
-    assert!(effort_used(&fixture, "claude-sonnet-4-5", Some(&medium)).await);
-    let empty_config = params(r#"{"output_config": {"effort": ""}}"#);
-    assert!(!effort_used(&fixture, "claude-sonnet-4-5", Some(&empty_config)).await);
-    let number_effort = params(r#"{"output_config": {"effort": 5}}"#);
-    assert!(!effort_used(&fixture, "claude-sonnet-4-5", Some(&number_effort)).await);
-    let text = params(r#"{"output_config": "plain"}"#);
-    assert!(!effort_used(&fixture, "claude-sonnet-4-5", Some(&text)).await);
-    let blank = params(r#"{"output_config": {}}"#);
-    assert!(!effort_used(&fixture, "claude-sonnet-4-5", Some(&blank)).await);
+    for (model, text, expected) in EFFORT_CASES {
+        let optional_params = params(text);
+        assert_eq!(
+            effort_used(&fixture, model, Some(&optional_params)).await,
+            expected,
+            "{model} {text}"
+        );
+    }
 }
