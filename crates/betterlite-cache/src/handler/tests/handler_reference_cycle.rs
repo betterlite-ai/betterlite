@@ -62,42 +62,35 @@ async fn drops_the_logging_object_from_retrieved_kwargs() {
 async fn retrieval_does_not_keep_the_hit() {
     let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
     let cache = super::support::cache(Arc::clone(&backend));
+    let cache_source = source(&cache, AsyncSupport::Supported);
     let mut handler = handler(chat_kwargs());
     let request_kwargs = chat_kwargs();
     let _miss = retrieve_from_cache(
         &mut handler,
-        Some(&source(&cache, AsyncSupport::Supported)),
+        Some(&cache_source),
         CachingSupportedCallType::Acompletion,
         &request_kwargs,
         &[],
     )
     .await
     .expect("the first retrieval runs");
-    let key = handler
-        .preset_cache_key
-        .clone()
-        .expect("the first retrieval derives a preset key");
-    backend.seed(
-        &key,
-        super::support::envelope(cache_object(&[("id", cache_text("cached-answer"))])),
-    );
+    let key = handler.preset_cache_key.clone().expect("a preset key");
+    let stored = cache_object(&[("id", cache_text("cached-answer"))]);
+    backend.seed(&key, super::support::envelope(stored.clone()));
     let hit = retrieve_from_cache(
         &mut handler,
-        Some(&source(&cache, AsyncSupport::Supported)),
+        Some(&cache_source),
         CachingSupportedCallType::Acompletion,
         &request_kwargs,
         &[],
     )
     .await
     .expect("the second retrieval runs");
-    assert_eq!(
-        hit,
-        Retrieval::Hit(cache_object(&[("id", cache_text("cached-answer"))]))
-    );
+    assert_eq!(hit, Retrieval::Hit(stored));
     backend.clear();
     let after = retrieve_from_cache(
         &mut handler,
-        Some(&source(&cache, AsyncSupport::Supported)),
+        Some(&cache_source),
         CachingSupportedCallType::Acompletion,
         &request_kwargs,
         &[],
