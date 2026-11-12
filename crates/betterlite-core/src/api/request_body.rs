@@ -154,6 +154,7 @@ impl RequestBodyResult {
         self.parsed_body.as_ref().map(ParsedBody::visible)
     }
 
+    #[must_use]
     pub fn raw_json_body<'body>(&self, input: &'body RequestBodyInput) -> Option<&'body [u8]> {
         if self.parsed_body.is_none()
             || classify_media_type(input.content_type()) == MediaTypeKind::Form
