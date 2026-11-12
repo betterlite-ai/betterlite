@@ -4,7 +4,6 @@ use std::time::Duration;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
-use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
@@ -43,12 +42,11 @@ impl LogSink for Silent {
 pub(crate) struct Recorder(Mutex<Vec<Json>>);
 
 impl Recorder {
-    fn record(&self, details: &Json) -> Result<(), PrePostError> {
+    fn record(&self, details: &Json) {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
-        Ok(())
     }
 
     pub(crate) fn last(&self, phase: &str) -> Option<Value> {
@@ -79,7 +77,7 @@ fn callback_value(details: &Json) -> Value {
     let Json::Object(fields) = details else {
         return Value::Null;
     };
-    let input = fields.get("input").cloned().unwrap_or(Value::Null);
+    let input = fields.get("input").cloned().unwrap_or(Json::Null);
     let additional = fields
         .get("additional_args")
         .cloned()
@@ -104,8 +102,8 @@ fn arguments_value(additional: &Json) -> Value {
     let complete_input_dict = fields
         .get("complete_input_dict")
         .cloned()
-        .unwrap_or(Value::Null);
-    let acompletion = fields.get("acompletion").cloned().unwrap_or(Value::Null);
+        .unwrap_or(Json::Null);
+    let acompletion = fields.get("acompletion").cloned().unwrap_or(Json::Null);
     let mut header_names: Vec<String> = match fields.get("headers") {
         Some(Json::Object(headers)) => headers.keys().cloned().collect(),
         None
@@ -149,7 +147,10 @@ where
     )
     .map_err(|error| invalid(error.to_string()))?;
     let sink = Silent;
-    let logger = |details: &Json| recorder.record(details);
+    let logger = |details: &Json| {
+        recorder.record(details);
+        Ok(())
+    };
     let env = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),

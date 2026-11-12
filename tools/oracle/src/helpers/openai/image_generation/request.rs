@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -5,12 +6,14 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::call::ImageGenerationCall;
+use betterlite_openai::image_generation::error::ImageGenerationFailure;
 use betterlite_openai::image_generation::logging::{
     ImageGenerationLogger, PostCallRecord, PreCallRecord,
 };
 use betterlite_openai::image_generation::request::{
-    begin_image_generation, finish_image_generation, send_image_generation,
+    ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
 };
 use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 use http::HeaderMap;
@@ -39,10 +42,11 @@ impl FakeTransport {
     fn new(probe: &Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
         let mut headers = HeaderMap::new();
         for (name, value) in &probe.reply.headers {
-            let name = HeaderName::from_bytes(name.as_bytes())
+            let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|error| invalid(error.to_string()))?;
-            let value = HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
-            headers.insert(name, value);
+            let header_value =
+                HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
+            headers.insert(header_name, header_value);
         }
         Ok(Self {
             status: probe.reply.status,
@@ -67,7 +71,10 @@ impl FakeTransport {
 }
 
 impl ImageGenerationTransport for FakeTransport {
-    async fn generate(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+    fn generate(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> {
         let body = match &request.body {
             RequestBody::Json(bytes) => bytes.clone(),
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => {
@@ -81,14 +88,16 @@ impl ImageGenerationTransport for FakeTransport {
                 body,
                 deadline: request.deadline,
             });
-        if self.failure.is_some() {
-            return Err(TransportError::Closed);
-        }
-        Ok(UpstreamResponse {
-            status: self.status,
-            headers: self.headers.clone(),
-            body: self.body.clone(),
-        })
+        let outcome = if self.failure.is_some() {
+            Err(TransportError::Closed)
+        } else {
+            Ok(UpstreamResponse {
+                status: self.status,
+                headers: self.headers.clone(),
+                body: self.body.clone(),
+            })
+        };
+        ready(outcome)
     }
 }
 
@@ -145,7 +154,22 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         Err(failure) => Err(failure),
     };
     let calls = transport.calls();
-    let client = if calls.is_empty() {
+    let client = client_value(probe, max_retries, calls.is_empty());
+    let (result, provider_headers, error) = outcome_parts(outcome)?;
+    let bodies = call_bodies(&calls)?;
+    Ok(json!({
+        "client": client,
+        "calls": bodies,
+        "result": result,
+        "provider_headers": provider_headers,
+        "error": error,
+        "pre_call": recorder.pre_calls.last().cloned().unwrap_or(Value::Null),
+        "post_call": recorder.post_calls.last().cloned().unwrap_or(Value::Null),
+    }))
+}
+
+fn client_value(probe: &Probe, max_retries: Option<i64>, empty: bool) -> Value {
+    if empty {
         Value::Null
     } else {
         json!({
@@ -154,37 +178,36 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
             "organization": probe.organization,
             "max_retries": max_retries,
         })
-    };
-    let (result, provider_headers, error) = match outcome {
-        Ok(outcome) => (
-            serde_json::to_value(&outcome.reply).map_err(|error| invalid(error.to_string()))?,
-            serde_json::to_value(&outcome.provider_headers.headers)
+    }
+}
+
+fn outcome_parts(
+    outcome: Result<ImageGenerationOutcome, ImageGenerationFailure>,
+) -> Result<(Value, Value, Value), Box<crate::helpers::HelperError>> {
+    match outcome {
+        Ok(found) => Ok((
+            serde_json::to_value(&found.reply).map_err(|error| invalid(error.to_string()))?,
+            serde_json::to_value(&found.provider_headers.headers)
                 .map_err(|error| invalid(error.to_string()))?,
             Value::Null,
-        ),
-        Err(failure) => (
+        )),
+        Err(failure) => Ok((
             Value::Null,
             Value::Null,
             json!({"mapped": failure.mapped(), "status": failure.status()}),
-        ),
-    };
-    let calls = calls
+        )),
+    }
+}
+
+fn call_bodies(calls: &[Recorded]) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+    calls
         .iter()
         .map(|record| {
-            let body: betterlite_models::decisions::Json =
+            let body: Json =
                 serde_json::from_slice(&record.body).map_err(|error| invalid(error.to_string()))?;
             Ok(json!({"body": body, "timeout": record.deadline.as_secs_f64()}))
         })
-        .collect::<Result<Vec<Value>, Box<crate::helpers::HelperError>>>()?;
-    Ok(json!({
-        "client": client,
-        "calls": calls,
-        "result": result,
-        "provider_headers": provider_headers,
-        "error": error,
-        "pre_call": recorder.pre_calls.last().cloned().unwrap_or(Value::Null),
-        "post_call": recorder.post_calls.last().cloned().unwrap_or(Value::Null),
-    }))
+        .collect()
 }
 
 fn call_for(probe: &Probe) -> ImageGenerationCall {

@@ -54,6 +54,7 @@ impl ImageGenerationLogger for PrePostLogger<'_, '_> {
             },
             self.env,
         )
+        .map(drop)
     }
 
     fn post_call(&mut self, record: PostCallRecord) {

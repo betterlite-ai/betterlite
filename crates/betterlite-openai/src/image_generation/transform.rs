@@ -19,6 +19,7 @@ pub enum ImageTransformError {
     Reply(#[from] ImageReplyError),
 }
 
+#[derive(Clone, Copy)]
 pub struct ImageTransformCall<'raw> {
     pub family: ImageFamily,
     pub raw: &'raw [u8],

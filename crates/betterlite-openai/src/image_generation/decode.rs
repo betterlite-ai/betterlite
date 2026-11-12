@@ -51,15 +51,12 @@ fn response_object_error(error: &Json) -> Option<ImageReplyError> {
             }
             let status = fields
                 .get("code")
-                .and_then(|code| match code {
-                    Json::Number(number) => {
-                        number.as_i64().and_then(|value| u16::try_from(value).ok())
-                    }
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Text(_)
-                    | Json::List(_)
-                    | Json::Object(_) => None,
+                .and_then(|code| {
+                    let Json::Number(number) = code else {
+                        return None;
+                    };
+                    let value = number.as_i64()?;
+                    u16::try_from(value).ok()
                 })
                 .unwrap_or(422);
             let message = match fields.get("message") {

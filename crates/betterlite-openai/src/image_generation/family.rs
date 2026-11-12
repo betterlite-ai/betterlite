@@ -72,7 +72,9 @@ pub fn map_openai_params(
         }
         if supported.contains(&name.as_str()) {
             optional_params.insert(name.clone(), value.clone());
-        } else if !drop_params {
+            continue;
+        }
+        if !drop_params {
             return Err(ImageParamError::Unsupported {
                 parameter: name.clone(),
                 model: model.to_owned(),

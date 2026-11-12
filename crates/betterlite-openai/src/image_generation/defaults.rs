@@ -71,11 +71,9 @@ fn integer_option(value: Option<&Json>) -> Option<i64> {
     match value {
         Some(Json::Number(number)) => number.as_i64(),
         None
-        | Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Text(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_)) => None,
+        | Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+            None
+        }
     }
 }
 

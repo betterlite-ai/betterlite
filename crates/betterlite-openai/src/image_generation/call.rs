@@ -27,6 +27,7 @@ pub struct ImageGenerationCall {
     pub now_seconds: i64,
 }
 
+#[derive(Debug)]
 pub struct PreparedImageCall {
     pub prompt: String,
     pub api_base: String,
@@ -42,6 +43,7 @@ pub struct PreparedImageCall {
     pub now_seconds: i64,
 }
 
+#[derive(Debug)]
 pub struct PrepareFailure {
     pub data: IndexMap<String, Json>,
     pub source: ImageGenerationSource,
@@ -91,7 +93,7 @@ fn take_max_retries(data: &mut IndexMap<String, Json>) -> Result<i64, ImageGener
 }
 
 pub(super) fn authorization_headers(api_key: Option<&SecretString>) -> IndexMap<String, Json> {
-    let key = api_key.map_or("None", |key| key.expose_secret().as_str());
+    let key = api_key.map_or("None", |key| key.expose_secret());
     IndexMap::from([(
         String::from("Authorization"),
         Json::Text(format!("Bearer {key}")),
@@ -121,7 +123,7 @@ fn wire_body(data: &IndexMap<String, Json>, headers: Option<Headers>) -> IndexMa
 }
 
 fn request_headers(api_key: Option<&SecretString>) -> Result<HeaderMap, ImageGenerationSource> {
-    let key = api_key.map_or("None", |key| key.expose_secret().as_str());
+    let key = api_key.map_or("None", |key| key.expose_secret());
     let value = HeaderValue::from_str(&format!("Bearer {key}")).map_err(|source| {
         ImageGenerationSource::RequestHeader {
             name: String::from("Authorization"),

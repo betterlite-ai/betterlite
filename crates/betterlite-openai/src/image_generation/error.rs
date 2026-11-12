@@ -2,6 +2,7 @@ use std::string::FromUtf8Error;
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use http::header::{InvalidHeaderValue, ToStrError};
 use thiserror::Error;
 
 use super::reply::ImageReplyError;
@@ -40,13 +41,13 @@ pub enum ImageGenerationSource {
     RequestHeader {
         name: String,
         #[source]
-        source: http::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the {name} response header is not text")]
     ResponseHeader {
         name: String,
         #[source]
-        source: http::header::ToStrError,
+        source: ToStrError,
     },
     #[error(transparent)]
     Reply(#[from] ImageReplyError),
@@ -87,7 +88,7 @@ impl OpenAiImageError {
     pub fn wrapped(source: ImageGenerationSource) -> Self {
         let status = match source.status() {
             ErrorStatus::Missing => ErrorStatus::Code(500),
-            found => found,
+            found @ ErrorStatus::Code(_) => found,
         };
         Self {
             status,
@@ -130,7 +131,7 @@ impl ImageGenerationFailure {
     }
 
     #[must_use]
-    pub fn source(&self) -> &ImageGenerationSource {
+    pub fn failure_source(&self) -> &ImageGenerationSource {
         match self {
             Self::Wrapped(error) => &error.source,
             Self::Raw(source) => source,

@@ -6,7 +6,9 @@ use std::path::Path;
 use crate::case::HelperCase;
 use crate::case::helper::validate_helper;
 
-use super::Input;
+use serde_json::Value;
+
+use super::{Function, Input};
 
 const PREFIX: &str = "openai_image_generation-";
 
@@ -44,7 +46,8 @@ fn helper_seeds_select_openai_image_generation() {
             .trim_end_matches(".yaml")
             .replace('-', "_");
         case.call.operation == "openai_image_generation"
-            && input.function.name() == expected
+            && serde_json::from_value::<Function>(Value::String(expected))
+                .is_ok_and(|function| function == input.function)
             && !input.probes.is_empty()
     }));
 }

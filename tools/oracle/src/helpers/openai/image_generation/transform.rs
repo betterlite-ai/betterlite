@@ -33,7 +33,7 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
     }))
 }
 
-pub(crate) fn mapped_value(probe: &Probe) -> HelperResult {
+pub(crate) fn mapped_value(probe: &Probe) -> Value {
     let family = select_image_family(&probe.model);
     let mut mapped = probe.existing_params.clone();
     let outcome = map_openai_params(
@@ -47,12 +47,12 @@ pub(crate) fn mapped_value(probe: &Probe) -> HelperResult {
         Ok(()) => Value::Null,
         Err(ImageParamError::Unsupported { .. }) => json!({"kind": "unsupported_parameter"}),
     };
-    Ok(json!({
+    json!({
         "family": family_name(family),
         "supported": family.supported_params(),
         "mapped": mapped,
         "error": error,
-    }))
+    })
 }
 
 fn request_data(probe: &Probe) -> IndexMap<String, Json> {

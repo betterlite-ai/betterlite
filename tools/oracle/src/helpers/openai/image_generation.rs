@@ -23,22 +23,6 @@ pub(crate) enum Function {
     ImageRawResponseHeaders,
 }
 
-impl Function {
-    pub(crate) const fn name(self) -> &'static str {
-        match self {
-            Self::Dalle2Parameters => "dalle2_parameters",
-            Self::Dalle3QualityStyle => "dalle3_quality_style",
-            Self::GptImageUsage => "gpt_image_usage",
-            Self::B64JsonAndUrl => "b64_json_and_url",
-            Self::MissingCreated => "missing_created",
-            Self::ImageStatusError => "image_status_error",
-            Self::UnsupportedImageParam => "unsupported_image_param",
-            Self::ImageRequestOverlay => "image_request_overlay",
-            Self::ImageRawResponseHeaders => "image_raw_response_headers",
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -61,7 +45,7 @@ impl crate::helpers::Helper for Op {
                 | Function::GptImageUsage
                 | Function::B64JsonAndUrl
                 | Function::MissingCreated => transform::value(probe),
-                Function::UnsupportedImageParam => transform::mapped_value(probe),
+                Function::UnsupportedImageParam => Ok(transform::mapped_value(probe)),
                 Function::ImageStatusError
                 | Function::ImageRequestOverlay
                 | Function::ImageRawResponseHeaders => request::value(probe),

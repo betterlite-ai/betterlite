@@ -12,14 +12,16 @@ use indexmap::IndexMap;
 use super::call::{
     ImageGenerationCall, PreparedImageCall, authorization_headers, prepare_image_call,
 };
+use super::decode::decode_image_reply;
 use super::error::{ImageGenerationFailure, ImageGenerationSource, OpenAiImageError};
 use super::logging::{ImageGenerationLogger, PostCallRecord, PreCallRecord};
-use super::reply::{ImageGenerationReply, ImageReplyError, decode_image_reply};
+use super::reply::{ImageGenerationReply, ImageReplyError};
 use super::transport::ImageGenerationTransport;
 use crate::compatible_wire::error::OpenAiLikeError;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
 
+#[derive(Debug)]
 pub struct ImageGenerationOutcome {
     pub reply: ImageGenerationReply,
     pub provider_headers: ProviderHeaderProjection,
@@ -61,10 +63,13 @@ pub fn begin_image_generation(
 }
 
 // the one transport path both source methods share; it never touches the logging object
-pub async fn send_image_generation<T: ImageGenerationTransport>(
+pub async fn send_image_generation<T>(
     prepared: &PreparedImageCall,
     transport: &T,
-) -> Result<ImageGenerationOutcome, ImageGenerationSource> {
+) -> Result<ImageGenerationOutcome, ImageGenerationSource>
+where
+    T: ImageGenerationTransport,
+{
     let body = serde_json::to_vec(&prepared.wire_data).map_err(ImageGenerationSource::Encode)?;
     let request = OutboundRequest {
         method: Method::POST,
@@ -166,24 +171,23 @@ fn checked_reply(
 }
 
 fn status_message(text: &str) -> String {
-    let error = serde_json::from_str::<Json>(text)
+    let body = serde_json::from_str::<Json>(text)
         .ok()
         .and_then(|value| match value {
             Json::Object(fields) => fields.get("error").cloned(),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         });
-    error
-        .and_then(|error| match error {
-            Json::Object(fields) => match fields.get("message") {
-                Some(Json::Text(message)) => Some(message.clone()),
-                Some(
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-                )
-                | None => None,
-            },
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-        })
-        .unwrap_or_else(|| text.to_owned())
+    body.and_then(|error| match error {
+        Json::Object(fields) => match fields.get("message") {
+            Some(Json::Text(message)) => Some(message.clone()),
+            Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            )
+            | None => None,
+        },
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    })
+    .unwrap_or_else(|| text.to_owned())
 }
 
 fn response_headers(
