@@ -45,7 +45,7 @@ enum Expected {
 type Row = (&'static str, &'static str, &'static str, Expected);
 
 #[rustfmt::skip]
-const MINIMUM_ROWS: [Row; 12] = [
+const MINIMUM_ROWS: [Row; 14] = [
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 1}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 15}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 16}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
@@ -54,6 +54,8 @@ const MINIMUM_ROWS: [Row; 12] = [
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 17}"#, Expected::Mapped(r#"{"max_output_tokens": 17}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 18446744073709551615}"#, Expected::Mapped(r#"{"max_output_tokens": 18446744073709551615}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 15.5}"#, Expected::Mapped(r#"{"max_output_tokens": 15.5}"#)),
+    (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": -99999999999999999999}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
+    (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": -3.5}"#, Expected::Mapped(r#"{"max_output_tokens": -3.5}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": "8"}"#, Expected::Mapped(r#"{"max_output_tokens": "8"}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": null}"#, Expected::Mapped(r#"{"max_output_tokens": null}"#)),
     (MINIMUM_CATALOG, "gpt-5.2", r#"{"max_output_tokens": 1}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
@@ -99,7 +101,7 @@ const GPT5_MODEL_ROWS: [Row; 7] = [
 ];
 
 #[rustfmt::skip]
-const TOP_P_ROWS: [Row; 13] = [
+const TOP_P_ROWS: [Row; 15] = [
     (GPT_5_CATALOG, "gpt-5.2", r#"{"top_p": 0.9}"#, Expected::Mapped(r#"{"top_p": 0.9}"#)),
     (GPT_5_CATALOG, "gpt-5.2", r#"{"temperature": 0.5}"#, Expected::Mapped(r#"{"temperature": 0.5}"#)),
     (GPT_5_CATALOG, "gpt-5.2", r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#, Expected::Error("top_p")),
@@ -112,6 +114,8 @@ const TOP_P_ROWS: [Row; 13] = [
     (GPT_5_CATALOG, "gpt-5-chat-latest", r#"{"top_p": 0.9}"#, Expected::Mapped(r#"{"top_p": 0.9}"#)),
     (GPT_5_CATALOG, "gpt-5", r#"{"top_p": 0.9}"#, Expected::Error("top_p")),
     (GPT_5_CATALOG, "gpt-5", r#"{"top_p": 0.9}"#, Expected::Dropped("{}")),
+    (GPT_5_CATALOG, "gpt-5", r#"{"temperature": 0.5, "top_p": 0.9}"#, Expected::Error("temperature=0.5")),
+    (GPT_5_CATALOG, "gpt-5", r#"{"temperature": 0.5, "top_p": 0.9}"#, Expected::Dropped("{}")),
     (GPT_5_CATALOG, "azure/gpt-5.2", r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#, Expected::Mapped(r#"{"top_p": 0.9, "reasoning": {"effort": "high"}}"#)),
 ];
 

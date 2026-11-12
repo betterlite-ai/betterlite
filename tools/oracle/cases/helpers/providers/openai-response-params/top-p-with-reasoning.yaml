@@ -18,5 +18,8 @@ call:
       - {model: gpt-5-chat-latest, params: {top_p: 0.9}, model_cost: {gpt-5-chat-latest: {litellm_provider: openai}}}
       - {model: azure/gpt-5.2, params: {top_p: 0.9, reasoning: {effort: high}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
       - {model: gpt-5.2, params: {top_p: 0.9, reasoning: {summary: auto}}, model_cost: {gpt-5.2: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}}}
+      - {model: gpt-5, params: {temperature: 0.5, top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}}
+      - {model: gpt-5, params: {temperature: 0.5, top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}, drop_params: true}
+      - {model: gpt-5, params: {temperature: 0.5, top_p: 0.9}, model_cost: {gpt-5: {litellm_provider: openai, supports_reasoning: true, supports_none_reasoning_effort: false}}, global_drop_params: true}
 env: {}
 compare: {ignore: []}

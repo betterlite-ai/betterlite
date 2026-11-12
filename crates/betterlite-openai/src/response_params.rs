@@ -20,7 +20,7 @@ use error::ResponseParamsError;
 use params::{ResponsesOptions, ResponsesParams};
 
 // ast-grep-ignore: no-long-names
-pub const OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS: i64 = 16;
+pub const OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS: i32 = 16;
 
 pub async fn map_openai_params<C>(
     capabilities: &mut C,
@@ -55,12 +55,20 @@ fn enforce_min_max_output_tokens(params: &mut ResponsesParams) {
     let Some(Some(Value::Number(number))) = &params.max_output_tokens else {
         return;
     };
-    let Some(tokens) = number.as_i64() else {
+    let Some(value) = number.as_f64() else {
         return;
     };
+    // an integer past i64 still arrives as a float, so only a fraction marks a caller's float
+    if value.fract() != 0.0_f64 {
+        return;
+    }
     // ast-grep-ignore: no-long-names
-    let clamped = tokens.max(OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS);
-    params.max_output_tokens = Some(Some(Value::from(clamped)));
+    let minimum = OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS;
+    let clamped = value.max(f64::from(minimum));
+    if clamped.to_bits() == value.to_bits() {
+        return;
+    }
+    params.max_output_tokens = Some(Some(Value::from(minimum)));
 }
 
 fn requests_reasoning_effort(reasoning: Option<&Option<Value>>) -> bool {
@@ -130,10 +138,11 @@ where
         .await;
     let resolves_none = supports_none && resolves_to_none(capabilities, model, effort).await;
     if let Some(rejected) = rejected_temperature(params, resolves_none) {
-        return reject_sampling_param(params, model, drop_params, rejected);
+        reject_sampling_param(params, model, drop_params, rejected)?;
     }
+    // LiteLLM checks top_p after the temperature branch, so a dropped temperature still reaches it
     if params.top_p.is_some() && !resolves_none {
-        return reject_sampling_param(params, model, drop_params, Rejected::TopP);
+        reject_sampling_param(params, model, drop_params, Rejected::TopP)?;
     }
     Ok(())
 }
