@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout_at};
@@ -41,12 +41,6 @@ pub struct LimiterSnapshot {
 struct Waiting<'state> {
     state: &'state Mutex<GateState>,
 }
-fn lock(state: &Mutex<GateState>) -> MutexGuard<'_, GateState> {
-    match state.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
 impl UploadLimiter {
     pub fn new(window: usize, adaptive_ceiling: Option<usize>) -> Result<Self, BoundsError> {
         let permits = Arc::new(Semaphore::new(window));
@@ -84,7 +78,7 @@ impl UploadLimiter {
             let Some(gate) = &self.gate else {
                 return Ok(permit);
             };
-            let mut state = lock(gate);
+            let mut state = gate.lock().unwrap_or_else(PoisonError::into_inner);
             if state.owed == 0 {
                 return Ok(permit);
             }
@@ -97,7 +91,7 @@ impl UploadLimiter {
         let Some(gate) = &self.gate else {
             return;
         };
-        let mut state = lock(gate);
+        let mut state = gate.lock().unwrap_or_else(PoisonError::into_inner);
         let before = state.limit;
         if throttled {
             state.limit = state.floor.max(before.div_euclid(2));
@@ -120,16 +114,16 @@ impl UploadLimiter {
     }
     #[must_use]
     pub fn snapshot(&self) -> LimiterSnapshot {
-        let limit = self
-            .gate
-            .as_ref()
-            .map_or_else(|| self.permits.available_permits(), |gate| lock(gate).limit);
+        let limit = self.gate.as_ref().map_or_else(
+            || self.permits.available_permits(),
+            |gate| gate.lock().unwrap_or_else(PoisonError::into_inner).limit,
+        );
         LimiterSnapshot { limit }
     }
 }
 impl<'state> Waiting<'state> {
     fn register(state: &'state Mutex<GateState>) -> Result<Self, AcquireError> {
-        let mut gate = lock(state);
+        let mut gate = state.lock().unwrap_or_else(PoisonError::into_inner);
         if gate.waiters >= MAX_WAITERS {
             return Err(AcquireError::Overloaded);
         }
@@ -140,7 +134,7 @@ impl<'state> Waiting<'state> {
 }
 impl Drop for Waiting<'_> {
     fn drop(&mut self) {
-        let mut gate = lock(self.state);
+        let mut gate = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         gate.waiters = gate.waiters.saturating_sub(1);
     }
 }

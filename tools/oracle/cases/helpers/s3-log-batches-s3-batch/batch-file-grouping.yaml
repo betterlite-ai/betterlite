@@ -12,7 +12,8 @@ call:
       s3_batch_file_upload: true
     now: 1767323045
     steps:
-      - enqueue:
+      - replies: []
+        enqueue:
           - s3_object_key: team/2026-01-02/a.json
             s3_object_download_filename: a.json
             payload: {a: 1}

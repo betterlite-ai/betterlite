@@ -21,9 +21,12 @@ call:
           - match: a.json
             responses:
               - status: 429
-      - replies:
+                body: ""
+      - enqueue: []
+        replies:
           - match: a.json
             responses:
               - status: 200
+                body: ""
 env: {}
 compare: {ignore: []}

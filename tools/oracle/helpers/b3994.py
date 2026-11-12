@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import time
+from collections import Counter
 from datetime import UTC, datetime, tzinfo
 from typing import NotRequired, TypeAlias, TypedDict
 
@@ -25,7 +26,7 @@ class Element(TypedDict):
 
 class Reply(TypedDict):
     status: int
-    body: NotRequired[str]
+    body: str
 
 
 class Rule(TypedDict):
@@ -34,8 +35,8 @@ class Rule(TypedDict):
 
 
 class Step(TypedDict):
-    enqueue: NotRequired[list[Element]]
-    replies: NotRequired[list[Rule]]
+    enqueue: list[Element]
+    replies: list[Rule]
 
 
 class Input(TypedDict):
@@ -48,33 +49,26 @@ class Input(TypedDict):
 class Client:
     def __init__(self) -> None:
         self.rules: list[Rule] = []
-        self.served: dict[str, int] = {}
+        self.served: Counter[str] = Counter()
         self.requests: list[tuple[str, str]] = []
 
     def reply(self, url: str) -> Reply:
         rule = next((item for item in self.rules if item["match"] in url), None)
         if rule is None:
-            return {"status": 200}
-        try:
-            index = self.served[rule["match"]]
-        except KeyError:
-            index = 0
-        self.served[rule["match"]] = index + 1
+            return {"status": 200, "body": ""}
+        index = self.served[rule["match"]]
+        self.served[rule["match"]] += 1
         responses = rule["responses"]
-        return responses[index] if index < len(responses) else {"status": 200}
+        return responses[index] if index < len(responses) else {"status": 200, "body": ""}
 
     async def put(self, url: str, data: str | None = None, **_kwargs: Json) -> httpx.Response:
         self.requests.append((url, data if data is not None else ""))
         reply = self.reply(url)
         for _ in range(2):
             await asyncio.sleep(0)
-        try:
-            body = reply["body"]
-        except KeyError:
-            body = ""
         return httpx.Response(
             status_code=reply["status"],
-            content=body.encode(),
+            content=reply["body"].encode(),
             request=httpx.Request("PUT", url),
         )
 
@@ -150,17 +144,10 @@ async def execute(input_value: Input) -> dict[str, Json]:
         else:
             litellm.cold_storage_custom_logger = None
         for step in input_value["steps"]:
-            try:
-                client.rules = step["replies"]
-            except KeyError:
-                client.rules = []
-            client.served = {}
+            client.rules = step["replies"]
+            client.served = Counter()
             client.requests = []
-            try:
-                queued = step["enqueue"]
-            except KeyError:
-                queued = []
-            for item in queued:
+            for item in step["enqueue"]:
                 logger.log_queue.append(element(item))
             await logger.flush_queue()  # type: ignore[no-untyped-call, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54
             remaining: list[Json] = [

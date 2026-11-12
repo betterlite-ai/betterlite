@@ -12,7 +12,8 @@ call:
     now: 1767323045
     cold_storage_logger: s3_v2
     steps:
-      - enqueue:
+      - replies: []
+        enqueue:
           - s3_object_key: 2026-01-02/a.json
             s3_object_download_filename: a.json
             payload: {a: 1}

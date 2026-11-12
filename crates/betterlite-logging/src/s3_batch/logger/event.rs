@@ -11,7 +11,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use std::fmt::Display;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 fn element_for(
     logger: &S3BatchLogger,
     event: &LoggerEvent,
@@ -24,10 +24,10 @@ fn element_for(
         callback: CALLBACK_NAME.to_owned(),
         message: "the standard logging payload startTime is not a valid timestamp".to_owned(),
     })?;
-    let mut cache = match logger.partition_cache.lock() {
-        Ok(cache) => cache,
-        Err(poisoned) => poisoned.into_inner(),
-    };
+    let mut cache = logger
+        .partition_cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     create_batch_element(
         &logger.parameters,
         &Event {

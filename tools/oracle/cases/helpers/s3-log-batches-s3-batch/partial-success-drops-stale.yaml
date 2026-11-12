@@ -29,6 +29,7 @@ call:
           - match: stale.json
             responses:
               - status: 429
+                body: ""
           - match: terminal.json
             responses:
               - status: 400
@@ -36,5 +37,6 @@ call:
           - match: fresh.json
             responses:
               - status: 429
+                body: ""
 env: {}
 compare: {ignore: []}

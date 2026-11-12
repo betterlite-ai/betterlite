@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
 
 pub(crate) struct Op;
 
@@ -26,16 +26,13 @@ pub(crate) struct Op;
 pub(crate) struct Input {
     source: Source<()>,
     now: u64,
-    #[serde(default)]
     cold_storage_logger: Option<String>,
     steps: Vec<Step>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct Step {
-    #[serde(default)]
     enqueue: Vec<ElementInput>,
-    #[serde(default)]
     replies: Vec<ReplyRule>,
 }
 
@@ -44,7 +41,6 @@ pub(crate) struct ElementInput {
     s3_object_key: String,
     s3_object_download_filename: String,
     payload: Json,
-    #[serde(default)]
     retrying_since_offset: Option<f64>,
 }
 
@@ -58,7 +54,6 @@ pub(crate) struct ReplyRule {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Reply {
     status: u16,
-    #[serde(default)]
     body: String,
 }
 
@@ -128,7 +123,7 @@ impl Helper for Op {
             .enable_time()
             .start_paused(true)
             .build()
-            .map_err(|error| fail("RuntimeError", &error.to_string()))?;
+            .or_config_error()?;
         runtime.block_on(execute(input))
     }
 }
@@ -153,21 +148,13 @@ fn body_lines(body: &str) -> Vec<Value> {
         .collect()
 }
 
-fn fail(class: &str, message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
-}
-
 async fn execute(input: &Input) -> HelperResult {
     let client = Arc::new(ScriptedS3::default());
     let logger = build_logger(input, &client)?;
-    let steps = run_steps(&logger, client.as_ref(), input).await;
+    let mut steps = Vec::new();
+    for step in &input.steps {
+        steps.push(run_step(&logger, client.as_ref(), step).await);
+    }
     drop(logger);
     Ok(json!({"steps": steps}))
 }
@@ -202,15 +189,7 @@ fn build_logger(
             shutdown: CancellationToken::new(),
         },
     )
-    .map_err(|error| fail("InitError", &error.to_string()))
-}
-
-async fn run_steps(logger: &S3BatchLogger, client: &ScriptedS3, input: &Input) -> Vec<Value> {
-    let mut steps = Vec::new();
-    for step in &input.steps {
-        steps.push(run_step(logger, client, step).await);
-    }
-    steps
+    .or_config_error()
 }
 
 async fn run_step(logger: &S3BatchLogger, client: &ScriptedS3, step: &Step) -> Value {

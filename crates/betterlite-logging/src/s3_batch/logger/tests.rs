@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use indexmap::IndexMap;
+use rstest::rstest;
 use tokio::time::{advance, timeout};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -130,17 +131,23 @@ fn source(extra: &str) -> Source<()> {
     .expect("the S3 source loads")
 }
 
-fn build(
+fn logger(
     client: Arc<ScriptedClient>,
     extra: &str,
-    environment: BTreeMap<String, String>,
+    mut environment: BTreeMap<String, String>,
     cold_storage_logger: Option<&str>,
     lifecycle: Option<(&TaskTracker, &CancellationToken)>,
-) -> Result<Arc<S3BatchLogger>, InitError> {
+) -> Arc<S3BatchLogger> {
     let (tasks, shutdown) = lifecycle.map_or_else(
         || (None, CancellationToken::new()),
         |(tracker, token)| (Some(tracker.clone()), token.clone()),
     );
+    environment
+        .entry("AWS_ACCESS_KEY_ID".to_owned())
+        .or_insert_with(|| "DEFAULTKEYID".to_owned());
+    environment
+        .entry("AWS_SECRET_ACCESS_KEY".to_owned())
+        .or_insert_with(|| "defaultsecret".to_owned());
     let lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::new(environment);
     let parameters =
         resolve_s3_parameters::<()>(&Source::default(), &source(extra), None, lookup.as_ref());
@@ -157,22 +164,7 @@ fn build(
             shutdown,
         },
     )
-}
-
-fn logger(
-    client: Arc<ScriptedClient>,
-    extra: &str,
-    mut environment: BTreeMap<String, String>,
-    cold_storage_logger: Option<&str>,
-    lifecycle: Option<(&TaskTracker, &CancellationToken)>,
-) -> Arc<S3BatchLogger> {
-    environment
-        .entry("AWS_ACCESS_KEY_ID".to_owned())
-        .or_insert_with(|| "DEFAULTKEYID".to_owned());
-    environment
-        .entry("AWS_SECRET_ACCESS_KEY".to_owned())
-        .or_insert_with(|| "defaultsecret".to_owned());
-    build(client, extra, environment, cold_storage_logger, lifecycle).expect("the logger builds")
+    .expect("the logger builds")
 }
 
 fn event(text: &str) -> Arc<LoggerEvent> {
@@ -440,32 +432,41 @@ async fn callback_logger_prefers_the_configured_credentials() {
     drop(logger);
 }
 
+#[rstest]
+#[case::empty_key_variable("", Some(""), Some("envsecret"))]
+#[case::no_key("", None, Some("envsecret"))]
+#[case::no_secret(r#","s3_aws_access_key_id":"SRCKEYID""#, None, None)]
 #[tokio::test]
-async fn callback_logger_refuses_missing_credentials() {
-    let empty = build(
-        ScriptedClient::with_replies(&[]),
-        "",
-        BTreeMap::from([("AWS_ACCESS_KEY_ID".to_owned(), String::new())]),
-        None,
-        None,
+async fn callback_logger_refuses_missing_credentials(
+    #[case] extra: &str,
+    #[case] key_id: Option<&str>,
+    #[case] secret: Option<&str>,
+) {
+    let variables = [
+        ("AWS_ACCESS_KEY_ID", key_id),
+        ("AWS_SECRET_ACCESS_KEY", secret),
+    ];
+    let environment: BTreeMap<String, String> = variables
+        .into_iter()
+        .filter_map(|(name, value)| Some((name.to_owned(), value?.to_owned())))
+        .collect();
+    let lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::new(environment);
+    let parameters =
+        resolve_s3_parameters::<()>(&Source::default(), &source(extra), None, lookup.as_ref());
+    let built = S3BatchLogger::new(
+        parameters,
+        S3BatchDeps {
+            client: ScriptedClient::with_replies(&[]),
+            clock: Arc::new(FixedClock(SystemTime::UNIX_EPOCH)),
+            monotonic: Arc::new(SystemMonotonic::default()),
+            environment: lookup,
+            throttle_observer: None,
+            cold_storage_logger: None,
+            tasks: None,
+            shutdown: CancellationToken::new(),
+        },
     );
-    assert!(matches!(empty, Err(InitError::MissingCredentials)));
-    let without_secret = build(
-        ScriptedClient::with_replies(&[]),
-        r#","s3_aws_access_key_id":"SRCKEYID""#,
-        BTreeMap::new(),
-        None,
-        None,
-    );
-    assert!(matches!(without_secret, Err(InitError::MissingCredentials)));
-    let without_key = build(
-        ScriptedClient::with_replies(&[]),
-        "",
-        BTreeMap::from([("AWS_SECRET_ACCESS_KEY".to_owned(), "envsecret".to_owned())]),
-        None,
-        None,
-    );
-    assert!(matches!(without_key, Err(InitError::MissingCredentials)));
+    assert!(matches!(built, Err(InitError::MissingCredentials)));
 }
 
 #[tokio::test]

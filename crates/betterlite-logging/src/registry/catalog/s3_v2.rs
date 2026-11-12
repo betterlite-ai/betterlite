@@ -64,21 +64,13 @@ fn tls_policy(
         return Ok(None);
     };
     let Some(enabled) = value.as_bool() else {
-        return Err(CatalogError::Init {
-            message: format!(
-                "callback_settings.s3_v2.s3_verify: expected a bool, got {}",
-                value.type_name()
-            ),
-        });
+        let found = value.type_name();
+        let message = format!("callback_settings.s3_v2.s3_verify: expected a bool, got {found}");
+        return Err(CatalogError::Init { message });
     };
     let environment: BTreeMap<String, String> = TLS_VARIABLES
         .iter()
-        .filter_map(|name| {
-            inputs
-                .env
-                .lookup(name)
-                .map(|value| ((*name).to_owned(), value))
-        })
+        .filter_map(|name| Some(((*name).to_owned(), inputs.env.lookup(name)?)))
         .collect();
     TlsPolicy::resolve(&inputs.config, &environment, Some(enabled))
         .map(Some)

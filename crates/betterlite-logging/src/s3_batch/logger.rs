@@ -2,13 +2,13 @@ use crate::s3_batch::Element;
 use crate::s3_batch::flush::{
     FlushContext, FlushError, FlushSettings, MonotonicClock, UploadOperation, send_batch,
 };
-use crate::s3_batch::logger::setup::{flush_settings, schedule, transport, unsupported_flow};
+use crate::s3_batch::logger::setup::{schedule, transport, unsupported_flow};
 use crate::s3_batch::queue::{BatchQueue, QueueState};
 use crate::s3_batch::upload_bounded::{BoundsError, UPLOAD_WAIT, UploadLimiter};
 use crate::s3_transport::error::S3TransportError;
 use crate::s3_transport::signing::Clock;
 use crate::s3_transport::transport::{S3HttpClient, S3Transport, ThrottleSink, UploadOutcome};
-use crate::s3_v2::{PartitionGranularityCache, S3Parameters};
+use crate::s3_v2::{Feature, PartitionGranularityCache, S3Parameters};
 use betterlite_config::loader::EnvironmentLookup;
 use std::future::Future;
 use std::pin::Pin;
@@ -87,7 +87,13 @@ impl S3BatchLogger {
         }
         let (transport, uploads) = transport(&parameters, &deps)?;
         let (batch_size, flush_interval) = schedule(deps.environment.as_ref());
-        let settings = flush_settings(&parameters, deps.cold_storage_logger);
+        let settings = FlushSettings {
+            max_retry_age: parameters.max_retry_age_seconds,
+            max_queue_size: parameters.max_queue_size,
+            batch_file_upload: parameters.features.contains(&Feature::BatchFileUpload),
+            cold_storage_logger: deps.cold_storage_logger,
+            max_concurrent_uploads: parameters.max_concurrent_uploads,
+        };
         let logger = Arc::new(Self {
             queue: BatchQueue {
                 state: Mutex::new(QueueState::default()),

@@ -24,13 +24,16 @@ call:
           - match: a.json
             responses:
               - status: 408
+                body: ""
           - match: b.json
             responses:
               - status: 504
+                body: ""
           - match: c.json
             responses:
               - status: 400
                 body: <Error><Code>UnknownCode</Code></Error>
-      - replies: []
+      - enqueue: []
+        replies: []
 env: {}
 compare: {ignore: []}
