@@ -39,8 +39,7 @@ fn required<'value>(
     fields: &'value IndexMap<String, JsonValue>,
     field: &'static str,
 ) -> Result<&'value JsonValue, ResponsesParametersError> {
-    let key = field.rsplit_once('.').map_or(field, |(_, key)| key);
     fields
-        .get(key)
+        .get(field.rsplit_once('.').map_or(field, |(_, key)| key))
         .ok_or(ResponsesParametersError::MissingTextFormatField { field })
 }
