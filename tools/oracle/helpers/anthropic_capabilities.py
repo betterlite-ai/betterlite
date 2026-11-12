@@ -14,7 +14,6 @@ JsonObject: TypeAlias = dict[str, Json]
 class Fixture(TypedDict):
     model_cost: JsonObject
     packaged: JsonObject
-    budgets: JsonObject
 
 
 class MapStep(TypedDict):

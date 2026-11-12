@@ -1,9 +1,11 @@
+use betterlite_config::sections::anthropic_capability_catalog::{
+    BEDROCK_MIN_THINKING_BUDGET, Settings,
+};
 use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::fixture::{Fixture, Session};
 use super::support::json;
-use crate::capabilities::ThinkingBudgets;
 use crate::capabilities::reasoning::{
     ReasoningEffortError, ReasoningRequest, map_reasoning_effort,
 };
@@ -18,7 +20,7 @@ async fn mapped(
     model: &str,
     effort: Option<&str>,
 ) -> Result<Option<Json>, ReasoningEffortError> {
-    let budgets = ThinkingBudgets::default();
+    let budgets = Settings::default();
     let mut session = Session::new(fixture);
     let request = ReasoningRequest {
         reasoning_effort: effort,
@@ -96,13 +98,14 @@ async fn unknown_effort_is_a_bad_request(fixture: &Fixture) {
 }
 
 async fn a_configured_minimal_budget_is_used_as_given(fixture: &Fixture) {
-    let raised = ThinkingBudgets {
+    let raised = Settings {
         minimal: 4096,
         low: 1024,
         medium: 2048,
         high: 4096,
         xhigh: 8192,
         max: 0x4000,
+        bedrock_min: BEDROCK_MIN_THINKING_BUDGET,
     };
     let mut session = Session::new(fixture);
     let request = ReasoningRequest {

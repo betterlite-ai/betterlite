@@ -1,3 +1,4 @@
+use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
@@ -6,7 +7,7 @@ use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use indexmap::IndexMap;
 
-use super::{MIN_THINKING_BUDGET_TOKENS, ThinkingBudgets};
+use super::MIN_THINKING_BUDGET_TOKENS;
 use crate::anthropic_capability_catalog::CatalogSources;
 use crate::anthropic_capability_catalog::capability::supports_model_capability;
 
@@ -15,7 +16,7 @@ pub struct ReasoningRequest<'request> {
     pub model: &'request str,
     pub custom_llm_provider: &'request str,
     pub llm_provider: &'request str,
-    pub budgets: &'request ThinkingBudgets,
+    pub budgets: &'request Settings,
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]

@@ -5,8 +5,7 @@ use super::fixture::{Fixture, capture_warnings};
 use super::support::json;
 use crate::anthropic_capability_catalog::DropParams;
 use crate::capabilities::speed::{
-    DROP_UNSUPPORTED_SPEED_WARNING, SpeedDecision, SpeedParam, SpeedRequest,
-    maybe_drop_speed_param, model_supports_speed_param,
+    SpeedDecision, SpeedParam, SpeedRequest, maybe_drop_speed_param, model_supports_speed_param,
 };
 
 const SPEED_MODELS: &str = r#"{
@@ -136,7 +135,9 @@ fn speed_unsupported_raises(fixture: &Fixture) {
 
 fn speed_drop_flags_warn_and_remove(fixture: &Fixture) {
     let fast = json(r#""fast""#);
-    let expected = [DROP_UNSUPPORTED_SPEED_WARNING.replacen("%s", "claude-opus-4-7", 1)];
+    let expected = [
+        "Dropping unsupported `speed` for model=claude-opus-4-7 (drop_params=True). Fast mode is only supported on select Opus models.",
+    ];
     let (guard, warnings) = capture_warnings();
     assert_eq!(
         maybe_drop_speed_param(

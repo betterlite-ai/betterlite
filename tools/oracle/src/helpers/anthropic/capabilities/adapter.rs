@@ -1,5 +1,5 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
-use betterlite_anthropic::capabilities::ThinkingBudgets;
+use betterlite_config::sections::anthropic_capability_catalog::Settings;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use serde_json::Value;
@@ -13,7 +13,7 @@ pub(super) type Environment<'env> = CapabilityEnvironment<'env, NoDynamicMetadat
 
 pub(super) struct Adapter<'helper> {
     pub(super) catalogs: CatalogSources<'helper>,
-    pub(super) budgets: ThinkingBudgets,
+    pub(super) budgets: Settings,
     pub(super) warnings: &'helper Warnings,
 }
 
