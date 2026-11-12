@@ -24,6 +24,13 @@ call:
     - model_sets:
         open_ai_text_completion_models: [text-model]
       model: other-text-model
+    - model_sets: &chat_and_text
+        open_ai_chat_completion_models: [shared-model]
+        open_ai_text_completion_models: [shared-model]
+      model: shared-model
+    - model_sets: *chat_and_text
+      model: shared-model
+      environment: [OPENAI_API_KEY]
     - model_sets:
         vercel_ai_gateway_models: [vercel-model]
       model: vercel-model
