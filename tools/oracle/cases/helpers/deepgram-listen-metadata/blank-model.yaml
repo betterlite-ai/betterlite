@@ -1,0 +1,27 @@
+kind: helper
+name: deepgram-listen-metadata-blank-model
+call:
+  deepgram_listen_metadata:
+    calls:
+    - function: blank_model
+      query: model=&language=en
+      api_base: null
+      upstream_url: ""
+      messages: []
+    - function: blank_model
+      query: model=&model=nova-2&language=en&redact=true
+      api_base: ""
+      upstream_url: ""
+      messages: []
+    - function: blank_model
+      query: model=%20&language=en
+      api_base: http://localhost:8080/base
+      upstream_url: ""
+      messages: []
+    - function: blank_model
+      query: model=nova-2
+      api_base: wss://example.test/ws
+      upstream_url: ""
+      messages: []
+compare: {ignore: []}
+env: {}

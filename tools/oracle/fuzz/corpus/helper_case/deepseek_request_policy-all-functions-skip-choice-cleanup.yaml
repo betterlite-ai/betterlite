@@ -1,0 +1,34 @@
+kind: helper
+name: deepseek-request-policy-all-functions-skip-choice-cleanup
+call:
+  deepseek_request_policy:
+    op: request
+    cases:
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        messages: []
+        optional_params:
+          thinking: {type: enabled}
+          tools:
+            - {type: function, function: {name: lookup}}
+          tool_choice: {type: function, function: {name: missing}}
+          parallel_tool_calls: true
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        messages: []
+        optional_params:
+          thinking: {type: enabled}
+          tools: []
+          tool_choice: auto
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        messages: []
+        optional_params:
+          thinking: {type: enabled}
+          tool_choice: auto
+env: {}
+compare:
+  ignore: []
