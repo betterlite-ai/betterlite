@@ -43,17 +43,16 @@ where
     let Some(Json::Object(thinking)) = params.thinking.as_ref() else {
         return false;
     };
-    if !matches!(thinking.get("type"), Some(Json::Text(kind)) if kind == "disabled") {
-        return false;
-    }
-    if !supports_model_capability(
-        model,
-        "thinking_always_on",
-        custom_llm_provider,
-        environment,
-        catalogs,
-    )
-    .await
+    let disabled = matches!(thinking.get("type"), Some(Json::Text(kind)) if kind == "disabled");
+    if !disabled
+        || !supports_model_capability(
+            model,
+            "thinking_always_on",
+            custom_llm_provider,
+            environment,
+            catalogs,
+        )
+        .await
     {
         return false;
     }
@@ -200,15 +199,12 @@ where
     let lowered = model.to_lowercase();
     let opus = lowered.contains("opus-4-5") || lowered.contains("opus_4_5");
     let effort_text = |value: &Json| matches!(value, Json::Text(text) if !text.is_empty());
-    if opus && params.reasoning_effort.as_ref().is_some_and(effort_text) {
-        return true;
-    }
-    if let Some(Json::Object(fields)) = params.output_config.as_ref()
-        && fields.get("effort").is_some_and(effort_text)
-    {
-        return true;
-    }
-    false
+    let reasoning = opus && params.reasoning_effort.as_ref().is_some_and(effort_text);
+    let configured = matches!(
+        params.output_config.as_ref(),
+        Some(Json::Object(fields)) if fields.get("effort").is_some_and(effort_text)
+    );
+    reasoning || configured
 }
 
 // Python's int(thinking.get("budget_tokens") or 0): absent and null read as 0, floats truncate.

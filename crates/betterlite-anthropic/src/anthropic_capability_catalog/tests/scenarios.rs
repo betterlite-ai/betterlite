@@ -187,120 +187,80 @@ pub(super) async fn provider_qualified_catalog() {
     );
 }
 
+// Each row is the model, the optional_params before translation and the expected params after it.
+const TRANSLATIONS: [(&str, &str, &str); 10] = [
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000, "display": "summarized"}}"#,
+        r#"{"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "high"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "omitted"}}"#,
+        r#"{"thinking": {"type": "adaptive", "display": "omitted"}, "output_config": {"effort": "high"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "updates"}}"#,
+        r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 1000}, "output_config": {"effort": null, "format": "x"}}"#,
+        r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": null, "format": "x"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 1000}, "output_config": "plain"}"#,
+        r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled"}}"#,
+        r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": "low"}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000.9}}"#,
+        r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}"#,
+    ),
+    (
+        "claude-opus-4-6",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#,
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#,
+    ),
+    (
+        "claude-sonnet-4-5",
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#,
+        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#,
+    ),
+    (
+        "claude-opus-4-7",
+        r#"{"thinking": {"type": "disabled"}}"#,
+        r#"{"thinking": {"type": "disabled"}}"#,
+    ),
+];
+
 pub(super) async fn adaptive_thinking() {
     let fixture = Fixture::new(THINKING_MODELS, "{}");
-    display_translation(&fixture).await;
-    overlay_translation(&fixture).await;
-    untouched_translation(&fixture).await;
-    budget_edges(&fixture).await;
-}
-
-async fn display_translation(fixture: &Fixture) {
-    let mut displayed = params(
-        r#"{"thinking": {"type": "enabled", "budget_tokens": 5000, "display": "summarized"}}"#,
-    );
-    translate(fixture, "claude-opus-4-7", &mut displayed)
-        .await
-        .expect("translation");
-    assert_eq!(
-        displayed.thinking,
-        Some(json(r#"{"type": "adaptive", "display": "summarized"}"#))
-    );
-    assert_eq!(displayed.output_config, Some(json(r#"{"effort": "high"}"#)));
-    let mut omitted =
-        params(r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "omitted"}}"#);
-    translate(fixture, "claude-opus-4-7", &mut omitted)
-        .await
-        .expect("translation");
-    assert_eq!(
-        omitted.thinking,
-        Some(json(r#"{"type": "adaptive", "display": "omitted"}"#))
-    );
-    let mut updated =
-        params(r#"{"thinking": {"type": "enabled", "budget_tokens": 4096, "display": "updates"}}"#);
-    translate(fixture, "claude-opus-4-7", &mut updated)
-        .await
-        .expect("translation");
-    assert_eq!(updated.thinking, Some(json(r#"{"type": "adaptive"}"#)));
-}
-
-async fn overlay_translation(fixture: &Fixture) {
-    let mut overlaid = params(
-        r#"{"thinking": {"type": "enabled", "budget_tokens": 1000}, "output_config": {"effort": null, "format": "x"}}"#,
-    );
-    translate(fixture, "claude-opus-4-7", &mut overlaid)
-        .await
-        .expect("translation");
-    assert_eq!(
-        overlaid.output_config,
-        Some(json(r#"{"effort": null, "format": "x"}"#)),
-        "the caller's effort wins and its other keys survive"
-    );
-    let mut discarded = params(
-        r#"{"thinking": {"type": "enabled", "budget_tokens": 1000}, "output_config": "plain"}"#,
-    );
-    translate(fixture, "claude-opus-4-7", &mut discarded)
-        .await
-        .expect("translation");
-    assert_eq!(
-        discarded.output_config,
-        Some(json(r#"{"effort": "low"}"#)),
-        "a non-dict output_config is discarded"
-    );
-}
-
-async fn untouched_translation(fixture: &Fixture) {
-    let mut legacy = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#);
-    translate(fixture, "claude-opus-4-6", &mut legacy)
-        .await
-        .expect("legacy model");
-    assert_eq!(
-        legacy.thinking,
-        Some(json(r#"{"type": "enabled", "budget_tokens": 5000}"#))
-    );
-    assert_eq!(legacy.output_config, None);
-    let mut plain = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 5000}}"#);
-    translate(fixture, "claude-sonnet-4-5", &mut plain)
-        .await
-        .expect("non-adaptive model");
-    assert_eq!(
-        plain.thinking,
-        Some(json(r#"{"type": "enabled", "budget_tokens": 5000}"#))
-    );
-    let mut disabled = params(r#"{"thinking": {"type": "disabled"}}"#);
-    translate(fixture, "claude-opus-4-7", &mut disabled)
-        .await
-        .expect("disabled thinking");
-    assert_eq!(disabled.thinking, Some(json(r#"{"type": "disabled"}"#)));
-}
-
-async fn budget_edges(fixture: &Fixture) {
-    let mut invalid = params(
-        r#"{"thinking": {"type": "enabled", "budget_tokens": "many"}, "output_config": {"format": "x"}}"#,
-    );
+    for (model, before, after) in TRANSLATIONS {
+        let mut translated = params(before);
+        translate(&fixture, model, &mut translated)
+            .await
+            .expect("translation");
+        assert_eq!(translated, params(after), "{model} {before}");
+    }
+    let invalid_text = r#"{"thinking": {"type": "enabled", "budget_tokens": "many"}, "output_config": {"format": "x"}}"#;
+    let mut invalid = params(invalid_text);
     assert!(matches!(
-        translate(fixture, "claude-opus-4-7", &mut invalid).await,
+        translate(&fixture, "claude-opus-4-7", &mut invalid).await,
         Err(ThinkingError::BudgetTokens)
     ));
     assert_eq!(
-        invalid.thinking,
-        Some(json(r#"{"type": "enabled", "budget_tokens": "many"}"#))
-    );
-    assert_eq!(
-        invalid.output_config,
-        Some(json(r#"{"format": "x"}"#)),
+        invalid,
+        params(invalid_text),
         "the conversion fails before any mutation"
     );
-    let mut absent = params(r#"{"thinking": {"type": "enabled"}}"#);
-    translate(fixture, "claude-opus-4-7", &mut absent)
-        .await
-        .expect("absent budget");
-    assert_eq!(absent.output_config, Some(json(r#"{"effort": "low"}"#)));
-    let mut float = params(r#"{"thinking": {"type": "enabled", "budget_tokens": 5000.9}}"#);
-    translate(fixture, "claude-opus-4-7", &mut float)
-        .await
-        .expect("float budget");
-    assert_eq!(float.output_config, Some(json(r#"{"effort": "high"}"#)));
 }
 
 const NO_DROP: DropParams = DropParams {
@@ -398,24 +358,31 @@ pub(super) fn sampling_capability() {
     sampling_refusals(&fixture);
 }
 
+// The catalog flag wins over the name, so claude-fable-lite samples and claude-opus-4-7 does not.
+const SAMPLING_FLAGS: [(&str, bool); 13] = [
+    ("claude-sonnet-4-5", true),
+    ("claude-opus-4-6", true),
+    ("claude-fable-lite", true),
+    ("claude-opus-4-7", false),
+    ("claude-fable-5", false),
+    ("CLAUDE-FABLE-5", false),
+    ("claude-opus_4_7", false),
+    ("claude-opus-4.7", false),
+    ("claude-opus_4.7", false),
+    ("claude-opus-4-8", false),
+    ("claude-opus_4_8", false),
+    ("claude-opus-4.8", false),
+    ("claude-opus_4.8", false),
+];
+
 fn sampling_flags(fixture: &Fixture) {
     let catalogs = fixture.catalogs();
-    for model in ["claude-sonnet-4-5", "claude-opus-4-6", "claude-fable-lite"] {
-        assert!(supports_sampling_params(model, &catalogs), "{model}");
-    }
-    for model in [
-        "claude-opus-4-7",
-        "claude-fable-5",
-        "CLAUDE-FABLE-5",
-        "claude-opus_4_7",
-        "claude-opus-4.7",
-        "claude-opus_4.7",
-        "claude-opus-4-8",
-        "claude-opus_4_8",
-        "claude-opus-4.8",
-        "claude-opus_4.8",
-    ] {
-        assert!(!supports_sampling_params(model, &catalogs), "{model}");
+    for (model, supported) in SAMPLING_FLAGS {
+        assert_eq!(
+            supports_sampling_params(model, &catalogs),
+            supported,
+            "{model}"
+        );
     }
 }
 

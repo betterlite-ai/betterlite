@@ -11,12 +11,27 @@ use serde_json::{Value, json};
 use super::adapter::Adapter;
 use crate::helpers::{HelperError, OrHelperError as _};
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct DropFlags {
+    drop_params: bool,
+    global_drop_params: bool,
+}
+
+impl From<DropFlags> for DropParams {
+    fn from(flags: DropFlags) -> Self {
+        Self {
+            global: flags.global_drop_params,
+            call: flags.drop_params,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub(super) struct ForcedToolStep {
     model: String,
     tool_choice: Json,
-    drop_params: bool,
-    global_drop_params: bool,
+    #[serde(flatten)]
+    drop: DropFlags,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,16 +40,13 @@ pub(super) struct SamplingStep {
     param: SamplingParam,
     value: Json,
     output_key: String,
-    drop_params: bool,
-    global_drop_params: bool,
+    #[serde(flatten)]
+    drop: DropFlags,
 }
 
 impl ForcedToolStep {
     pub(super) fn answer(&self, adapter: &Adapter<'_>) -> Value {
-        let drop = DropParams {
-            global: self.global_drop_params,
-            call: self.drop_params,
-        };
+        let drop = DropParams::from(self.drop);
         match apply_forced_tool_choice(&self.model, &self.tool_choice, drop, &adapter.catalogs) {
             Ok(choice) => json!({"tool_choice": choice, "warning": adapter.warnings.first()}),
             Err(error) => json!({"error": {"status": error.status_code()}}),
@@ -48,20 +60,16 @@ impl SamplingStep {
             model: &self.model,
             param: self.param,
             value: &self.value,
-            drop: DropParams {
-                global: self.global_drop_params,
-                call: self.drop_params,
-            },
+            drop: DropParams::from(self.drop),
         };
-        match apply_sampling_param(&request, &adapter.catalogs) {
-            Ok(forwarded) => {
-                let mut params = IndexMap::new();
-                if let Some(value) = forwarded {
-                    params.insert(self.output_key.clone(), value);
-                }
-                serde_json::to_value(&params).or_value_error()
-            }
-            Err(error) => Ok(json!({"error": {"status": error.status_code()}})),
+        let forwarded = match apply_sampling_param(&request, &adapter.catalogs) {
+            Ok(forwarded) => forwarded,
+            Err(error) => return Ok(json!({"error": {"status": error.status_code()}})),
+        };
+        let mut params = IndexMap::new();
+        if let Some(value) = forwarded {
+            params.insert(self.output_key.clone(), value);
         }
+        serde_json::to_value(&params).or_value_error()
     }
 }

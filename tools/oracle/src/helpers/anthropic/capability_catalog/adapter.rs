@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use super::Step;
 use super::fixture::NoHfTransport;
+use super::thinking::ThinkingFunction;
 use super::warnings::Warnings;
 use crate::helpers::HelperError;
 
@@ -25,14 +26,24 @@ impl Adapter<'_> {
         self.warnings.clear();
         match step {
             Step::ProviderQualifiedCatalog(catalog) => Ok(catalog.answer(self, environment).await),
-            Step::AdaptiveThinking(thinking) => thinking.translate(self, environment).await,
+            Step::AdaptiveThinking(thinking) => {
+                thinking
+                    .answer(ThinkingFunction::Translate, self, environment)
+                    .await
+            }
             Step::ForcedToolDowngrade(forced) => Ok(forced.answer(self)),
             Step::SamplingCapability(sampling) => sampling.answer(self),
             Step::LegacyBudgetEffort(budget) => Ok(budget.answer(self, environment).await),
             Step::DisabledThinkingWarning(thinking) => {
-                Ok(thinking.drop_disabled(self, environment).await)
+                thinking
+                    .answer(ThinkingFunction::DropDisabled, self, environment)
+                    .await
             }
-            Step::EffortBetaGate(thinking) => Ok(thinking.effort_used(self, environment).await),
+            Step::EffortBetaGate(thinking) => {
+                thinking
+                    .answer(ThinkingFunction::EffortUsed, self, environment)
+                    .await
+            }
         }
     }
 }
