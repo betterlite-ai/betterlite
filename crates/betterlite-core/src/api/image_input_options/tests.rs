@@ -222,6 +222,26 @@ fn additional_drops_remove_names_before_validation() {
 }
 
 #[test]
+fn additional_drops_remove_the_remaining_declared_names() {
+    let provider = RecordingProvider::with(&[]);
+    let policy = OptionalParamsPolicy {
+        global_drop_params: false,
+        call_drop_params: None,
+        additional_drop_params: ["mask", "quality", "size", "user"]
+            .map(str::to_owned)
+            .to_vec(),
+    };
+    let recorded = optional_params_image_edit(
+        &provider,
+        "edit-model",
+        &options(r#"{"mask":"m","quality":"low","size":"1024x1024","user":"u"}"#),
+        &policy,
+    )
+    .expect("dropped");
+    assert_eq!(recorded.options, empty());
+}
+
+#[test]
 fn additional_drops_remove_supported_names_too() {
     let provider = RecordingProvider::with(&["n", "user"]);
     let policy = OptionalParamsPolicy {

@@ -92,7 +92,7 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Select { supported, params } => {
             let selected = requested_optional_params(params, supported);
-            Ok(json!({"ok": true, "value": selected}))
+            Ok(json!(selected))
         }
         Call::Optional {
             model,
