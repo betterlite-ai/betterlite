@@ -1096,6 +1096,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "num-traits",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
