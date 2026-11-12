@@ -639,3 +639,50 @@ async fn injected_tracker_drains_refresh() {
     assert_eq!(fixture.executor.refresh_count(), 1);
     fixture.cache.shutdown().await;
 }
+
+#[tokio::test]
+async fn stale_record_without_a_token_blocks_on_refresh() {
+    let fixture = new_fixture(
+        Vec::new(),
+        vec![RefreshReply::Immediate(Ok(fresh("token-fresh")))],
+    );
+    let key = requested_key(Some(PROJECT));
+    store(
+        &fixture.cache,
+        &key,
+        snapshot(None, TokenState::Stale, Some(PROJECT)),
+        Some(PROJECT),
+    );
+    let granted = lookup(&fixture.cache, Some(PROJECT)).await.unwrap();
+    assert_eq!(granted.token.expose_secret(), "token-fresh");
+    assert_eq!(granted.project, PROJECT);
+    assert_eq!(fixture.executor.refresh_count(), 1);
+    fixture.cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn async_lookup_reports_missing_token_and_project() {
+    let fixture = new_fixture(Vec::new(), Vec::new());
+    let key = requested_key(Some(PROJECT));
+    store(
+        &fixture.cache,
+        &key,
+        snapshot(None, TokenState::Fresh, Some(PROJECT)),
+        Some(PROJECT),
+    );
+    let missing_token = lookup(&fixture.cache, Some(PROJECT)).await.unwrap_err();
+    assert!(matches!(missing_token, CredentialCacheError::MissingToken));
+    let unresolved = requested_key(None);
+    store(
+        &fixture.cache,
+        &unresolved,
+        snapshot(Some("token-a"), TokenState::Fresh, None),
+        None,
+    );
+    let missing_project = lookup(&fixture.cache, None).await.unwrap_err();
+    assert!(matches!(
+        missing_project,
+        CredentialCacheError::MissingProject
+    ));
+    fixture.cache.shutdown().await;
+}
