@@ -1,0 +1,10 @@
+kind: helper
+name: langgraph-stream-messages-tuple
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: ["messages", [[{"type": "ai", "content": "hello"}, {"langgraph_node": "agent"}], [{"type": "human", "content": "ignored"}]]]'

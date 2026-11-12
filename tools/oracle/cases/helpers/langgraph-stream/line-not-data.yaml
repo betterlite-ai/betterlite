@@ -1,0 +1,12 @@
+kind: helper
+name: langgraph-stream-line-not-data
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'event: {"content": "ignored"}'
+          - ': keep-alive'
+          - 'data: {"content": "kept"}'

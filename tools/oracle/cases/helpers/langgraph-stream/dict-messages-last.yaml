@@ -1,0 +1,10 @@
+kind: helper
+name: langgraph-stream-dict-messages-last
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: {"messages": [{"type": "human", "content": "question"}, {"type": "ai", "content": "answer"}]}'
