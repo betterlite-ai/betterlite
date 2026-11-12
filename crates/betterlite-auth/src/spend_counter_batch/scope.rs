@@ -96,8 +96,7 @@ impl SpendCounterScope {
         &self,
         counter_key: &str,
     ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
-        let window = BTreeSet::from([counter_key.to_owned()]);
-        self.bind_spend_counter_keys(&window);
+        self.bind_spend_counter_keys(&BTreeSet::from([counter_key.to_owned()]));
         self.read_spend_counter(counter_key).await
     }
 
