@@ -82,99 +82,68 @@ impl BaseFilesConfig for Config {
         ProviderId::Openai
     }
 
-    fn get_supported_openai_params(&self, _model: &str) -> Vec<FileOpenAiParam> {
+    fn get_supported_openai_params(&self, _: &str) -> Vec<FileOpenAiParam> {
         vec![FileOpenAiParam::Purpose]
     }
 
     fn transform_create_file_request(
         &self,
-        _model: &str,
-        _create_file_data: &FileCreate,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
+        _: &str,
+        _: &FileCreate,
+        _: &FileParams,
+        _: &FileParams,
     ) -> Result<CreateFileBody, FileContractError> {
         Ok(CreateFileBody::Text(String::new()))
     }
 
-    fn transform_create_file_response(
-        &self,
-        _model: Option<&str>,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Reply<FileObject> {
+    #[rustfmt::skip]
+    fn transform_create_file_response(&self, _: Option<&str>, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<FileObject> {
         Ok(file_object())
     }
 
-    fn transform_retrieve_file_request(
-        &self,
-        _file_id: &str,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
-    ) -> Prepared {
+    fn transform_retrieve_file_request(&self, _: &str, _: &FileParams, _: &FileParams) -> Prepared {
         Ok((String::new(), FileParams::new()))
     }
 
-    fn transform_retrieve_file_response(
-        &self,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Reply<FileObject> {
+    #[rustfmt::skip]
+    fn transform_retrieve_file_response(&self, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<FileObject> {
         Ok(file_object())
     }
 
-    fn transform_delete_file_request(
-        &self,
-        _file_id: &str,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
-    ) -> Prepared {
+    fn transform_delete_file_request(&self, _: &str, _: &FileParams, _: &FileParams) -> Prepared {
         Ok((String::new(), FileParams::new()))
     }
 
-    fn transform_delete_file_response(
-        &self,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Reply<FileDeleted> {
+    #[rustfmt::skip]
+    fn transform_delete_file_response(&self, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<FileDeleted> {
         Ok(file_deleted())
     }
 
     fn transform_list_files_request(
         &self,
-        _purpose: Option<&str>,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
+        _: Option<&str>,
+        _: &FileParams,
+        _: &FileParams,
     ) -> Prepared {
         Ok((String::new(), FileParams::new()))
     }
 
-    fn transform_list_files_response(
-        &self,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Reply<Vec<FileObject>> {
+    #[rustfmt::skip]
+    fn transform_list_files_response(&self, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<Vec<FileObject>> {
         Ok(Vec::new())
     }
 
     fn transform_file_content_request(
         &self,
-        _file_content_request: &FileContentRequest,
-        _optional_params: &FileParams,
-        _litellm_params: &FileParams,
+        _: &FileContentRequest,
+        _: &FileParams,
+        _: &FileParams,
     ) -> Prepared {
         Ok((String::new(), FileParams::new()))
     }
 
-    fn transform_file_content_response(
-        &self,
-        _raw_response: &FileResponse,
-        _logging_obj: &mut FileLogging,
-        _litellm_params: &FileParams,
-    ) -> Reply<BinaryContent> {
+    #[rustfmt::skip]
+    fn transform_file_content_response(&self, _: &FileResponse, _: &mut FileLogging, _: &FileParams) -> Reply<BinaryContent> {
         Ok(binary_content())
     }
 }

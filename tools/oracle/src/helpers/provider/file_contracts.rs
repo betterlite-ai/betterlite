@@ -81,29 +81,26 @@ impl BaseFileUploadStream for Upload {
     }
 }
 
-fn extracted_predicates(cases: &[Case]) -> Value {
+#[derive(Debug, Clone, Copy)]
+enum Predicate {
+    Content,
+    File,
+}
+
+fn predicate_results(cases: &[Case], predicate: Predicate) -> Value {
     let results: Vec<bool> = cases
         .iter()
-        .map(|case| {
-            is_batch_jsonl_file(
+        .map(|case| match predicate {
+            Predicate::Content => is_batch_jsonl_file(
                 case.purpose.as_deref(),
                 case.content_type.as_deref(),
                 case.content.as_deref().map(str::as_bytes),
-            )
-        })
-        .collect();
-    json!(results)
-}
-
-fn metadata_predicates(cases: &[Case]) -> Value {
-    let results: Vec<bool> = cases
-        .iter()
-        .map(|case| {
-            is_batch_jsonl_request(
+            ),
+            Predicate::File => is_batch_jsonl_request(
                 case.purpose.as_deref(),
                 case.content_type.as_deref(),
                 case.file.as_ref(),
-            )
+            ),
         })
         .collect();
     json!(results)
@@ -219,8 +216,10 @@ fn stream_passthrough(input: &StreamPassthroughInput) -> Result<Value, String> {
 
 fn run_functions(input: &Input) -> Result<Value, String> {
     match input {
-        Input::BatchExtractedPredicate { cases } => Ok(extracted_predicates(cases)),
-        Input::BatchMetadataPredicate { cases } => Ok(metadata_predicates(cases)),
+        Input::BatchExtractedPredicate { cases } => {
+            Ok(predicate_results(cases, Predicate::Content))
+        }
+        Input::BatchMetadataPredicate { cases } => Ok(predicate_results(cases, Predicate::File)),
         Input::BaseDefaults(fields) => Ok(base_defaults(fields)),
         Input::FileUrlForwarding(fields) => file_url_forwarding(fields),
         Input::StreamPassthrough(fields) => stream_passthrough(fields),

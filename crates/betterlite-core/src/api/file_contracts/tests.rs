@@ -72,29 +72,26 @@ fn batch_extracted_predicate(
 }
 
 #[rstest]
-#[case::empty_bytes(Some("batch"), Some("text/plain"), Probe::EmptyBytes, true)]
-#[case::file_name(Some("batch"), Some("text/plain"), Probe::Name, true)]
-#[case::null_file(Some("batch"), Some("text/plain"), Probe::Missing, false)]
-#[case::absent_file(Some("batch"), Some("text/plain"), Probe::Missing, false)]
-#[case::lazy_file_is_not_read(Some("batch"), Some("text/plain"), Probe::Lazy, true)]
-#[case::assistants_purpose(Some("assistants"), Some("text/plain"), Probe::Name, false)]
-#[case::capitalized_purpose(Some("Batch"), Some("text/plain"), Probe::Name, false)]
-#[case::null_purpose(None, Some("text/plain"), Probe::Name, false)]
-#[case::absent_purpose(None, Some("text/plain"), Probe::Name, false)]
-#[case::null_content_type(Some("batch"), None, Probe::Name, false)]
-#[case::csv_content_type(Some("batch"), Some("text/csv"), Probe::Name, false)]
-#[case::capitalized_content_type(Some("batch"), Some("TEXT/PLAIN"), Probe::Name, false)]
+#[case::empty_bytes((Some("batch"), Some("text/plain"), Probe::EmptyBytes), true)]
+#[case::file_name((Some("batch"), Some("text/plain"), Probe::Name), true)]
+#[case::null_file((Some("batch"), Some("text/plain"), Probe::Missing), false)]
+#[case::absent_file((Some("batch"), Some("text/plain"), Probe::Missing), false)]
+#[case::lazy_file_is_not_read((Some("batch"), Some("text/plain"), Probe::Lazy), true)]
+#[case::assistants_purpose((Some("assistants"), Some("text/plain"), Probe::Name), false)]
+#[case::capitalized_purpose((Some("Batch"), Some("text/plain"), Probe::Name), false)]
+#[case::null_purpose((None, Some("text/plain"), Probe::Name), false)]
+#[case::absent_purpose((None, Some("text/plain"), Probe::Name), false)]
+#[case::null_content_type((Some("batch"), None, Probe::Name), false)]
+#[case::csv_content_type((Some("batch"), Some("text/csv"), Probe::Name), false)]
+#[case::capitalized_content_type((Some("batch"), Some("TEXT/PLAIN"), Probe::Name), false)]
 #[case::parameterized_content_type(
-    Some("batch"),
-    Some("application/json;charset=utf-8"),
-    Probe::Name,
+    (Some("batch"), Some("application/json;charset=utf-8"), Probe::Name),
     false
 )]
 fn batch_metadata_predicate(
-    #[case] purpose: Option<&str>,
-    #[case] content_type: Option<&str>,
-    #[case] probe: Probe,
+    #[case] scenario: (Option<&str>, Option<&str>, Probe),
     #[case] expected: bool,
 ) {
+    let (purpose, content_type, probe) = scenario;
     assert_eq!(metadata_result(purpose, content_type, probe), expected);
 }

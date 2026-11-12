@@ -23,10 +23,10 @@ pub fn is_batch_jsonl_file(
     content_type: Option<&str>,
     content: Option<&[u8]>,
 ) -> bool {
-    if purpose != Some("batch") {
-        return false;
+    match content {
+        Some(_) => purpose == Some("batch") && valid_content_type(content_type),
+        None => false,
     }
-    valid_content_type(content_type) && content.is_some()
 }
 
 #[must_use]
