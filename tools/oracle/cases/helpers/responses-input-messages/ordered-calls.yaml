@@ -1,0 +1,22 @@
+kind: helper
+name: ordered-calls
+call:
+  responses_input_messages:
+    request:
+      input:
+        - {role: assistant, content: hello}
+        - {type: function_call, call_id: c1, name: f, arguments: "{}"}
+        - {type: custom_tool_call, call_id: c2, name: g, input: patch}
+        - {type: web_search_call, id: ws, status: completed, action: {type: search, query: q}}
+        - {type: function_call_output, call_id: c1, output: r1}
+        - {type: custom_tool_call_output, call_id: c2, output: r2}
+        - {type: function_call, call_id: c3, name: h, arguments: "{}"}
+        - {type: function_call_output, call_id: c3, output: r3}
+    replay_reasoning: false
+    cache:
+      - {key: c1, value: {id: c1, type: function, function: {name: f, arguments: "{}"}}}
+      - {key: c2, value: {id: cX, type: function, function: {name: g, arguments: "{}"}}}
+      - {key: c3, value: {id: "", type: function, function: {name: h, arguments: "{}"}}}
+env: {}
+compare:
+  ignore: []

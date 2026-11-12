@@ -159,7 +159,7 @@ checks:
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_refresh_grant_corpus)'
     - id: helper-tests
       why: the helper adapter does not reach the production refresher and lazy store
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4660::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-oracle-server --no-tests=fail -E 'test(/^b4660::/) - test(/replays_the_/)'
     - id: helper-oracle
       why: the helper cases are missing or differ from LiteLLM
       run: >-

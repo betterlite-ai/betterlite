@@ -1,0 +1,13 @@
+kind: helper
+name: guardrail-params-list-checks-wrong-guardrail
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: pre_call
+      checks:
+        - name: pii
+          instructions: Flag personal data
+env: {}
+compare: {ignore: []}

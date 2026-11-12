@@ -29,7 +29,7 @@ description: >-
   8. debug headers: B8194's maybe_build_debug_headers.
 
 
-  transport.rs. build_transport(state: &McpState, shared: &Shared) -> Arc<McpTransport<ProdPorts>> is called once from McpState::build, which stores it in the new field `transport`. mount_public merges B8592's routes (with B8592's McpStreamHandler implementation for McpTransport) and B8727's mcp_app_routes(transport). start calls McpTransport::start, so the session cleanup runs from boot; B8701 reads `McpState::shared(state).transport` for B8723's SessionRegistry.
+  transport.rs. build_transport(state: &McpState, shared: &Shared) -> Arc<McpTransport<ProdPorts>> is called once from McpState::build, which stores it in the new field `transport`. mount_public merges B8592's routes (with B8592's McpStreamHandler implementation for McpTransport) and B8727's mcp_app_routes(transport). start calls McpTransport::start, so the session cleanup runs from boot; B9950 reads `McpState::shared(state).transport` for B8723's SessionRegistry.
 
 
   Tests in app::mcp::transport:: : the merged router answers each of the four path routes and /mcp/enabled with something other than 404 through tower's oneshot; /mcp/proxy reaches the transport with proxy_mode true and /toolset/{name}/mcp with its toolset id; ProdPorts reads the allowlist again after general_settings changes; start then stop leaves no cleanup task running.
@@ -111,7 +111,7 @@ oracle_cases:
   - tools/oracle/cases/http/mcp-transport/sse-unknown-session.yaml
 deviations: []
 out_of_scope:
-  - "The route handlers: B8592. The transport behavior: B8720 to B8727. The /v1/mcp/sessions routes over the SessionRegistry this task stores: B8701."
+  - "The route handlers: B8592. The transport behavior: B8720 to B8727. The /v1/mcp/sessions routes over the SessionRegistry this task stores: B9950."
 pitfalls:
   - "Mounting inside the auth layers would answer 401 before the MCP handler can send its own challenge with a WWW-Authenticate header, which breaks every OAuth MCP client."
   - "An initialize case leaves a stateful session open for 30 minutes in the booted proxy, so a later GET /v1/mcp/sessions in the same run reports it; keep that in mind when a sessions case fails."

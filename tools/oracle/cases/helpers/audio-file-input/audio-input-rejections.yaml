@@ -1,0 +1,17 @@
+kind: helper
+name: audio-input-rejections
+call:
+  audio_file_input:
+    calls:
+      - {function: process, file: {kind: text, content: voice.wav}}
+      - {function: process, file: {kind: tuple, filename: voice.wav, content: {kind: text, content: abc}}}
+      - {function: process, file: {kind: tuple, filename: voice.wav}}
+      - {function: process, file: {kind: unsupported, class_name: int}}
+      - {function: process, file: {kind: tuple, filename: voice.wav, content: {kind: unsupported, class_name: int}}}
+      - {function: process, file: {kind: stream, name: voice.wav, content: YWJj, read: missing}}
+      - {function: process, file: {kind: stream, name: voice.wav, content: YWJj, read: fail}}
+      - {function: process, file: {kind: stream, name: voice.wav, content: YWJj, seek: fails}}
+      - {function: process, file: {kind: path, path: /missing/voice.wav}}
+      - {function: process, file: {kind: tuple, filename: voice.wav, content: {kind: path, path: /missing/voice.wav}}}
+env: {}
+compare: {ignore: []}

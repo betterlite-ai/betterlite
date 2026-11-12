@@ -1,13 +1,13 @@
 id: B8807
 milestone: M0 foundation
 title: Oracle helper group server as its own crate
-status: todo
+status: done
 depends_on: [B8806]
 file: tasks/B8807-oracle-server-group-crate.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1421

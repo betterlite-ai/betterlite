@@ -1,0 +1,19 @@
+kind: helper
+name: normalize_media_types
+call:
+  request_body:
+    function: normalize_media_types
+    content_types:
+      - application/json
+      - application/json; charset=utf-8
+      - Application/JSON
+      - " text/plain ; q=1 "
+      - ""
+      - "; charset=utf-8"
+      - application/x-www-form-urlencoded
+      - multipart/form-data; boundary=x
+      - application/x-protobuf
+      - application/protobuf
+env: {}
+compare:
+  ignore: []

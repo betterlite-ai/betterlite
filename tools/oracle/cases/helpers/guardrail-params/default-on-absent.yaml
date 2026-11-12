@@ -1,0 +1,10 @@
+kind: helper
+name: guardrail-params-default-on-absent
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: during_call
+env: {}
+compare: {ignore: []}

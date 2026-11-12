@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-claude-bedrock-service-only
+call:
+  b5650: {function: claude_target, custom_llm_provider: bedrock, model: "x:bedrock:y"}
+env: {}
+compare: {ignore: []}
