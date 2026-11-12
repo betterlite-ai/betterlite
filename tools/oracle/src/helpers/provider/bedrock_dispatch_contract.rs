@@ -1,6 +1,8 @@
+use betterlite_bedrock::aws_endpoints::error::AwsEndpointError;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_provider::bedrock_dispatch_contract::{
-    BedrockAwsSettings, BedrockOperation, BedrockPlanRequest, BedrockPrepared, dispatch,
+    BedrockAwsSettings, BedrockDispatchError, BedrockOperation, BedrockPlanRequest,
+    BedrockPrepared, dispatch,
 };
 use indexmap::IndexSet;
 use serde::Deserialize;
@@ -31,20 +33,11 @@ struct PlanCase {
     api_base: Option<String>,
     aws_bedrock_runtime_endpoint: Option<String>,
     #[serde(default)]
-    settings: SettingsCase,
+    settings: BedrockAwsSettings,
     #[serde(default)]
     request_params: ParamMap,
     #[serde(default)]
     additional_drop_params: Vec<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SettingsCase {
-    aws_region_name: Option<String>,
-    aws_region: Option<String>,
-    session_region: Option<String>,
-    aws_bedrock_runtime_endpoint: Option<String>,
 }
 
 pub(crate) struct Op;
@@ -72,12 +65,7 @@ fn case_plan(case: &PlanCase, input: &Input, converse_models: &IndexSet<String>)
         aws_region_name: case.aws_region_name.clone(),
         api_base: case.api_base.clone(),
         aws_bedrock_runtime_endpoint: case.aws_bedrock_runtime_endpoint.clone(),
-        settings: BedrockAwsSettings {
-            aws_region_name: case.settings.aws_region_name.clone(),
-            aws_region: case.settings.aws_region.clone(),
-            session_region: case.settings.session_region.clone(),
-            aws_bedrock_runtime_endpoint: case.settings.aws_bedrock_runtime_endpoint.clone(),
-        },
+        settings: case.settings.clone(),
         request_params: case.request_params.clone(),
         additional_drop_params: case.additional_drop_params.clone(),
         price_map: input.price_map.clone(),
@@ -85,18 +73,31 @@ fn case_plan(case: &PlanCase, input: &Input, converse_models: &IndexSet<String>)
         request_metadata_owned: !input.request_metadata_fields.is_empty(),
     };
     match dispatch(&BedrockOperation::Plan(Box::new(request))) {
-        Ok(prepared) => json!({"plan": prepared_value(&prepared)}),
-        Err(_error) => json!({"error": true}),
+        Ok(BedrockPrepared::Invoke {
+            model,
+            model_id,
+            region,
+            endpoint_url,
+            proxy_endpoint_url,
+        }) => json!({"plan": {
+            "operation": "invoke",
+            "model": model,
+            "model_id": model_id,
+            "region": region,
+            "endpoint_url": endpoint_url,
+            "proxy_endpoint_url": proxy_endpoint_url,
+        }}),
+        Ok(BedrockPrepared::Routed { operation, model }) => {
+            json!({"plan": {"operation": operation, "model": model}})
+        }
+        Err(BedrockDispatchError::Route(_)) => json!({"error": "route"}),
+        Err(BedrockDispatchError::Endpoint(AwsEndpointError::Region { .. })) => {
+            json!({"error": "region"})
+        }
+        Err(
+            error @ (BedrockDispatchError::Endpoint(_)
+            | BedrockDispatchError::Encode { .. }
+            | BedrockDispatchError::Unsupported { .. }),
+        ) => json!({"error": error.to_string()}),
     }
-}
-
-fn prepared_value(prepared: &BedrockPrepared) -> Value {
-    json!({
-        "operation": prepared.operation,
-        "model": prepared.model,
-        "model_id": prepared.model_id,
-        "region": prepared.region,
-        "endpoint_url": prepared.endpoint_url,
-        "proxy_endpoint_url": prepared.proxy_endpoint_url,
-    })
 }

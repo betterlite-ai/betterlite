@@ -3,32 +3,30 @@ name: bedrock-dispatch-contract-converse-plan
 call:
   bedrock_dispatch_contract:
     price_map:
-      openai.gpt-5.6-fixture: not-an-object
+      openai.gpt-5.6-fixture:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.6-broken: not-an-object
     converse_models:
       - "anthropic.claude-3-haiku-20240307-v1:0"
     request_metadata_fields: []
     cases:
       - model: "anthropic.claude-3-haiku-20240307-v1:0"
         aws_region_name: "us-east-1"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
       - model: "converse/amazon.titan-text-express-v1"
         aws_region_name: "eu-central-1"
-        api_base: "https://bedrock-proxy.example"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
+      - model: "converse/us-east-1/anthropic.claude-3-haiku-20240307-v1:0"
       - model: "anthropic.claude-3-haiku-20240307-v1:0"
         model_id: "arn:aws:bedrock:us-east-2:123456789012:inference-profile/global.anthropic.claude"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
       - model: "cohere.command-r-v1:0"
         aws_region_name: "us-east-1"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
       - model: "openai.gpt-5.6-fixture"
         aws_region_name: "us-east-1"
-        settings:
-          aws_bedrock_runtime_endpoint: "https://env-runtime.example"
-env:
-  AWS_BEDROCK_RUNTIME_ENDPOINT: "https://env-runtime.example"
+      - model: "openai.gpt-5.6-fixture"
+        request_params: {stop: ["x"]}
+      - model: "openai.gpt-5.6-fixture"
+        request_params: {stop: ["x"]}
+        additional_drop_params: ["stop"]
+      - model: "openai.gpt-5.6-broken"
+        aws_region_name: "us-east-1"
+env: {}
 compare: {ignore: []}

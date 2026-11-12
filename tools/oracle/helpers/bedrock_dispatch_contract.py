@@ -3,6 +3,7 @@ from typing import NotRequired, TypeAlias, TypedDict, cast
 import litellm
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.common_utils import bedrock_route_for_request
+from pydantic import ValidationError
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -61,25 +62,29 @@ def plan_case(case: PlanCase) -> Json:
     request_params: dict[str, Json] = params_value if params_value is not None else {}
     drops_value = case.get("additional_drop_params")
     drops = drops_value if drops_value is not None else []
-    route = bedrock_route_for_request(model, request_params, drops)
+    try:
+        route = bedrock_route_for_request(model, request_params, drops)
+    except ValidationError:
+        return {"error": "route"}
+    if route != "invoke":
+        return {"plan": {"operation": route, "model": model}}
     params = optional_params(case)
     provider = BaseAWSLLM.get_bedrock_invoke_provider(model)
     model_id = BaseAWSLLM.get_bedrock_model_id(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L618
         params, provider, model
     )
-    overridden = case.get("model_id")
-    region_model_id = overridden if route == "converse" else None
     instance = BaseAWSLLM()
-    region = instance._get_aws_region_name(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L732
-        params, model=model, model_id=region_model_id
-    )
+    try:
+        region = instance._get_aws_region_name(params, model=model)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L732
+    except ValueError:
+        return {"error": "region"}
     endpoint_url, proxy_endpoint_url = instance.get_runtime_endpoint(
         api_base=case.get("api_base"),
         aws_bedrock_runtime_endpoint=case.get("aws_bedrock_runtime_endpoint"),
         aws_region_name=region,
     )
     plan: dict[str, Json] = {
-        "operation": route,
+        "operation": "invoke",
         "model": model,
         "model_id": model_id,
         "region": region,
@@ -92,11 +97,6 @@ def plan_case(case: PlanCase) -> Json:
 
 def run(input_value: Input) -> Json:
     apply_catalogs(input_value)
-    plans: list[Json] = []
-    for case in input_value["cases"]:
-        try:
-            plans.append(plan_case(case))
-        except (TypeError, ValueError):
-            plans.append({"error": True})
+    plans: list[Json] = [plan_case(case) for case in input_value["cases"]]
     output: dict[str, Json] = {"plans": plans}
     return output

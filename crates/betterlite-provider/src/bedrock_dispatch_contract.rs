@@ -20,18 +20,24 @@ pub struct Bedrock;
 pub struct BedrockRequest;
 pub struct BedrockResult;
 
+// B591's model id, region and runtime endpoint belong to the Invoke route; each other route's handler task builds its own
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BedrockPrepared {
-    pub operation: BedrockRoute,
-    pub model: String,
-    pub model_id: String,
-    pub region: String,
-    pub endpoint_url: String,
-    pub proxy_endpoint_url: String,
+pub enum BedrockPrepared {
+    Invoke {
+        model: String,
+        model_id: String,
+        region: String,
+        endpoint_url: String,
+        proxy_endpoint_url: String,
+    },
+    Routed {
+        operation: BedrockRoute,
+        model: String,
+    },
 }
 
 // AWS values B591's config section resolved before the request, in the order _get_aws_region_name reads them
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
 pub struct BedrockAwsSettings {
     pub aws_region_name: Option<String>,
     pub aws_region: Option<String>,
@@ -105,8 +111,12 @@ fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatch
         &request.request_params,
         Some(&request.additional_drop_params),
     )?;
+    if operation != BedrockRoute::Invoke {
+        let model = request.model.clone();
+        return Ok(BedrockPrepared::Routed { operation, model });
+    }
     let model_id = select_model_id(request)?;
-    let region = select_region(request, operation)?;
+    let region = select_region(request)?;
     let endpoint = runtime_endpoint(RuntimeEndpointInput {
         api_base: request.api_base.as_deref(),
         configured_endpoint: request.aws_bedrock_runtime_endpoint.as_deref(),
@@ -114,8 +124,7 @@ fn plan(request: &BedrockPlanRequest) -> Result<BedrockPrepared, BedrockDispatch
         region: &region,
         endpoint_type: BedrockEndpointType::Runtime,
     });
-    Ok(BedrockPrepared {
-        operation,
+    Ok(BedrockPrepared::Invoke {
         model: request.model.clone(),
         model_id,
         region,
@@ -136,19 +145,11 @@ fn select_model_id(request: &BedrockPlanRequest) -> Result<String, BedrockDispat
     Ok(model_id)
 }
 
-fn select_region(
-    request: &BedrockPlanRequest,
-    operation: BedrockRoute,
-) -> Result<String, BedrockDispatchError> {
-    // the Converse handler passes the caller's model_id override to the region resolver; every other route does not
-    let model_id_region = request
-        .model_id
-        .as_deref()
-        .filter(|_| operation == BedrockRoute::Converse);
+fn select_region(request: &BedrockPlanRequest) -> Result<String, BedrockDispatchError> {
     let region = llm_region_name(LlmRegion {
         explicit: request.aws_region_name.as_deref(),
         model: Some(&request.model),
-        model_id: model_id_region,
+        model_id: None,
         environment_region_name: request.settings.aws_region_name.as_deref(),
         environment_region: request.settings.aws_region.as_deref(),
         session_region: request.settings.session_region.as_deref(),

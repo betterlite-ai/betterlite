@@ -1,4 +1,4 @@
-use super::plan_cases::{BASE, request};
+use super::plan_cases::{BASE, check_rows};
 use crate::bedrock_dispatch_contract::{BedrockDispatchError, BedrockOperation, dispatch};
 
 fn assert_unsupported(operation: &BedrockOperation, name: &str) {
@@ -26,7 +26,5 @@ fn bedrock_dispatch_contract_unsupported_operation() {
     assert_unsupported(&BedrockOperation::Agent, "agent");
     assert_unsupported(&BedrockOperation::Interactive, "interactive");
 
-    let plan = dispatch(&BedrockOperation::Plan(Box::new(request(&BASE))))
-        .expect("the plan operation stays installed next to the unsupported families");
-    assert_eq!(plan.region, "us-west-2");
+    check_rows(&[BASE]);
 }

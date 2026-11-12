@@ -18,7 +18,7 @@ enum Scenario {
 #[case::operation_error_propagation(Scenario::OperationErrorPropagation)]
 fn bedrock_dispatch_contract_cases(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::InvokePlan => plan_cases::invoke_plan(),
+        Scenario::InvokePlan => plan_cases::check_rows(&plan_cases::INVOKE_ROWS),
         Scenario::ConversePlan => plan_cases::converse_plan(),
         Scenario::OperationErrorPropagation => plan_cases::operation_error_propagation(),
     }

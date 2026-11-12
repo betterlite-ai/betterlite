@@ -3,10 +3,11 @@ use betterlite_bedrock::aws_endpoints::region::{LlmRegion, llm_region_name};
 use betterlite_bedrock::model_routes::{
     BedrockRoute, ModelRouteSelector, ParamMap, ParamValue, RouteError,
 };
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::bedrock_dispatch_contract::{
-    BedrockAwsSettings, BedrockDispatchError, BedrockOperation, BedrockPlanRequest, dispatch,
+    BedrockAwsSettings, BedrockDispatchError, BedrockOperation, BedrockPlanRequest,
+    BedrockPrepared, dispatch,
 };
 
 const CLAUDE: &str = "anthropic.claude-3-haiku-20240307-v1:0";
@@ -18,12 +19,12 @@ const OVERRIDE_ARN: &str =
     "arn:aws:bedrock:us-east-2:123456789012:inference-profile/global.anthropic.claude";
 const ENCODED_OVERRIDE_ARN: &str =
     "arn%3Aaws%3Abedrock%3Aus-east-2%3A123456789012%3Ainference-profile%2Fglobal.anthropic.claude";
-const MALFORMED_MODEL: &str = "openai.gpt-5.6-fixture";
+const MALFORMED_MODEL: &str = "openai.gpt-5.6-broken";
+const GPT: &str = "openai.gpt-5.6-fixture";
 const PROXY: &str = "https://bedrock-proxy.example";
 
 #[derive(Clone, Copy)]
 struct Expected {
-    operation: BedrockRoute,
     model_id: &'static str,
     region: &'static str,
     endpoint_url: &'static str,
@@ -57,7 +58,6 @@ pub(super) const BASE: Row = Row {
     settings_endpoint: None,
     converse: false,
     expected: Expected {
-        operation: BedrockRoute::Invoke,
         model_id: CLAUDE,
         region: "us-west-2",
         endpoint_url: "https://bedrock-runtime.us-west-2.amazonaws.com",
@@ -72,7 +72,7 @@ const US_EAST_1: Expected = Expected {
     ..BASE.expected
 };
 
-const INVOKE_ROWS: [Row; 7] = [
+pub(super) const INVOKE_ROWS: [Row; 8] = [
     Row {
         region: Some("us-east-1"),
         expected: US_EAST_1,
@@ -110,7 +110,6 @@ const INVOKE_ROWS: [Row; 7] = [
             region: "eu-west-3",
             endpoint_url: PROXY,
             proxy_endpoint_url: PROXY,
-            ..BASE.expected
         },
         ..BASE
     },
@@ -136,7 +135,18 @@ const INVOKE_ROWS: [Row; 7] = [
             region: "ca-central-1",
             endpoint_url: "https://env-runtime.example",
             proxy_endpoint_url: "https://env-runtime.example",
-            ..BASE.expected
+        },
+        ..BASE
+    },
+    // Invoke resolves the region from the model alone, so the override's us-east-2 never wins
+    Row {
+        model_id: Some(OVERRIDE_ARN),
+        settings_region_name: Some("eu-north-1"),
+        expected: Expected {
+            model_id: ENCODED_OVERRIDE_ARN,
+            region: "eu-north-1",
+            endpoint_url: "https://bedrock-runtime.eu-north-1.amazonaws.com",
+            proxy_endpoint_url: "https://bedrock-runtime.eu-north-1.amazonaws.com",
         },
         ..BASE
     },
@@ -144,50 +154,26 @@ const INVOKE_ROWS: [Row; 7] = [
 
 const CONVERSE_ROWS: [Row; 4] = [
     Row {
-        region: Some("us-east-1"),
         converse: true,
-        expected: Expected {
-            operation: BedrockRoute::Converse,
-            ..US_EAST_1
-        },
         ..BASE
     },
     Row {
         model: "converse/amazon.titan-text-express-v1",
         region: Some("eu-central-1"),
-        expected: Expected {
-            operation: BedrockRoute::Converse,
-            model_id: "amazon.titan-text-express-v1",
-            region: "eu-central-1",
-            endpoint_url: "https://bedrock-runtime.eu-central-1.amazonaws.com",
-            proxy_endpoint_url: "https://bedrock-runtime.eu-central-1.amazonaws.com",
-        },
+        ..BASE
+    },
+    Row {
+        model: "converse/us-east-1/anthropic.claude-3-haiku-20240307-v1:0",
         ..BASE
     },
     Row {
         model_id: Some(OVERRIDE_ARN),
         converse: true,
-        expected: Expected {
-            operation: BedrockRoute::Converse,
-            model_id: ENCODED_OVERRIDE_ARN,
-            region: "us-east-2",
-            endpoint_url: "https://bedrock-runtime.us-east-2.amazonaws.com",
-            proxy_endpoint_url: "https://bedrock-runtime.us-east-2.amazonaws.com",
-        },
-        ..BASE
-    },
-    // only the Converse route reads the region from a model_id override, so Invoke keeps the default
-    Row {
-        model_id: Some(OVERRIDE_ARN),
-        expected: Expected {
-            model_id: ENCODED_OVERRIDE_ARN,
-            ..BASE.expected
-        },
         ..BASE
     },
 ];
 
-pub(super) fn request(row: &Row) -> BedrockPlanRequest {
+fn request(row: &Row) -> BedrockPlanRequest {
     let mut converse_models = IndexSet::new();
     if row.converse {
         converse_models.insert(row.model.to_owned());
@@ -212,17 +198,41 @@ pub(super) fn request(row: &Row) -> BedrockPlanRequest {
     }
 }
 
-fn check_rows(rows: &[Row]) {
+pub(super) fn check_rows(rows: &[Row]) {
     for row in rows {
         let plan = dispatch(&BedrockOperation::Plan(Box::new(request(row))))
             .expect("the plan composes the route and endpoint leaves");
-        assert_eq!(plan.operation, row.expected.operation, "{}", row.model);
-        assert_eq!(plan.model, row.model);
-        assert_eq!(plan.model_id, row.expected.model_id);
-        assert_eq!(plan.region, row.expected.region);
-        assert_eq!(plan.endpoint_url, row.expected.endpoint_url);
-        assert_eq!(plan.proxy_endpoint_url, row.expected.proxy_endpoint_url);
+        let expected = BedrockPrepared::Invoke {
+            model: row.model.to_owned(),
+            model_id: row.expected.model_id.to_owned(),
+            region: row.expected.region.to_owned(),
+            endpoint_url: row.expected.endpoint_url.to_owned(),
+            proxy_endpoint_url: row.expected.proxy_endpoint_url.to_owned(),
+        };
+        assert_eq!(plan, expected, "{}", row.model);
     }
+}
+
+fn check_routed(request: BedrockPlanRequest, operation: BedrockRoute) {
+    let model = request.model.clone();
+    let plan = dispatch(&BedrockOperation::Plan(Box::new(request)))
+        .expect("a route other than Invoke still plans");
+    assert_eq!(plan, BedrockPrepared::Routed { operation, model });
+}
+
+// B598 picks chat_completions for a GPT 5.6 row listing the endpoint, Converse once stop is sent, and back when stop is dropped
+fn check_params_reach_route() {
+    let endpoints = ParamValue::List(vec![ParamValue::Text(String::from("/v1/chat/completions"))]);
+    let entry = IndexMap::from([(String::from("supported_endpoints"), endpoints)]);
+    let mut gpt = request(&Row { model: GPT, ..BASE });
+    gpt.price_map
+        .insert(GPT.to_owned(), ParamValue::Mapping(entry));
+    check_routed(gpt.clone(), BedrockRoute::ChatCompletions);
+    let stop = ParamValue::List(vec![ParamValue::Text(String::from("x"))]);
+    gpt.request_params.insert(String::from("stop"), stop);
+    check_routed(gpt.clone(), BedrockRoute::Converse);
+    gpt.additional_drop_params.push(String::from("stop"));
+    check_routed(gpt, BedrockRoute::ChatCompletions);
 }
 
 // a price entry that is not an object makes B598's route selector refuse, and the plan must keep that error as is
@@ -271,12 +281,11 @@ fn assert_region_error(row: &Row, leaf: LlmRegion<'_>, region: &str) {
     }
 }
 
-pub(super) fn invoke_plan() {
-    check_rows(&INVOKE_ROWS);
-}
-
 pub(super) fn converse_plan() {
-    check_rows(&CONVERSE_ROWS);
+    for row in &CONVERSE_ROWS {
+        check_routed(request(row), BedrockRoute::Converse);
+    }
+    check_params_reach_route();
     assert_catalog_error();
 }
 
