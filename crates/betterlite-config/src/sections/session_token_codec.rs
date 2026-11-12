@@ -31,6 +31,7 @@ struct RawLiteLlmSettings {
 #[serde(from = "Option<RawNumber>")]
 struct RawBudget(BudgetState);
 
+// a present null is a disabled budget, an absent key keeps LiteLLM's one-dollar default
 #[derive(Debug, Default)]
 enum BudgetState {
     #[default]
@@ -81,7 +82,6 @@ impl Section for Raw {
     }
 }
 
-// a present null is a disabled budget, an absent key keeps LiteLLM's one-dollar default
 fn cli_expiration_hours<L>(lookup: &L) -> Result<i64, ConfigError>
 where
     L: EnvironmentLookup,

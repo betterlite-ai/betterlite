@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -284,7 +285,7 @@ fn cli_explicit_team() {
     let selection = CliSession {
         team_id: Some("team-explicit".to_owned()),
         team_alias: Some("Team Alias".to_owned()),
-        team_models: Some(vec!["gpt-4o".to_owned(), "claude".to_owned()]),
+        team_models: vec!["gpt-4o".to_owned(), "claude".to_owned()],
         team_model_aliases: Some(BTreeMap::from([("gpt-4o".to_owned(), "alias".to_owned())])),
         max_budget: Some("5.5".parse::<Decimal>().unwrap()),
     };
@@ -303,7 +304,7 @@ fn cli_explicit_team() {
     let empty = CliSession {
         team_id: Some(String::new()),
         team_alias: None,
-        team_models: None,
+        team_models: Vec::new(),
         team_model_aliases: None,
         max_budget: None,
     };
@@ -340,7 +341,7 @@ fn cli_team_grants() {
     let selection = CliSession {
         team_id: None,
         team_alias: None,
-        team_models: Some(vec!["gpt-4o".to_owned()]),
+        team_models: vec!["gpt-4o".to_owned()],
         team_model_aliases: Some(BTreeMap::from([(
             "gpt-4o".to_owned(),
             "gpt-alias".to_owned(),
@@ -375,7 +376,7 @@ fn cli_alias_and_budget() {
     let selection = CliSession {
         team_id: None,
         team_alias: Some("Team Alias".to_owned()),
-        team_models: None,
+        team_models: Vec::new(),
         team_model_aliases: None,
         max_budget: Some("5.5".parse::<Decimal>().unwrap()),
     };
@@ -690,13 +691,14 @@ impl<S: Subscriber> Layer<S> for Events {
     }
 }
 
-#[test]
-fn session_error_redaction() {
+#[rstest]
+#[case::invalid_role("{\"user_role\":\"SECRET-MARKER\"}")]
+#[case::bad_models("{\"models\":\"SECRET-MARKER\"}")]
+fn session_error_redaction(#[case] plaintext: &str) {
     let settings = codec(Some(SALT), Some(Decimal::ONE), 24);
-    let plaintext = b"{\"key_alias\":\"SECRET-MARKER\",\"user_role\":\"not-a-role\"}";
     let token = sealed(
         &settings,
-        plaintext,
+        plaintext.as_bytes(),
         LITELLM_SESSION_TOKEN_PREFIX.as_bytes(),
     );
     let events = Events::default();
@@ -704,7 +706,12 @@ fn session_error_redaction() {
     let error = with_default(subscriber, || {
         settings.session_from_token(&token).unwrap_err()
     });
-    let rendered = format!("{error} {error:?}");
+    let mut rendered = format!("{error} {error:?}");
+    let mut source = error.source();
+    while let Some(cause) = source {
+        rendered = format!("{rendered} {cause} {cause:?}");
+        source = cause.source();
+    }
     let ciphertext = token.strip_prefix(LITELLM_SESSION_TOKEN_PREFIX).unwrap();
     assert!(!rendered.contains(ciphertext));
     assert!(!rendered.contains("SECRET-MARKER"));

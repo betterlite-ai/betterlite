@@ -3,15 +3,28 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::Expiry;
 use rust_decimal::Decimal;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use crate::resolved_key::auth::UserAPIKeyAuth;
 use crate::user_roles::UserRole;
 
+// serializes the plain token so a record can leave the process, while the secret's Debug stays redacted
+#[derive(Serialize)]
+struct ExposedToken(String);
+
+impl From<&SecretString> for ExposedToken {
+    fn from(secret: &SecretString) -> Self {
+        Self(secret.expose_secret().to_owned())
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SessionRecord {
-    pub token: Option<String>,
+    #[serde(
+        serialize_with = "serde_with::As::<Option<serde_with::FromIntoRef<ExposedToken>>>::serialize"
+    )]
+    pub token: Option<SecretString>,
     pub key_name: Option<String>,
     pub key_alias: Option<String>,
     #[serde(serialize_with = "rust_decimal::serde::float_option::serialize")]
@@ -31,9 +44,8 @@ pub struct SessionRecord {
 
 impl SessionRecord {
     pub fn from_auth(auth: &UserAPIKeyAuth) -> Self {
-        let session_token = auth.view.token.token.as_ref();
         Self {
-            token: session_token.map(|token| token.expose_secret().to_owned()),
+            token: auth.view.token.token.clone(),
             key_name: auth.view.token.key_name.clone(),
             key_alias: auth.view.token.key_alias.clone(),
             max_budget: auth.view.token.max_budget,

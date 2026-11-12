@@ -9,9 +9,11 @@ use betterlite_secrets::secret_codec::{NonceSource, StoredCipher};
 use chrono::{DateTime, TimeDelta, Utc};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use serde_json::error::Category;
 use thiserror::Error;
 
 use crate::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
+use crate::resolved_key::view::ViewError;
 use crate::session_token_codec::payload::{SessionShape, seal_session};
 use crate::session_token_codec::{DecodeError, decode_session_token};
 use crate::user_roles::UserRole;
@@ -36,7 +38,7 @@ pub enum SessionKind {
 pub struct CliSession {
     pub team_id: Option<String>,
     pub team_alias: Option<String>,
-    pub team_models: Option<Vec<String>>,
+    pub team_models: Vec<String>,
     pub team_model_aliases: Option<BTreeMap<String, String>>,
     pub max_budget: Option<Decimal>,
 }
@@ -68,12 +70,20 @@ pub enum SessionTokenError {
         source: DecodeError,
     },
     #[error("the decrypted session token is not a valid session record")]
-    Record {
-        #[source]
-        source: AuthError,
-    },
+    Record { detail: RecordDetail },
     #[error("the session expiry is outside the supported range")]
     ExpiryRange,
+}
+
+// serde_json's category, line and column without the message, which quotes the offending field value
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordDetail {
+    Json {
+        category: Category,
+        line: usize,
+        column: usize,
+    },
+    NonStringApiKey,
 }
 
 pub struct SessionTokenCodec<N, D> {
@@ -94,8 +104,21 @@ impl<N, D> SessionTokenCodec<N, D> {
         };
         UserAPIKeyAuth::construct(AuthInput::Dict(record))
             .map(Some)
-            .map_err(|source| SessionTokenError::Record { source })
+            .map_err(record_error)
     }
+}
+
+// the wrapped serde error's text quotes the bad value, so only its position survives
+fn record_error(source: AuthError) -> SessionTokenError {
+    let detail = match source {
+        AuthError::Json(error) | AuthError::View(ViewError::Json(error)) => RecordDetail::Json {
+            category: error.classify(),
+            line: error.line(),
+            column: error.column(),
+        },
+        AuthError::NonStringApiKey => RecordDetail::NonStringApiKey,
+    };
+    SessionTokenError::Record { detail }
 }
 
 struct CliScope {
@@ -199,7 +222,7 @@ fn cli_scope(user: &LiteLLMUserTable, session: &CliSession) -> CliScope {
     } else {
         user.models.clone()
     };
-    let team_models = session.team_models.clone().unwrap_or_default();
+    let team_models = session.team_models.clone();
     let team_model_aliases: Option<BTreeMap<String, JsonData>> =
         session.team_model_aliases.as_ref().map(|aliases| {
             aliases

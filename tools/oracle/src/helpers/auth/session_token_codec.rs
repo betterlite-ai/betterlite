@@ -154,7 +154,7 @@ fn answer(
             let selection = CliSession {
                 team_id: team_id.clone(),
                 team_alias: team_alias.clone(),
-                team_models: team_models.clone(),
+                team_models: team_models.clone().unwrap_or_default(),
                 team_model_aliases: team_model_aliases.clone(),
                 max_budget: *max_budget,
             };
