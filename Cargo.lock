@@ -3171,6 +3171,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
  "betterlite-vertex",
+ "indexmap 2.14.2",
  "jiff",
  "libfuzzer-sys",
 ]

@@ -1,0 +1,23 @@
+kind: helper
+name: studio-interactions-encoded-cancel-id
+call:
+  studio_interactions:
+    calls:
+      - function: lifecycle
+        action: cancel
+        interaction_id: "a/b c?d#e%"
+        api_base: ""
+      - function: lifecycle
+        action: get
+        interaction_id: "a/b c?d#e%"
+        api_base: "https://proxy.example"
+      - function: lifecycle
+        action: delete
+        interaction_id: "a-b.c_d~e"
+        api_base: ""
+      - function: lifecycle
+        action: get
+        interaction_id: "\u00e9"
+        api_base: ""
+env: {}
+compare: {ignore: []}
