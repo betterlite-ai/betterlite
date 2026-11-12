@@ -1,0 +1,6 @@
+kind: helper
+name: assistant-text-from-chat-response
+call:
+  b3663: {"function": "assistant_text", "response": {"choices": [{"message": {"role": "assistant", "content": "hello"}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: chat-response-stream-tools-corpus
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request: {tools: []}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps: []
+env: {}
+compare: {ignore: []}

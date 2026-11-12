@@ -1,0 +1,21 @@
+kind: helper
+name: supported-options
+call:
+  responses_chat_options:
+    request:
+      model: m
+      input: hi
+    provider: null
+    stream: null
+    extra_headers: null
+    metadata: null
+    service_tier: null
+    api_base: null
+    supported_openai_params: null
+    bridge_mode: null
+    bridge_failure: null
+    route_all_openai_to_responses: false
+    cache: []
+env: {}
+compare:
+  ignore: []
