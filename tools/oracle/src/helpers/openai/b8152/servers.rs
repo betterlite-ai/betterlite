@@ -133,24 +133,19 @@ pub(super) fn params_value(call: &ParamsCall) -> Value {
     let (base, catalog) = call.config_parts();
     let mut optional = call.preset.clone();
     match call.provider {
-        ChatProvider::DockerModelRunner => {
-            let requested: IndexMap<String, Value> = call.params.iter().cloned().collect();
-            docker_model_runner::ChatConfig { base }.map_openai_params(
+        ChatProvider::DockerModelRunner => docker_model_runner::ChatConfig { base }
+            .map_openai_params(
                 &call.model,
-                &requested,
+                &call.params.iter().cloned().collect(),
                 &mut optional,
                 &catalog,
-            );
-        }
-        ChatProvider::LmStudio => {
-            let requested: Object = call.params.iter().cloned().collect();
-            lm_studio::ChatConfig { base }.map_openai_params(
-                &call.model,
-                &requested,
-                &mut optional,
-                &catalog,
-            );
-        }
+            ),
+        ChatProvider::LmStudio => lm_studio::ChatConfig { base }.map_openai_params(
+            &call.model,
+            &call.params.iter().cloned().collect(),
+            &mut optional,
+            &catalog,
+        ),
     }
     Value::Object(optional)
 }
