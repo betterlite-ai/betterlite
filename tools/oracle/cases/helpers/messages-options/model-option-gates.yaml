@@ -1,0 +1,31 @@
+kind: helper
+name: model-option-gates
+call:
+  messages_options:
+    fixture:
+      model_cost:
+        claude-opus-4-8: {litellm_provider: anthropic, supports_speed: true}
+        claude-opus-4-7: {litellm_provider: anthropic, supports_sampling_params: false}
+        claude-opus-4-6: {litellm_provider: anthropic, supports_sampling_params: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+    steps:
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, max_tokens: 5}, model: claude-opus-4-8, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, max_tokens: 5}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, max_tokens: 5}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, max_tokens: 5}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: false, global_drop_params: true}
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: null, max_tokens: 5}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {top_p: 0.9, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: true}
+      - {function: get_requested_anthropic_messages_optional_param, params: {top_k: 5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 1, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {top_p: 1, top_k: 1, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {top_k: 3, max_tokens: 5, top_p: 0.5, temperature: 0.2, system: s}, model: claude-opus-4-6, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {top_k: 3, max_tokens: 5, top_p: 0.5, temperature: 0.2, system: s}, model: claude-sonnet-4-5, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: null, top_p: null, top_k: null, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, speed: fast}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, speed: fast, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {temperature: 0.5, top_p: 0.5, top_k: 4, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}
