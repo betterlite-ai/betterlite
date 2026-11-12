@@ -1,0 +1,11 @@
+task: B1370
+deviations:
+  - what: A response body that is not valid UTF-8 is not decoded into the Gemini error message. The error reports the byte count instead.
+    why: Python's httpx decodes with replacement characters, and betterlite refuses to put lossy text into an error that callers match on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/interactions/transformation.py#L261-L271
+  - what: An image_config that is not an object is refused with an ImageConfigNotObject error.
+    why: LiteLLM raises a bare TypeError from `.get` or `.items` on it, which no caller can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/interactions/transformation.py#L239-L246
+  - what: A create, get or cancel response body larger than 32 MiB is refused with a ResponseTooLarge error.
+    why: LiteLLM reads any body into memory, and betterlite bounds every upstream JSON read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/interactions/transformation.py#L255-L275
