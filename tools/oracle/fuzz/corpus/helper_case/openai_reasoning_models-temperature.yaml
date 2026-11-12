@@ -1,0 +1,9 @@
+kind: helper
+name: openai-reasoning-models-seed-temperature
+call:
+  openai_reasoning_models:
+    temperature_while_thinking:
+      probes:
+      - {model: gpt-5.1, requested: {temperature: null}}
+env: {}
+compare: {ignore: []}

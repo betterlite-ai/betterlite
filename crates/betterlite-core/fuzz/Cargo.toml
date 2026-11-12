@@ -22,6 +22,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 
 [[bin]]
+name = "anthropic_beta_config"
+path = "fuzz_targets/anthropic_beta_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "budget_reset_clock"
 path = "fuzz_targets/budget_reset_clock.rs"
 test = false
@@ -171,6 +178,13 @@ bench = false
 [[bin]]
 name = "responses_codex_tools"
 path = "fuzz_targets/responses_codex_tools.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response_id_codecs"
+path = "fuzz_targets/response_id_codecs.rs"
 test = false
 doc = false
 bench = false

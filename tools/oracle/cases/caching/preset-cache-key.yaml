@@ -1,0 +1,16 @@
+kind: helper
+name: caching-preset-cache-key
+call:
+  b4300:
+    function: retrieve
+    call_type: acompletion
+    parameters: [model, messages]
+    args: []
+    kwargs:
+      model: gpt-4
+      messages: [{role: user, content: hello}]
+      stream: true
+      metadata: null
+    entries: []
+env: {}
+compare: {ignore: []}

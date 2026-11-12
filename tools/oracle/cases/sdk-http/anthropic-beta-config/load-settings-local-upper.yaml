@@ -1,0 +1,13 @@
+kind: sdk_http
+name: anthropic-beta-config-load-settings-local-upper
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'TRUE'}
+call:
+  anthropic_beta_config:
+    url: mock
+    steps: [load]
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
