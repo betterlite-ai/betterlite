@@ -8,7 +8,7 @@ use crate::api::batch_records::BatchRecordsError;
 
 #[derive(Debug, Error)]
 pub enum XaiBatchesError {
-    #[error("Missing xAI API Key. Pass api_key, set litellm.xai_key or XAI_API_KEY")]
+    #[error("Missing xAI API Key. Pass api_key or set XAI_API_KEY")]
     MissingApiKey,
     #[error("input_file_id is required to create an xAI batch")]
     InputFileRequired,

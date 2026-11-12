@@ -28,11 +28,12 @@ use crate::xai_batches::records::{
     is_xai_batch_results_id,
 };
 use crate::xai_batches::transformation::{
-    DEFAULT_BATCH_ENDPOINT, create_endpoint, get_xai_api_base, get_xai_auth_headers,
-    raise_for_xai_status, results_params, to_create_batch_body, to_litellm_batch,
-    to_openai_batch_list, xai_batch_status, xai_batches_url,
+    DEFAULT_BATCH_ENDPOINT, get_xai_api_base, get_xai_auth_headers, raise_for_xai_status,
+    results_params, to_create_batch_body, to_litellm_batch, to_openai_batch_list, xai_batch_status,
+    xai_batches_url,
 };
 use crate::xai_batches::transport::XaiBatchTransport;
+mod endpoints;
 mod proxied;
 
 fn limits() -> WireDecodeLimits {
@@ -346,20 +347,6 @@ fn create_body_requires_an_input_file(#[case] input_file_id: Option<&str>) {
     let error = to_create_batch_body(&create_request(input_file_id, None)).unwrap_err();
     assert_eq!(error.status_code(), Some(400));
     assert!(matches!(error, XaiBatchesError::InputFileRequired));
-}
-
-#[rstest]
-#[case::default(None, "/v1/chat/completions")]
-#[case::chat(Some(BatchEndpoint::ChatCompletions), "/v1/chat/completions")]
-#[case::embeddings(Some(BatchEndpoint::Embeddings), "/v1/embeddings")]
-#[case::video_edits(Some(BatchEndpoint::VideoEdits), "/v1/videos/edits")]
-fn create_endpoint_defaults_and_keeps_the_caller_value(
-    #[case] endpoint: Option<BatchEndpoint>,
-    #[case] expected: &str,
-) {
-    let mut request = create_request(Some("file-1"), None);
-    request.endpoint = endpoint;
-    assert_eq!(create_endpoint(&request), expected);
 }
 
 #[rstest]
