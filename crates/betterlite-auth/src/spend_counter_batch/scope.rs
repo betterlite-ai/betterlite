@@ -14,7 +14,7 @@ use crate::spend_counter_batch::keys::admission_counter_keys;
 
 #[derive(Default)]
 pub struct SpendCounterScope {
-    active: Mutex<Option<Arc<SpendCounterBatch>>>,
+    pub(crate) active: Mutex<Option<Arc<SpendCounterBatch>>>,
 }
 
 #[must_use = "the active batch is restored when the guard drops"]
@@ -63,28 +63,20 @@ impl SpendCounterScope {
         }
     }
 
-    #[must_use]
-    pub fn active_spend_counter_batch(&self) -> Option<Arc<SpendCounterBatch>> {
-        let active = lock(&self.active);
-        let batch = active.as_ref().map(Arc::clone);
-        drop(active);
-        batch
-    }
-
     pub fn bind_spend_counter_keys(&self, counter_keys: &BTreeSet<String>) {
-        if let Some(batch) = self.active_spend_counter_batch() {
+        if let Some(batch) = lock(&self.active).as_ref() {
             batch.bind(counter_keys);
         }
     }
 
     pub fn record_spend_counter_value(&self, counter_key: &str, value: Decimal) {
-        if let Some(batch) = self.active_spend_counter_batch() {
+        if let Some(batch) = lock(&self.active).as_ref() {
             batch.record(counter_key, value);
         }
     }
 
     pub fn forget_spend_counter(&self, counter_key: &str) {
-        if let Some(batch) = self.active_spend_counter_batch() {
+        if let Some(batch) = lock(&self.active).as_ref() {
             batch.forget(counter_key);
         }
     }
@@ -93,7 +85,8 @@ impl SpendCounterScope {
         &self,
         counter_key: &str,
     ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
-        match self.active_spend_counter_batch() {
+        let active = lock(&self.active).clone();
+        match active {
             Some(batch) => batch.read(counter_key).await,
             None => Ok(None),
         }
@@ -109,14 +102,14 @@ impl SpendCounterScope {
     }
 
     pub fn bind_admission_counter_keys(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {
-        if let Some(batch) = self.active_spend_counter_batch() {
+        if let Some(batch) = lock(&self.active).as_ref() {
             batch.bind(&admission_counter_keys(auth, end_user_id));
         }
     }
 
     pub fn release_spend_counter_batch(&self) {
-        if let Some(batch) = self.active_spend_counter_batch() {
-            batch.close();
+        if let Some(batch) = lock(&self.active).as_ref() {
+            lock(&batch.state).phase = BatchPhase::Closed;
         }
     }
 }

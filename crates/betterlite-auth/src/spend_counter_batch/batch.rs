@@ -56,9 +56,8 @@ pub struct SpendCounterBatch {
 impl SpendCounterBatch {
     #[must_use]
     pub fn new(redis_cache: Arc<RedisCache>) -> Arc<Self> {
-        let request_batch = active_request_redis_batch(&redis_cache);
         let batch = Arc::new(Self {
-            request_batch: request_batch.clone(),
+            request_batch: active_request_redis_batch(&redis_cache),
             redis_cache,
             state: Mutex::new(BatchState {
                 phase: BatchPhase::Open,
@@ -69,7 +68,7 @@ impl SpendCounterBatch {
             }),
             loading: Mutex::new(None),
         });
-        let Some(shared) = request_batch else {
+        let Some(shared) = batch.request_batch.as_ref() else {
             return batch;
         };
         let declared = Arc::downgrade(&batch);
@@ -86,13 +85,6 @@ impl SpendCounterBatch {
         let mut state = lock(&self.state);
         if state.phase == BatchPhase::Open {
             state.keys.extend(counter_keys.iter().cloned());
-        }
-    }
-
-    pub fn close(&self) {
-        let mut state = lock(&self.state);
-        if state.phase == BatchPhase::Open {
-            state.phase = BatchPhase::Closed;
         }
     }
 

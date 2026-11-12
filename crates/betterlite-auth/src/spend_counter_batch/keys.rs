@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use secrecy::ExposeSecret as _;
 
 use crate::auth_cache::keys::CacheKey;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -105,23 +104,18 @@ pub fn admission_counter_keys(
     auth: &UserAPIKeyAuth,
     end_user_id: Option<&str>,
 ) -> BTreeSet<String> {
-    let token = auth
-        .view
-        .token
-        .token
-        .as_ref()
-        .map(|secret| JsonData::String(secret.expose_secret().to_owned()));
-    let team_id = auth.view.token.team_id.clone().map(JsonData::String);
-    let user_id = auth.view.token.user_id.clone().map(JsonData::String);
-    let org_id = auth.view.token.org_id.clone().map(JsonData::String);
-    let project_id = auth.view.token.project_id.clone().map(JsonData::String);
-    let end_user = end_user_id.map(|id| JsonData::String(id.to_owned()));
     entity_counter_keys(&EntityCounterIds {
-        token: CounterId::from_json(token.as_ref()),
-        team_id: CounterId::from_json(team_id.as_ref()),
-        user_id: CounterId::from_json(user_id.as_ref()),
-        org_id: CounterId::from_json(org_id.as_ref()),
-        project_id: CounterId::from_json(project_id.as_ref()),
-        end_user_id: CounterId::from_json(end_user.as_ref()),
+        token: CounterId::from_text(
+            auth.view
+                .token
+                .token
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret),
+        ),
+        team_id: CounterId::from_text(auth.view.token.team_id.as_deref()),
+        user_id: CounterId::from_text(auth.view.token.user_id.as_deref()),
+        org_id: CounterId::from_text(auth.view.token.org_id.as_deref()),
+        project_id: CounterId::from_text(auth.view.token.project_id.as_deref()),
+        end_user_id: CounterId::from_text(end_user_id),
     })
 }

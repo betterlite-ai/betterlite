@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive as _;
 use thiserror::Error;
+
+use crate::model_budget_values::amount_text::amount_from_text;
 
 #[derive(Debug, Error)]
 pub(super) enum CounterValueError {
@@ -41,37 +42,23 @@ fn cached_counter(value: &CachedValue) -> Result<Option<Decimal>, CounterValueEr
     }
 }
 
+// the JSON text keeps every digit, where a float round trip would drop a cent from a long counter
 fn number_counter(number: &serde_json::Number) -> Result<Option<Decimal>, CounterValueError> {
-    if let Some(value) = number.as_i64() {
-        return Ok(Some(Decimal::from(value)));
-    }
-    if let Some(value) = number.as_u64() {
-        return Ok(Some(Decimal::from(value)));
-    }
-    let Some(value) = number.as_f64() else {
-        return Err(CounterValueError::OutOfRange {
-            text: number.to_string(),
-        });
-    };
-    let Some(amount) = Decimal::from_f64(value) else {
-        return Err(CounterValueError::OutOfRange {
-            text: number.to_string(),
-        });
-    };
-    Ok(Some(amount))
+    let text = number.to_string();
+    amount_from_text(&text).map_or_else(
+        || Err(CounterValueError::OutOfRange { text }),
+        |amount| Ok(Some(amount)),
+    )
 }
 
 // litellm validates the value as a float, so a numeric string and a bool widen the same way here
 fn text_counter(text: &str) -> Result<Option<Decimal>, CounterValueError> {
-    let Ok(value) = text.parse::<f64>() else {
-        return Err(CounterValueError::OutOfRange {
-            text: text.to_owned(),
-        });
-    };
-    let Some(amount) = Decimal::from_f64(value) else {
-        return Err(CounterValueError::OutOfRange {
-            text: text.to_owned(),
-        });
-    };
-    Ok(Some(amount))
+    amount_from_text(text).map_or_else(
+        || {
+            Err(CounterValueError::OutOfRange {
+                text: text.to_owned(),
+            })
+        },
+        |amount| Ok(Some(amount)),
+    )
 }

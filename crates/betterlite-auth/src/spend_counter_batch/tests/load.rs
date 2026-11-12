@@ -36,7 +36,7 @@ async fn closed_or_unbound_read_none() {
     let batch = open_batch(&server).await;
     assert!(batch.read("spend:key:a").await.unwrap().is_none());
     batch.bind(&keys(&["spend:key:a"]));
-    batch.close();
+    lock(&batch.state).phase = BatchPhase::Closed;
     assert!(batch.read("spend:key:a").await.unwrap().is_none());
     assert!(server.commands_named("MGET").is_empty());
 }
@@ -383,7 +383,7 @@ async fn close_during_read_does_not_abort_it() {
     let reading = Arc::clone(&batch);
     tasks.spawn(async move { reading.read("spend:key:a").await });
     held.wait_arrived().await;
-    batch.close();
+    lock(&batch.state).phase = BatchPhase::Closed;
     held.release();
     let value = tasks.join_next().await.unwrap().unwrap().unwrap();
     assert_eq!(value, Some(CounterValue::Amount(decimal("7"))));

@@ -10,8 +10,8 @@ use crate::spend_counter_batch::scope::SpendCounterScope;
 use super::support::{FakeRedis, Reply, allow_cache, decimal, keys, user_auth};
 
 fn active(scope: &SpendCounterScope) -> Arc<SpendCounterBatch> {
-    scope
-        .active_spend_counter_batch()
+    lock(&scope.active)
+        .clone()
         .expect("the scope holds a batch")
 }
 
@@ -22,7 +22,7 @@ async fn no_active_scope_wrappers() {
     scope.record_spend_counter_value("spend:key:a", decimal("1"));
     scope.forget_spend_counter("spend:key:a");
     scope.release_spend_counter_batch();
-    assert!(scope.active_spend_counter_batch().is_none());
+    assert!(lock(&scope.active).is_none());
     assert!(
         scope
             .read_spend_counter("spend:key:a")
@@ -54,7 +54,7 @@ async fn none_redis_preserves_outer() {
     drop(inner);
     assert!(Arc::ptr_eq(&active(&scope), &batch));
     drop(outer);
-    assert!(scope.active_spend_counter_batch().is_none());
+    assert!(lock(&scope.active).is_none());
 }
 
 #[tokio::test]
@@ -90,7 +90,7 @@ async fn closed_outer_gets_new_inner() {
     let scope = SpendCounterScope::default();
     let _outer = scope.enter(Some(&first), &keys(&["spend:key:a"]));
     let outer_batch = active(&scope);
-    outer_batch.close();
+    lock(&outer_batch.state).phase = BatchPhase::Closed;
     let inner = scope.enter(Some(&second), &keys(&["spend:key:b"]));
     let inner_batch = active(&scope);
     assert!(!Arc::ptr_eq(&inner_batch, &outer_batch));
@@ -106,15 +106,15 @@ async fn exit_restores_on_success_and_failure() {
     let cache = allow_cache(&server).await;
     let scope = SpendCounterScope::default();
     let guard = scope.enter(Some(&cache), &keys(&["spend:key:a"]));
-    assert!(scope.active_spend_counter_batch().is_some());
+    assert!(lock(&scope.active).is_some());
     drop(guard);
-    assert!(scope.active_spend_counter_batch().is_none());
+    assert!(lock(&scope.active).is_none());
     let outcome = catch_unwind(AssertUnwindSafe(|| {
         let _guard = scope.enter(Some(&cache), &keys(&["spend:key:a"]));
         panic!("the request failed");
     }));
     assert!(outcome.is_err());
-    assert!(scope.active_spend_counter_batch().is_none());
+    assert!(lock(&scope.active).is_none());
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn exit_does_not_close_batch() {
     let guard = scope.enter(Some(&cache), &keys(&["spend:key:a"]));
     let batch = active(&scope);
     drop(guard);
-    assert!(scope.active_spend_counter_batch().is_none());
+    assert!(lock(&scope.active).is_none());
     server.script_mget(Reply::Array(vec![Reply::Bulk("8".to_owned())]));
     assert_eq!(
         batch.read("spend:key:a").await.unwrap(),
