@@ -76,7 +76,7 @@ fn transport_urls(
             request,
         ));
     }
-    let edit = edit_bases
+    let edit_urls = edit_bases
         .iter()
         .map(|api_base| {
             BaseImageEditConfig::get_complete_url(edit, MODEL, api_base.as_deref(), &params).ok()
@@ -85,6 +85,6 @@ fn transport_urls(
     TransportUrls {
         generation,
         variation,
-        edit,
+        edit: edit_urls,
     }
 }

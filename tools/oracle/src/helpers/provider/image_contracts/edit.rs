@@ -1,20 +1,20 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_openai::api::image_contracts::records::{ImageFile, ImageFiles, ImageParams};
-use betterlite_provider::api::image_contracts::edit::{BaseImageEditConfig, ImageEditRequest};
+use betterlite_openai::api::image_contracts::records::{ImageFile, ImageFiles};
+use betterlite_provider::api::image_contracts::edit::{BaseImageEditConfig as _, ImageEditRequest};
 use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 
 use super::fixtures::{EditFixture, Seen};
-use super::{AsyncCopyScenario, EditAsyncTransformCopy, MODEL};
+use super::{AsyncCopyScenario, EditAsyncTransformCopy};
 
 pub(super) fn async_copy(fields: &EditAsyncTransformCopy) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|source| Box::<HelperError>::from(source))?;
+        .map_err(Box::<HelperError>::from)?;
     let cases: Vec<Value> = fields
         .scenarios
         .iter()

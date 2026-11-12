@@ -10,7 +10,7 @@ use betterlite_provider::api::image_contracts::generation::{
     BaseImageGenerationConfig, ImageGenerationReply, ImageGenerationRequest,
 };
 use betterlite_provider::api::image_contracts::variation::{
-    BaseImageVariationConfig, ImageVariationChat, ImageVariationReply,
+    BaseImageVariationConfig as _, ImageVariationChat, ImageVariationReply,
 };
 use serde_json::{Value, json};
 
