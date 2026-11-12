@@ -392,9 +392,10 @@ fn the_standalone_utility_processes_exactly_ten_levels() {
     );
     remove_json_schema_refs(&mut schema, STANDALONE_MAX_RECURSE_DEPTH);
     assert!(schema.get("$id").is_none());
-    assert_eq!(
-        schema.pointer("/next/next/next/next/next/next/next/next/next/$id"),
-        Some(&Value::from("d1"))
+    assert!(
+        schema
+            .pointer("/next/next/next/next/next/next/next/next/next/$id")
+            .is_none()
     );
     assert_eq!(
         schema.pointer("/next/next/next/next/next/next/next/next/next/next/$id"),
