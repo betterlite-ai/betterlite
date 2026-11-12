@@ -1,4 +1,7 @@
+use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
+use betterlite_error::normalize::class::Class;
+use betterlite_error::normalize::{ErrorFacts, Normalizer};
 use betterlite_models::decisions::Json;
 
 use super::fixture::{Fixture, Session, capture_warnings};
@@ -292,10 +295,25 @@ const CALL_DROP: DropParams = DropParams {
     call: true,
 };
 
-fn assert_unsupported_params(class: Option<ErrorClass>) {
+fn assert_unsupported_params(class: Option<ErrorClass>, message: String) {
     let error_class = class.expect("an UnsupportedParamsError class");
     assert!(matches!(error_class, ErrorClass::UnsupportedParams(_)));
-    assert_eq!(error_class.metadata().code, "400_INVALID_PARAMETER_VALUE");
+    let metadata = error_class.metadata();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(metadata.error_type, WireField::MISSING);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.code, "400");
+    let facts = ErrorFacts {
+        proxy_type: None,
+        message,
+        class: Class::from(&error_class),
+        status_code: Some(400),
+        rate_limit_type: None,
+    };
+    assert_eq!(
+        Normalizer::new().unwrap().normalize(Some(&facts)),
+        Some("400_INVALID_PARAMETER_VALUE")
+    );
 }
 
 pub(super) fn forced_tool_downgrade() {
@@ -306,7 +324,7 @@ pub(super) fn forced_tool_downgrade() {
     let refused = forced_tool_use_downgraded("claude-fable-5-1", NO_DROP, &catalogs)
         .expect_err("no drop_params");
     assert_eq!(refused.status_code(), Some(400));
-    assert_unsupported_params(refused.classify());
+    assert_unsupported_params(refused.classify(), refused.to_string());
     assert!(ForcedToolChoiceError::MissingType.classify().is_none());
     assert_eq!(
         forced_tool_use_downgraded("claude-sonnet-4-5", NO_DROP, &catalogs),
@@ -457,7 +475,7 @@ fn temperature_refusal(fixture: &Fixture) {
     let temperature = sampling(fixture, "claude-opus-4-8", Temperature, &half, NO_DROP)
         .expect_err("no drop_params");
     assert_eq!(temperature.status_code(), Some(400));
-    assert_unsupported_params(temperature.classify());
+    assert_unsupported_params(temperature.classify(), temperature.to_string());
     let message = temperature.to_string();
     assert!(message.contains("claude-opus-4-8 does not support temperature=0.5."));
     assert!(message.contains("Only temperature=1 is supported."));
@@ -541,14 +559,15 @@ pub(super) async fn disabled_thinking_warning() {
 }
 
 async fn other_thinking_values(fixture: &Fixture) {
-    let enabled = json(r#"{"thinking": {"type": "enabled"}}"#);
-    let text = json(r#"{"thinking": "disabled"}"#);
     let mut enabled_params = params(r#"{"thinking": {"type": "enabled"}}"#);
     assert!(!drop_disabled(fixture, "claude-fable-5", &mut enabled_params).await);
-    assert_eq!(enabled_params.thinking, Some(enabled));
+    assert_eq!(
+        enabled_params.thinking,
+        Some(json(r#"{"type": "enabled"}"#))
+    );
     let mut text_params = params(r#"{"thinking": "disabled"}"#);
     assert!(!drop_disabled(fixture, "claude-fable-5", &mut text_params).await);
-    assert_eq!(text_params.thinking, Some(text));
+    assert_eq!(text_params.thinking, Some(json(r#""disabled""#)));
     let mut absent = OptionalParams::default();
     assert!(!drop_disabled(fixture, "claude-fable-5", &mut absent).await);
     assert_eq!(absent.thinking, None);
