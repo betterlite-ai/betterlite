@@ -183,15 +183,6 @@ impl VectorStoreCall {
     }
 }
 
-impl ComputerUseCall {
-    const fn tokens(&self) -> TokenCounts {
-        TokenCounts {
-            input_tokens: self.input_tokens,
-            output_tokens: self.output_tokens,
-        }
-    }
-}
-
 fn optional_info(fields: Option<&Fields>) -> Result<Option<ToolModelInfo>, Box<HelperError>> {
     let Some(found) = fields else {
         return Ok(None);
@@ -235,7 +226,10 @@ fn vector_store_call(call: &VectorStoreCall, prices: &ToolPrices) -> Fee {
 fn computer_use_call(call: &ComputerUseCall, prices: &ToolPrices) -> Fee {
     let info = optional_info(call.model_info.as_ref())?;
     let provider = call.provider.as_deref();
-    let tokens = call.tokens();
+    let tokens = TokenCounts {
+        input_tokens: call.input_tokens,
+        output_tokens: call.output_tokens,
+    };
     outcome(computer_use_fee(tokens, provider, info.as_ref(), prices))
 }
 

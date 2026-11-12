@@ -146,7 +146,11 @@ impl BuiltInToolBilling<'_> {
         let info = self
             .source
             .model_info(request.model, request.custom_llm_provider);
-        let tool = billable_file_search(request.params);
+        let tool = request
+            .params
+            .file_search
+            .as_ref()
+            .filter(|tool| !tool.fields.is_empty());
         let usage = tool.map(|found| Json::Object(found.fields.clone()));
         let params = extract_file_search_params(usage.as_ref())?;
         let provider = request.custom_llm_provider;
@@ -162,7 +166,11 @@ impl BuiltInToolBilling<'_> {
             return Ok(Decimal::ZERO);
         }
         let info = self.source.model_info(request.model, provider).ok();
-        let vector_fee = match billable_vector_usage(request.params) {
+        let billable = request
+            .params
+            .vector_store_usage
+            .filter(|usage| usage.storage_gb.is_some() || usage.days.is_some());
+        let vector_fee = match billable {
             Some(usage) => vector_store_fee(usage, provider, info.as_ref(), self.prices)?,
             None => Decimal::ZERO,
         };
@@ -183,17 +191,4 @@ impl BuiltInToolBilling<'_> {
             .try_fold(Decimal::ZERO, Decimal::checked_add)
             .ok_or(ToolFeeError::Overflow)
     }
-}
-
-fn billable_file_search(params: &BuiltInToolParams) -> Option<&FileSearchTool> {
-    params
-        .file_search
-        .as_ref()
-        .filter(|tool| !tool.fields.is_empty())
-}
-
-fn billable_vector_usage(params: &BuiltInToolParams) -> Option<VectorStoreUsage> {
-    params
-        .vector_store_usage
-        .filter(|usage| usage.storage_gb.is_some() || usage.days.is_some())
 }
