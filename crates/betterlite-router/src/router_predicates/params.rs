@@ -37,11 +37,22 @@ fn separated_float(text: &str) -> Option<f64> {
 }
 
 fn cap_from_float(value: f64) -> Option<i64> {
-    let cap = i64::try_from(Decimal::from_f64(value)?.trunc()).ok()?;
-    if cap < 0 {
+    if !value.is_finite() {
         return None;
     }
-    Some(cap)
+    let truncated = value.trunc();
+    if truncated < 0.0_f64 {
+        return None;
+    }
+    // Decimal rejects only finite values past its own range, which is far past i64's range too
+    let Some(cap) = Decimal::from_f64(truncated) else {
+        return Some(i64::MAX);
+    };
+    // int(float(value)) keeps every finite value, so an oversized cap saturates instead of disappearing
+    if cap > Decimal::from(i64::MAX) {
+        return Some(i64::MAX);
+    }
+    i64::try_from(cap).ok()
 }
 
 #[must_use]
