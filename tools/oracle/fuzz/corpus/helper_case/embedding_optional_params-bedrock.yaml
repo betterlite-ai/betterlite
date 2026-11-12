@@ -1,0 +1,27 @@
+kind: helper
+name: embedding-optional-params-bedrock-seed
+call:
+  b5363:
+    calls:
+      - model: amazon.titan-embed-text-v2:0
+        custom_llm_provider: bedrock
+        encoding_format: float
+        dimensions: 512
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [dimensions, encoding_format], mapped: {dimensions: 512, embeddingTypes: [float]}}
+      - model: mystery-model
+        custom_llm_provider: bedrock
+        dimensions: 2
+        drop_params: true
+        kwargs: {extra_body: {}}
+        force_branch: true
+      - model: cohere.embed-twelvelabs
+        custom_llm_provider: bedrock
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [encoding_format, dimensions], mapped: {embedding_types: [float], output_dimension: 8}}
+env: {}
+compare: {ignore: []}

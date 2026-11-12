@@ -1,0 +1,61 @@
+kind: helper
+name: argument-strings
+call:
+  responses_codex_tools:
+    operation: argument_strings
+    values:
+      - {x: 1}
+      - ["é", 1]
+      - ""
+      - null
+      - text
+      - '{"already":"json"}'
+      - 7
+      - 1.5
+      - true
+      - {nested: {key: [null, false]}}
+    arguments:
+      - '{"content":"patch"}'
+      - '{"content":null}'
+      - '{"content":7}'
+      - '{"content":1.5}'
+      - '{"content":true}'
+      - '{"content":false}'
+      - '{"content":""}'
+      - ""
+      - '{"content":'
+      - '["content"]'
+      - '{"other":"x"}'
+      - plain text
+      - '{"content":"a","content":"b"}'
+      - '{"content":"é😀"}'
+      - '{"content":"\u00e9\ud83d\ude00"}'
+      - '  {"content" : "spaced"}  '
+    padded:
+      - {fill: a, count: 999986}
+      - {fill: a, count: 999987}
+      - {fill: é, count: 999986}
+      - {fill: é, count: 999987}
+    ids:
+      - {item_type: function_call, tool_id: call_a}
+      - {item_type: custom_tool_call, tool_id: call_a}
+      - {item_type: function_call, tool_id: ""}
+      - {item_type: message, tool_id: call_a}
+      - {item_type: function_call, tool_id: fc_a}
+      - {item_type: function_call, tool_id: fcabc}
+      - {item_type: custom_tool_call, tool_id: ctcabc}
+      - {item_type: function_call, tool_id: ctc_a}
+      - {item_type: custom_tool_call, tool_id: fc_a}
+    calls:
+      - {call_id: call_a, name: edit, arguments: '{"content":"patch"}', status: completed}
+      - {call_id: call_a, name: edit, arguments: '{"content":"patch"}', status: in_progress}
+      - {call_id: call_a, name: other, arguments: '{"content":"patch"}', status: completed}
+      - {call_id: call_a, name: other, arguments: '{"a', status: in_progress}
+      - {call_id: call_a, name: Edit, arguments: x, status: completed}
+      - {call_id: call_a, name: edit, arguments: '{"content":null}', status: completed}
+      - {call_id: call_a, name: edit, arguments: "", status: completed}
+      - {call_id: "", name: edit, arguments: raw, status: completed}
+    custom_names: [edit]
+env: {}
+compare:
+  ignore: []

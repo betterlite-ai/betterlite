@@ -1,7 +1,7 @@
 id: B1015
 milestone: M5 api families
 title: File contracts
-status: todo
+status: done
 depends_on: [B010, B171, B1128, B2202]
 file: tasks/B1015-file-contracts.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/base_llm/files/transformation.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1372
