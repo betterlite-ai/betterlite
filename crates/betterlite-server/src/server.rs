@@ -2,13 +2,14 @@ pub mod chat_setup;
 
 use crate::admission_control::in_flight::InFlightRequests;
 use crate::admission_control::{AdmissionControl, AdmissionStack};
-use crate::auth::auth_route_patterns::AuthSettings;
 use crate::middleware::request_root_paths::RootPaths;
 use crate::middleware::request_stack;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
+use crate::state::ServerState;
+use crate::state::shared::Shared;
 use axum::Router;
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
@@ -103,13 +104,11 @@ pub(crate) fn application(
     shutting_down: Arc<AtomicBool>,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
+    let shared = Arc::new(Shared);
+    let state = Arc::new(ServerState::new(config, Arc::clone(&executor), shared));
     let routed = router(
-        AuthSettings {
-            master_key: config.general_settings.master_key.clone(),
-            routes: config.sections.auth_route_patterns.clone(),
-        },
+        state,
         shutting_down,
-        &config.model_list,
         chat_routes_with_call_id(
             Arc::clone(&executor),
             config

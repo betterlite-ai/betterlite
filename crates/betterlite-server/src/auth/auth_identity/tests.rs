@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -12,9 +13,8 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use betterlite_auth::auth_identity::errors::AuthError;
-use betterlite_config::sections::auth_route_patterns::Settings;
+use betterlite_config::loader::ConfigLoader;
 
-use crate::auth::auth_route_patterns::AuthSettings;
 use crate::routes;
 
 use super::{
@@ -60,13 +60,14 @@ fn protected_server(master_key: &str) -> Router {
 }
 
 fn protected_server_with_chat(master_key: &str, chat: Router) -> Router {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(&format!("general_settings:\n  master_key: {master_key}\n"))
+    .unwrap();
     routes::router(
-        AuthSettings {
-            master_key: Some(SecretString::from(master_key.to_owned())),
-            routes: Settings::default(),
-        },
+        crate::routes::tests::state_for(&config),
         Arc::new(AtomicBool::new(false)),
-        &[],
         chat,
         Router::new(),
     )
