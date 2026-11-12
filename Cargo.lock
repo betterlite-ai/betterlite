@@ -2792,6 +2792,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "chrono",
  "fancy-regex 0.19.2",
  "hex",
  "indexmap 2.14.2",
