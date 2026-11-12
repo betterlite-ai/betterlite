@@ -17,7 +17,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 http = "1.5.0"
-indexmap = { version = "2.14.2", features = ["serde"] }
+indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true
 regex.workspace = true
@@ -29,6 +29,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 thiserror.workspace = true
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"

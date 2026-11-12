@@ -1,0 +1,9 @@
+kind: helper
+name: openai-reasoning-models-seed-policy
+call:
+  openai_reasoning_models:
+    gpt5_chat_exclusion:
+      probes:
+      - {model: gpt-5-chat}
+env: {}
+compare: {ignore: []}

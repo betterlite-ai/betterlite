@@ -1,0 +1,17 @@
+kind: helper
+name: responses-provider-request-normalization
+call:
+  responses_provider_contract:
+    action: request_normalization
+    steps:
+      - input:
+          - {type: custom_tool_call, namespace: ns, name: edit, input: x}
+          - {type: function_call, namespace: ns, name: f}
+        other: 1
+      - input: hello
+      - other: true
+      - input:
+          - 7
+          - {type: custom_tool_call, namespace: ns, name: edit, input: x}
+env: {}
+compare: {ignore: []}

@@ -10,6 +10,7 @@ use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
 use result::SdkResult;
 
+pub(crate) mod anthropic_beta_config;
 pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
@@ -60,6 +61,7 @@ pub enum SdkHttpCall {
     OpenaiChat(OpenaiChat),
     VectorStoreEmbeddingExecutor(VectorStoreEmbeddingCall),
     VectorQueryEmbedding(VectorQueryEmbeddingCall),
+    AnthropicBetaConfig(AnthropicBetaConfigCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +92,28 @@ pub struct VectorQueryEmbeddingCall {
     pub(crate) query_text: String,
     #[serde(default)]
     pub(crate) litellm_params: Params,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnthropicBetaConfigCall {
+    pub(crate) url: BetaConfigUrl,
+    pub(crate) steps: Vec<BetaConfigStep>,
+}
+
+// the call names no address: the harness points the endpoint at its own mock, or leaves it empty
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BetaConfigUrl {
+    Mock,
+    Empty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BetaConfigStep {
+    Load,
+    Reload,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,7 +216,7 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 }
             }
         }
-        SdkHttpCall::VectorQueryEmbedding(_) => {}
+        SdkHttpCall::VectorQueryEmbedding(_) | SdkHttpCall::AnthropicBetaConfig(_) => {}
     }
     Ok(())
 }

@@ -28,7 +28,7 @@ fn replays_the_bedrock_other_count_call_corpus() {
     }));
     let (_, valid) = sources
         .iter()
-        .find(|(name, _)| name.starts_with("valid_"))
+        .find(|(name, _)| name == "valid_input_tokens.json")
         .unwrap();
     let decoded = decode_bedrock_count_reply(valid).unwrap();
     assert_eq!(

@@ -1,0 +1,87 @@
+kind: helper
+name: deepseek-request-policy-reasoning-promotion-and-space-warning
+call:
+  deepseek_request_policy:
+    op: request
+    cases:
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - {role: user, content: what is up}
+          - role: assistant
+            content: an earlier answer
+            provider_specific_fields:
+              reasoning_content: the stored chain
+              trace: t1
+          - role: assistant
+            content: another answer
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - role: assistant
+            content: empty top level
+            reasoning_content: ''
+            provider_specific_fields:
+              reasoning_content: the nested chain
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - role: assistant
+            content: kept chain
+            reasoning_content: already here
+            provider_specific_fields:
+              reasoning_content: stale nested chain
+          - {role: user, content: no repair for this role}
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - role: assistant
+            content: falsy stored chain
+            provider_specific_fields:
+              reasoning_content: ''
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - role: assistant
+            content: null top level
+            reasoning_content: null
+            provider_specific_fields:
+              reasoning_content: promoted after null
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: false
+        optional_params:
+          thinking: {type: enabled}
+        messages:
+          - {role: assistant, content: model without reasoning}
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params:
+          thinking: {type: disabled}
+        messages:
+          - {role: assistant, content: thinking turned off}
+      - model: deepseek-reasoner
+        supports_vision: false
+        supports_reasoning: true
+        optional_params: {}
+        messages:
+          - {role: assistant, content: thinking not requested}
+env: {}
+compare:
+  ignore: []

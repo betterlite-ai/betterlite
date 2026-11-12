@@ -1,8 +1,10 @@
 import contextlib
 import sys
 
-from openai_chat import ChatCall, run_chat
 from pydantic import BaseModel, ConfigDict
+
+from anthropic_beta_config import BetaConfigCall, run_beta_config
+from openai_chat import ChatCall, run_chat
 from vector_query_embedding import QueryEmbeddingCall, run_query
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
@@ -32,10 +34,21 @@ class VectorQueryEmbeddingCall(BaseModel):
     vector_query_embedding: QueryEmbeddingCall
 
 
+class AnthropicBetaConfigCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    anthropic_beta_config: BetaConfigCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    call: OpenaiChatCall | VectorStoreEmbeddingExecutorCall | VectorQueryEmbeddingCall
+    call: (
+        OpenaiChatCall
+        | VectorStoreEmbeddingExecutorCall
+        | VectorQueryEmbeddingCall
+        | AnthropicBetaConfigCall
+    )
     api_base: str
 
 
@@ -45,16 +58,22 @@ def main() -> None:
         raise RequestTooLargeError
     request = Request.model_validate_json(raw)
     with contextlib.redirect_stdout(sys.stderr):
-        outcome: BaseModel
+        output: str
         if isinstance(request.call, OpenaiChatCall):
-            outcome = run_chat(request.call.openai_chat, request.api_base)
-        elif isinstance(request.call, VectorQueryEmbeddingCall):
-            outcome = run_query(request.call.vector_query_embedding, request.api_base)
-        else:
-            outcome = run_embedding(
-                request.call.vector_store_embedding_executor, request.api_base
+            output = run_chat(request.call.openai_chat, request.api_base).model_dump_json(
+                by_alias=True, exclude_unset=True
             )
-    sys.stdout.write(outcome.model_dump_json(by_alias=True, exclude_unset=True))
+        elif isinstance(request.call, AnthropicBetaConfigCall):
+            output = run_beta_config(request.call.anthropic_beta_config, request.api_base)
+        elif isinstance(request.call, VectorQueryEmbeddingCall):
+            output = run_query(
+                request.call.vector_query_embedding, request.api_base
+            ).model_dump_json(by_alias=True, exclude_unset=True)
+        else:
+            output = run_embedding(
+                request.call.vector_store_embedding_executor, request.api_base
+            ).model_dump_json(by_alias=True, exclude_unset=True)
+    sys.stdout.write(output)
 
 
 if __name__ == "__main__":
