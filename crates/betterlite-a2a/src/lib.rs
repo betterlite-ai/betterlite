@@ -1,3 +1,4 @@
+pub mod a2a_text;
 pub mod agent_card;
 pub mod agentcore_transform;
 pub mod card_resolver;

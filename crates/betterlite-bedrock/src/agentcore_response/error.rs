@@ -1,6 +1,6 @@
 use std::str::Utf8Error;
 
-use betterlite_tokenizer::a2a_text::A2aTextError;
+use betterlite_a2a::a2a_text::A2aTextError;
 use thiserror::Error;
 
 use crate::bedrock_settings::{BedrockError, HeaderError};
