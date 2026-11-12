@@ -11,6 +11,7 @@ call:
     output_item_groups:
       - - {kind: dict, value: {type: reasoning, id: rs_d, summary: [{text: dict}], encrypted_content: null}}
         - {kind: typed, value: {id: rs_t, type: reasoning, summary: [{type: summary_text, text: typed}], encrypted_content: enc}}
+        - {kind: dict, value: {type: reasoning, id: rs_e, summary: [{type: summary_text}]}}
         - {kind: dict, value: {type: message, role: assistant}}
         - {kind: typed_other}
       - []

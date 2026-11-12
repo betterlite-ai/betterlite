@@ -304,6 +304,30 @@ fn tool_outputs_are_classified_by_custom_call_ids() {
 }
 
 #[test]
+fn null_call_ids_flow_through_function_and_custom_calls() {
+    let converted = convert_history(&messages(json!([
+        {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+                {"id": null, "function": {"name": "f", "arguments": "{}"}},
+                {"id": null, "custom": {"name": "g", "input": "i"}}
+            ]
+        },
+        {"role": "tool", "content": "ok"}
+    ])))
+    .unwrap();
+    assert_eq!(
+        converted.input,
+        vec![
+            json!({"type": "function_call", "call_id": null, "name": "f", "arguments": "{}"}),
+            json!({"type": "custom_tool_call", "call_id": null, "name": "g", "input": "i"}),
+            json!({"type": "custom_tool_call_output", "call_id": null, "output": "ok"}),
+        ]
+    );
+}
+
+#[test]
 fn tool_output_before_its_definition_is_still_custom() {
     let converted = convert_history(&messages(json!([
         {"role": "tool", "tool_call_id": "c2", "content": "ok"},
@@ -473,6 +497,7 @@ fn reasoning_records_cover_dict_and_response_items() {
     let items = output_items(json!([
         {"kind": "typed", "value": {"id": "rs_t", "encrypted_content": "enc", "summary": [{"type": "summary_text", "text": "typed"}]}},
         {"kind": "dict", "value": {"type": "reasoning", "id": "rs_d", "summary": [{"text": "dict"}], "encrypted_content": null}},
+        {"kind": "dict", "value": {"type": "reasoning", "id": "rs_e", "summary": [{"type": "summary_text"}]}},
         {"kind": "dict", "value": {"type": "message", "role": "assistant"}},
         {"kind": "typed_other"}
     ]));
@@ -481,7 +506,8 @@ fn reasoning_records_cover_dict_and_response_items() {
         serde_json::to_value(&records).unwrap(),
         json!([
             {"type": "reasoning", "id": "rs_t", "encrypted_content": "enc", "summary": [{"type": "summary_text", "text": "typed"}]},
-            {"type": "reasoning", "id": "rs_d", "encrypted_content": null, "summary": [{"type": "summary_text", "text": "dict"}]}
+            {"type": "reasoning", "id": "rs_d", "encrypted_content": null, "summary": [{"type": "summary_text", "text": "dict"}]},
+            {"type": "reasoning", "id": "rs_e", "encrypted_content": null, "summary": [{"type": "summary_text", "text": ""}]}
         ])
     );
 }
@@ -588,15 +614,18 @@ fn output_tool_fields_reject_nonstring_payloads(#[case] item: Value, #[case] fie
 #[test]
 fn provider_metadata_removes_null_chat_and_responses_fields() {
     let fields = json!({
-        "id": "bad",
-        "output": [],
-        "instructions": "x",
-        "choices": [],
-        "usage": {"total_tokens": 1},
-        "status": "completed",
-        "vendor": 7,
-        "nested": {"a": 1},
-        "empty": null
+        "choices": [], "created": 1, "id": "bad", "model": "m", "object": "chat.completion",
+        "system_fingerprint": "fp", "usage": {"total_tokens": 1},
+        "background": false, "completed_at": 2, "conversation": "conv", "created_at": 3,
+        "error": {"code": "x"}, "incomplete_details": {"reason": "content_filter"},
+        "instructions": "x", "max_output_tokens": 4, "max_tool_calls": 5,
+        "metadata": {"m": 1}, "output": [], "parallel_tool_calls": true,
+        "previous_response_id": "resp_prev", "prompt": {"id": "p"}, "prompt_cache_key": "k",
+        "prompt_cache_options": {"mode": "explicit"}, "prompt_cache_retention": "24h",
+        "reasoning": {"effort": "low"}, "safety_identifier": "s", "status": "completed",
+        "store": true, "temperature": 0.5, "text": {"format": {"type": "text"}},
+        "tool_choice": "auto", "tools": [], "top_logprobs": 6, "top_p": 0.9,
+        "truncation": "auto", "user": "u", "vendor": 7, "nested": {"a": 1}, "empty": null
     });
     assert_eq!(
         provider_metadata(fields.as_object()),

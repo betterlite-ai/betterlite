@@ -12,5 +12,7 @@ call:
       - - {role: assistant, content: null, tool_calls: [{id: c9, function: {}, custom: {name: g, input: i}}]}
       - - {role: assistant, content: null, tool_calls: [{id: c9, function: {name: f}, custom: {name: g}}]}
         - {role: tool, tool_call_id: c9, content: ok}
+      - - {role: assistant, content: null, tool_calls: [{id: null, function: {name: f, arguments: "{}"}}, {id: null, custom: {name: g, input: i}}]}
+        - {role: tool, content: ok}
 env: {}
 compare: {ignore: []}

@@ -35,7 +35,8 @@ pub struct ConvertedHistory {
 }
 
 struct HistoryConversion {
-    custom_call_ids: BTreeSet<String>,
+    // None stands for a custom call whose declared id is null, which a tool message without a call id matches
+    custom_call_ids: BTreeSet<Option<String>>,
     reasoning_ids: ReasoningIds,
     input: Vec<Value>,
     instructions: Option<String>,
@@ -62,7 +63,7 @@ pub fn convert_history(messages: &[HistoryMessage]) -> Result<ConvertedHistory, 
 }
 
 // A result can arrive before the assistant turn that defines a custom call, so the whole history is scanned first
-fn custom_call_ids(messages: &[HistoryMessage]) -> BTreeSet<String> {
+fn custom_call_ids(messages: &[HistoryMessage]) -> BTreeSet<Option<String>> {
     let mut ids = BTreeSet::new();
     for message in messages {
         if message.role != "assistant" {
@@ -82,8 +83,14 @@ fn custom_call_ids(messages: &[HistoryMessage]) -> BTreeSet<String> {
             if function_is_truthy || !custom_is_dict {
                 continue;
             }
-            if let Some(Value::String(id)) = object.get("id") {
-                ids.insert(id.clone());
+            match object.get("id") {
+                Some(Value::String(id)) => {
+                    ids.insert(Some(id.clone()));
+                }
+                Some(Value::Null) => {
+                    ids.insert(None);
+                }
+                None | Some(_) => {}
             }
         }
     }
@@ -142,7 +149,7 @@ impl HistoryConversion {
             Some(value) => text_by_role(value, "user")?,
         };
         let call_id = message.tool_call_id.as_deref();
-        let custom = call_id.is_some_and(|id| self.custom_call_ids.contains(id));
+        let custom = self.custom_call_ids.contains(&message.tool_call_id);
         let output = match content {
             Some(Value::String(text)) if custom => Value::String(text.clone()),
             _ => tool_output,
@@ -183,10 +190,11 @@ impl HistoryConversion {
 
     fn append_tool_call(&mut self, tool_call: &Value) -> Result<(), HistoryError> {
         let object = tool_call.as_object().ok_or(HistoryError::ToolCallShape)?;
-        let call_id = object
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or(HistoryError::ToolCallShape)?;
+        let call_id = match object.get("id") {
+            Some(Value::String(id)) => Some(id.as_str()),
+            Some(Value::Null) => None,
+            None | Some(_) => return Err(HistoryError::ToolCallShape),
+        };
         if object
             .get("function")
             .is_some_and(|function| is_truthy(Some(function)))
@@ -225,12 +233,15 @@ impl HistoryConversion {
     fn push_tool_call_item(
         &mut self,
         kind: &str,
-        call_id: &str,
+        call_id: Option<&str>,
         fields: Vec<(&'static str, Value)>,
     ) {
         let mut item = Map::new();
         item.insert("type".to_owned(), Value::String(kind.to_owned()));
-        item.insert("call_id".to_owned(), Value::String(call_id.to_owned()));
+        item.insert(
+            "call_id".to_owned(),
+            call_id.map_or(Value::Null, |id| Value::String(id.to_owned())),
+        );
         for (field, value) in fields {
             item.insert(field.to_owned(), value);
         }
