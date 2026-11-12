@@ -1,0 +1,5 @@
+kind: helper
+name: openai-chat-choices-seed-tool-call
+call: {openai_chat_choices: {tool_call_json_content: {steps: [{optional_params: {tools: [{type: function, function: {name: lookup, parameters: {type: object}}}]}, json_mode: false, choices: [{index: 0, finish_reason: stop, message: {content: '{"type":"function","name":"lookup","arguments":"{}"}'}}]}]}}}
+env: {}
+compare: {ignore: []}

@@ -2,7 +2,7 @@ id: B136
 milestone: M9 agents and mcp
 title: MCP gateway server, transports and server registry
 status: todo
-depends_on: [B001, B8610, B8626, B8701, B8728, B8680, B3848, B3852, B8970, B8971, B9654]
+depends_on: [B001, B8610, B8626, B8701, B8728, B8680, B3848, B3852, B8970, B8971, B9654, B9950]
 file: tasks/B136-mcp-gateway-parity.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/{AGENTS.md,sse_transport.py,stdio_gate.py,server_resolution.py,capabilities.py,contracts.py,operations.py,mcp_context.py,mcp_debug.py,exceptions.py,utils.py,result_conversion.py,elicitation_handler.py,sampling_handler.py,legacy_callbacks.py,tool_outcome.py,cost_calculator.py,discoverable_endpoints.py,client_allowlist.py}"

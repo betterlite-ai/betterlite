@@ -19,7 +19,9 @@ description: >-
   database it answers 400 with {"error": CommonProxyErrors.db_not_connected_error}, which B8595's service already
   returns. If B8595 left those services private to its handlers, stop and report a blocker instead of copying them. It
   holds what B8595's services take (the optional database store, B8380's ProxyConfigState, B8230's PluginRegistry and
-  the rest; read config_fields.rs).
+  the rest; read config_fields.rs), including the `Arc<dyn ConfigOverlayPort>` (B8379's port) that the update service
+  takes for the pass-through re-serve, the same Arc as `shared.config_overlay`. A ConfigOverlayPortError from that
+  service keeps its status (503 for DatabaseUnavailable, 500 otherwise) when mapped into GeneralSettingsError.
 
 
   Cache runtime. LiteLLM's litellm.cache is a global that /cache/settings replaces at runtime, so the proxy needs a
@@ -73,7 +75,9 @@ description: >-
 
   Tests in shared_ports/tests.rs use in-memory stores and recording fakes for B8595's services, B8651's builder and
   B8377's attach step, and a test Postgres only where AGENT_SELECT_SQL runs (B8231's own tests show the fixture). Names
-  start with `settings_`, `reinit_`, `switch_`, `secrets_`, `audit_` and `agents_`. No HTTP oracle case: the routes
+  start with `settings_`, `reinit_`, `switch_`, `secrets_`, `audit_` and `agents_`; a `settings_` test updates
+  pass_through_endpoints through a ConfigOverlayPort fake that returns DatabaseUnavailable and gets 503 back through
+  GeneralSettingsError. No HTTP oracle case: the routes
   that reach these ports are mounted by the pass-through, cache and secrets, agents and admin wiring parts, which add
   the cases.
 scope:

@@ -1,0 +1,14 @@
+kind: helper
+name: rewrite_without_cache
+call:
+  request_body:
+    function: rewrite_request_model
+    request_data: {model: old, api_key: merged}
+    model: new
+    request:
+      method: POST
+      route_path: /v1/chat/completions
+      body: {encoding: utf8, value: ""}
+env: {}
+compare:
+  ignore: []

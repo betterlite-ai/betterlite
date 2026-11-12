@@ -108,6 +108,10 @@ description: >-
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
   B1100 registers state/auth_key_validation.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_key_validation.rs and leave state.rs as it is.
+  The slot builds the production B736 UserLookup with db_cache_expiry set to the DEFAULT_IN_MEMORY_TTL value B735 loads in
+  config.sections.auth_prefetch (int env, default 5). Test user_lookup_config_expiry under
+  betterlite-server::auth::auth_key_validation::tests misses a user, then creates that user row, and shows the next
+  request sees the row with DEFAULT_IN_MEMORY_TTL=0 but not with the default 5.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_key_validation.rs
@@ -179,7 +183,7 @@ dod:
       - config-tests
       - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
+      execution, and user_lookup_config_expiry shows the user lookup gets DEFAULT_IN_MEMORY_TTL as its expiry.
     proof:
       - stage-wiring-tests
       - behavior-tests

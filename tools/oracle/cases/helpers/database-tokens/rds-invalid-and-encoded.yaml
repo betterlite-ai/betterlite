@@ -1,0 +1,23 @@
+kind: helper
+name: database-tokens-rds-invalid-and-encoded
+call:
+  database_tokens:
+    function: batch
+    calls:
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20241301T000000Z&X-Amz-Expires=60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000060Z&X-Amz-Expires=60"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=20240101T000000Z&X-Amz-Expires=soon"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:p@h:1/d?X-Amz-Date=99991231T235959Z&X-Amz-Expires=2"
+      - function: expiration
+        kind: rds
+        token: "postgresql://u:tok%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:1/d"
+env: {}
+compare: {ignore: []}
