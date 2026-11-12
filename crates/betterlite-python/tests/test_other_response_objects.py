@@ -42,6 +42,12 @@ class Dumpable(Protocol):
     ) -> JsonValue: ...
 
 
+class HiddenAccess(Dumpable, Protocol):
+    def get(self, key: str, default: StoredValue = None) -> StoredValue: ...
+
+    def __getitem__(self, key: str) -> StoredValue: ...
+
+
 class RecordingHandler(logging.Handler):
     messages: list[str]
 
@@ -280,6 +286,14 @@ def test_text_completion_defaults() -> None:
     dumped = parse_object(ours.model_dump_json())
     assert dumped["object"] == "text_completion"
     assert dumped["id"] == ours.id
+    ours_hidden: HiddenAccess = ours._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2518
+    reference_hidden: HiddenAccess = litellm_utils.TextCompletionResponse()._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2518
+    assert ours_hidden["model_id"] == reference_hidden["model_id"]
+    assert ours_hidden["api_base"] == reference_hidden["api_base"]
+    assert ours_hidden["original_response"] == reference_hidden["original_response"]
+    assert ours_hidden.get("response_cost") == reference_hidden.get("response_cost")  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2518
+    assert ours_hidden["response_cost"] is None
+    assert_same("hidden params", reference_hidden, ours_hidden)
 
 
 def test_text_completion_stream() -> None:
