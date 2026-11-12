@@ -267,6 +267,7 @@ fn addon_pricing_models_enables_each_enabled_addon_once(
 #[case::zero("channels=0", None)]
 #[case::text("channels=abc", None)]
 #[case::blank("channels=", None)]
+#[case::signed("channels=%2B4", None)]
 #[case::non_ascii_digits("channels=%EF%BC%91", None)]
 #[case::first_of_duplicates("channels=3&channels=2", Some(3))]
 fn declared_channels_accepts_only_positive_ascii_digits(
@@ -332,10 +333,17 @@ fn audio_seconds_uses_the_last_positive_metadata_duration() {
             {"type": "Metadata", "duration": 0},
             {"type": "Metadata", "duration": -2.0},
             {"type": "Metadata", "duration": 2.5},
+            {"type": "Metadata", "duration": 0},
             {"type": "Results", "start": 8.0, "duration": 1.0}
         ]"#,
     );
     assert_eq!(audio_seconds(&frames), Decimal::new(25, 1));
+}
+
+#[test]
+fn audio_seconds_accepts_an_integer_metadata_duration() {
+    let frames = frames(r#"[{"type": "Metadata", "duration": 2}]"#);
+    assert_eq!(audio_seconds(&frames), Decimal::new(2, 0));
 }
 
 #[test]
