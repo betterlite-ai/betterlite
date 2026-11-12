@@ -39,7 +39,8 @@ impl TryRng for FixedSample {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        Ok(1)
+        let high = u32::try_from(self.sample.wrapping_shr(32)).unwrap_or(0);
+        Ok(high.max(1))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Infallible> {
@@ -47,7 +48,11 @@ impl TryRng for FixedSample {
         Ok(self.sample.wrapping_shl(11) | 0x07FF)
     }
 
-    fn try_fill_bytes(&mut self, _destination: &mut [u8]) -> Result<(), Infallible> {
+    fn try_fill_bytes(&mut self, destination: &mut [u8]) -> Result<(), Infallible> {
+        let bytes = self.sample.to_le_bytes();
+        for (slot, byte) in destination.iter_mut().zip(bytes.iter().cycle()) {
+            *slot = *byte;
+        }
         Ok(())
     }
 }

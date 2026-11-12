@@ -185,9 +185,15 @@ fn retries<L>(
 where
     L: EnvironmentLookup,
 {
-    let field_path = format!("{path}.{name}");
-    let resolved = resolve_number(value, &field_path, lookup, parse_retries)?;
-    Ok(resolved)
+    match value {
+        Some(number) => resolve_number(
+            Some(number),
+            &format!("{path}.{name}"),
+            lookup,
+            parse_retries,
+        ),
+        None => Ok(None),
+    }
 }
 
 fn group_policies<L>(

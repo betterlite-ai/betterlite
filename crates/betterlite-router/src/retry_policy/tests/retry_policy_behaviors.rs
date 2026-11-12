@@ -326,7 +326,7 @@ fn a_healthy_alternative_does_not_draw_a_sample() {
 
 #[test]
 fn the_jitter_scales_the_injected_sample() {
-    let mut random = FixedSample::new(1 << 52);
+    let mut random = FixedSample::new(4_503_599_627_370_496);
     let delay = sleep_before_retry(
         &settings(0.0),
         RetryTiming {
