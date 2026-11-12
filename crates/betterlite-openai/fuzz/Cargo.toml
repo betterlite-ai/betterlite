@@ -388,5 +388,3 @@ bench = false
 name = "comet_embedding_reply"
 path = "fuzz_targets/comet_embedding_reply.rs"
 test = false
-doc = false
-bench = false

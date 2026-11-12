@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_openai::cometapi_wire::chunk::ChunkError;
 use betterlite_openai::cometapi_wire::error::CometApiError;
 use rstest::rstest;
 
@@ -21,10 +20,8 @@ fn chunk(iterator: &mut CometApiChatIterator, line: &str) -> CometApiChunk {
 
 fn api_error(failure: CometApiIteratorError) -> CometApiError {
     match failure {
-        CometApiIteratorError::Chunk(ChunkError::Api(error)) => error,
-        CometApiIteratorError::Chunk(ChunkError::FieldShape { field }) => {
-            panic!("expected a CometAPI error, got the {field} shape")
-        }
+        CometApiIteratorError::Api(error) => error,
+        CometApiIteratorError::NotAnObject => panic!("expected a CometAPI error"),
     }
 }
 
@@ -132,9 +129,7 @@ fn a_truthy_non_object_line_is_refused(#[case] line: &str) {
     let mut iterator = CometApiChatIterator::default();
     assert!(matches!(
         iterator.next_line(line),
-        Err(CometApiIteratorError::Chunk(ChunkError::FieldShape {
-            field: "chunk"
-        }))
+        Err(CometApiIteratorError::NotAnObject)
     ));
 }
 

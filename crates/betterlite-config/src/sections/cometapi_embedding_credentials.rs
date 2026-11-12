@@ -13,7 +13,6 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        // the embedding adapter reads COMETAPI_KEY only, never the image adapter's COMETAPI_API_KEY alias
         let api_key = lookup
             .lookup("COMETAPI_KEY")
             .filter(|value| !value.is_empty())

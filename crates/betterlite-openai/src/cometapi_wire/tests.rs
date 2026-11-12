@@ -11,11 +11,11 @@ use secrecy::SecretString;
 use serde_json::{Map, Value};
 
 use super::chat::{CHAT_FAMILY, ChatError, ChatTransform, complete_url, transform_request};
-use super::chunk::{ChunkError, chunk_parser};
+use super::chunk::chunk_parser;
 use super::embed::{
-    CometEmbeddingReply, EmbeddingReplyError, EmbeddingReplyInput, MAX_REPLY_BYTES,
-    complete_url as embedding_url, decode_comet_embedding_reply,
-    map_openai_params as map_embedding_params, transform_embedding_request, validate_environment,
+    CometEmbeddingReply, MAX_REPLY_BYTES, complete_url as embedding_url,
+    decode_comet_embedding_reply, map_openai_params as map_embedding_params,
+    transform_embedding_request, validate_environment,
 };
 use super::error::{CometApiError, get_error_class};
 use crate::chat::ChatMessage;
@@ -49,22 +49,6 @@ fn json_headers() -> Headers {
 
 fn body_value(body: &Object) -> Value {
     serde_json::to_value(body).unwrap()
-}
-
-fn api_error(failure: ChunkError) -> CometApiError {
-    match failure {
-        ChunkError::Api(error) => error,
-        ChunkError::FieldShape { field } => {
-            panic!("expected a CometAPI error, got the {field} shape")
-        }
-    }
-}
-
-fn shape_field(failure: ChunkError) -> &'static str {
-    match failure {
-        ChunkError::FieldShape { field } => field,
-        ChunkError::Api(error) => panic!("expected a shape error, got {}", error.message),
-    }
 }
 
 fn chunk_value(chunk: &Json) -> Value {
@@ -327,6 +311,10 @@ fn chat_error_class_keeps_the_supplied_status_and_headers() {
     assert_eq!(error.headers, supplied);
 }
 
+fn shape_field(failure: CometApiError) -> String {
+    failure.message
+}
+
 fn chunk(source: &str) -> Object {
     object(source)
 }
@@ -380,7 +368,7 @@ fn chunk_parser_forces_the_chunk_object_and_carries_usage() {
 #[case::created(r#"{"id":"a","model":"m","choices":[]}"#, "created")]
 #[case::model(r#"{"id":"a","created":1,"choices":[]}"#, "model")]
 fn chunk_parser_requires_choices_id_created_and_model(#[case] source: &str, #[case] field: &str) {
-    let error = api_error(chunk_parser(&chunk(source)).unwrap_err());
+    let error = chunk_parser(&chunk(source)).unwrap_err();
     assert_eq!(error.status_code, Some(400));
     assert_eq!(error.headers, json_headers());
     assert!(error.message.contains(field));
@@ -388,8 +376,7 @@ fn chunk_parser_requires_choices_id_created_and_model(#[case] source: &str, #[ca
 
 #[test]
 fn chunk_parser_reports_a_chunk_error_before_the_choices() {
-    let error =
-        api_error(chunk_parser(&chunk(r#"{"error":{"message":"boom","code":429}}"#)).unwrap_err());
+    let error = chunk_parser(&chunk(r#"{"error":{"message":"boom","code":429}}"#)).unwrap_err();
     assert_eq!(error.message, "CometAPI Error: boom");
     assert_eq!(error.status_code, Some(429));
     assert_eq!(error.headers, json_headers());
@@ -404,20 +391,19 @@ fn chunk_parser_defaults_only_a_missing_error_code(
     #[case] source: &str,
     #[case] expected_status: Option<u16>,
 ) {
-    let error = api_error(chunk_parser(&chunk(source)).unwrap_err());
+    let error = chunk_parser(&chunk(source)).unwrap_err();
     assert_eq!(error.status_code, expected_status);
     assert_eq!(error.headers, json_headers());
 }
 
 #[test]
 fn chunk_parser_defaults_only_a_missing_error_message() {
-    let absent = api_error(chunk_parser(&chunk(r#"{"error":{}}"#)).unwrap_err());
+    let absent = chunk_parser(&chunk(r#"{"error":{}}"#)).unwrap_err();
     assert_eq!(absent.message, "CometAPI Error: Unknown error");
-    let explicit_null =
-        api_error(chunk_parser(&chunk(r#"{"error":{"message":null}}"#)).unwrap_err());
+    let explicit_null = chunk_parser(&chunk(r#"{"error":{"message":null}}"#)).unwrap_err();
     assert_eq!(explicit_null.message, "CometAPI Error: null");
     let wrong_type = shape_field(chunk_parser(&chunk(r#"{"error":{"message":5}}"#)).unwrap_err());
-    assert_eq!(wrong_type, "error.message");
+    assert!(wrong_type.contains("error.message"));
 }
 
 #[rstest]
@@ -538,16 +524,8 @@ fn embedding_request_lets_options_overlay_input_and_model() {
     );
 }
 
-fn reply(
-    body: &str,
-    status: u16,
-    headers: &Headers,
-) -> Result<CometEmbeddingReply, EmbeddingReplyError> {
-    decode_comet_embedding_reply(&EmbeddingReplyInput {
-        body: body.as_bytes(),
-        status,
-        headers,
-    })
+fn reply(body: &str, status: u16, headers: &Headers) -> Result<CometEmbeddingReply, CometApiError> {
+    decode_comet_embedding_reply(body.as_bytes(), status, headers)
 }
 
 #[test]
@@ -598,10 +576,7 @@ fn decode_embedding_reply_sets_usage_counters_independently(
 #[test]
 fn decode_embedding_reply_wraps_json_failure_with_the_response() {
     let supplied = headers_of(&[("X-Request-Id", "r")]);
-    let failure = reply("not json", 502, &supplied).unwrap_err();
-    let EmbeddingReplyError::Api(error) = failure else {
-        panic!("expected the native error");
-    };
+    let error = reply("not json", 502, &supplied).unwrap_err();
     assert_eq!(error.message, "not json");
     assert_eq!(error.status_code, Some(502));
     assert_eq!(error.headers, supplied);
@@ -614,34 +589,22 @@ fn decode_embedding_reply_wraps_json_failure_with_the_response() {
 #[case::body_list("[]")]
 fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str) {
     let error = reply(body, 200, &Headers::new()).unwrap_err();
-    assert!(matches!(error, EmbeddingReplyError::FieldShape { .. }));
+    assert_eq!(error.status_code, None);
 }
 
 #[test]
 fn decode_embedding_reply_rejects_an_oversized_body() {
     let body = vec![b'x'; MAX_REPLY_BYTES + 1];
-    let error = decode_comet_embedding_reply(&EmbeddingReplyInput {
-        body: &body,
-        status: 200,
-        headers: &Headers::new(),
-    })
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        EmbeddingReplyError::TooLarge { size } if size == MAX_REPLY_BYTES + 1
-    ));
+    let error = decode_comet_embedding_reply(&body, 200, &Headers::new()).unwrap_err();
+    assert_eq!(error.status_code, None);
+    assert!(error.message.contains("over the"));
 }
 
 #[test]
 fn decode_embedding_reply_accepts_a_body_at_the_byte_limit() {
     let mut body = String::from(r#"{"usage":{"prompt_tokens":3,"total_tokens":4}}"#).into_bytes();
     body.resize(MAX_REPLY_BYTES, b' ');
-    let parsed = decode_comet_embedding_reply(&EmbeddingReplyInput {
-        body: &body,
-        status: 200,
-        headers: &Headers::new(),
-    })
-    .unwrap();
+    let parsed = decode_comet_embedding_reply(&body, 200, &Headers::new()).unwrap();
     assert_eq!(parsed.usage.prompt_tokens, 3);
 }
 
@@ -657,10 +620,5 @@ fn embedding_error_class_keeps_the_supplied_status_and_headers() {
 #[rstest]
 fn replays_comet_embedding_corpus(#[files("fuzz/corpus/comet_embedding_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let headers = Headers::new();
-    let _reply = decode_comet_embedding_reply(&EmbeddingReplyInput {
-        body: &bytes,
-        status: 200,
-        headers: &headers,
-    });
+    let _reply = decode_comet_embedding_reply(&bytes, 200, &Headers::new());
 }

@@ -3,7 +3,6 @@ use super::{CHUNK_OBJECT, JSON_CONTENT_TYPE};
 use crate::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
-use thiserror::Error;
 const ERROR_PREFIX: &str = "CometAPI Error: ";
 const UNKNOWN_ERROR: &str = "Unknown error";
 const MISSING_ERROR_CODE: u16 = 400;
@@ -16,22 +15,15 @@ pub struct CometApiChunk {
     pub usage: Option<Json>,
     pub choices: Vec<Json>,
 }
-#[derive(Debug, Error)]
-pub enum ChunkError {
-    #[error(transparent)]
-    Api(#[from] CometApiError),
-    #[error("the CometAPI stream chunk field {field} has an unexpected shape")]
-    FieldShape { field: &'static str },
-}
 // chunk_parser visits the choices before it reads the chunk's own keys, and an error key wins over both
-pub fn chunk_parser(chunk: &Object) -> Result<CometApiChunk, ChunkError> {
+pub fn chunk_parser(chunk: &Object) -> Result<CometApiChunk, CometApiError> {
     if let Some(error) = chunk.get("error") {
-        return Err(ChunkError::Api(error_chunk(error)?));
+        return Err(error_chunk(error)?);
     }
     let Some(Json::List(choices)) = chunk.get("choices") else {
         return Err(match chunk.get("choices") {
-            None => ChunkError::Api(missing("choices")),
-            Some(_) => ChunkError::FieldShape { field: "choices" },
+            None => missing("choices"),
+            Some(_) => shape("choices"),
         });
     };
     let choices = projected_choices(choices)?;
@@ -45,63 +37,57 @@ pub fn chunk_parser(chunk: &Object) -> Result<CometApiChunk, ChunkError> {
         choices,
     })
 }
-fn projected_choices(choices: &[Json]) -> Result<Vec<Json>, ChunkError> {
+fn projected_choices(choices: &[Json]) -> Result<Vec<Json>, CometApiError> {
     let mut projected = Vec::with_capacity(choices.len());
     for choice in choices {
         let Json::Object(mut fields) = choice.clone() else {
-            return Err(ChunkError::FieldShape { field: "choices" });
+            return Err(shape("choices"));
         };
         copy_reasoning(&mut fields)?;
         projected.push(Json::Object(fields));
     }
     Ok(projected)
 }
-fn chunk_keys(chunk: &Object) -> Result<(String, i64, Option<String>), ChunkError> {
+fn chunk_keys(chunk: &Object) -> Result<(String, i64, Option<String>), CometApiError> {
     let id = match chunk.get("id") {
-        None => return Err(ChunkError::Api(missing("id"))),
+        None => return Err(missing("id")),
         Some(Json::Text(text)) => text.clone(),
-        Some(_) => return Err(ChunkError::FieldShape { field: "id" }),
+        Some(_) => return Err(shape("id")),
     };
     let created = match chunk.get("created") {
-        None => return Err(ChunkError::Api(missing("created"))),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .ok_or(ChunkError::FieldShape { field: "created" })?,
-        Some(_) => return Err(ChunkError::FieldShape { field: "created" }),
+        None => return Err(missing("created")),
+        Some(Json::Number(number)) => number.as_i64().ok_or_else(|| shape("created"))?,
+        Some(_) => return Err(shape("created")),
     };
     let model = match chunk.get("model") {
-        None => return Err(ChunkError::Api(missing("model"))),
+        None => return Err(missing("model")),
         Some(Json::Null) => None,
         Some(Json::Text(text)) => Some(text.clone()),
-        Some(_) => return Err(ChunkError::FieldShape { field: "model" }),
+        Some(_) => return Err(shape("model")),
     };
     Ok((id, created, model))
 }
 // a present reasoning key is copied even when it is null, which overwrites an earlier reasoning_content
-fn copy_reasoning(fields: &mut Object) -> Result<(), ChunkError> {
+fn copy_reasoning(fields: &mut Object) -> Result<(), CometApiError> {
     let Some(delta) = fields.get_mut("delta") else {
         return Ok(());
     };
     let Json::Object(delta_fields) = delta else {
-        return Err(ChunkError::FieldShape { field: "delta" });
+        return Err(shape("delta"));
     };
     if let Some(reasoning) = delta_fields.get("reasoning").cloned() {
         delta_fields.insert("reasoning_content".to_owned(), reasoning);
     }
     Ok(())
 }
-fn error_chunk(error: &Json) -> Result<CometApiError, ChunkError> {
+fn error_chunk(error: &Json) -> Result<CometApiError, CometApiError> {
     let Json::Object(fields) = error else {
-        return Err(ChunkError::FieldShape { field: "error" });
+        return Err(shape("error"));
     };
     let message = match fields.get("message") {
         None => String::from(UNKNOWN_ERROR),
         Some(Json::Text(text)) => text.clone(),
-        Some(_) => {
-            return Err(ChunkError::FieldShape {
-                field: "error.message",
-            });
-        }
+        Some(_) => return Err(shape("error.message")),
     };
     let status_code = match fields.get("code") {
         None => Some(MISSING_ERROR_CODE),
@@ -110,20 +96,21 @@ fn error_chunk(error: &Json) -> Result<CometApiError, ChunkError> {
             .as_u64()
             .and_then(|value| u16::try_from(value).ok())
             .map(Some)
-            .ok_or(ChunkError::FieldShape {
-                field: "error.code",
-            })?,
-        Some(_) => {
-            return Err(ChunkError::FieldShape {
-                field: "error.code",
-            });
-        }
+            .ok_or_else(|| shape("error.code"))?,
+        Some(_) => return Err(shape("error.code")),
     };
     Ok(CometApiError {
         message: format!("{ERROR_PREFIX}{message}"),
         status_code,
         headers: json_headers(),
     })
+}
+fn shape(field: &'static str) -> CometApiError {
+    CometApiError {
+        message: format!("the CometAPI stream chunk field {field} has an unexpected shape"),
+        status_code: None,
+        headers: Headers::new(),
+    }
 }
 fn missing(field: &'static str) -> CometApiError {
     CometApiError {

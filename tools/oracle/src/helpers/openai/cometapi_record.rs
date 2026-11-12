@@ -5,10 +5,8 @@ use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::cometapi_wire::chat::{
     ChatError, ChatTransform, complete_url, transform_request,
 };
-use betterlite_openai::cometapi_wire::chunk::{ChunkError, chunk_parser};
-use betterlite_openai::cometapi_wire::embed::{
-    EmbeddingReplyError, EmbeddingReplyInput, decode_comet_embedding_reply, validate_environment,
-};
+use betterlite_openai::cometapi_wire::chunk::chunk_parser;
+use betterlite_openai::cometapi_wire::embed::{decode_comet_embedding_reply, validate_environment};
 use betterlite_prompts::arguments::json::Object as JsonObject;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -84,14 +82,11 @@ fn request_value(call: &RequestCall) -> Value {
 fn chunk_value(chunk: &JsonObject) -> Value {
     match chunk_parser(chunk) {
         Ok(parsed) => json!({"ok": true, "value": parsed}),
-        Err(ChunkError::Api(error)) => json!({
+        Err(error) => json!({
             "ok": false,
             "class": "CometAPIException",
             "status": error.status_code,
         }),
-        Err(ChunkError::FieldShape { field }) => {
-            json!({"ok": false, "class": "InvalidChunk", "field": field})
-        }
     }
 }
 fn header_value(call: &HeaderCall) -> Result<Value, Box<HelperError>> {
@@ -105,21 +100,13 @@ fn header_value(call: &HeaderCall) -> Result<Value, Box<HelperError>> {
     Ok(json!({"headers": validate_environment(&call.headers, key.as_ref(), &settings)}))
 }
 fn reply_value(call: &ReplyCall) -> Value {
-    let input = EmbeddingReplyInput {
-        body: call.body.as_bytes(),
-        status: call.status,
-        headers: &call.headers,
-    };
-    match decode_comet_embedding_reply(&input) {
+    match decode_comet_embedding_reply(call.body.as_bytes(), call.status, &call.headers) {
         Ok(reply) => json!({"ok": true, "value": reply}),
-        Err(EmbeddingReplyError::Api(error)) => json!({
+        Err(error) => json!({
             "ok": false,
             "class": "CometAPIException",
             "status": error.status_code,
         }),
-        Err(EmbeddingReplyError::TooLarge { .. } | EmbeddingReplyError::FieldShape { .. }) => {
-            json!({"ok": false, "class": "InvalidReply"})
-        }
     }
 }
 fn invalid(message: String) -> Box<HelperError> {

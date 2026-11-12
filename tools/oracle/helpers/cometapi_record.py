@@ -42,7 +42,6 @@ class ReplyCall(TypedDict):
 
 
 class Input(TypedDict):
-    # the function names the one list the call supplies, and the case parser guarantees its presence
     function: str
     requests: list[RequestCall]
     chunks: list[dict[str, JsonValue]]

@@ -1,4 +1,5 @@
-use betterlite_openai::cometapi_wire::chunk::{ChunkError, CometApiChunk, chunk_parser};
+use betterlite_openai::cometapi_wire::chunk::{CometApiChunk, chunk_parser};
+use betterlite_openai::cometapi_wire::error::CometApiError;
 use betterlite_prompts::arguments::json::Json;
 use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use thiserror::Error;
@@ -7,7 +8,9 @@ const DONE_MARKER: &str = "[DONE]";
 #[derive(Debug, Error)]
 pub enum CometApiIteratorError {
     #[error(transparent)]
-    Chunk(#[from] ChunkError),
+    Api(#[from] CometApiError),
+    #[error("the CometAPI stream chunk is not a JSON object")]
+    NotAnObject,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamStep {
@@ -42,9 +45,7 @@ impl CometApiChatIterator {
             return Ok(StreamStep::Empty);
         }
         let Json::Object(fields) = parsed else {
-            return Err(CometApiIteratorError::Chunk(ChunkError::FieldShape {
-                field: "chunk",
-            }));
+            return Err(CometApiIteratorError::NotAnObject);
         };
         Ok(StreamStep::Chunk(Box::new(chunk_parser(&fields)?)))
     }
