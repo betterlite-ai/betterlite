@@ -1,0 +1,19 @@
+kind: helper
+name: gemini-embedding-records-batch-usage-seed
+call:
+  gemini_embedding_records:
+    calls:
+    - kind: batch_reply
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - data:image/png;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response:
+        embeddings:
+        - values:
+          - 0.1
+compare:
+  ignore: []
+env: {}

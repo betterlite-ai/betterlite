@@ -1,0 +1,11 @@
+task: B5361
+deviations:
+  - what: The provider model sets live in a `ProviderModelSets` value the caller owns, where LiteLLM keeps one module global per set.
+    why: The inject-dependencies rule bars globals. The Python package in B157 still shows them as module attributes through the native call B5369 adds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L602-L718
+  - what: The `supports_audio_output` flag reads the `supports_audio_output` key, where LiteLLM's wrapper at the pin asks `_supports_factory` for `supports_audio_input`.
+    why: The wrapper's name and docstring both say audio output, so the key is a copy-paste bug. Copying it reports audio output support for a model that only accepts audio input, and never reads the key it names. The capability-flags case declares both keys on its audio-output models so the oracle can still compare the fold, and a Rust test proves the flag reads its own key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2951-L2953
+  - what: The sets start empty, where LiteLLM seeds `bedrock_converse_models` and `wandb_models` from `litellm.constants` at import and imports the replicate, clarifai, huggingface, modelscope, empower, together_ai and baseten sets already filled, plus the petals, ollama and maritalk lists.
+    why: Those names live in litellm/constants.py, which none of this task's references own. The oracle clears every set before folding the fixture cost map, so the fold is what this task owns and compares; B5369 must clear LiteLLM's sets the same way when it compares them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L636

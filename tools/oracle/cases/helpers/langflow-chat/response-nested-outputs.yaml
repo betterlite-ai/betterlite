@@ -1,0 +1,40 @@
+kind: helper
+name: langflow-response-nested-outputs
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: reply
+    replies:
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"results":{"message":{"text":"hello"}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"results":{"message":{"text":""}},"outputs":{"Chat Output":{"message":{"text":"walked"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"outputs":{"Chat Output":{"message":{"text":"walked"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"results":[],"outputs":{"Chat Output":{"message":{"text":"walked"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"outputs":{"a":7,"b":{"message":{"text":"second"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"outputs":{"a":{},"b":{"message":{"text":"second"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"results":{"message":{"text":"first"}},"outputs":{"x":{"message":{"text":"second"}}}}]}]}'
+        messages: [{role: user, content: hi}]
+      - model: langflow/abc
+        status: 200
+        body: '{"outputs":[{"outputs":[{"outputs":{"a":{"message":{"text":"one"}},"b":{"message":{"text":"two"}}}}]}]}'
+        messages: [{role: user, content: hi}]

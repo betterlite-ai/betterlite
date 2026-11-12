@@ -1,0 +1,20 @@
+kind: helper
+name: gemini-response-parts-legacy-last-function
+call:
+  gemini_response_parts:
+    parts:
+      - functionCall:
+          name: first
+          args: {a: 1}
+        thoughtSignature: sig-first
+      - functionCall:
+          name: last
+          args: {b: 2}
+      - text: trailing text
+    legacy_function: true
+    cumulative_tool_call_idx: 2
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

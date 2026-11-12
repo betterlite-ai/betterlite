@@ -1,0 +1,22 @@
+kind: helper
+name: gemini-response-parts-sparse-logprobs
+call:
+  gemini_response_parts:
+    parts:
+      - text: token stream
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs:
+      chosenCandidates:
+        - {token: alpha, tokenId: 1, logProbability: -0.5}
+        - {token: beta, tokenId: 2, logProbability: -0.25}
+        - {token: gamma, tokenId: 3, logProbability: -0.125}
+      topCandidates:
+        - candidates:
+            - {token: alpha, tokenId: 1, logProbability: -0.1}
+            - {token: delta, tokenId: 4, logProbability: -0.9}
+        - candidates: []
+env: {}
+compare: {ignore: []}

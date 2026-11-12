@@ -1,0 +1,17 @@
+kind: helper
+name: google-pricing-search-detail-zero-fallback
+call:
+  google_pricing:
+    operation: web_search_cost
+    record:
+      search_context_cost_per_query:
+        search_context_size_medium: 0.01
+    usage:
+      prompt_tokens: 3
+      completion_tokens: 0
+      prompt_tokens_details:
+        web_search_requests: 0
+      server_tool_use:
+        web_search_requests: 2
+env: {}
+compare: {ignore: []}
