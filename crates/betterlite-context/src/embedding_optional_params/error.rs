@@ -2,8 +2,12 @@ use crate::non_default_params::error::{MapperError, NonDefaultParamsError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingParamsError {
-    #[error("{provider} does not support the passed parameters for {model}")]
-    Unsupported { provider: String, model: String },
+    #[error("{provider} does not support {param} for {model}")]
+    Unsupported {
+        provider: String,
+        model: String,
+        param: String,
+    },
     #[error("dimensions is not supported for {model}")]
     DimensionsUnsupported { model: String },
     #[error("{0} must be {1}")]
