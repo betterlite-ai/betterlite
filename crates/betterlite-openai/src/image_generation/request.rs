@@ -175,18 +175,15 @@ fn status_message(text: &str) -> String {
 fn response_headers(
     headers: &http::HeaderMap,
 ) -> Result<IndexMap<String, String>, ImageGenerationSource> {
-    headers
-        .iter()
-        .map(|(name, value)| {
-            value.to_str().map_or_else(
-                |source| {
-                    Err(ImageGenerationSource::ResponseHeader {
-                        name: name.as_str().to_owned(),
-                        source,
-                    })
-                },
-                |text| Ok((name.as_str().to_owned(), text.to_owned())),
-            )
-        })
-        .collect()
+    let mut found = IndexMap::new();
+    for (name, value) in headers {
+        let text = value
+            .to_str()
+            .map_err(|source| ImageGenerationSource::ResponseHeader {
+                name: name.as_str().to_owned(),
+                source,
+            })?;
+        found.insert(name.as_str().to_owned(), text.to_owned());
+    }
+    Ok(found)
 }

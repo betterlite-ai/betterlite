@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Final, TypedDict
+from typing import Final, Self, TypedDict
 
 import httpx
 import litellm
@@ -69,36 +69,31 @@ class Fixture:
                 return Raw(self.probe.reply)
 
 
-class SyncImages:
+class Images:
     def __init__(self, fixture: Fixture, client: "Client") -> None:
         self.fixture = fixture
         self.client = client
 
     @property
-    def with_raw_response(self) -> "SyncImages":
+    def with_raw_response(self) -> Self:
         return self
 
-    def generate(self, *, timeout: float, **params: Json) -> Raw:
+    def send(self, timeout: float, params: dict[str, Json]) -> Raw:
         if timeout < 0:
             raise ValueError("timeout must not be negative")
         return self.fixture.answer(self.client.wire_call(params, timeout))
 
 
-class AsyncImages:
-    def __init__(self, fixture: Fixture, client: "Client") -> None:
-        self.fixture = fixture
-        self.client = client
+class SyncImages(Images):
+    def generate(self, *, timeout: float, **params: Json) -> Raw:
+        return self.send(timeout, params)
 
-    @property
-    def with_raw_response(self) -> "AsyncImages":
-        return self
 
+class AsyncImages(Images):
     async def generate(
         self, *, timeout: float, **params: Json  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1429
     ) -> Raw:
-        if timeout < 0:
-            raise ValueError("timeout must not be negative")
-        return self.fixture.answer(self.client.wire_call(params, timeout))
+        return self.send(timeout, params)
 
 
 def api_base(probe: Probe) -> str:

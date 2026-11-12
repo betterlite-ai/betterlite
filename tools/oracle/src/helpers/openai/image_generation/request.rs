@@ -214,10 +214,7 @@ fn call_for(probe: &Probe) -> Result<ImageGenerationCall, Box<crate::helpers::He
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
         optional_params: probe.optional_params.clone(),
-        api_key: probe
-            .api_key
-            .as_ref()
-            .map(|key| SecretString::from(key.clone())),
+        api_key: probe.api_key.clone().map(SecretString::from),
         api_base: probe.api_base.clone(),
         organization: probe.organization.clone(),
         headers: probe.headers.clone(),
