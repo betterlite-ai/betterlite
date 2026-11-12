@@ -18,3 +18,9 @@ deviations:
   - what: "StreamingChatCompletionChunk stores moderation as the value the caller passed and dumps it unchanged, where LiteLLM hands it to OpenAI's Moderation model, which fills that model's defaults."
     why: "The chunk class lives on OpenAI's SDK model in LiteLLM, and betterlite's wheel has no openai dependency; every other chunk field and the converted choices match."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2057-L2065
+  - what: "ModelResponse keeps the hidden_params and _response_headers it is built with, where LiteLLM assigns them before pydantic's __init__ resets the private attributes, so it ends with {} and None."
+    why: "Losing both values is lost data no working setup can rely on; the attributes the task asks the base to carry stay readable and out of model_dump."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2237-L2245
+  - what: "model_dump, model_dump_json and dict take include and exclude as flat sets of top-level field names, where pydantic also takes nested dict selectors and applies them to child models, and none of them take exclude_defaults, by_alias, round_trip, warnings, context, serialize_as_any, fallback or indent; json takes only exclude_unset, where pydantic's takes include and exclude too."
+    why: "The response classes are not pydantic models, so the options that only make sense for pydantic serialization or nested selectors are not built; exclude_defaults would drop fields LiteLLM stores as pydantic extras and keeps."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096-L2100

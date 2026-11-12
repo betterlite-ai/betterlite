@@ -34,6 +34,9 @@ StoredValue: TypeAlias = (
 )
 ValidatorMode: TypeAlias = Literal["before", "after"]
 AnnotationValue: TypeAlias = type | str | types.GenericAlias | types.UnionType
+MODEL_TYPES: dict[AnnotationValue, type[ModelObject]] = {}
+MAPPING_ARGUMENTS = 2
+SEQUENCE_ARGUMENTS = 1
 
 
 class ValidationError(ValueError):
@@ -101,7 +104,7 @@ class Validator:
         self.attribute = ""
         self.model_level = model_level
 
-    def __set_name__(self, owner: "type[ValidatorHost]", name: str) -> None:
+    def __set_name__(self, owner: type[ValidatorHost], name: str) -> None:
         self.attribute = name
         if self.model_level:
             owner.__model_validators__ = (*owner.__model_validators__, self)
@@ -118,7 +121,7 @@ class FieldValidatorDecorator:
         self.mode = mode
 
     def __call__(self, function: Callable[Parameters, StoredValue]) -> Validator:
-        stored = cast("StoredFunction", function)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1135-L1146
+        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L353
         return Validator(self.names, self.mode, stored, model_level=False)
 
 
@@ -129,7 +132,7 @@ class ModelValidatorDecorator:
         self.mode = mode
 
     def __call__(self, function: Callable[Parameters, StoredValue]) -> Validator:
-        stored = cast("StoredFunction", function)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1487-L1489
+        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L353
         return Validator((), self.mode, stored, model_level=True)
 
 
@@ -137,52 +140,59 @@ field_validator = FieldValidatorDecorator
 model_validator = ModelValidatorDecorator
 
 
-class ModelBuilder(Protocol):
-    def __call__(self, **data: StoredValue) -> ModelObject: ...
+def union_annotation(annotation: AnnotationValue) -> bool:
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
+    return origin in (Union, types.UnionType)
+
+
+def container_annotation(annotation: AnnotationValue) -> bool:
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
+    return origin in (list, tuple, Sequence, dict, Mapping)
 
 
 def allows_none(annotation: AnnotationValue) -> bool:
     if annotation is JsonValue or annotation is NoneType:
         return True
-    origin = cast("type | None", get_origin(annotation))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3648
-    if origin not in (Union, types.UnionType):
+    if not union_annotation(annotation):
         return False
-    parameters = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3648
-    return any(allows_none(member) for member in parameters)
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
+    return any(allows_none(member) for member in arguments)
 
 
 def checked_value(
     annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    if value is None or annotation is JsonValue:
-        if value is None and not allows_none(annotation):
-            raise ValidationError(model, (name,), "value is required")
+    if value is None:
+        if allows_none(annotation):
+            return None
+        raise ValidationError(model, (name,), "value is required")
+    if annotation is JsonValue:
         return value
-    origin = cast("type | None", get_origin(annotation))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3648
-    if origin in (Union, types.UnionType):
+    if union_annotation(annotation):
         return union_value(annotation, value, model, name)
-    return member_value(annotation, origin, value, model, name)
+    return member_value(annotation, value, model, name)
 
 
 def union_value(
     annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    parameters = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3648
-    members = [item for item in parameters if item is not NoneType]
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
+    members = [member for member in arguments if member is not NoneType]
     if len(members) != 1:
         return value
     return checked_value(members[0], value, model, name)
 
 
 def member_value(
-    annotation: AnnotationValue, origin: type | None, value: StoredValue, model: str, name: str,
+    annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
     if annotation is Base64Str or annotation is AwareDatetime:
         return text_value(annotation, value, model, name)
-    if "__fields__" in dir(annotation):
-        return model_value(annotation, value, model, name)
-    if origin in (list, tuple, Sequence, dict, Mapping):
-        return container_value(annotation, origin, value, model, name)
+    constructor = MODEL_TYPES.get(annotation)
+    if constructor is not None:
+        return model_value(constructor, value, model, name)
+    if container_annotation(annotation):
+        return container_value(annotation, value, model, name)
     return value
 
 
@@ -205,13 +215,11 @@ def text_value(
 
 
 def model_value(
-    annotation: AnnotationValue, value: StoredValue, model: str, name: str,
+    constructor: type[ModelObject], value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    constructor = cast("type[ModelObject]", annotation)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390
     match value:
         case Mapping():
-            builder = cast("ModelBuilder", constructor)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1679
-            return builder(**value)
+            return constructor(**value)
         case _other:
             if constructor in value.__class__.__mro__:
                 return value
@@ -219,17 +227,22 @@ def model_value(
 
 
 def container_value(
-    annotation: AnnotationValue, origin: type | None, value: StoredValue, model: str, name: str,
+    annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    parameters = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3648
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
     match value:
         case Mapping() if origin in (dict, Mapping):
+            if len(arguments) != MAPPING_ARGUMENTS:
+                return value
             return {
-                key: checked_value(parameters[1], entry, model, name)
+                key: checked_value(arguments[1], entry, model, name)
                 for key, entry in value.items()
             }
         case Sequence() if origin in (list, tuple, Sequence):
-            return [checked_value(parameters[0], entry, model, name) for entry in value]
+            if len(arguments) != SEQUENCE_ARGUMENTS:
+                return value
+            return [checked_value(arguments[0], entry, model, name) for entry in value]
         case _other:
             raise ValidationError(model, (name,), "wrong type")
 

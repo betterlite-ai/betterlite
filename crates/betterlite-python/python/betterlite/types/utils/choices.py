@@ -4,10 +4,10 @@ from typing import Final, Literal, TypeAlias
 
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject, dump_any
+from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.message import Delta, Message
 from betterlite.types.utils.tool_calls import ChoiceLogprobs
-from betterlite.types.utils.values import JsonValue, StoredValue
+from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
 
 FinishReason: TypeAlias = Literal[
     "stop", "length", "tool_calls", "content_filter", "function_call",
@@ -49,7 +49,7 @@ class Choices(ResponseObject):
     index: int
     message: Message
     logprobs: ChoiceLogprobs | JsonValue
-    provider_specific_fields: dict[str, JsonValue] | None
+    provider_specific_fields: dict[str, StoredValue] | None
 
     @override
     def __init__(
@@ -68,7 +68,7 @@ class Choices(ResponseObject):
         super().__init__(**params)
         if enhancements is not None:
             self["enhancements"] = enhancements
-        self.provider_specific_fields = json_mapping(fields)
+        self.provider_specific_fields = provider_fields(fields)
         if self.logprobs is None:
             del self.logprobs
         if self.provider_specific_fields is None:
@@ -93,7 +93,7 @@ class StreamingChoices(ResponseObject):
                 params["finish_reason"] = map_finish_reason(finish_reason)
             case _other:
                 params["finish_reason"] = None
-        params["index"] = index
+        params["index"] = 0 if index is None else index
         match delta:
             case None:
                 params["delta"] = Delta()
@@ -109,29 +109,24 @@ class StreamingChoices(ResponseObject):
             self["enhancements"] = enhancements
 
 
-def native_finish_reason(fields: StoredValue, finish_reason: str) -> StoredValue:
-    merged = mapping_values(fields)
+def native_finish_reason(
+    fields: StoredValue, finish_reason: str,
+) -> dict[str, StoredValue]:
+    merged = provider_fields(fields)
+    if merged is None:
+        merged = {}
     merged["native_finish_reason"] = finish_reason
     return merged
 
 
-def mapping_values(value: StoredValue) -> dict[str, StoredValue]:
+def provider_fields(value: StoredValue) -> dict[str, StoredValue] | None:
     match value:
+        case None:
+            return None
         case Mapping():
             return {str(name): item for name, item in value.items()}
         case _other:
-            return {}
-
-
-def json_mapping(value: StoredValue) -> dict[str, JsonValue] | None:
-    match value:
-        case Mapping():
-            return {
-                str(name): dump_any(entry, exclude_unset=False, exclude_none=False)
-                for name, entry in value.items()
-            }
-        case _other:
-            return None
+            raise ValidationError("Choices", ("provider_specific_fields",), "wrong type")
 
 
 def message_value(message: StoredValue) -> StoredValue:

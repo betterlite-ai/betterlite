@@ -1,12 +1,11 @@
 from collections.abc import Mapping
-from typing import ClassVar, Literal, cast
+from typing import ClassVar, Literal
 
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
 
-DetailKind = Literal["completion", "prompt", "tool_use"]
 CACHED_TARGETS: tuple[tuple[Literal["cached", "write"], str], ...] = (
     ("cached", "prompt_cache_hit_tokens"), ("cached", "cache_read_input_tokens"),
     ("write", "cache_creation_input_tokens"),
@@ -24,20 +23,27 @@ DROP_WHEN_NONE = (
 )
 
 
-class ServerToolUse(ResponseObject):
+class DeclaredOnly(ResponseObject):
+    @override
+    def __init__(self, **data: StoredValue) -> None:
+        super().__init__(**{
+            name: value for name, value in data.items() if name in type(self).__fields__
+        })
+
+
+class ServerToolUse(DeclaredOnly):
     web_search_requests: int | None
     tool_search_requests: int | None
     browser_open_requests: int | None
 
     @override
     def __getitem__(self, key: str) -> StoredValue:
-        values = self._values
-        if key in values:
-            return values[key]
-        raise KeyError(key)
+        if key not in type(self).__fields__:
+            raise KeyError(key)
+        return super().__getitem__(key)
 
 
-class CacheCreationTokenDetails(ResponseObject):
+class CacheCreationTokenDetails(DeclaredOnly):
     ephemeral_5m_input_tokens: int | None
     ephemeral_1h_input_tokens: int | None
 
@@ -82,11 +88,12 @@ class PromptTokensDetailsWrapper(ResponseObject):
     @override
     def __init__(self, **data: StoredValue) -> None:
         super().__init__(**data)
-        mirror_cache_tokens(self, data)
-        if self.cache_write_tokens is None and "cache_creation_input_tokens" in data:
-            nested = int_value(data["cache_creation_input_tokens"])
-            if nested is not None:
-                self.cache_write_tokens = nested
+        write = self.cache_write_tokens
+        if write is None:
+            write = self.cache_creation_tokens
+        if write is None and "cache_creation_input_tokens" in data:
+            write = int_value(data["cache_creation_input_tokens"])
+        self.cache_write_tokens = write
         drop_none_fields(self)
 
 
@@ -113,37 +120,30 @@ class Usage(ResponseObject):
         server_tool_use: StoredValue = None, cost: StoredValue = None,
         **params: StoredValue,
     ) -> None:
-        details = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1891-L1894
-            "CompletionTokensDetailsWrapper | None",
-            detail_value(completion_tokens_details, "completion", "completion_tokens_details"),
-        )
-        if reasoning_tokens is not None:
-            details = reasoning_details(details, reasoning_tokens, completion_tokens)
-        prompt_details = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1924-L1930
-            "PromptTokensDetailsWrapper | None",
-            detail_value(prompt_tokens_details, "prompt", "prompt_tokens_details"),
-        )
-        for kind, name in CACHED_TARGETS:
-            value = int_param(params, name)
-            if value is not None:
-                prompt_details = token_details(prompt_details, value, kind)
         super().__init__(
             prompt_tokens=token_count(prompt_tokens, "prompt_tokens"),
             completion_tokens=token_count(completion_tokens, "completion_tokens"),
             total_tokens=token_count(total_tokens, "total_tokens"),
-            completion_tokens_details=details,
-            prompt_tokens_details=prompt_details,
+            completion_tokens_details=completion_tokens_details,
+            prompt_tokens_details=prompt_tokens_details,
+            server_tool_use=server_tool_use,
         )
+        if reasoning_tokens is not None:
+            self.completion_tokens_details = reasoning_details(
+                self.completion_tokens_details, reasoning_tokens, completion_tokens,
+            )
+        prompt_details = self.prompt_tokens_details
+        for kind, name in CACHED_TARGETS:
+            cached = int_param(params, name)
+            if cached is not None:
+                prompt_details = token_details(prompt_details, cached, kind)
+        self.prompt_tokens_details = prompt_details
         for name, target in PRIVATE_CACHE_PARAMS:
             value = int_param(params, name)
             if value is not None:
                 self[target] = value
         if server_tool_use is None:
             del self.server_tool_use
-        else:
-            self.server_tool_use = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1962-L1963
-                "ServerToolUse", detail_value(server_tool_use, "tool_use", "server_tool_use"),
-            )
         if cost is None:
             del self.cost
         else:
@@ -158,19 +158,6 @@ def int_value(value: StoredValue) -> int | None:
             return value
         case _other:
             return None
-
-
-def mirror_cache_tokens(
-    details: PromptTokensDetailsWrapper, data: Mapping[str, StoredValue],
-) -> None:
-    if "cache_write_tokens" in data:
-        write = int_value(data["cache_write_tokens"])
-        if write is not None:
-            details.cache_creation_tokens = write
-    if "cache_creation_tokens" in data:
-        creation = int_value(data["cache_creation_tokens"])
-        if creation is not None:
-            details.cache_write_tokens = creation
 
 
 def drop_none_fields(details: PromptTokensDetailsWrapper) -> None:
@@ -201,30 +188,6 @@ def cost_number(value: StoredValue) -> float:
             return float(value)
         case _other:
             raise ValidationError("Usage", ("cost",), "expected a number")
-
-
-def detail_value(value: StoredValue, kind: DetailKind, name: str) -> StoredValue:
-    match value:
-        case None:
-            return None
-        case CompletionTokensDetailsWrapper() if kind == "completion":
-            return value
-        case PromptTokensDetailsWrapper() if kind == "prompt":
-            return value
-        case ServerToolUse() if kind == "tool_use":
-            return value
-        case Mapping():
-            return build_detail(value, kind)
-        case _other:
-            raise ValidationError("Usage", (name,), "wrong type")
-
-
-def build_detail(value: Mapping[str, StoredValue], kind: DetailKind) -> StoredValue:
-    if kind == "completion":
-        return CompletionTokensDetailsWrapper(**value)
-    if kind == "prompt":
-        return PromptTokensDetailsWrapper(**value)
-    return ServerToolUse(**value)
 
 
 def reasoning_details(

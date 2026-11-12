@@ -1,13 +1,14 @@
 import base64
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from copy import deepcopy
 from datetime import datetime
-from typing import ClassVar, Generic, Literal, Protocol, TypeVar, cast
+from typing import ClassVar, Generic, Literal, Protocol, TypeVar
 
 from typing_extensions import override
 
 from betterlite.types.utils.values import (
+    MODEL_TYPES,
     AnnotationValue,
     Base64Str,
     JsonValue,
@@ -23,9 +24,13 @@ INTERNAL_NAMES = ("_values", "_fields_set")
 
 
 class Dumpable(Protocol):
-    def dict(self, **_kwargs: JsonValue) -> JsonValue: ...
+    def dict(
+        self, *, include: Collection[str] | None = None,
+        exclude: Collection[str] | None = None, exclude_unset: bool = False,
+        exclude_none: bool = False,
+    ) -> JsonValue: ...
 
-    def json(self, **_kwargs: JsonValue) -> JsonValue: ...
+    def json(self, *, exclude_unset: bool = False, exclude_none: bool = False) -> JsonValue: ...
 
 
 class ResponseObject(Dumpable):
@@ -97,7 +102,7 @@ class ResponseObject(Dumpable):
         super().__init_subclass__(**kwargs)
         fields = dict(cls.__fields__)
         defaults = dict(cls.__defaults__)
-        annotations = cast("dict[str, AnnotationValue]", cls.__annotations__)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390
+        annotations: dict[str, AnnotationValue] = cls.__annotations__
         for name, annotation in annotations.items():
             if name == "defaults":
                 continue
@@ -107,6 +112,7 @@ class ResponseObject(Dumpable):
         defaults.update(cls.defaults)
         cls.__fields__ = fields
         cls.__defaults__ = defaults
+        MODEL_TYPES[cls] = cls
 
     def __init__(self, **data: StoredValue) -> None:
         self._values = {}
@@ -170,28 +176,49 @@ class ResponseObject(Dumpable):
 
     def model_dump(
         self, *, mode: Literal["python", "json"] = "python",
+        include: Collection[str] | None = None, exclude: Collection[str] | None = None,
         exclude_unset: bool = False, exclude_none: bool = False,
     ) -> JsonValue:
         dumped: dict[str, JsonValue] = {}
         for name, value in self._values.items():
-            if name.startswith("_") or (exclude_unset and name not in self._fields_set):
+            if name.startswith("_"):
+                continue
+            if include is not None and name not in include:
+                continue
+            if exclude is not None and name in exclude:
+                continue
+            if exclude_unset and name not in self._fields_set:
                 continue
             if exclude_none and value is None:
                 continue
             dumped[name] = dump_any(value, exclude_unset=exclude_unset, exclude_none=exclude_none)
         return json_ready(dumped) if mode == "json" else dumped
 
-    def model_dump_json(self, *, exclude_unset: bool = False, exclude_none: bool = False) -> str:
-        dumped = self.model_dump(exclude_unset=exclude_unset, exclude_none=exclude_none)
+    def model_dump_json(
+        self, *, include: Collection[str] | None = None,
+        exclude: Collection[str] | None = None, exclude_unset: bool = False,
+        exclude_none: bool = False,
+    ) -> str:
+        dumped = self.model_dump(
+            include=include, exclude=exclude, exclude_unset=exclude_unset,
+            exclude_none=exclude_none,
+        )
         return json.dumps(json_ready(dumped))
 
     @override
-    def dict(self, **_kwargs: JsonValue) -> JsonValue:
-        return self.model_dump()
+    def dict(
+        self, *, include: Collection[str] | None = None,
+        exclude: Collection[str] | None = None, exclude_unset: bool = False,
+        exclude_none: bool = False,
+    ) -> JsonValue:
+        return self.model_dump(
+            include=include, exclude=exclude, exclude_unset=exclude_unset,
+            exclude_none=exclude_none,
+        )
 
     @override
-    def json(self, **_kwargs: JsonValue) -> JsonValue:
-        return self.model_dump_json()
+    def json(self, *, exclude_unset: bool = False, exclude_none: bool = False) -> JsonValue:
+        return self.model_dump_json(exclude_unset=exclude_unset, exclude_none=exclude_none)
 
 
 def dump_any(value: StoredValue, *, exclude_unset: bool, exclude_none: bool) -> JsonValue:
@@ -241,6 +268,7 @@ class RootModel(ResponseObject, Generic[RootValue]):
     @override
     def model_dump(
         self, *, mode: Literal["python", "json"] = "python",
+        include: Collection[str] | None = None, exclude: Collection[str] | None = None,
         exclude_unset: bool = False, exclude_none: bool = False,
     ) -> JsonValue:
         dumped = dump_any(self.root, exclude_unset=exclude_unset, exclude_none=exclude_none)

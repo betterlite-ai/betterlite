@@ -1,12 +1,13 @@
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import ClassVar, Final, Literal
 
 from typing_extensions import override
 
 from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.choices import Choices, FinishReason, StreamingChoices
+from betterlite.types.utils.tool_calls import ChatCompletionTokenLogprob
 from betterlite.types.utils.usage import Usage
 from betterlite.types.utils.values import JsonValue, StoredValue, ValidationError
 
@@ -52,12 +53,16 @@ class ModelResponseBase(ResponseObject):
     @override
     def model_dump(
         self, *, mode: Literal["python", "json"] = "python",
+        include: Collection[str] | None = None, exclude: Collection[str] | None = None,
         exclude_unset: bool | None = None, exclude_none: bool | None = None,
     ) -> JsonValue:
         if exclude_unset is None and exclude_none is None:
-            return super().model_dump(mode=mode, exclude_unset=True)
+            return super().model_dump(
+                mode=mode, include=include, exclude=exclude, exclude_unset=True,
+            )
         return super().model_dump(
-            mode=mode, exclude_unset=exclude_unset is True, exclude_none=exclude_none is True,
+            mode=mode, include=include, exclude=exclude,
+            exclude_unset=exclude_unset is True, exclude_none=exclude_none is True,
         )
 
 
@@ -133,20 +138,38 @@ class StreamingChunkDelta(ResponseObject):
     tool_calls: JsonValue
 
 
+class ChunkLogprobs(ResponseObject):
+    content: list[ChatCompletionTokenLogprob] | None
+    refusal: list[ChatCompletionTokenLogprob] | None
+
+
 class StreamingChunkChoice(ResponseObject):
     delta: StreamingChunkDelta
     finish_reason: FinishReason | None
     index: int
-    logprobs: JsonValue
+    logprobs: ChunkLogprobs | None
     defaults: ClassVar[dict[str, StoredValue]] = {"index": 0}
+
+
+class ChunkCompletionTokensDetails(ResponseObject):
+    accepted_prediction_tokens: int | None
+    audio_tokens: int | None
+    reasoning_tokens: int | None
+    rejected_prediction_tokens: int | None
+
+
+class ChunkPromptTokensDetails(ResponseObject):
+    audio_tokens: int | None
+    cache_write_tokens: int | None
+    cached_tokens: int | None
 
 
 class ChunkUsage(ResponseObject):
     completion_tokens: int
     prompt_tokens: int
     total_tokens: int
-    completion_tokens_details: JsonValue
-    prompt_tokens_details: JsonValue
+    completion_tokens_details: ChunkCompletionTokensDetails | None
+    prompt_tokens_details: ChunkPromptTokensDetails | None
 
 
 class StreamingChatCompletionChunk(ResponseObject):

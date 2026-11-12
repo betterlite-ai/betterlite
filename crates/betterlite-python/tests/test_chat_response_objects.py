@@ -1,8 +1,9 @@
 import json
 import logging
+import uuid
 from abc import ABC
 from datetime import UTC, datetime
-from typing import ClassVar, Generic, Protocol, TypeVar, cast
+from typing import ClassVar, Generic, Protocol, TypeVar
 
 import httpx
 import litellm.types.completion as litellm_completion  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/completion.py#L19
@@ -68,6 +69,12 @@ USAGE_VALUES: dict[str, JsonValue] = {
 }
 ENHANCEMENTS: dict[str, JsonValue] = {"e": 1}
 EXTRA_VALUES: dict[str, JsonValue] = {"foo": "bar"}
+MISMATCHED_TOKENS = 7
+UUID_VERSION = 4
+HIDDEN_PARAMS: dict[str, StoredValue] = {"a": 1}
+HEADERS: dict[str, StoredValue] = {"h": "v"}
+EXTRA_TOOL_USE: dict[str, int] = {"web_search_requests": 1, "web_fetch_requests": 2}
+EXTRA_TOKEN_COUNT: dict[str, int] = {"extra": 2}
 ARGS: dict[str, JsonValue] = {"a": 1}
 FUNCTION_ARGS: dict[str, JsonValue] = {"b": 2}
 TOOL_FUNCTION: dict[str, JsonValue] = {"name": "f"}
@@ -79,18 +86,23 @@ CHOICES: list[JsonValue] = [CHOICE_MESSAGE_LENGTH]
 
 
 def parse_object(text: str) -> dict[str, JsonValue]:
-    return cast("dict[str, JsonValue]", json.loads(text))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    parsed: dict[str, JsonValue] = json.loads(text)
+    return parsed
 
 
 class Dumpable(Protocol):
     def model_dump(
         self,
         *,
+        include: set[str] | None = None,
+        exclude: set[str] | None = None,
         exclude_unset: bool = False,
         exclude_none: bool = False,
     ) -> JsonValue: ...
 
     def model_dump_json(self) -> str: ...
+
+    def dict(self, *, exclude_none: bool = False) -> JsonValue: ...
 
 
 class RecordingHandler(logging.Handler):
@@ -167,6 +179,14 @@ def assert_full_dump(label: str, reference: Dumpable, ours: Dumpable) -> None:
     assert ours.model_dump(exclude_unset=False) == dumped, label
 
 
+def assert_selected(
+    label: str, reference: Dumpable, ours: Dumpable, *,
+    include: set[str] | None = None, exclude: set[str] | None = None,
+) -> None:
+    expected = reference.model_dump(include=include, exclude=exclude)
+    assert ours.model_dump(include=include, exclude=exclude) == expected, label
+
+
 def test_access_attribute_and_item() -> None:
     ours = betterlite_utils.Message(content="x", extra_field="e")
     reference = litellm_utils.Message(content="x", extra_field="e")
@@ -210,6 +230,17 @@ def test_access_delete_missing() -> None:
     reference = litellm_utils.Message(content="x")
     del reference.content
     assert_same("delete", reference, message)
+
+
+def test_access_dict_parity() -> None:
+    ours = betterlite_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
+    reference: Dumpable = litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
+    assert ours.dict() == reference.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    assert ours.dict(exclude_none=True) == reference.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    message = betterlite_utils.Message(content="x")
+    reference_message: Dumpable = litellm_utils.Message(content="x")
+    assert message.dict() == reference_message.dict()  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
+    assert message.dict(exclude_none=True) == reference_message.dict(exclude_none=True)  # pyright: ignore[reportDeprecated]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1499-L1504
 
 
 def test_dump_message_parity() -> None:
@@ -355,8 +386,8 @@ def test_dump_usage_parity() -> None:
     assert parse_object(extra.model_dump_json())["foo"] == "bar"
     assert_same(
         "nested cache",
-        litellm_utils.Usage(completion_tokens_details=NESTED_CACHE),
-        betterlite_utils.Usage(completion_tokens_details=NESTED_CACHE),
+        litellm_utils.Usage(prompt_tokens_details=NESTED_CACHE),
+        betterlite_utils.Usage(prompt_tokens_details=NESTED_CACHE),
     )
 
 
@@ -399,6 +430,9 @@ def test_tool_call_ids_and_types() -> None:
     reference = litellm_utils.ChatCompletionMessageToolCall(function=TOOL_FUNCTION)
     assert ours.type == reference.type
     assert ours.type == "function"
+    assert uuid.UUID(ours.id).version == UUID_VERSION
+    again = betterlite_utils.ChatCompletionMessageToolCall(function=TOOL_FUNCTION)
+    assert again.id != ours.id
     assert ours.id != reference.id
     explicit = betterlite_utils.ChatCompletionMessageToolCall(
         function=TOOL_FUNCTION, id="call", type="custom"
@@ -409,6 +443,20 @@ def test_tool_call_ids_and_types() -> None:
     assert explicit.id == "call"
     assert explicit.type == "custom"
     assert_same("ids", reference_explicit, explicit)
+    audio = betterlite_utils.ChatCompletionAudioResponse(data="d", expires_at=1, transcript="t")
+    again_audio = betterlite_utils.ChatCompletionAudioResponse(
+        data="d", expires_at=1, transcript="t"
+    )
+    assert uuid.UUID(audio.id).version == UUID_VERSION
+    assert again_audio.id != audio.id
+    audio_explicit = betterlite_utils.ChatCompletionAudioResponse(
+        data="d", expires_at=1, transcript="t", id="a"
+    )
+    reference_audio = litellm_utils.ChatCompletionAudioResponse(
+        data="d", expires_at=1, transcript="t", id="a"
+    )
+    assert audio_explicit.id == "a"
+    assert_same("audio", reference_audio, audio_explicit)
 
 
 def test_tool_call_custom_helpers() -> None:
@@ -455,20 +503,6 @@ def test_tool_call_delta_indexing() -> None:
     ours_calls = ours.tool_calls
     assert ours_calls is not None
     assert [call.index for call in ours_calls] == [0, 3, 1]
-
-
-def test_tool_call_audio_ids() -> None:
-    ours = betterlite_utils.ChatCompletionAudioResponse(data="d", expires_at=1, transcript="t")
-    reference = litellm_utils.ChatCompletionAudioResponse(data="d", expires_at=1, transcript="t")
-    assert not ours.id.startswith("chatcmpl-")
-    assert not reference.id.startswith("chatcmpl-")
-    explicit = betterlite_utils.ChatCompletionAudioResponse(
-        data="d", expires_at=1, transcript="t", id="a"
-    )
-    reference_explicit = litellm_utils.ChatCompletionAudioResponse(
-        data="d", expires_at=1, transcript="t", id="a"
-    )
-    assert_same("audio", reference_explicit, explicit)
 
 
 def test_message_none_fields() -> None:
@@ -542,13 +576,23 @@ def test_choices_unknown_warns() -> None:
     assert_same("bogus", reference, ours)
 
 
+def test_choices_keep_model() -> None:
+    message = betterlite_utils.Message(content="y")
+    fields: dict[str, StoredValue] = {"x": litellm_utils.Message(content="y")}
+    ours = betterlite_utils.Choices(provider_specific_fields={"x": message})
+    reference = litellm_utils.Choices(provider_specific_fields=fields)
+    stored = ours.provider_specific_fields
+    assert stored is not None
+    assert stored["x"] is message
+    assert_same("provider model", reference, ours)
+
+
 def test_choices_defaults() -> None:
-    ours = betterlite_utils.Choices(index=None)
     reference = litellm_utils.Choices()
-    assert ours.index == reference.index
-    assert ours.index == 0
-    assert "logprobs" not in ours
+    ours = betterlite_utils.Choices(index=None)
+    assert (ours.index, "logprobs" in ours) == (reference.index, False)
     assert_same("choices defaults", reference, ours)
+    assert betterlite_utils.StreamingChoices(index=None).index == 0
 
 
 def test_choices_logprobs() -> None:
@@ -639,6 +683,24 @@ def test_usage_server_tool() -> None:
     assert "cost" not in betterlite_utils.Usage()
 
 
+def test_usage_ignores_extras() -> None:
+    ours = betterlite_utils.Usage(server_tool_use=EXTRA_TOOL_USE)
+    reference: Dumpable = litellm_utils.Usage(server_tool_use=EXTRA_TOOL_USE)
+    assert_same("server tool extra", reference, ours)
+    tool_use = betterlite_utils.ServerToolUse(**EXTRA_TOOL_USE)
+    reference_tool: Dumpable = litellm_utils.ServerToolUse(**EXTRA_TOOL_USE)
+    assert tool_use.model_dump() == reference_tool.model_dump()
+    with pytest.raises(KeyError):
+        _ = tool_use["web_fetch_requests"]
+    details = betterlite_utils.CacheCreationTokenDetails(
+        ephemeral_5m_input_tokens=1, **EXTRA_TOKEN_COUNT,
+    )
+    reference_details: Dumpable = litellm_utils.CacheCreationTokenDetails(
+        ephemeral_5m_input_tokens=1, **EXTRA_TOKEN_COUNT,
+    )
+    assert details.model_dump() == reference_details.model_dump()
+
+
 def test_usage_token_details() -> None:
     ours = betterlite_utils.Usage(
         completion_tokens=10,
@@ -666,6 +728,26 @@ def test_usage_token_details() -> None:
         "prompt wrapper",
         litellm_utils.PromptTokensDetailsWrapper(cache_write_tokens=3),
         prompt_wrapper,
+    )
+    creation_wrapper = betterlite_utils.PromptTokensDetailsWrapper(
+        cache_creation_tokens=MISMATCHED_TOKENS,
+    )
+    assert creation_wrapper.cache_write_tokens == MISMATCHED_TOKENS
+    assert_same(
+        "prompt wrapper creation",
+        litellm_utils.PromptTokensDetailsWrapper(cache_creation_tokens=MISMATCHED_TOKENS),
+        creation_wrapper,
+    )
+    both_wrapper = betterlite_utils.PromptTokensDetailsWrapper(
+        cache_write_tokens=CACHE_WRITE_TOKENS, cache_creation_tokens=MISMATCHED_TOKENS,
+    )
+    assert both_wrapper.cache_creation_tokens == CACHE_WRITE_TOKENS
+    assert_same(
+        "prompt wrapper both",
+        litellm_utils.PromptTokensDetailsWrapper(
+            cache_write_tokens=CACHE_WRITE_TOKENS, cache_creation_tokens=MISMATCHED_TOKENS,
+        ),
+        both_wrapper,
     )
 
 
@@ -769,6 +851,19 @@ def test_model_response_private() -> None:
     second = betterlite_utils.ModelResponse(id="i", created=5)
     assert second._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2088-L2094
     assert "_hidden_params" not in parse_object(first.model_dump_json())
+
+
+def test_model_response_hidden() -> None:
+    ours = betterlite_utils.ModelResponse(hidden_params=HIDDEN_PARAMS, _response_headers=HEADERS)
+    assert ours._hidden_params == HIDDEN_PARAMS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2237-L2245
+    assert ours._response_headers == HEADERS  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2237-L2245
+
+
+def test_dump_include_and_exclude() -> None:
+    ours = betterlite_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
+    reference = litellm_utils.ModelResponse(id="i", created=5, usage=USAGE_VALUES)
+    assert_selected("exclude", reference, ours, exclude={"usage"})
+    assert_selected("include", reference, ours, include={"id"})
 
 
 def test_typed_dict_keys_match() -> None:
