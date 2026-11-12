@@ -173,33 +173,28 @@ fn default_base() {
 }
 
 pub(super) fn model_list_decode_failure() {
-    let invalid = Script::replying(200, "not json");
-    assert!(matches!(
-        fetch(&invalid, &request(None, Some("k"))),
-        Err(ModelListError::Decode { .. })
-    ));
     for body in [
+        "not json",
         r#"{"models": []}"#,
         r#"{"data": "x"}"#,
         r#"{"data": [{}]}"#,
         r#"{"data": [{"id": 5}]}"#,
     ] {
-        let script = Script::replying(200, body);
-        assert!(matches!(
-            fetch(&script, &request(None, Some("k"))),
-            Err(ModelListError::Decode { .. })
-        ));
+        let error = fetch(&Script::replying(200, body), &request(None, Some("k"))).unwrap_err();
+        assert!(matches!(error, ModelListError::Decode { .. }), "{body}");
     }
-    let failed = Script::replying(500, r#"{"error": "boom"}"#);
-    assert!(matches!(
-        fetch(&failed, &request(None, Some("k"))),
-        Err(ModelListError::Status { status: 500 })
-    ));
-    let invalid_base = Script::replying(200, MODELS);
-    assert!(matches!(
-        fetch(&invalid_base, &request(Some("not a url"), Some("k"))),
-        Err(ModelListError::InvalidBase { .. })
-    ));
+    let failed = fetch(
+        &Script::replying(500, r#"{"error": "boom"}"#),
+        &request(None, Some("k")),
+    )
+    .unwrap_err();
+    assert!(matches!(failed, ModelListError::Status { status: 500 }));
+    let invalid = fetch(
+        &Script::replying(200, MODELS),
+        &request(Some("not a url"), Some("k")),
+    )
+    .unwrap_err();
+    assert!(matches!(invalid, ModelListError::InvalidBase { .. }));
 }
 
 pub(super) fn query_url_join() {

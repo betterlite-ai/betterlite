@@ -145,7 +145,6 @@ pub(super) fn response_headers() {
     assert_eq!(projected["hidden_headers"], projected["response_headers"]);
     recorded_post_call(&state);
     malformed_reply(&redactor, &env);
-    invalid_utf8_reply(&redactor, &env);
 }
 
 fn recorded_post_call(state: &LoggingState) {
@@ -161,32 +160,24 @@ fn recorded_post_call(state: &LoggingState) {
 }
 
 fn malformed_reply(redactor: &Redactor, env: &PrePostEnv<'_>) {
-    let (mut state, _) = fixture(redactor);
-    let (error, _projected) = respond(&mut state, env, 400, b"not json").unwrap_err();
-    match error {
-        TransformResponseError::Json(record) => {
-            assert_eq!(record.status_code, 400);
-            assert_eq!(record.headers, Some(headers()));
+    let lossy = String::from("\u{fffd}\u{fffd} oops");
+    for (status, body, logged) in [
+        (400, b"not json".as_slice(), "not json"),
+        (502, b"\xff\xfe oops".as_slice(), lossy.as_str()),
+    ] {
+        let (mut state, _) = fixture(redactor);
+        let (error, _projected) = respond(&mut state, env, status, body).unwrap_err();
+        match error {
+            TransformResponseError::Json(record) => {
+                assert_eq!(record.status_code, status);
+                assert_eq!(record.headers, Some(headers()));
+            }
+            TransformResponseError::Projection(_error) => panic!("unexpected projection failure"),
+            TransformResponseError::Base { .. } => panic!("unexpected base failure"),
         }
-        TransformResponseError::Projection(_error) => panic!("unexpected projection failure"),
-        TransformResponseError::Base { .. } => panic!("unexpected base failure"),
+        assert_eq!(
+            state.model_call_details.get("original_response"),
+            Some(&Json::Text(logged.to_owned()))
+        );
     }
-    assert!(state.model_call_details.contains_key("original_response"));
-}
-
-fn invalid_utf8_reply(redactor: &Redactor, env: &PrePostEnv<'_>) {
-    let (mut state, _) = fixture(redactor);
-    let (error, _projected) = respond(&mut state, env, 502, b"\xff\xfe oops").unwrap_err();
-    match error {
-        TransformResponseError::Json(record) => {
-            assert_eq!(record.status_code, 502);
-            assert_eq!(record.headers, Some(headers()));
-        }
-        TransformResponseError::Projection(_error) => panic!("unexpected projection failure"),
-        TransformResponseError::Base { .. } => panic!("unexpected base failure"),
-    }
-    assert_eq!(
-        state.model_call_details.get("original_response"),
-        Some(&Json::Text(String::from("\u{fffd}\u{fffd} oops")))
-    );
 }
