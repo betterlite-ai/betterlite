@@ -62,11 +62,8 @@ pub fn async_audio_transcriptions(
     data: &TranscriptionData,
     logger: &mut dyn TranscriptionLogger,
 ) -> Result<(OutboundRequest, Pending), TranscriptionError> {
-    let started = begin(call, data, (ClientKind::Async, async_model(data)), logger);
-    if let Err(error) = &started {
-        log_failure(&call.input, error, logger);
-    }
-    started
+    begin(call, data, (ClientKind::Async, async_model(data)), logger)
+        .inspect_err(|error| log_failure(&call.input, error, logger))
 }
 
 // the hidden model: data.model, whisper-1 only when the key is missing, nothing for any other value
