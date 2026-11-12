@@ -1,4 +1,3 @@
-use crate::helpers::HelperResult;
 use async_trait::async_trait;
 use betterlite_core::api::realtime_contracts::config::{
     BaseRealtimeConfig, BaseRealtimeHttpConfig, Environment, ErrorInfo, RealtimeUrl,
@@ -14,7 +13,7 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[derive(Debug, Deserialize)]
-pub(super) struct HooksInput {
+pub(crate) struct HooksInput {
     complete_urls: Vec<Option<String>>,
     pub(super) error: ErrorInput,
 }
@@ -25,7 +24,7 @@ pub(super) struct ErrorInput {
     pub(super) headers: HeaderMap,
 }
 #[derive(Debug, Deserialize)]
-pub(super) struct HttpUrlsInput {
+pub(crate) struct HttpUrlsInput {
     urls: Vec<UrlInput>,
 }
 #[derive(Debug, Deserialize)]
@@ -120,7 +119,7 @@ fn error_record(exception: &BaseLlmException, raised: bool) -> Value {
     })
 }
 
-pub(super) fn hooks(input: &HooksInput) -> HelperResult {
+pub(super) fn hooks(input: &HooksInput) -> Value {
     let config = ContractConfig;
     let http_config = ContractHttpConfig;
     let complete_urls: Vec<String> = input
@@ -138,7 +137,7 @@ pub(super) fn hooks(input: &HooksInput) -> HelperResult {
         Err(exception) => error_record(&exception, true),
     };
     let returned = http_config.get_error_class(&error);
-    Ok(json!({
+    json!({
         "complete_urls": complete_urls,
         "session_configuration_request": config.session_configuration_request("model"),
         "session_close_usage": config.session_close_usage("model"),
@@ -148,10 +147,10 @@ pub(super) fn hooks(input: &HooksInput) -> HelperResult {
         "requires_session_configuration": config.requires_session_configuration(),
         "websocket_error": websocket_error,
         "http_error": error_record(&returned, false),
-    }))
+    })
 }
 
-pub(super) fn http_urls(input: &HttpUrlsInput) -> HelperResult {
+pub(super) fn http_urls(input: &HttpUrlsInput) -> Value {
     let config = ContractHttpConfig;
     let urls: Vec<Value> = input
         .urls
@@ -173,5 +172,5 @@ pub(super) fn http_urls(input: &HttpUrlsInput) -> HelperResult {
             })
         })
         .collect();
-    Ok(json!({"urls": urls}))
+    json!({"urls": urls})
 }

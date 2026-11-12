@@ -20,8 +20,8 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Function::Records(fields) => records::records(fields),
-            Function::Hooks(fields) => hooks::hooks(fields),
-            Function::HttpUrls(fields) => hooks::http_urls(fields),
+            Function::Hooks(fields) => Ok(hooks::hooks(fields)),
+            Function::HttpUrls(fields) => Ok(hooks::http_urls(fields)),
             Function::CloseHelpers(fields) => close_helpers::close_helpers(fields),
             Function::CachedBodyAndFrames(fields) => body::cached_body_and_frames(fields),
         }

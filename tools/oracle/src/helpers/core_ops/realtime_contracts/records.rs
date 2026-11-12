@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 const LIMITS: RealtimeDecodeLimits = RealtimeDecodeLimits { max_bytes: 1 << 20 };
 #[derive(Debug, Deserialize)]
-pub(super) struct RecordsInput {
+pub(crate) struct RecordsInput {
     groups: Vec<RecordGroup>,
 }
 #[derive(Debug, Deserialize)]
@@ -33,7 +33,7 @@ enum RecordKind {
     Usage,
 }
 impl RecordKind {
-    fn contract(self) -> Option<RealtimeContractKind> {
+    const fn contract(self) -> Option<RealtimeContractKind> {
         match self {
             Self::Usage => None,
             Self::Expiry => Some(RealtimeContractKind::Expiry),

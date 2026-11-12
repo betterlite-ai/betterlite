@@ -8,7 +8,7 @@ use betterlite_core::api::realtime_contracts::close::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[derive(Debug, Deserialize)]
-pub(super) struct CloseHelpersInput {
+pub(crate) struct CloseHelpersInput {
     error: ErrorInput,
     reason_messages: Vec<ReasonInput>,
     close_codes: Vec<u16>,
@@ -29,7 +29,6 @@ struct FrameInput {
 #[derive(Debug, Deserialize)]
 struct BackendErrorInput {
     received: Option<FrameInput>,
-    sent: Option<FrameInput>,
 }
 
 pub(super) fn close_helpers(input: &CloseHelpersInput) -> HelperResult {

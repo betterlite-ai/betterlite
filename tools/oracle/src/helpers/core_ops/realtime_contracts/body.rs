@@ -9,7 +9,7 @@ use serde_json::json;
 const LIMITS: RealtimeDecodeLimits = RealtimeDecodeLimits { max_bytes: 1 << 20 };
 const DISTINCT_MODELS: usize = 1001;
 #[derive(Debug, Deserialize)]
-pub(super) struct CachedBodyInput {
+pub(crate) struct CachedBodyInput {
     models: Vec<Option<String>>,
     payloads: Vec<String>,
 }
@@ -28,11 +28,9 @@ pub(super) fn cached_body_and_frames(input: &CachedBodyInput) -> HelperResult {
         .payloads
         .iter()
         .map(|payload| {
-            decode_realtime_frame(payload.as_bytes(), LIMITS)
-                .map_err(|error| failure(error.to_string()))
-                .and_then(|frame| {
-                    serde_json::to_value(frame).map_err(|error| failure(error.to_string()))
-                })
+            let frame = decode_realtime_frame(payload.as_bytes(), LIMITS)
+                .map_err(|error| failure(error.to_string()))?;
+            serde_json::to_value(frame).map_err(|error| failure(error.to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({
