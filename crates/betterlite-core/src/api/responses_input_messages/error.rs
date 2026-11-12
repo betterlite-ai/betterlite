@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::api::api_boundaries::ApiLimitError;
 use crate::api::responses_codex_tools::error::CustomToolsError;
 use crate::api::responses_input_content::ContentError;
 use crate::api::responses_input_messages::thinking::ThinkingError;
@@ -30,6 +31,8 @@ pub enum InputMessagesError {
     Thinking(#[from] ThinkingError),
     #[error(transparent)]
     WebSearch(#[from] WebSearchError),
+    #[error(transparent)]
+    Limit(#[from] ApiLimitError),
 }
 
 impl From<serde_json::Error> for InputMessagesError {

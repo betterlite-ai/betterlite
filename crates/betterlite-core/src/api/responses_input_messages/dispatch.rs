@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use betterlite_models::decisions::Json;
 use serde_json::Value;
 
+use crate::api::api_boundaries::{ApiBoundariesInput, ItemsBoundary};
 use crate::api::responses_input_messages::Assembly;
 use crate::api::responses_input_messages::error::InputMessagesError;
 use crate::api::responses_input_messages::item::{
@@ -11,14 +12,17 @@ use crate::api::responses_input_messages::item::{
 use crate::api::responses_reasoning_merge::merge_reasoning;
 use crate::api::responses_reasoning_merge::record::ChatRecord;
 use crate::api::responses_reasoning_merge::trailing::{TrailingInput, merge_trailing};
-use crate::api::responses_tool_repair::definition::append_tool_call;
-use crate::api::responses_tool_repair::value::Value as RepairValue;
 
 pub(crate) fn append_items(
     messages: &mut Vec<Value>,
     items: &[Json],
     assembly: &Assembly<'_>,
 ) -> Result<(), InputMessagesError> {
+    assembly
+        .limits
+        .check(ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: items.len(),
+        }))?;
     let mut call_ids: BTreeSet<String> = BTreeSet::new();
     for (position, item) in items.iter().enumerate() {
         let Json::Object(fields) = item else {
@@ -37,7 +41,7 @@ pub(crate) fn append_items(
                 call_ids.insert(id.to_owned());
             }
             if last_is_assistant(messages) {
-                append_to_last(messages, &produced)?;
+                append_to_last(messages, &produced);
                 continue;
             }
         }
@@ -60,9 +64,9 @@ fn last_is_assistant(messages: &[Value]) -> bool {
     )
 }
 
-fn append_to_last(messages: &mut [Value], produced: &[Value]) -> Result<(), InputMessagesError> {
+fn append_to_last(messages: &mut [Value], produced: &[Value]) {
     let Some(last) = messages.last_mut() else {
-        return Ok(());
+        return;
     };
     for message in produced {
         let Value::Object(fields) = message else {
@@ -75,17 +79,22 @@ fn append_to_last(messages: &mut [Value], produced: &[Value]) -> Result<(), Inpu
             continue;
         };
         for call in calls {
-            append_call(last, call)?;
+            append_call(last, call);
         }
     }
-    Ok(())
 }
 
-fn append_call(assistant: &mut Value, call: &Value) -> Result<(), InputMessagesError> {
-    let mut target: RepairValue = serde_json::from_value(assistant.clone())?;
-    append_tool_call(&mut target, serde_json::from_value(call.clone())?);
-    *assistant = serde_json::to_value(&target)?;
-    Ok(())
+// a chat message here is always a JSON object, so the pinned dict branch is the whole behavior
+fn append_call(assistant: &mut Value, call: &Value) {
+    let Value::Object(fields) = assistant else {
+        return;
+    };
+    let slot = fields
+        .entry("tool_calls".to_owned())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if let Value::Array(calls) = slot {
+        calls.push(call.clone());
+    }
 }
 
 fn append_tool_outputs(

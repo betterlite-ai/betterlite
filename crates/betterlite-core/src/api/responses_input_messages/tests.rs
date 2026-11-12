@@ -16,7 +16,7 @@ use super::error::InputMessagesError;
 use super::item::{is_function_call, is_tool_call_output};
 use super::thinking::{ThinkingError, decode_thinking_blocks};
 use super::{InputRequest, input_messages};
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
 const GREETING: &str = r#"Hosted web search: {"id":"w","action":{"type":"search","query":"q"},"status":"completed","type":"web_search_call"}"#;
 
@@ -71,6 +71,23 @@ fn limits_with_json(max_json_bytes: usize) -> ApiLimits {
         max_event_bytes: default.max_event_bytes,
         max_items: default.max_items,
     }
+}
+
+fn limits_with_items(max_items: usize) -> ApiLimits {
+    let default = ApiLimits::default();
+    ApiLimits {
+        max_json_bytes: default.max_json_bytes,
+        max_event_bytes: default.max_event_bytes,
+        max_items,
+    }
+}
+
+fn convert_with_limits(input: &str, limits: ApiLimits) -> Result<Vec<Value>, InputMessagesError> {
+    let request = InputRequest {
+        input: Some(json_input(input)),
+        instructions: None,
+    };
+    input_messages(&request, false, limits, &cache(&[]))
 }
 
 #[rstest]
@@ -189,6 +206,32 @@ fn rejects_non_text_non_list_input(#[case] input: &str) {
 }
 
 #[test]
+fn rejects_an_input_list_over_the_item_limit() {
+    let input = concat!(
+        r#"[{"role": "user", "content": "a"},"#,
+        r#" {"role": "user", "content": "b"},"#,
+        r#" {"role": "user", "content": "c"},"#,
+        r#" {"role": "user", "content": "d"},"#,
+        r#" {"role": "user", "content": "e"}]"#
+    );
+    let error = convert_with_limits(input, limits_with_items(4)).unwrap_err();
+    assert!(matches!(
+        error,
+        InputMessagesError::Limit(ApiLimitError::TooManyItems {
+            observed: 5,
+            limit: 4,
+        })
+    ));
+}
+
+#[test]
+fn accepts_an_input_list_at_the_item_limit() {
+    let input = r#"[{"role": "user", "content": "a"}, {"role": "user", "content": "b"}]"#;
+    let converted = convert_with_limits(input, limits_with_items(2)).unwrap();
+    assert_eq!(converted.len(), 2);
+}
+
+#[test]
 fn web_search_calls_serialize_the_validated_model() {
     let input = concat!(
         r#"[{"type": "web_search_call", "id": "ws_1", "status": "completed","#,
@@ -285,6 +328,33 @@ fn web_search_rejections(#[case] item: &str) {
         convert(&input, None, false, &cache(&[])),
         Err(InputMessagesError::WebSearch(_))
     ));
+}
+
+#[test]
+fn merges_thousands_of_calls_in_order() {
+    let items: Vec<Value> = (0..4_000_usize)
+        .map(|index| {
+            json!({
+                "type": "function_call",
+                "call_id": format!("c{index}"),
+                "name": "f",
+                "arguments": "{}"
+            })
+        })
+        .collect();
+    let input = serde_json::to_string(&items).unwrap();
+    let converted = messages(&input, false);
+    assert_eq!(converted.len(), 1);
+    let calls = converted
+        .first()
+        .and_then(|message| message.get("tool_calls"))
+        .and_then(Value::as_array)
+        .unwrap();
+    assert_eq!(calls.len(), 4_000);
+    assert!(calls.iter().enumerate().all(|(index, call)| {
+        let expected = format!("c{index}");
+        call.get("id").and_then(Value::as_str) == Some(expected.as_str())
+    }));
 }
 
 #[test]
