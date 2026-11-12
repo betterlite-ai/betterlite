@@ -67,8 +67,8 @@ fn configured_bucket_name_follows_the_litellm_chain(
     #[case] expected: Result<&str, GcsAccessError>,
 ) {
     match (configured_bucket_name(&candidates), expected) {
-        (Ok(bucket), Ok(expected)) => assert_eq!(bucket, expected),
-        (Err(error), Err(expected)) => assert_eq!(error, expected),
+        (Ok(bucket), Ok(wanted)) => assert_eq!(bucket, wanted),
+        (Err(error), Err(wanted)) => assert_eq!(error, wanted),
         (outcome, expectation) => panic!("{outcome:?} does not match {expectation:?}"),
     }
 }
@@ -185,7 +185,7 @@ fn parse_gcs_uri_authorizes_the_managed_prefix(
             assert_eq!(found.bucket, bucket);
             assert_eq!(found.encoded_object, object);
         }
-        (Err(error), Err(expected)) => assert_eq!(error, expected),
+        (Err(error), Err(wanted)) => assert_eq!(error, wanted),
         (outcome, expectation) => panic!("{outcome:?} does not match {expectation:?}"),
     }
 }
@@ -217,7 +217,7 @@ fn parse_gcs_uri_encodes_the_object_once_more(
 ) {
     match (parse_gcs_uri(file_id, "bucket", None), expected) {
         (Ok(found), Ok(object)) => assert_eq!(found.encoded_object, object),
-        (Err(error), Err(expected)) => assert_eq!(error, expected),
+        (Err(error), Err(wanted)) => assert_eq!(error, wanted),
         (outcome, expectation) => panic!("{outcome:?} does not match {expectation:?}"),
     }
 }
