@@ -1,7 +1,7 @@
 id: B1393
 milestone: M3 providers
 title: Native GCS object authorization and trusted legacy access
-status: todo
+status: done
 depends_on: [B002, B643, B1300, B171]
 file: tasks/B1393-vertex-gcs-access.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/cloud_storage_security.py"
 parent: B034
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1352

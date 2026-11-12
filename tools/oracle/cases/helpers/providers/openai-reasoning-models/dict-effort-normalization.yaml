@@ -1,0 +1,14 @@
+kind: helper
+name: openai-reasoning-models-dict-effort-normalization
+call:
+  openai_reasoning_models:
+    dict_effort_normalization:
+      probes:
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: {effort: high, summary: detailed}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, existing: {reasoning_effort: {effort: low}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: {}}, existing: {reasoning_effort: high}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: null}, existing: {reasoning_effort: low}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: {effort: xhigh}}}
+      - {model: gpt-5.5, chat_models: [gpt-5.5], model_cost: {gpt-5.5: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, default_reasoning_effort: high}}, requested: {reasoning_effort: {effort: none}, temperature: 0.5}}
+env: {}
+compare: {ignore: []}

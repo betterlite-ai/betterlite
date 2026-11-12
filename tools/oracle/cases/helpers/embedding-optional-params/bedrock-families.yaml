@@ -1,0 +1,111 @@
+kind: helper
+name: embedding-optional-params-bedrock-families
+call:
+  b5363:
+    calls:
+      - model: amazon.titan-embed-text-v1
+        custom_llm_provider: bedrock
+        kwargs: {foo: 1}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: amazon.titan-embed-text-v1
+        custom_llm_provider: bedrock
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: amazon.titan-embed-image-v1
+        custom_llm_provider: bedrock
+        dimensions: 512
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [dimensions], mapped: {embeddingConfig: {outputEmbeddingLength: 512}}}
+      - model: amazon.titan-embed-text-v2:0
+        custom_llm_provider: bedrock
+        encoding_format: float
+        dimensions: 512
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [dimensions, encoding_format], mapped: {dimensions: 512, embeddingTypes: [float]}}
+      - model: cohere.embed-english-v3
+        custom_llm_provider: bedrock
+        encoding_format: float
+        dimensions: 256
+        kwargs: {input_type: search_document}
+        force_branch: true
+        mapper: {supported: [encoding_format, dimensions], mapped: {embedding_types: [float], output_dimension: 256}}
+      - model: cohere.embed-english-v3
+        custom_llm_provider: bedrock
+        user: u
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [encoding_format, dimensions], mapped: {}}
+      - model: twelvelabs.marengo-embed-2-7-v1:0
+        custom_llm_provider: bedrock
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper:
+          supported: [encoding_format, embeddingOption, startSec, input_type, endSec, segmentation, embeddingType, embeddingScope, inferenceId, media_source, media_sources, textTruncate, lengthSec, useFixedLengthSec, minClipSec]
+          mapped: {}
+      - model: twelvelabs.marengo-embed-2-7-v1:0
+        custom_llm_provider: bedrock
+        kwargs: {}
+        force_branch: true
+        mapper:
+          supported: [encoding_format, embeddingOption, startSec, input_type, endSec, segmentation, embeddingType, embeddingScope, inferenceId, media_source, media_sources, textTruncate, lengthSec, useFixedLengthSec, minClipSec]
+          mapped: {}
+      - model: marengo-embed-3
+        custom_llm_provider: bedrock
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper:
+          supported: [encoding_format, embeddingOption, startSec, input_type, endSec, segmentation, embeddingType, embeddingScope, inferenceId, media_source, media_sources, textTruncate, lengthSec, useFixedLengthSec, minClipSec]
+          mapped: {}
+      - model: amazon.nova-2-multimodal-embeddings-v1:0
+        custom_llm_provider: bedrock
+        dimensions: 256
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [dimensions], mapped: {embedding_dimension: 256}}
+      - model: NOVA-model
+        custom_llm_provider: bedrock
+        dimensions: 256
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [dimensions], mapped: {embedding_dimension: 256}}
+      - model: mystery-model
+        custom_llm_provider: bedrock
+        kwargs: {foo: 1}
+        force_branch: true
+      - model: mystery-model
+        custom_llm_provider: bedrock
+        kwargs: {aws_region_name: r, extra_body: {}}
+        force_branch: true
+      - model: mystery-model
+        custom_llm_provider: bedrock
+        dimensions: 2
+        kwargs: {}
+        force_branch: true
+      - model: mystery-model
+        custom_llm_provider: bedrock
+        dimensions: 2
+        drop_params: true
+        kwargs: {extra_body: {}}
+        force_branch: true
+      - model: amazon.titan-embed-text-v1-amazon.titan-embed-text-v2:0
+        custom_llm_provider: bedrock
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: cohere.embed-twelvelabs
+        custom_llm_provider: bedrock
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [encoding_format, dimensions], mapped: {embedding_types: [float], output_dimension: 8}}
+env: {}
+compare: {ignore: []}

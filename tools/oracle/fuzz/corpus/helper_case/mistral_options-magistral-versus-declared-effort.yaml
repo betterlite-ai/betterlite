@@ -1,0 +1,41 @@
+kind: helper
+name: mistral-options-magistral-versus-declared-effort
+call:
+  mistral_options:
+    catalog:
+      supports_reasoning: true
+      declared_efforts: [low, high, max]
+    steps:
+      - kind: options
+        model: Magistral-Small-2506
+        max_depth: 100
+        params:
+          - [reasoning_effort, medium]
+          - [thinking, {type: enabled}]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [reasoning_effort, medium]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [reasoning_effort, minimal]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [reasoning_effort, xhigh]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [reasoning_effort, none]
+      - kind: options
+        model: mistral-small-latest
+        max_depth: 100
+        params:
+          - [reasoning_effort, banana]
+env: {}
+compare: {ignore: []}
