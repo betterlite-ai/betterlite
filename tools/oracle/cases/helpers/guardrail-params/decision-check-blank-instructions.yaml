@@ -1,0 +1,14 @@
+kind: helper
+name: guardrail-params-decision-check-blank-instructions
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: decision_model
+      mode: pre_call
+      decision_model: judge
+      checks:
+        - name: pii
+          instructions: "   "
+env: {}
+compare: {ignore: []}

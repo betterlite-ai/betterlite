@@ -1,0 +1,8 @@
+kind: helper
+name: xinference-image-supported-and-dropped-params
+call:
+  b8152:
+    function: "xinference"
+    calls: [{"model": "sd", "params": {"n": 2, "size": "512x512", "response_format": "url"}, "preset": {}, "drop_params": false}, {"model": "sd", "params": {"n": 2, "quality": "hd"}, "preset": {}, "drop_params": false}, {"model": "sd", "params": {"n": 2, "quality": "hd"}, "preset": {}, "drop_params": true}, {"model": "sd", "params": {"n": 2}, "preset": {"n": 5, "seed": 1}, "drop_params": false}, {"model": "sd", "params": {}, "preset": {"seed": 1}, "drop_params": false}, {"model": "sd", "params": {"style": "vivid"}, "preset": {"style": "natural"}, "drop_params": false}]
+env: {}
+compare: {ignore: []}

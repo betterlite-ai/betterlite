@@ -1,0 +1,12 @@
+kind: helper
+name: guardrail-params-content-filter-bad-pattern-type
+call:
+  b3662:
+    function: content_filter
+    body:
+      patterns:
+        - pattern_type: glob
+          pattern: "*"
+          action: BLOCK
+env: {}
+compare: {ignore: []}
