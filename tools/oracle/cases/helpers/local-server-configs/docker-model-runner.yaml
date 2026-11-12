@@ -1,0 +1,8 @@
+kind: helper
+name: docker-model-runner-request-url-and-messages
+call:
+  b8152:
+    function: "docker_request"
+    calls: [{"api_base": null, "model": "ai/smollm2", "messages": [{"role": "user", "content": "hi"}]}, {"api_base": "", "model": "ai/smollm2", "messages": [{"role": "user", "content": "hi"}]}, {"api_base": "http://host:1/engines/llama.cpp/", "model": "ai/smollm2", "messages": [{"role": "user", "content": "hi"}]}, {"api_base": "http://host:1", "model": "ai/smollm2", "messages": [{"role": "user", "content": [{"type": "text", "text": "a", "cache_control": {"type": "ephemeral"}}]}]}, {"api_base": null, "model": "ai/smollm2", "messages": [{"role": "user", "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b"}]}]}, {"api_base": null, "model": "ai/smollm2", "messages": [{"role": "user", "content": [{"type": "text", "text": "a"}, {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]}]}, {"api_base": null, "model": "ai/smollm2", "messages": [{"role": "system", "content": [{"type": "text", "text": "s"}]}, {"role": "assistant", "content": "ok"}, {"role": "user", "content": "hi"}]}]
+env: {}
+compare: {ignore: []}
