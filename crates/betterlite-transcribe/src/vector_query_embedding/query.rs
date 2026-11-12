@@ -9,8 +9,8 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
 use serde_json::error::Category;
 
-use crate::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
-use crate::api::vector_store_contracts::router::{RouterEmbeddingExecutor, VectorStoreRouter};
+use crate::vector_store_contracts::executor::DirectEmbeddingExecutor;
+use crate::vector_store_contracts::router::{RouterEmbeddingExecutor, VectorStoreRouter};
 
 // LiteLLM's precedence: an explicit executor, else a router one with the request metadata, else direct
 pub enum SelectedExecutor<'executor, R> {

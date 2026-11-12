@@ -185,6 +185,14 @@
           "type": "string",
           "minLength": 1
         },
+        "fix_model": {
+          "description": "The model a worker fix turn on this rung runs on after a run that reported done: failed task checks, review changes or a CI round. It resumes the rung's session with the rung's effort. A run after a blocked, unfinished or malformed answer keeps the rung's model.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
         "model": {
           "type": "string",
           "minLength": 1
