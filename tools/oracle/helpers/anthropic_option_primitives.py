@@ -1,5 +1,7 @@
+import io
 import os
 from collections.abc import Callable
+from contextlib import redirect_stdout
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
@@ -132,9 +134,11 @@ def defaults_answer(call: DefaultsCall) -> Json:
 
 def capacity_answer(call: CapacityCall) -> Json:
     check_environment(call["default_chat_max_tokens"])
-    values: list[Json] = [
-        CONFIG.get_max_tokens_for_model(model) for model in call["models"]
-    ]
+    # get_llm_provider prints a provider banner to stdout, which would corrupt the helper's JSON
+    with redirect_stdout(io.StringIO()):
+        values: list[Json] = [
+            CONFIG.get_max_tokens_for_model(model) for model in call["models"]
+        ]
     return {"values": values}
 
 

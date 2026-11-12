@@ -192,19 +192,19 @@ fn metadata_case() {
     let reference = load(
         &deployment(
             "metadata",
-            "{user_id: os.environ/ANTHROPIC_USER, nested: {note: os.environ/ANTHROPIC_NOTE}, tags: [os.environ/ANTHROPIC_TAG]}",
+            "{user_id: os.environ/ANTHROPIC_USER, nested: {note: os.environ/ANTHROPIC_NOTE}, tags: [os.environ/ANTHROPIC_ABSENT], entries: [{note: os.environ/ANTHROPIC_ENTRY}]}",
         ),
         &[
             ("ANTHROPIC_USER", "from-env"),
             ("ANTHROPIC_NOTE", "hi"),
-            ("ANTHROPIC_TAG", "a"),
+            ("ANTHROPIC_ENTRY", "entry"),
         ],
     )
     .unwrap();
     assert_eq!(
         reference.deployments[0].metadata,
         Some(metadata(
-            r#"{"user_id": "from-env", "nested": {"note": "hi"}, "tags": ["a"]}"#
+            r#"{"user_id": "from-env", "nested": {"note": "hi"}, "tags": ["os.environ/ANTHROPIC_ABSENT"], "entries": [{"note": "entry"}]}"#
         ))
     );
 }

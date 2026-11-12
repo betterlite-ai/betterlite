@@ -150,7 +150,7 @@ where
     Ok(Some(resolved))
 }
 
-// LiteLLM resolves every os.environ/ string in the config tree, nested objects and lists included
+// LiteLLM recurses into objects and the dict items of a list, and leaves every other list item as it is
 fn resolved_json<L>(value: Json, path: &str, lookup: &L) -> Result<Json, ConfigError>
 where
     L: EnvironmentLookup,
@@ -160,7 +160,11 @@ where
         Json::List(items) => {
             let mut resolved = Vec::with_capacity(items.len());
             for item in items {
-                resolved.push(resolved_json(item, path, lookup)?);
+                if let Json::Object(fields) = item {
+                    resolved.push(resolved_json(Json::Object(fields), path, lookup)?);
+                } else {
+                    resolved.push(item);
+                }
             }
             Ok(Json::List(resolved))
         }
