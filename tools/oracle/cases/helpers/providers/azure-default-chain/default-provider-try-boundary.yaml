@@ -1,0 +1,24 @@
+kind: helper
+name: default-provider-try-boundary
+call:
+  azure_default_chain:
+    try_boundary:
+      steps:
+        - environment: {}
+          scope: https://cognitiveservices.azure.com/.default
+          invoke: false
+        - environment: {}
+          scope: https://cognitiveservices.azure.com/.default
+          invoke: true
+        - environment: {}
+          scope: https://cognitiveservices.azure.com/.default
+          invoke: true
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: unavailable, message: mi-missing}]
+        - environment: {AZURE_TOKEN_CREDENTIALS: bogus}
+          scope: https://cognitiveservices.azure.com/.default
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/steps/0/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/1/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/2/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}

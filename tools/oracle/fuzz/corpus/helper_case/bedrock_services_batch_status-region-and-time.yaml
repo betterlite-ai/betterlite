@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-services-batch-status-region-and-time
+call:
+  bedrock_services_batch_status:
+    operation: region_and_time
+    arns:
+      - "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+      - "arn:aws:s3:us-east-1:123456789012:model-invocation-job/job-abc"
+      - ""
+    times:
+      - integer: 5
+      - float: 1.9
+      - boolean: true
+      - datetime: "2024-01-15T10:30:00.5Z"
+      - text: "5"
+      - "null": null
+      - nonfinite: inf
+env: {}
+compare: {ignore: []}
