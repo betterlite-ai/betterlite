@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use rstest::rstest;
 
@@ -25,16 +26,13 @@ fn extras(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue
         .collect()
 }
 
-fn assert_literal_round_trip<T>(wire: &str, value: T)
+fn assert_literal_round_trip<T>(wire: &str, value: &T)
 where
-    T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
+    T: Serialize + DeserializeOwned + PartialEq + Debug,
 {
     let parsed: T = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
-    assert_eq!(parsed, value);
-    assert_eq!(
-        serde_json::to_string(&value).unwrap(),
-        format!("\"{wire}\"")
-    );
+    assert_eq!(&parsed, value);
+    assert_eq!(serde_json::to_string(value).unwrap(), format!("\"{wire}\""));
 }
 
 #[test]
@@ -229,7 +227,7 @@ fn bedrock_content_filter_literals(
     #[case] wire: &str,
     #[case] value: BedrockContentFilterCategory,
 ) {
-    assert_literal_round_trip(wire, value);
+    assert_literal_round_trip(wire, &value);
 }
 
 #[rstest]
@@ -237,7 +235,7 @@ fn bedrock_content_filter_literals(
 #[case::prompt_injection("PROMPT_INJECTION", BedrockPromptAttackCategory::PromptInjection)]
 #[case::prompt_leakage("PROMPT_LEAKAGE", BedrockPromptAttackCategory::PromptLeakage)]
 fn bedrock_prompt_attack_literals(#[case] wire: &str, #[case] value: BedrockPromptAttackCategory) {
-    assert_literal_round_trip(wire, value);
+    assert_literal_round_trip(wire, &value);
 }
 
 #[rstest]
@@ -312,7 +310,7 @@ fn bedrock_prompt_attack_literals(#[case] wire: &str, #[case] value: BedrockProm
     BedrockSensitiveInfoEntity::VehicleIdentificationNumber
 )]
 fn bedrock_sensitive_info_literals(#[case] wire: &str, #[case] value: BedrockSensitiveInfoEntity) {
-    assert_literal_round_trip(wire, value);
+    assert_literal_round_trip(wire, &value);
 }
 
 #[test]
@@ -337,14 +335,17 @@ fn thresholds_must_be_a_unit_score(#[case] value: f64, #[case] accepted: bool) {
 
 #[test]
 fn chunk_budget_must_be_positive() {
-    serde_json::from_str::<BedrockGuardrailConfigModel>(r#"{"chunk_budget_chars":1}"#).unwrap();
+    let model: BedrockGuardrailConfigModel =
+        serde_json::from_str(r#"{"chunk_budget_chars":1}"#).unwrap();
+    assert_eq!(model.chunk_budget_chars.0, 1);
     serde_json::from_str::<BedrockGuardrailConfigModel>(r#"{"chunk_budget_chars":0}"#).unwrap_err();
 }
 
 #[test]
 fn sampling_rate_must_be_positive() {
-    serde_json::from_str::<BedrockGuardrailStreamParams>(r#"{"streaming_sampling_rate":1}"#)
-        .unwrap();
+    let params: BedrockGuardrailStreamParams =
+        serde_json::from_str(r#"{"streaming_sampling_rate":1}"#).unwrap();
+    assert_eq!(params.streaming_sampling_rate.0, 1);
     serde_json::from_str::<BedrockGuardrailStreamParams>(r#"{"streaming_sampling_rate":0}"#)
         .unwrap_err();
 }
@@ -361,4 +362,14 @@ fn lakera_v2_literal_on_flagged_values_are_the_three_litellm_actions() {
         Some(LakeraOnFlagged::InjectSystemMessage)
     );
     serde_json::from_str::<LakeraV2GuardrailConfigModel>(r#"{"on_flagged":"drop"}"#).unwrap_err();
+}
+
+#[test]
+fn bedrock_secret_fields_serialize_in_clear() {
+    let body = r#"{"aws_secret_access_key":"secret","aws_session_token":"token","aws_web_identity_token":"web"}"#;
+    let model: BedrockGuardrailConfigModel = serde_json::from_str(body).unwrap();
+    let encoded = serde_json::to_value(&model).unwrap();
+    assert_eq!(encoded["aws_secret_access_key"], "secret");
+    assert_eq!(encoded["aws_session_token"], "token");
+    assert_eq!(encoded["aws_web_identity_token"], "web");
 }

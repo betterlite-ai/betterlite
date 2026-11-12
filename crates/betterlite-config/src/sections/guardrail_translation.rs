@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
-use serde_inline_default::serde_inline_default;
 
 use super::content_filter_records::ConfidenceThreshold;
 use crate::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
@@ -151,14 +150,13 @@ impl BedrockChecksConfigModel {
     }
 }
 
-#[serde_inline_default]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BedrockGuardrailConfigModel {
     #[serde(rename = "guardrailIdentifier")]
     pub guardrail_identifier: Option<String>,
     #[serde(rename = "guardrailVersion")]
     pub guardrail_version: Option<String>,
-    #[serde_inline_default(Some(false))]
     pub disable_exception_on_block: Option<bool>,
     pub aws_region_name: Option<String>,
     pub aws_access_key_id: Option<String>,
@@ -181,17 +179,39 @@ pub struct BedrockGuardrailConfigModel {
     pub aws_external_id: Option<String>,
     pub aws_bedrock_runtime_endpoint: Option<String>,
     pub checks: Option<BedrockChecksConfigModel>,
-    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub content_filter_threshold: Option<ConfidenceThreshold>,
-    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub prompt_attack_threshold: Option<ConfidenceThreshold>,
-    #[serde_inline_default(Some(ConfidenceThreshold(0.5)))]
     pub pii_confidence_threshold: Option<ConfidenceThreshold>,
-    #[serde_inline_default(ChunkBudgetChars(25_000))]
     pub chunk_budget_chars: ChunkBudgetChars,
     #[serde(rename = "contextual_grounding_from_messages")]
-    #[serde_inline_default(false)]
     pub contextual_grounding: bool,
+}
+
+impl Default for BedrockGuardrailConfigModel {
+    fn default() -> Self {
+        Self {
+            guardrail_identifier: None,
+            guardrail_version: None,
+            disable_exception_on_block: Some(false),
+            aws_region_name: None,
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+            aws_session_token: None,
+            aws_session_name: None,
+            aws_profile_name: None,
+            aws_role_name: None,
+            aws_web_identity_token: None,
+            aws_sts_endpoint: None,
+            aws_external_id: None,
+            aws_bedrock_runtime_endpoint: None,
+            checks: None,
+            content_filter_threshold: Some(ConfidenceThreshold(0.5)),
+            prompt_attack_threshold: Some(ConfidenceThreshold(0.5)),
+            pii_confidence_threshold: Some(ConfidenceThreshold(0.5)),
+            chunk_budget_chars: ChunkBudgetChars(25_000),
+            contextual_grounding: false,
+        }
+    }
 }
 
 #[path = "guardrail_translation/guardrail_provider_options/tests.rs"]
