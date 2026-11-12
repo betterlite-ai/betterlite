@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-router-deployment-id-none
+call:
+  b5650: {function: deployment_id, kwargs: {}}
+env: {}
+compare: {ignore: []}

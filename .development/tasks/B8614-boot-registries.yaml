@@ -45,11 +45,12 @@ description: >-
 
 
   Binary side, in crates/betterlite/src/boot_registries.rs and boot_registries/ (declared by the skeleton).
-  `BootRegistries` holds Arc<AgentRegistry> (B4776), Arc<McpRegistry>, Arc<VectorStores> and implements B8590's
+  `BootRegistries` holds Arc<AgentRegistry> (B4776), Arc<McpRegistry>, Arc<VectorStores> and Arc<PythonHooks> (B165's
+  one service for the process: B8375 builds it and B8613 passes it in from LifespanInputs), and implements B8590's
   NonLlmRegistries, each method loading for real, as LiteLLM does before the server starts:
   `agents` loads the config agent list into the AgentRegistry with the loader B4776 exposes for config entries;
-  `mcp_tools` awaits B8871's load_configured_tools with the mcp_tools list, the config file path and the shared
-  PythonHooks service, so a handler string imports through B165 instead of failing as unsupported. Entries register in
+  `mcp_tools` awaits B8871's load_configured_tools with the mcp_tools list, the config file path and the PythonHooks
+  BootRegistries holds, so a handler string imports through B165 instead of failing as unsupported. Entries register in
   order, and a later import failure leaves the earlier entries registered; `mcp_servers` loads the mcp_servers
   mapping with litellm_settings.mcp_aliases into the SharedRegistry through B6764's config loader; `vector_stores` loads
   the vector_store_registry block into VectorStores through B1062's config load (load_config's vector_store_registry
@@ -58,8 +59,9 @@ description: >-
 
   Tests: server_registries tests (names start with `mcp_`, `vectors_` and `pass_`) assert the mutator and the readers see the
   same SharedRegistry, DbServerRows reads nothing without a database, the invalidator drops one server from every cache, the fetcher returns a non-2xx document as a document, CipherDecryptor leaves plain text alone, the cell forwards clear only after set, and VectorStores and PassThroughState start empty. boot_registries
-  tests (names start with `boot_`) load a config with two agents, one mcp_tools entry, two mcp_servers with an alias and
-  one vector store, and assert each lands in its registry and a bad entry returns its loader's error. No oracle case:
+  tests (names start with `boot_`) load a config with two agents, one mcp_tools entry whose handler is a temporary
+  module next to the config file (imported through a PythonHooks built for that file), two mcp_servers with an alias
+  and one vector store, and assert each lands in its registry and a bad entry returns its loader's error. No oracle case:
   the routes that read these registries are mounted by the mcp, agents and inference wiring parts, which add the cases.
 scope:
   paths:
@@ -92,7 +94,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Making the values at startup and passing BootRegistries to load_non_llm_configs: B8613. The Shared fields: B8610."
+  - "Making the values at startup and passing BootRegistries to load_non_llm_configs: B8613. Building the PythonHooks: B8375. The Shared fields: B8610."
   - "The loaders and registries themselves: B4680, B4731, B4776, B6762 to B6765, B1062 and B1063."
   - "The periodic MCP and database object reload: B8384."
 pitfalls:

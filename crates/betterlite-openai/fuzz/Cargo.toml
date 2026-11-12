@@ -287,6 +287,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_chat_choices"
+path = "fuzz_targets/openai_chat_choices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_models"
 path = "fuzz_targets/xai_models.rs"
 test = false

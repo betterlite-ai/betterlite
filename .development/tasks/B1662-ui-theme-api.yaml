@@ -11,6 +11,15 @@ description: >-
   only its environment fallback is filtered to an http/https URL with nonempty netloc. A
   legacy stored local path therefore passes through, while a local path supplied solely by
   environment remains hidden. Do not fetch or inspect any URL in these settings handlers.
+  GET and PATCH load config with reload_config on B8379's ConfigOverlayPort (betterlite-server's
+  config_overlay_port), since get_config lives in the binary crate this crate cannot depend on;
+  the router this module exports takes the port as an `Arc<dyn ConfigOverlayPort>` argument. A
+  port error ends GET, or PATCH before anything is published or saved, and is answered as
+  LiteLLM's unhandled-error handler does (proxy_server.py L2049-L2080): DatabaseUnavailable is
+  503 with B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503"), and Reload and PassThrough are 500
+  {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
   decode_ui_theme_request(bytes) parses PATCH's JSON body into UIThemeConfig. The handler
   validates the three supplied values before the storage guard: null, empty and
   whitespace-only strings are accepted; other strings require the source's urlparse scheme
@@ -30,7 +39,9 @@ description: >-
   Generate logo_<uuid-hex><extension>, create the uploads directory beside the executable,
   write the bytes and return message/status/file_path/filename/file_size. No theme setting is
   automatically changed. Keep the upload destination independent of the supplied filename.
-  Native tests inspect byte limits, disk failures and both persistence boundaries. HTTP cases
+  Native tests inspect byte limits, disk failures and both persistence boundaries; tests named
+  `reload_database_unavailable_*` and `reload_failure_*` drive GET and PATCH with a
+  ConfigOverlayPort fake that returns those errors. HTTP cases
   cover public URL resolution, accepted empty theme values, bad schemes, role differences,
   mixed-case extensions, empty image bytes and the 5 MiB boundary. Normalize only generated
   UUIDs and installation roots in upload comparisons, retaining filename structure and size.
@@ -69,6 +80,8 @@ dod:
     proof: [ui-theme-tests, oracle, ui-theme-corpora]
   - text: Theme configuration is loaded and both accepted body boundaries have committed malformed-input regressions.
     proof: [ui-theme-config, ui-theme-tests, ui-theme-corpora]
+  - text: GET and PATCH load config only through ConfigOverlayPort::reload_config, and a port error leaves nothing published or saved and answers 503 no_db_connection for DatabaseUnavailable and 500 internal_server_error otherwise.
+    proof: [ui-theme-tests]
 checks:
   optional: [mutants]
   commands:

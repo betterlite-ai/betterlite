@@ -1,0 +1,10 @@
+kind: helper
+name: rewrite_without_request
+call:
+  request_body:
+    function: rewrite_request_model
+    request_data: {model: old}
+    model: new
+env: {}
+compare:
+  ignore: []

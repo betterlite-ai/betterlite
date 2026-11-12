@@ -8,11 +8,13 @@ description: >-
 
 
   `crates/betterlite-server/src/python_hooks.rs` and its folder. `PythonHooks::new(config_file_path: Option<PathBuf>)`
-  builds the service and does not start Python. The first `load_*` call starts the interpreter through
-  `PythonHost::start` with `module_dirs` set to the folder of `config_file_path` (none when the path is None), so a proxy
-  with no Python hook never pays for an interpreter. `PythonHooks::shutdown()` calls the pool's shutdown, and the server's
-  stop path calls it. `HookSlot` names where a value came from, for logs and errors: `CustomAuth`, `CustomKeyGenerate`,
-  `CustomKeyUpdate`, `CustomKeyPolicy`, `CustomTeamMetadataValidate`, `CustomSso`, `CustomUiSsoSignInHandler`,
+  builds the service and does not start Python. B8375's proxy_cli builds the one instance for the process and hands it
+  on as `LifespanInputs.python_hooks: Arc<PythonHooks>`; every caller clones that Arc, and no other code calls new
+  outside tests. The first `load_*` call starts the interpreter through `PythonHost::start` with `module_dirs` set to
+  the folder of `config_file_path` (none when the path is None), so a proxy with no Python hook never pays for an
+  interpreter. `PythonHooks::shutdown()` calls the pool's shutdown, and B8374's lifespan shutdown calls it after its
+  last step that can call a hook. `HookSlot` names where a value came from, for logs and errors: `CustomAuth`,
+  `CustomKeyGenerate`, `CustomKeyUpdate`, `CustomKeyPolicy`, `CustomTeamMetadataValidate`, `CustomSso`, `CustomUiSsoSignInHandler`,
   `PostCallRules`, `CustomValidate`, `PassThroughAdapter`, `McpToolHandler`, `GuardrailClass`, `CustomProvider`, `RoutingPlugin`
   (B8587), `ClassifierPlugin` (B8587) and
   `Callback(ListKey)`, with `ListKey` being `Callbacks`, `SuccessCallback`, `FailureCallback` or `AuditLogCallbacks`.

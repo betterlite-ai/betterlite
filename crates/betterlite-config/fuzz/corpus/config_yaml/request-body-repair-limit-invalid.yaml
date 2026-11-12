@@ -1,0 +1,6 @@
+environment_variables:
+  MAX_REQUEST_BODY_SIZE_TO_REPAIR_MB: many
+model_list:
+  - model_name: g
+    litellm_params:
+      model: openai/gpt-4o

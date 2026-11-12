@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-fields-seed
+call:
+  b5650: {function: echoed_fields, model_info: {key: gpt-4o, mode: chat}, entries: [{mode: chat}]}
+env: {}
+compare: {ignore: []}
