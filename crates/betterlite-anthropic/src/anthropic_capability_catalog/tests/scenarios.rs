@@ -23,7 +23,9 @@ const CATALOG_MODELS: &str = r#"{
     "anthropic/claude-x": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
     "claude-y": {"litellm_provider": "anthropic", "supports_adaptive_thinking": false},
     "claude-z": {"litellm_provider": "anthropic"},
-    "anthropic/claude-q": {"litellm_provider": "anthropic", "supports_adaptive_thinking": "yes"}
+    "anthropic/claude-q": {"litellm_provider": "anthropic", "supports_adaptive_thinking": "yes"},
+    "anthropic/claude-w": {"litellm_provider": "anthropic"},
+    "claude-w": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true}
 }"#;
 const CATALOG_PACKAGED: &str = r#"{
     "claude-x": {"thinking_always_on": true},
@@ -192,6 +194,12 @@ pub(super) async fn provider_qualified_catalog() {
         thinking_capabilities(&fixture, "claude-q").await,
         [true, false, false],
         "a non-bool resolved flag has no opinion, so the raw packaged true answers"
+    );
+    // The resolved anthropic/claude-w entry lacks the key and the raw walk never tries bare claude-w
+    assert_eq!(
+        thinking_capabilities(&fixture, "anthropic/claude-w").await,
+        [true, false, false],
+        "only _supports_factory's bare-entry fallback answers true"
     );
 }
 
@@ -423,12 +431,18 @@ fn sampling_forwarding(fixture: &Fixture) {
         ("claude-opus-4-8", TopP, "0.5", GLOBAL_DROP, None),
         ("claude-opus-4-8", TopK, "5", CALL_DROP, None),
     ];
-    for (model, param, value, drop, expected) in cases {
+    for (model, param, value, drop_params, expected) in cases {
+        let (guard, warnings) = capture_warnings();
         assert_eq!(
-            sampling(fixture, model, param, &json(value), drop).expect("allowed"),
+            sampling(fixture, model, param, &json(value), drop_params).expect("allowed"),
             expected.map(json),
             "{model} {param:?} {value}"
         );
+        assert!(
+            warnings.messages().is_empty(),
+            "the sampling drop is silent: {model} {param:?} {value}"
+        );
+        drop(guard);
     }
 }
 

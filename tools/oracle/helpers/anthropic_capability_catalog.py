@@ -143,6 +143,9 @@ def forced_tool_downgrade(step: ForcedToolStep) -> Json:
 
 def sampling_capability(step: SamplingStep) -> Json:
     optional_params: JsonObject = {}
+    warnings = Warnings()
+    logger = logging.getLogger("LiteLLM")
+    logger.addHandler(warnings)
     previous = litellm.drop_params
     litellm.drop_params = step["global_drop_params"]
     try:
@@ -156,7 +159,8 @@ def sampling_capability(step: SamplingStep) -> Json:
         )
     finally:
         litellm.drop_params = previous
-    return optional_params
+        logger.removeHandler(warnings)
+    return {"params": optional_params, "warning": warnings.first()}
 
 
 def disabled_thinking_warning(step: ThinkingStep) -> Json:

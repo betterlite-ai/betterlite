@@ -70,6 +70,7 @@ impl SamplingStep {
         if let Some(value) = forwarded {
             params.insert(self.output_key.clone(), value);
         }
-        serde_json::to_value(&params).or_value_error()
+        let encoded = serde_json::to_value(&params).or_value_error()?;
+        Ok(json!({"params": encoded, "warning": adapter.warnings.first()}))
     }
 }
