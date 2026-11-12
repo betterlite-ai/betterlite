@@ -2,7 +2,7 @@ use betterlite_config::sections::azure_default_chain::AzureCredentialType;
 use secrecy::ExposeSecret as _;
 
 use super::super::environment::DEFAULT_SCOPE;
-use super::super::error::{ENVIRONMENT_UNAVAILABLE, TROUBLESHOOT_URL, workload_missing_message};
+use super::super::error::{ENVIRONMENT_UNAVAILABLE, TROUBLESHOOT_URL};
 use super::super::plan::ENVIRONMENT_PASSWORD_WARNING;
 use super::super::provider::{AzureTokenProvider, try_default_credential};
 use super::super::selection::selection;
@@ -813,8 +813,7 @@ fn default_credential_exhaustion() {
     let token_provider = default_provider(&[], &grants);
     let error = token_provider.token().unwrap_err();
     let expected = format!(
-        "DefaultAzureCredential failed to retrieve a token from the included credentials.\nAttempted credentials:\n\tEnvironmentCredential: {ENVIRONMENT_UNAVAILABLE}\n\tWorkloadIdentityCredential: {}\n\tManagedIdentityCredential: imds unavailable\nTo mitigate this issue, please refer to the troubleshooting guidelines here at {TROUBLESHOOT_URL}.",
-        workload_missing_message(&["tenant_id", "client_id", "token_file_path"])
+        "DefaultAzureCredential failed to retrieve a token from the included credentials.\nAttempted credentials:\n\tEnvironmentCredential: {ENVIRONMENT_UNAVAILABLE}\n\tWorkloadIdentityCredential: WorkloadIdentityCredential authentication unavailable. The workload options are not fully configured. See the troubleshooting guide for more information: https://aka.ms/azsdk/python/identity/workloadidentitycredential/troubleshoot. Missing required arguments: 'tenant_id', 'client_id', 'token_file_path'.\n\tManagedIdentityCredential: imds unavailable\nTo mitigate this issue, please refer to the troubleshooting guidelines here at {TROUBLESHOOT_URL}."
     );
     assert_eq!(error.to_string(), expected);
     assert_eq!(error.category(), "client_authentication");
@@ -897,7 +896,7 @@ fn workload_missing_arguments() {
     assert_eq!(error.category(), "invalid_value");
     assert_eq!(
         error.to_string(),
-        workload_missing_message(&["tenant_id", "token_file_path"])
+        "WorkloadIdentityCredential authentication unavailable. The workload options are not fully configured. See the troubleshooting guide for more information: https://aka.ms/azsdk/python/identity/workloadidentitycredential/troubleshoot. Missing required arguments: 'tenant_id', 'token_file_path'."
     );
 }
 

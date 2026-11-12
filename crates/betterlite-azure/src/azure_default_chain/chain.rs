@@ -17,22 +17,6 @@ impl ChainName {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ManagedIdentityIdentity {
-    UserAssigned,
-    SystemAssigned,
-}
-
-impl ManagedIdentityIdentity {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::UserAssigned => "user",
-            Self::SystemAssigned => "system",
-        }
-    }
-}
-
 pub enum LinkInner<G> {
     Ready(G),
     Unavailable(String),
@@ -41,10 +25,7 @@ pub enum LinkInner<G> {
 pub enum Link<G> {
     Environment(LinkInner<G>),
     Workload(LinkInner<G>),
-    ManagedIdentity {
-        grant: G,
-        identity: ManagedIdentityIdentity,
-    },
+    ManagedIdentity(G),
 }
 
 impl<G: Grant> Link<G> {
@@ -53,7 +34,7 @@ impl<G: Grant> Link<G> {
         match self {
             Self::Environment(_) => "EnvironmentCredential",
             Self::Workload(_) => "WorkloadIdentityCredential",
-            Self::ManagedIdentity { .. } => "ManagedIdentityCredential",
+            Self::ManagedIdentity(_) => "ManagedIdentityCredential",
         }
     }
 
@@ -63,7 +44,7 @@ impl<G: Grant> Link<G> {
                 LinkInner::Ready(grant) => grant.token(),
                 LinkInner::Unavailable(message) => Err(LinkError::Unavailable(message.clone())),
             },
-            Self::ManagedIdentity { grant, .. } => grant.token(),
+            Self::ManagedIdentity(grant) => grant.token(),
         }
     }
 }

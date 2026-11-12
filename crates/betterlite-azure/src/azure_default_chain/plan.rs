@@ -1,4 +1,4 @@
-use super::chain::{Chain, ChainName, Link, LinkInner, ManagedIdentityIdentity};
+use super::chain::{Chain, ChainName, Link, LinkInner};
 use super::environment::ChainEnvironment;
 use super::error::{DefaultChainError, ENVIRONMENT_UNAVAILABLE, workload_missing_message};
 use super::grant::{
@@ -10,18 +10,9 @@ use super::selection::selection;
 pub const ENVIRONMENT_PASSWORD_WARNING: &str = "Environment is configured to use username and password authentication. This authentication method is deprecated, as it doesn't support multifactor authentication (MFA). For more details, see https://aka.ms/azsdk/identity/mfa.";
 
 #[must_use]
-pub fn construction(credential: &'static str, error: GrantError) -> DefaultChainError {
+pub fn construction(error: GrantError) -> DefaultChainError {
     DefaultChainError::Construction {
-        credential,
         message: error.message,
-    }
-}
-
-#[must_use]
-pub const fn identity(client_id: Option<&str>) -> ManagedIdentityIdentity {
-    match client_id {
-        Some(text) if !text.is_empty() => ManagedIdentityIdentity::UserAssigned,
-        Some(_) | None => ManagedIdentityIdentity::SystemAssigned,
     }
 }
 
@@ -29,16 +20,6 @@ enum EnvironmentRecord {
     Secret(ClientSecretRecord),
     Certificate(CertificateRecord),
     Password(UsernamePasswordRecord),
-}
-
-impl EnvironmentRecord {
-    const fn credential(&self) -> &'static str {
-        match self {
-            Self::Secret(_) => "ClientSecretCredential",
-            Self::Certificate(_) => "CertificateCredential",
-            Self::Password(_) => "UsernamePasswordCredential",
-        }
-    }
 }
 
 // EnvironmentCredential tests presence, so an empty variable still selects its branch
@@ -108,7 +89,7 @@ where
     };
     let inner = match grant {
         Ok(ready) => LinkInner::Ready(ready),
-        Err(error) => return Err(construction(record.credential(), error)),
+        Err(error) => return Err(construction(error)),
     };
     Ok(Link::Environment(inner))
 }
@@ -170,9 +151,7 @@ where
 {
     match workload_record(environment, scope) {
         Some(record) => Ok(Link::Workload(LinkInner::Ready(
-            grants
-                .workload(&record)
-                .map_err(|error| construction("WorkloadIdentityCredential", error))?,
+            grants.workload(&record).map_err(construction)?,
         ))),
         None => Ok(Link::Workload(LinkInner::Unavailable(
             workload_missing_message(&missing_workload_arguments(environment)),
@@ -205,13 +184,8 @@ where
             placement: ChainPlacement::DefaultCredential,
             scope: scope.to_owned(),
         };
-        let grant = grants
-            .managed_identity(&record)
-            .map_err(|error| construction("ManagedIdentityCredential", error))?;
-        links.push(Link::ManagedIdentity {
-            identity: identity(record.client_id.as_deref()),
-            grant,
-        });
+        let grant = grants.managed_identity(&record).map_err(construction)?;
+        links.push(Link::ManagedIdentity(grant));
     }
     Ok(Chain {
         name: ChainName::DefaultAzureCredential,

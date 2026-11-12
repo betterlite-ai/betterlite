@@ -115,18 +115,10 @@ where
     F: Grants + 'grants,
 {
     match single_record(credential, environment, scope)? {
-        SingleRecord::Secret(record) => grants
-            .client_secret(&record)
-            .map_err(|error| construction("ClientSecretCredential", error)),
-        SingleRecord::Managed(record) => grants
-            .managed_identity(&record)
-            .map_err(|error| construction("ManagedIdentityCredential", error)),
-        SingleRecord::Certificate(record) => grants
-            .certificate(&record)
-            .map_err(|error| construction("CertificateCredential", error)),
-        SingleRecord::Workload(record) => grants
-            .workload(&record)
-            .map_err(|error| construction("WorkloadIdentityCredential", error)),
+        SingleRecord::Secret(record) => grants.client_secret(&record).map_err(construction),
+        SingleRecord::Managed(record) => grants.managed_identity(&record).map_err(construction),
+        SingleRecord::Certificate(record) => grants.certificate(&record).map_err(construction),
+        SingleRecord::Workload(record) => grants.workload(&record).map_err(construction),
         SingleRecord::MissingUsernamePassword(arguments) => {
             Err(DefaultChainError::MissingArguments {
                 credential: "UsernamePasswordCredential.__init__()",

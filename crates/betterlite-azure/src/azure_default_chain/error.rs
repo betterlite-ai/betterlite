@@ -33,10 +33,7 @@ pub enum DefaultChainError {
     )]
     UnsupportedFilter { value: String },
     #[error("{message}")]
-    Construction {
-        credential: &'static str,
-        message: String,
-    },
+    Construction { message: String },
     #[error("{message}")]
     Credential { unavailable: bool, message: String },
     #[error("{message}")]

@@ -2,7 +2,7 @@ use super::chain::{Chain, ChainName, Link};
 use super::environment::ChainEnvironment;
 use super::error::DefaultChainError;
 use super::grant::{ChainPlacement, Grants, ManagedIdentityRecord};
-use super::plan::{construction, identity, workload_link, workload_record};
+use super::plan::{construction, workload_link, workload_record};
 
 // LiteLLM builds a plain ChainedTokenCredential here, so the workload and both identity links are separate
 pub fn deployment_chain<'grants, F>(
@@ -53,10 +53,7 @@ fn managed_link<'grants, F>(
 where
     F: Grants + 'grants,
 {
-    Ok(Link::ManagedIdentity {
-        identity: identity(record.client_id.as_deref()),
-        grant: grants
-            .managed_identity(record)
-            .map_err(|error| construction("ManagedIdentityCredential", error))?,
-    })
+    Ok(Link::ManagedIdentity(
+        grants.managed_identity(record).map_err(construction)?,
+    ))
 }
