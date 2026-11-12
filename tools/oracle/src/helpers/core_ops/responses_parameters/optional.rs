@@ -93,7 +93,7 @@ pub(super) fn step(fields: &OptionalStep) -> Result<Value, Box<HelperError>> {
     let (ok, status, value) = match result {
         Ok(mapped) => (true, None, json!(mapped)),
         Err(ResponsesParametersError::UnsupportedParams { .. }) => {
-            (false, Some(UNSUPPORTED_PARAMS_STATUS), Value::Null)
+            (false, Some(UNSUPPORTED_PARAMS_STATUS), json!({}))
         }
         Err(error) => return Err(helper_error(&error)),
     };
