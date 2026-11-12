@@ -1,0 +1,18 @@
+kind: helper
+name: multimodal-embedding-records-explicit-instances
+call:
+  multimodal_embedding_records:
+    requests:
+      - input: ["ignored", "gs://bucket/ignored.png"]
+        optional:
+          instances:
+            - {text: native}
+            - {image: {gcsUri: "gs://bucket/kept.png"}}
+          outputDimensionality: 4
+      - input: "hello"
+        optional: {instances: null}
+      - input: "gs://bucket/clip.mp4"
+        optional: {outputDimensionality: 2}
+    replies: []
+compare: {ignore: []}
+env: {}

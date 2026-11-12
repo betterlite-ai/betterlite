@@ -2492,7 +2492,9 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-auth",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -3113,6 +3115,7 @@ dependencies = [
 name = "betterlite-vertex"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
@@ -3123,6 +3126,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-tokenizer",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
  "regex",

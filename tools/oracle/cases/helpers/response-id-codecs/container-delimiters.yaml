@@ -1,0 +1,28 @@
+kind: helper
+name: container-delimiters
+call:
+  response_id_codecs:
+    operation: container_delimiters
+    containers:
+      - custom_llm_provider: null
+        model_id: null
+        container_id: "c;a"
+      - custom_llm_provider: "None"
+        model_id: "None"
+        container_id: c1
+      - custom_llm_provider: openai
+        model_id: dep_a
+        container_id: c2
+    ids:
+      - "resp_abcd"
+      - "cntr_bm9wZTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjb250YWluZXJfaWQ6Yw=="
+      - "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTt3cm9uZ19pZDpj"
+      - "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjb250YWluZXJfaWQ6"
+      - "cntr_/w=="
+      - "cntr_a"
+      - "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjb250YWluZXJfaWQ6Yztk"
+      - "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7cTttb2RlbF9pZDptO2NvbnRhaW5lcl9pZDpj"
+      - "cntr_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXBfYTtjb250YWluZXJfaWQ6YzI"
+env: {}
+compare:
+  ignore: []
