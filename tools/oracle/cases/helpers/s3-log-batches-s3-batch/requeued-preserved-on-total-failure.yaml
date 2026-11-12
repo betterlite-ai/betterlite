@@ -1,5 +1,5 @@
 kind: helper
-name: batch_total_failure_preserves_queue
+name: batch_timeout_classification
 call:
   b3994:
     source:
@@ -17,13 +17,20 @@ call:
           - s3_object_key: 2026-01-02/b.json
             s3_object_download_filename: b.json
             payload: {b: 2}
+          - s3_object_key: 2026-01-02/c.json
+            s3_object_download_filename: c.json
+            payload: {c: 3}
         replies:
           - match: a.json
             responses:
-              - status: 429
+              - status: 408
           - match: b.json
+            responses:
+              - status: 504
+          - match: c.json
             responses:
               - status: 400
                 body: <Error><Code>UnknownCode</Code></Error>
+      - replies: []
 env: {}
 compare: {ignore: []}
