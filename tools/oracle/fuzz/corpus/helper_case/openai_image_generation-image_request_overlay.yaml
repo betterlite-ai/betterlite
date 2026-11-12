@@ -1,0 +1,15 @@
+kind: helper
+name: openai-image-generation-seed-image-request-overlay
+call:
+  openai_image_generation:
+    function: image_request_overlay
+    probes:
+      - model: dall-e-2
+        prompt: a cat
+        optional_params: {n: 1, max_retries: 3}
+        api_key: sk-seed
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}
