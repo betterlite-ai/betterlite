@@ -1,23 +1,24 @@
 use betterlite_models::billing_text::{FormattedPromptData, PromptCallType, get_formatted_prompt};
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::error::CountError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_embedding_records::input::{
-    EmbeddingInput, InputEntry, ResolvedFiles, flatten, has_nested, is_image_only, is_multimodal,
-    is_multimodal_element,
-};
-use crate::gemini_embedding_records::usage_metadata::{
-    Modality, ModalityCount, parse_usage_metadata,
+    EmbeddingInput, InputEntry, ResolvedFiles, flatten, has_nested, is_image_only, is_media,
+    is_multimodal,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ModalityTokens {
-    pub text_tokens: Option<u32>,
-    pub audio_tokens: Option<u32>,
-    pub image_tokens: Option<u32>,
-    pub video_tokens: Option<u32>,
+    #[serde(rename = "text_tokens")]
+    pub text: Option<u32>,
+    #[serde(rename = "audio_tokens")]
+    pub audio: Option<u32>,
+    #[serde(rename = "image_tokens")]
+    pub image: Option<u32>,
+    #[serde(rename = "video_tokens")]
+    pub video: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -30,6 +31,59 @@ pub struct EmbeddingUsage {
 
 pub trait TextTokenCounter {
     fn count_text(&self, model: &str, text: &str) -> Result<u32, CountError>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum Modality {
+    Text,
+    Audio,
+    Image,
+    Video,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct ModalityCount {
+    pub modality: Modality,
+    #[serde(rename = "tokenCount")]
+    pub token_count: i64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct UsageMetadata {
+    #[serde(rename = "promptTokenCount")]
+    pub prompt_token_count: Option<i64>,
+    #[serde(rename = "totalTokenCount")]
+    pub total_token_count: Option<i64>,
+    #[serde(rename = "promptTokensDetails")]
+    pub prompt_tokens_details: Option<Vec<ModalityCount>>,
+    #[serde(rename = "candidatesTokenCount")]
+    _candidates_token_count: Option<i64>,
+    #[serde(rename = "responseTokenCount")]
+    _response_token_count: Option<i64>,
+    #[serde(rename = "cachedContentTokenCount")]
+    _cached_content_token_count: Option<i64>,
+    #[serde(rename = "toolUsePromptTokenCount")]
+    _tool_use_prompt_token_count: Option<i64>,
+    #[serde(rename = "thoughtsTokenCount")]
+    _thoughts_token_count: Option<i64>,
+    #[serde(rename = "toolUsePromptTokensDetails")]
+    _tool_use_details: Option<Vec<ModalityCount>>,
+    #[serde(rename = "cacheTokensDetails")]
+    _cache_tokens_details: Option<Vec<ModalityCount>>,
+    #[serde(rename = "responseTokensDetails")]
+    _response_tokens_details: Option<Vec<ModalityCount>>,
+    #[serde(rename = "candidatesTokensDetails")]
+    _candidates_tokens_details: Option<Vec<ModalityCount>>,
+}
+
+#[must_use]
+pub fn parse_usage_metadata(raw: Option<&Json>) -> Option<UsageMetadata> {
+    let Json::Object(_) = raw? else {
+        return None;
+    };
+    serde_json::from_value(serde_json::to_value(raw).ok()?).ok()
 }
 
 pub fn batch_usage(
@@ -77,14 +131,14 @@ pub fn embed_content_usage(
         .filter(|details| !details.is_empty())
     {
         None => ModalityTokens {
-            text_tokens: Some(0),
-            audio_tokens: None,
-            image_tokens: Some(if is_image_only(input, resolved_files) {
+            text: Some(0),
+            audio: None,
+            image: Some(if is_image_only(input, resolved_files) {
                 prompt_tokens
             } else {
                 0
             }),
-            video_tokens: None,
+            video: None,
         },
         Some(details) => modality_tokens(&details)?,
     };
@@ -135,10 +189,10 @@ fn modality_tokens(details: &[ModalityCount]) -> Result<ModalityTokens, GeminiEm
             .ok_or(GeminiEmbeddingError::TokenOverflow)?;
     }
     Ok(ModalityTokens {
-        text_tokens: Some(token_count(text)?),
-        audio_tokens: Some(token_count(audio)?),
-        image_tokens: Some(token_count(image)?),
-        video_tokens: Some(token_count(video)?),
+        text: Some(token_count(text)?),
+        audio: Some(token_count(audio)?),
+        image: Some(token_count(image)?),
+        video: Some(token_count(video)?),
     })
 }
 
@@ -190,7 +244,7 @@ fn count_formatted(
 fn text_elements(input: &EmbeddingInput) -> Vec<Json> {
     let mut texts = Vec::new();
     for element in flatten(input) {
-        if !is_multimodal_element(element) {
+        if !is_media(element) {
             texts.push(Json::Text(element.to_owned()));
         }
     }

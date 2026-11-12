@@ -4,9 +4,9 @@ use std::str;
 
 use rstest::rstest;
 
+use super::support::rejection;
 use crate::gemini_embedding_records::data_url::decode_embedding_data_url;
 use crate::gemini_embedding_records::data_url::infer_mime_from_gcs_url;
-use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 
 #[rstest]
 #[case::png("data:image/png;base64,AAAA", "image/png", "AAAA")]
@@ -30,35 +30,27 @@ fn keeps_supported_media(#[case] source: &str, #[case] mime_type: &str, #[case] 
 #[case::uppercase_prefix("DATA:image/png;base64,AAAA")]
 #[case::empty("")]
 fn rejects_without_the_data_prefix(#[case] source: &str) {
-    assert!(matches!(
-        decode_embedding_data_url(source),
-        Err(GeminiEmbeddingError::DataUrlPrefix)
-    ));
+    let error = decode_embedding_data_url(source).unwrap_err();
+    assert!(rejection(error).contains("does not start with data:"));
 }
 
 #[rstest]
 #[case::no_comma("data:image/png;base64")]
 #[case::prefix_only("data:")]
 fn rejects_without_a_comma(#[case] source: &str) {
-    assert!(matches!(
-        decode_embedding_data_url(source),
-        Err(GeminiEmbeddingError::DataUrlComma)
-    ));
+    let error = decode_embedding_data_url(source).unwrap_err();
+    assert!(rejection(error).contains("no comma"));
 }
 
 #[rstest]
 #[case::text("data:text/plain;base64,AAAA", "text/plain")]
 #[case::gif("data:image/gif;base64,AAAA", "image/gif")]
 #[case::uppercase_media("data:IMAGE/PNG;base64,AAAA", "IMAGE/PNG")]
-#[case::no_media("data:;base64,AAAA", "")]
-#[case::parameters_only("data:;charset=utf-8,AAAA", "")]
-fn rejects_unsupported_media(#[case] source: &str, #[case] mime_type: &str) {
-    match decode_embedding_data_url(source) {
-        Err(GeminiEmbeddingError::UnsupportedMime { mime_type: found }) => {
-            assert_eq!(found, mime_type);
-        }
-        outcome => panic!("expected an unsupported media type, got {outcome:?}"),
-    }
+#[case::no_media("data:;base64,AAAA", "is not a supported")]
+#[case::parameters_only("data:;charset=utf-8,AAAA", "is not a supported")]
+fn rejects_unsupported_media(#[case] source: &str, #[case] message: &str) {
+    let error = decode_embedding_data_url(source).unwrap_err();
+    assert!(rejection(error).contains(message));
 }
 
 #[rstest]
@@ -81,10 +73,8 @@ fn infers_the_gcs_media_type(#[case] url: &str, #[case] mime_type: &str) {
 #[case::query_after_extension("gs://bucket/photo.png?x=1")]
 #[case::trailing_slash("gs://bucket/photo.png/")]
 fn rejects_unknown_gcs_extensions(#[case] url: &str) {
-    assert!(matches!(
-        infer_mime_from_gcs_url(url),
-        Err(GeminiEmbeddingError::UnsupportedExtension { .. })
-    ));
+    let error = infer_mime_from_gcs_url(url).unwrap_err();
+    assert!(rejection(error).contains("no supported embedding media type matches"));
 }
 
 #[rstest]

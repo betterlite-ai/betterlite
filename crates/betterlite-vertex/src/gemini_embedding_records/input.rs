@@ -9,9 +9,7 @@ use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_media::part::{Blob, FileData};
 
 pub const IMAGE_MIME_TYPES: [&str; 2] = ["image/jpeg", "image/png"];
-const DATA_URL_MARKER: &str = ";base64,";
-const FILE_REFERENCE_PREFIX: &str = "files/";
-const GCS_PREFIX: &str = "gs://";
+const DATA_MARKER: &str = ";base64,";
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
@@ -44,31 +42,37 @@ pub enum Part {
     FileData(FileData),
 }
 
+#[must_use]
+pub fn is_media(element: &str) -> bool {
+    (element.starts_with("data:") && element.contains(DATA_MARKER))
+        || element.starts_with("files/")
+        || element.starts_with("gs://")
+}
+
 pub fn build_part(
     element: &str,
     resolved_files: &ResolvedFiles,
 ) -> Result<Part, GeminiEmbeddingError> {
-    if element.starts_with("data:") && element.contains(DATA_URL_MARKER) {
+    if element.starts_with("data:") && element.contains(DATA_MARKER) {
         let data_url = decode_embedding_data_url(element)?;
         return Ok(Part::InlineData(Blob {
             data: data_url.payload.to_owned(),
             mime_type: data_url.mime_type.to_owned(),
         }));
     }
-    if element.starts_with(GCS_PREFIX) {
+    if element.starts_with("gs://") {
         let mime_type = infer_mime_from_gcs_url(element)?;
         return Ok(Part::FileData(FileData {
             mime_type: Some(mime_type.to_owned()),
             file_uri: element.to_owned(),
         }));
     }
-    if element.starts_with(FILE_REFERENCE_PREFIX) {
-        let file =
-            resolved_files
-                .get(element)
-                .ok_or_else(|| GeminiEmbeddingError::UnresolvedFile {
-                    reference: element.to_owned(),
-                })?;
+    if element.starts_with("files/") {
+        let Some(file) = resolved_files.get(element) else {
+            return Err(GeminiEmbeddingError::Rejected {
+                reason: format!("the file reference {element} has no resolved MIME type and URI"),
+            });
+        };
         return Ok(Part::FileData(FileData {
             mime_type: Some(file.mime_type.clone()),
             file_uri: file.uri.clone(),
@@ -78,19 +82,12 @@ pub fn build_part(
 }
 
 #[must_use]
-pub fn is_multimodal_element(element: &str) -> bool {
-    (element.starts_with("data:") && element.contains(DATA_URL_MARKER))
-        || element.starts_with(FILE_REFERENCE_PREFIX)
-        || element.starts_with(GCS_PREFIX)
-}
-
-#[must_use]
 pub fn is_multimodal(input: &EmbeddingInput) -> bool {
     match input {
-        EmbeddingInput::Text(text) => is_multimodal_element(text),
+        EmbeddingInput::Text(text) => is_media(text),
         EmbeddingInput::Entries(entries) => entries.iter().any(|entry| match entry {
-            InputEntry::Text(text) => is_multimodal_element(text),
-            InputEntry::Group(group) => group.iter().any(|element| is_multimodal_element(element)),
+            InputEntry::Text(text) => is_media(text),
+            InputEntry::Group(group) => group.iter().any(|element| is_media(element)),
         }),
     }
 }
@@ -124,20 +121,20 @@ pub fn flatten(input: &EmbeddingInput) -> Vec<&str> {
 
 #[must_use]
 pub fn is_image_element(element: &str, resolved_files: &ResolvedFiles) -> bool {
-    if element.starts_with("data:") && element.contains(DATA_URL_MARKER) {
-        return decode_embedding_data_url(element)
-            .is_ok_and(|data_url| IMAGE_MIME_TYPES.contains(&data_url.mime_type));
-    }
-    if element.starts_with(GCS_PREFIX) {
-        return infer_mime_from_gcs_url(element)
-            .is_ok_and(|mime_type| IMAGE_MIME_TYPES.contains(&mime_type));
-    }
-    if element.starts_with(FILE_REFERENCE_PREFIX) {
-        return resolved_files
+    let mime_type = if element.starts_with("data:") && element.contains(DATA_MARKER) {
+        decode_embedding_data_url(element)
+            .ok()
+            .map(|decoded| decoded.mime_type)
+    } else if element.starts_with("gs://") {
+        infer_mime_from_gcs_url(element).ok()
+    } else if element.starts_with("files/") {
+        resolved_files
             .get(element)
-            .is_some_and(|file| IMAGE_MIME_TYPES.contains(&file.mime_type.as_str()));
-    }
-    false
+            .map(|file| file.mime_type.as_str())
+    } else {
+        None
+    };
+    mime_type.is_some_and(|mime_type| IMAGE_MIME_TYPES.contains(&mime_type))
 }
 
 #[must_use]

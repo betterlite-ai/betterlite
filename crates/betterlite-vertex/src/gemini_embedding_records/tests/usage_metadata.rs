@@ -1,25 +1,22 @@
 use rstest::rstest;
 
 use super::support::json;
-use crate::gemini_embedding_records::usage_metadata::Modality;
-use crate::gemini_embedding_records::usage_metadata::ModalityCount;
-use crate::gemini_embedding_records::usage_metadata::UsageMetadata;
-use crate::gemini_embedding_records::usage_metadata::parse_usage_metadata;
+use crate::gemini_embedding_records::usage::Modality;
+use crate::gemini_embedding_records::usage::ModalityCount;
+use crate::gemini_embedding_records::usage::parse_usage_metadata;
 
-fn parsed(source: &str) -> Option<UsageMetadata> {
-    parse_usage_metadata(Some(&json(source)))
+fn parsed(source: &str) -> bool {
+    parse_usage_metadata(Some(&json(source))).is_some()
+}
+
+fn counts(source: &str) -> (Option<i64>, Option<i64>) {
+    let metadata = parse_usage_metadata(Some(&json(source))).unwrap();
+    (metadata.prompt_token_count, metadata.total_token_count)
 }
 
 #[test]
 fn an_empty_record_is_valid() {
-    assert_eq!(
-        parsed("{}"),
-        Some(UsageMetadata {
-            prompt_token_count: None,
-            total_token_count: None,
-            prompt_tokens_details: None,
-        })
-    );
+    assert_eq!(counts("{}"), (None, None));
 }
 
 #[rstest]
@@ -31,10 +28,10 @@ fn an_empty_record_is_valid() {
 #[case::tool_use("toolUsePromptTokenCount")]
 #[case::thoughts("thoughtsTokenCount")]
 fn every_integer_field_is_validated(#[case] field: &str) {
-    assert!(parsed(&format!("{{\"{field}\": 4}}")).is_some());
-    assert!(parsed(&format!("{{\"{field}\": \"4\"}}")).is_none());
-    assert!(parsed(&format!("{{\"{field}\": true}}")).is_none());
-    assert!(parsed(&format!("{{\"{field}\": 4.5}}")).is_none());
+    assert!(parsed(&format!("{{\"{field}\": 4}}")));
+    assert!(!parsed(&format!("{{\"{field}\": \"4\"}}")));
+    assert!(!parsed(&format!("{{\"{field}\": true}}")));
+    assert!(!parsed(&format!("{{\"{field}\": 4.5}}")));
 }
 
 #[rstest]
@@ -44,26 +41,21 @@ fn every_integer_field_is_validated(#[case] field: &str) {
 #[case::response("responseTokensDetails")]
 #[case::candidates("candidatesTokensDetails")]
 fn every_detail_field_is_validated(#[case] field: &str) {
-    assert!(parsed(&format!("{{\"{field}\": []}}")).is_some());
-    assert!(parsed(&format!("{{\"{field}\": \"nope\"}}")).is_none());
-    assert!(
-        parsed(&format!(
-            "{{\"{field}\": [{{\"modality\": \"TEXT\", \"tokenCount\": 1}}]}}"
-        ))
-        .is_some()
-    );
-    assert!(parsed(&format!("{{\"{field}\": [{{\"modality\": \"TEXT\"}}]}}")).is_none());
+    assert!(parsed(&format!("{{\"{field}\": []}}")));
+    assert!(!parsed(&format!("{{\"{field}\": \"nope\"}}")));
+    assert!(parsed(&format!(
+        "{{\"{field}\": [{{\"modality\": \"TEXT\", \"tokenCount\": 1}}]}}"
+    )));
+    assert!(!parsed(&format!(
+        "{{\"{field}\": [{{\"modality\": \"TEXT\"}}]}}"
+    )));
 }
 
 #[test]
 fn null_takes_the_absent_value() {
     assert_eq!(
-        parsed(r#"{"promptTokenCount": null, "promptTokensDetails": null}"#),
-        Some(UsageMetadata {
-            prompt_token_count: None,
-            total_token_count: None,
-            prompt_tokens_details: None,
-        })
+        counts(r#"{"promptTokenCount": null, "promptTokensDetails": null}"#),
+        (None, None)
     );
 }
 
@@ -71,42 +63,42 @@ fn null_takes_the_absent_value() {
 #[case::unknown_integer(r#"{"futureTokenCount": 3}"#)]
 #[case::unknown_detail(r#"{"futureTokensDetails": "nope"}"#)]
 fn unknown_fields_are_ignored(#[case] source: &str) {
-    assert!(parsed(source).is_some());
+    assert!(parsed(source));
 }
 
 #[test]
 fn counts_and_details_are_read_from_the_record() {
+    let metadata = parse_usage_metadata(Some(&json(
+        r#"{"promptTokenCount": 7, "totalTokenCount": 9, "promptTokensDetails": [
+            {"modality": "TEXT", "tokenCount": 2},
+            {"modality": "AUDIO", "tokenCount": 3},
+            {"modality": "IMAGE", "tokenCount": 4},
+            {"modality": "VIDEO", "tokenCount": 5}
+        ]}"#,
+    )))
+    .unwrap();
+    assert_eq!(metadata.prompt_token_count, Some(7));
+    assert_eq!(metadata.total_token_count, Some(9));
     assert_eq!(
-        parsed(
-            r#"{"promptTokenCount": 7, "totalTokenCount": 9, "promptTokensDetails": [
-                {"modality": "TEXT", "tokenCount": 2},
-                {"modality": "AUDIO", "tokenCount": 3},
-                {"modality": "IMAGE", "tokenCount": 4},
-                {"modality": "VIDEO", "tokenCount": 5}
-            ]}"#
-        ),
-        Some(UsageMetadata {
-            prompt_token_count: Some(7),
-            total_token_count: Some(9),
-            prompt_tokens_details: Some(vec![
-                ModalityCount {
-                    modality: Modality::Text,
-                    token_count: 2,
-                },
-                ModalityCount {
-                    modality: Modality::Audio,
-                    token_count: 3,
-                },
-                ModalityCount {
-                    modality: Modality::Image,
-                    token_count: 4,
-                },
-                ModalityCount {
-                    modality: Modality::Video,
-                    token_count: 5,
-                },
-            ]),
-        })
+        metadata.prompt_tokens_details,
+        Some(vec![
+            ModalityCount {
+                modality: Modality::Text,
+                token_count: 2,
+            },
+            ModalityCount {
+                modality: Modality::Audio,
+                token_count: 3,
+            },
+            ModalityCount {
+                modality: Modality::Image,
+                token_count: 4,
+            },
+            ModalityCount {
+                modality: Modality::Video,
+                token_count: 5,
+            },
+        ])
     );
 }
 
@@ -117,14 +109,18 @@ fn counts_and_details_are_read_from_the_record() {
 #[case::null_count(r#"{"promptTokensDetails": [{"modality": "TEXT", "tokenCount": null}]}"#)]
 #[case::count_string(r#"{"promptTokensDetails": [{"modality": "TEXT", "tokenCount": "1"}]}"#)]
 fn malformed_details_invalidate_the_record(#[case] source: &str) {
-    assert!(parsed(source).is_none());
+    assert!(!parsed(source));
 }
 
 #[test]
 fn a_detail_entry_ignores_unknown_keys() {
+    let metadata = parse_usage_metadata(Some(&json(
+        r#"{"promptTokensDetails": [{"modality": "TEXT", "tokenCount": 1, "extra": 2}]}"#,
+    )))
+    .unwrap();
     assert_eq!(
-        parsed(r#"{"promptTokensDetails": [{"modality": "TEXT", "tokenCount": 1, "extra": 2}]}"#)
-            .and_then(|metadata| metadata.prompt_tokens_details)
+        metadata
+            .prompt_tokens_details
             .and_then(|details| details.first().copied()),
         Some(ModalityCount {
             modality: Modality::Text,
@@ -139,7 +135,7 @@ fn a_detail_entry_ignores_unknown_keys() {
 #[case::number("5")]
 #[case::boolean("true")]
 fn a_value_outside_the_record_is_invalid(#[case] source: &str) {
-    assert!(parsed(source).is_none());
+    assert!(!parsed(source));
 }
 
 #[test]
@@ -155,7 +151,7 @@ fn integers_keep_the_record_range(
     #[case] valid: bool,
     #[case] expected: Option<i64>,
 ) {
-    let metadata = parsed(&format!("{{\"promptTokenCount\": {value}}}"));
+    let metadata = parse_usage_metadata(Some(&json(&format!("{{\"promptTokenCount\": {value}}}"))));
     assert_eq!(metadata.is_some(), valid);
     if let Some(metadata) = metadata {
         assert_eq!(metadata.prompt_token_count, expected);

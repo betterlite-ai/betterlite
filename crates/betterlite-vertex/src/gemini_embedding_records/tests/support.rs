@@ -2,6 +2,7 @@ use betterlite_models::decisions::{Extra, Json};
 use betterlite_tokenizer::count::error::CountError;
 use serde::Serialize;
 
+use crate::gemini_embedding_records::error::GeminiEmbeddingError;
 use crate::gemini_embedding_records::input::{EmbeddingInput, ResolvedFiles};
 use crate::gemini_embedding_records::usage::TextTokenCounter;
 
@@ -42,4 +43,11 @@ pub(super) fn resolved_files(source: &str) -> ResolvedFiles {
 
 pub(super) fn serialized<T: Serialize>(value: &T) -> Json {
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
+}
+
+pub(super) fn rejection(error: GeminiEmbeddingError) -> String {
+    match error {
+        GeminiEmbeddingError::Rejected { reason } => reason,
+        other => panic!("expected a rejected transformation, got {other:?}"),
+    }
 }

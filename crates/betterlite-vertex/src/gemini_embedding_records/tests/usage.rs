@@ -129,10 +129,10 @@ fn image_only_inputs_report_the_prompt_as_image_tokens(
     assert_eq!(
         usage.prompt_tokens_details,
         Some(ModalityTokens {
-            text_tokens: Some(0),
-            audio_tokens: None,
-            image_tokens: Some(7),
-            video_tokens: None,
+            text: Some(0),
+            audio: None,
+            image: Some(7),
+            video: None,
         })
     );
 }
@@ -152,10 +152,10 @@ fn non_image_inputs_report_no_image_tokens(#[case] source: &str, #[case] resolve
     assert_eq!(
         usage.prompt_tokens_details,
         Some(ModalityTokens {
-            text_tokens: Some(0),
-            audio_tokens: None,
-            image_tokens: Some(0),
-            video_tokens: None,
+            text: Some(0),
+            audio: None,
+            image: Some(0),
+            video: None,
         })
     );
 }
@@ -178,10 +178,10 @@ fn modality_details_sum_exact_uppercase_labels() {
     assert_eq!(
         usage.prompt_tokens_details,
         Some(ModalityTokens {
-            text_tokens: Some(5),
-            audio_tokens: Some(1),
-            image_tokens: Some(4),
-            video_tokens: Some(6),
+            text: Some(5),
+            audio: Some(1),
+            image: Some(4),
+            video: Some(6),
         })
     );
 }
@@ -198,10 +198,10 @@ fn modality_details_default_missing_kinds_to_zero() {
     assert_eq!(
         usage.prompt_tokens_details,
         Some(ModalityTokens {
-            text_tokens: Some(3),
-            audio_tokens: Some(0),
-            image_tokens: Some(0),
-            video_tokens: Some(0),
+            text: Some(3),
+            audio: Some(0),
+            image: Some(0),
+            video: Some(0),
         })
     );
 }
@@ -216,10 +216,10 @@ fn an_empty_detail_list_takes_the_no_details_path() {
     assert_eq!(
         usage.prompt_tokens_details,
         Some(ModalityTokens {
-            text_tokens: Some(0),
-            audio_tokens: None,
-            image_tokens: Some(4),
-            video_tokens: None,
+            text: Some(0),
+            audio: None,
+            image: Some(4),
+            video: None,
         })
     );
 }

@@ -30,18 +30,19 @@ pub fn decode_embedding_data_url(
     data_url: &str,
 ) -> Result<EmbeddingDataUrl<'_>, GeminiEmbeddingError> {
     let Some(remainder) = data_url.strip_prefix("data:") else {
-        return Err(GeminiEmbeddingError::DataUrlPrefix);
+        return Err(GeminiEmbeddingError::Rejected {
+            reason: String::from("the data URL does not start with data:"),
+        });
     };
     let Some((metadata, payload)) = remainder.split_once(',') else {
-        return Err(GeminiEmbeddingError::DataUrlComma);
+        return Err(GeminiEmbeddingError::Rejected {
+            reason: String::from("the data URL has no comma before its payload"),
+        });
     };
-    let mime_type = match metadata.split_once(';') {
-        Some((head, _parameters)) => head,
-        None => metadata,
-    };
+    let mime_type = metadata.split_once(';').map_or(metadata, |(head, _)| head);
     if !SUPPORTED_MIME_TYPES.contains(&mime_type) {
-        return Err(GeminiEmbeddingError::UnsupportedMime {
-            mime_type: mime_type.to_owned(),
+        return Err(GeminiEmbeddingError::Rejected {
+            reason: format!("{mime_type} is not a supported embedding media type"),
         });
     }
     Ok(EmbeddingDataUrl { mime_type, payload })
@@ -54,7 +55,7 @@ pub fn infer_mime_from_gcs_url(gcs_url: &str) -> Result<&'static str, GeminiEmbe
             return Ok(mime_type);
         }
     }
-    Err(GeminiEmbeddingError::UnsupportedExtension {
-        url: gcs_url.to_owned(),
+    Err(GeminiEmbeddingError::Rejected {
+        reason: format!("no supported embedding media type matches the extension of {gcs_url}"),
     })
 }

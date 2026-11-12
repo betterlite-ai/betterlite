@@ -4,6 +4,7 @@ use rstest::rstest;
 use super::support::input;
 use super::support::json;
 use super::support::object;
+use super::support::rejection;
 use super::support::resolved_files;
 use super::support::serialized;
 use crate::gemini_embedding_records::error::GeminiEmbeddingError;
@@ -147,40 +148,32 @@ fn batch_parameters_filter_to_embedding_fields(#[case] optional: &str, #[case] e
 #[case::empty_group(r#"[[]]"#)]
 #[case::empty_group_after_text(r#"["a",[]]"#)]
 fn batch_rejects_empty_groups(#[case] source: &str) {
-    assert!(matches!(
-        batch(source, "{}", "{}"),
-        Err(GeminiEmbeddingError::EmptyGroup)
-    ));
+    let error = batch(source, "{}", "{}").unwrap_err();
+    assert!(rejection(error).contains("combined embedding group"));
 }
 
 #[rstest]
 #[case::text(r#""files/missing""#)]
 #[case::in_group(r#"[["files/missing"]]"#)]
 fn batch_rejects_unresolved_file_references(#[case] source: &str) {
-    assert!(matches!(
-        batch(source, "{}", "{}"),
-        Err(GeminiEmbeddingError::UnresolvedFile { reference }) if reference == "files/missing"
-    ));
+    let error = batch(source, "{}", "{}").unwrap_err();
+    assert!(rejection(error).contains("files/missing"));
 }
 
 #[rstest]
 #[case::unsupported_extension(r#""gs://bucket/photo.gif""#)]
 #[case::extension_with_query(r#""gs://bucket/photo.png?x=1""#)]
 fn batch_rejects_unsupported_gcs_extensions(#[case] source: &str) {
-    assert!(matches!(
-        batch(source, "{}", "{}"),
-        Err(GeminiEmbeddingError::UnsupportedExtension { .. })
-    ));
+    let error = batch(source, "{}", "{}").unwrap_err();
+    assert!(rejection(error).contains("no supported embedding media type matches"));
 }
 
 #[rstest]
 #[case::unsupported_mime(r#""data:text/plain;base64,AAAA""#)]
 #[case::uppercase_mime(r#""data:IMAGE/PNG;base64,AAAA""#)]
 fn batch_rejects_unsupported_data_url_media(#[case] source: &str) {
-    assert!(matches!(
-        batch(source, "{}", "{}"),
-        Err(GeminiEmbeddingError::UnsupportedMime { .. })
-    ));
+    let error = batch(source, "{}", "{}").unwrap_err();
+    assert!(rejection(error).contains("is not a supported embedding media type"));
 }
 
 #[rstest]
@@ -189,20 +182,19 @@ fn batch_rejects_unsupported_data_url_media(#[case] source: &str) {
 fn batch_rejects_non_integer_dimensions(#[case] optional: &str) {
     assert!(matches!(
         batch(r#""hello""#, optional, "{}"),
-        Err(GeminiEmbeddingError::NotInteger {
-            field: "outputDimensionality"
+        Err(GeminiEmbeddingError::WrongType {
+            field: "outputDimensionality",
+            ..
         })
     ));
 }
 
 #[rstest]
-#[case::unknown_task_type(r#"{"task_type":"BOGUS"}"#, "BOGUS")]
-#[case::unknown_native_task_type(r#"{"taskType":"retrieval_query"}"#, "retrieval_query")]
-fn batch_rejects_unknown_task_types(#[case] optional: &str, #[case] value: &str) {
-    assert!(matches!(
-        batch(r#""hello""#, optional, "{}"),
-        Err(GeminiEmbeddingError::TaskType { value: found }) if found == value
-    ));
+#[case::unknown_task_type(r#"{"task_type":"BOGUS"}"#)]
+#[case::unknown_native_task_type(r#"{"taskType":"retrieval_query"}"#)]
+fn batch_rejects_unknown_task_types(#[case] optional: &str) {
+    let error = batch(r#""hello""#, optional, "{}").unwrap_err();
+    assert!(rejection(error).contains("is not a Gemini embedding task type"));
 }
 
 #[rstest]
@@ -211,7 +203,7 @@ fn batch_rejects_unknown_task_types(#[case] optional: &str, #[case] value: &str)
 fn batch_rejects_mistyped_text_parameters(#[case] optional: &str) {
     assert!(matches!(
         batch(r#""hello""#, optional, "{}"),
-        Err(GeminiEmbeddingError::NotText { .. })
+        Err(GeminiEmbeddingError::WrongType { .. })
     ));
 }
 
@@ -250,10 +242,8 @@ fn embed_content_carries_filtered_parameters() {
 #[case::group(r#"[["a","b"]]"#)]
 #[case::group_after_text(r#"["a",["b"]]"#)]
 fn embed_content_rejects_nested_groups(#[case] source: &str) {
-    assert!(matches!(
-        embed_content(source, "{}", "{}"),
-        Err(GeminiEmbeddingError::NestedGroupUnsupported)
-    ));
+    let error = embed_content(source, "{}", "{}").unwrap_err();
+    assert!(rejection(error).contains("combined embedding groups"));
 }
 
 #[rstest]

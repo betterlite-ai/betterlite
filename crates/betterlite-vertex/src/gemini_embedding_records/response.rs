@@ -27,11 +27,10 @@ pub fn process_batch_reply(
     for (position, embedding) in embeddings.iter().enumerate() {
         data.push(embedding_record(embedding, position)?);
     }
-    let usage = batch_usage(input, model, counter)?;
     Ok(EmbeddingReply {
         model: model.to_owned(),
         data,
-        usage,
+        usage: batch_usage(input, model, counter)?,
     })
 }
 
@@ -48,18 +47,16 @@ pub fn process_embed_content_reply(
     let Some(embedding) = fields.get("embedding") else {
         return Err(GeminiEmbeddingError::MissingField { field: "embedding" });
     };
-    let record = embedding_record(embedding, 0)?;
-    let usage = embed_content_usage(
-        input,
-        model,
-        fields.get("usageMetadata"),
-        resolved_files,
-        counter,
-    )?;
     Ok(EmbeddingReply {
         model: model.to_owned(),
-        data: vec![record],
-        usage,
+        data: vec![embedding_record(embedding, 0)?],
+        usage: embed_content_usage(
+            input,
+            model,
+            fields.get("usageMetadata"),
+            resolved_files,
+            counter,
+        )?,
     })
 }
 
@@ -74,7 +71,10 @@ fn list_field<'value>(
         return Err(GeminiEmbeddingError::MissingField { field });
     };
     let Json::List(items) = found else {
-        return Err(GeminiEmbeddingError::NotList { field });
+        return Err(GeminiEmbeddingError::WrongType {
+            field,
+            expected: "a list",
+        });
     };
     Ok(items)
 }
@@ -84,8 +84,9 @@ fn embedding_record(
     position: usize,
 ) -> Result<EmbeddingRecord, GeminiEmbeddingError> {
     let Json::Object(fields) = embedding else {
-        return Err(GeminiEmbeddingError::NotObject {
+        return Err(GeminiEmbeddingError::WrongType {
             field: "embeddings",
+            expected: "objects",
         });
     };
     let Some(values) = fields.get("values") else {
@@ -95,7 +96,10 @@ fn embedding_record(
         Json::Text(encoded) => EmbeddingVector::Base64(encoded.clone()),
         Json::List(items) => EmbeddingVector::Floats(numbers(items)?),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => {
-            return Err(GeminiEmbeddingError::NotNumbers { field: "values" });
+            return Err(GeminiEmbeddingError::WrongType {
+                field: "values",
+                expected: "a list of numbers",
+            });
         }
     };
     let index = u32::try_from(position).map_err(|_error| GeminiEmbeddingError::IndexOverflow)?;
@@ -110,7 +114,10 @@ fn numbers(items: &[Json]) -> Result<Vec<Number>, GeminiEmbeddingError> {
     let mut values = Vec::with_capacity(items.len());
     for item in items {
         let Json::Number(number) = item else {
-            return Err(GeminiEmbeddingError::NotNumbers { field: "values" });
+            return Err(GeminiEmbeddingError::WrongType {
+                field: "values",
+                expected: "a list of numbers",
+            });
         };
         values.push(number.clone());
     }

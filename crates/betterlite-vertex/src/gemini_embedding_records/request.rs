@@ -57,7 +57,8 @@ pub struct Content {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EmbedContentRequest {
-    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub content: Content,
     #[serde(flatten)]
     pub parameters: EmbedParameters,
@@ -68,67 +69,63 @@ pub struct BatchEmbeddingsRequest {
     pub requests: Vec<EmbedContentRequest>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct EmbedContentBody {
-    pub content: Content,
-    #[serde(flatten)]
-    pub parameters: EmbedParameters,
-}
-
 pub fn filter_parameters(optional: &Extra) -> Result<EmbedParameters, GeminiEmbeddingError> {
-    let mut parameters = EmbedParameters {
-        output_dimensionality: output_dimensionality(optional.get("outputDimensionality"))?,
-        task_type: task_type(optional.get("taskType"), "taskType")?,
-        title: title(optional.get("title"))?,
-    };
-    if optional.contains_key("dimensions") {
-        parameters.output_dimensionality = output_dimensionality(optional.get("dimensions"))?;
-    }
-    if optional.contains_key("task_type") {
-        parameters.task_type = task_type(optional.get("task_type"), "task_type")?;
-    }
-    Ok(parameters)
+    let dimensionality = optional
+        .get("dimensions")
+        .or_else(|| optional.get("outputDimensionality"));
+    let task_type = optional
+        .get("task_type")
+        .or_else(|| optional.get("taskType"));
+    Ok(EmbedParameters {
+        output_dimensionality: number_parameter(dimensionality)?,
+        task_type: task_parameter(task_type)?,
+        title: text_parameter(optional.get("title"))?,
+    })
 }
 
-fn output_dimensionality(value: Option<&Json>) -> Result<Option<Number>, GeminiEmbeddingError> {
+fn number_parameter(value: Option<&Json>) -> Result<Option<Number>, GeminiEmbeddingError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) if number.is_i64() || number.is_u64() => {
             Ok(Some(number.clone()))
         }
         Some(Json::Number(_) | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GeminiEmbeddingError::NotInteger {
+            Err(GeminiEmbeddingError::WrongType {
                 field: "outputDimensionality",
+                expected: "a whole number",
             })
         }
     }
 }
 
-fn task_type(
-    value: Option<&Json>,
-    field: &'static str,
-) -> Result<Option<TaskType>, GeminiEmbeddingError> {
+fn task_parameter(value: Option<&Json>) -> Result<Option<TaskType>, GeminiEmbeddingError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => {
             TaskType::parse(text)
                 .map(Some)
-                .ok_or_else(|| GeminiEmbeddingError::TaskType {
-                    value: text.clone(),
+                .ok_or_else(|| GeminiEmbeddingError::Rejected {
+                    reason: format!("{text} is not a Gemini embedding task type"),
                 })
         }
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GeminiEmbeddingError::NotText { field })
+            Err(GeminiEmbeddingError::WrongType {
+                field: "taskType",
+                expected: "text",
+            })
         }
     }
 }
 
-fn title(value: Option<&Json>) -> Result<Option<String>, GeminiEmbeddingError> {
+fn text_parameter(value: Option<&Json>) -> Result<Option<String>, GeminiEmbeddingError> {
     match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(GeminiEmbeddingError::NotText { field: "title" })
+            Err(GeminiEmbeddingError::WrongType {
+                field: "title",
+                expected: "text",
+            })
         }
     }
 }
@@ -144,23 +141,20 @@ pub fn transform_batch_request(
     let mut requests = Vec::new();
     match input {
         EmbeddingInput::Text(text) => requests.push(EmbedContentRequest {
-            model: request_model,
+            model: Some(request_model),
             content: Content {
                 parts: vec![build_part(text, resolved_files)?],
             },
             parameters,
         }),
         EmbeddingInput::Entries(entries) => {
-            let mut grouped = Vec::with_capacity(entries.len());
             for entry in entries {
-                grouped.push(match entry {
+                let parts = match entry {
                     InputEntry::Text(text) => vec![build_part(text, resolved_files)?],
                     InputEntry::Group(group) => group_parts(group, resolved_files)?,
-                });
-            }
-            for parts in grouped {
+                };
                 requests.push(EmbedContentRequest {
-                    model: request_model.clone(),
+                    model: Some(request_model.clone()),
                     content: Content { parts },
                     parameters: parameters.clone(),
                 });
@@ -174,7 +168,7 @@ pub fn transform_embed_content(
     input: &EmbeddingInput,
     optional: &Extra,
     resolved_files: &ResolvedFiles,
-) -> Result<EmbedContentBody, GeminiEmbeddingError> {
+) -> Result<EmbedContentRequest, GeminiEmbeddingError> {
     let parameters = filter_parameters(optional)?;
     let mut parts = Vec::new();
     match input {
@@ -184,13 +178,18 @@ pub fn transform_embed_content(
                 match entry {
                     InputEntry::Text(text) => parts.push(build_part(text, resolved_files)?),
                     InputEntry::Group(_) => {
-                        return Err(GeminiEmbeddingError::NestedGroupUnsupported);
+                        return Err(GeminiEmbeddingError::Rejected {
+                            reason: String::from(
+                                "the embedContent path does not accept combined embedding groups",
+                            ),
+                        });
                     }
                 }
             }
         }
     }
-    Ok(EmbedContentBody {
+    Ok(EmbedContentRequest {
+        model: None,
         content: Content { parts },
         parameters,
     })
@@ -201,7 +200,9 @@ fn group_parts(
     resolved_files: &ResolvedFiles,
 ) -> Result<Vec<Part>, GeminiEmbeddingError> {
     if group.is_empty() {
-        return Err(GeminiEmbeddingError::EmptyGroup);
+        return Err(GeminiEmbeddingError::Rejected {
+            reason: String::from("a combined embedding group must hold at least one text"),
+        });
     }
     let mut parts = Vec::with_capacity(group.len());
     for element in group {

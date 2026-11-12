@@ -87,8 +87,9 @@ fn batch_replies_that_are_not_objects_are_rejected() {
 fn batch_embeddings_must_be_a_list() {
     assert!(matches!(
         batch_reply(r#""a""#, r#"{"embeddings":{}}"#),
-        Err(GeminiEmbeddingError::NotList {
-            field: "embeddings"
+        Err(GeminiEmbeddingError::WrongType {
+            field: "embeddings",
+            expected: "a list"
         })
     ));
 }
@@ -97,8 +98,9 @@ fn batch_embeddings_must_be_a_list() {
 fn batch_embedding_entries_must_be_objects() {
     assert!(matches!(
         batch_reply(r#""a""#, r#"{"embeddings":[[]]}"#),
-        Err(GeminiEmbeddingError::NotObject {
-            field: "embeddings"
+        Err(GeminiEmbeddingError::WrongType {
+            field: "embeddings",
+            expected: "objects"
         })
     ));
 }
@@ -111,7 +113,10 @@ fn batch_embedding_entries_must_be_objects() {
 fn batch_embedding_values_must_be_numbers(#[case] response: &str) {
     assert!(matches!(
         batch_reply(r#""a""#, response),
-        Err(GeminiEmbeddingError::NotNumbers { field: "values" })
+        Err(GeminiEmbeddingError::WrongType {
+            field: "values",
+            ..
+        })
     ));
 }
 
