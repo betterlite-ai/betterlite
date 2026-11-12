@@ -1,0 +1,37 @@
+kind: helper
+name: gemini-candidates-function-finish-precedence
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - content:
+            parts:
+              - functionCall:
+                  name: lookup
+                  args: {city: Paris}
+          finishReason: STOP
+        - content:
+            parts:
+              - functionCall:
+                  name: forecast
+                  args: {days: 3}
+          finishReason: MAX_TOKENS
+        - content:
+            parts:
+              - text: plain
+          finishReason: MAX_TOKENS
+        - content:
+            parts:
+              - text: unmapped
+          finishReason: SOMETHING_NEW
+      usageMetadata:
+        promptTokenCount: 2
+        candidatesTokenCount: 4
+        totalTokenCount: 6
+env: {}
+compare: {ignore: []}
