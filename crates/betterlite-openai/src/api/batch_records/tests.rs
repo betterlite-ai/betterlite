@@ -297,17 +297,31 @@ fn retrieve_and_list_requests_read_their_keys() {
     assert_eq!(serde_json::to_value(first_page).unwrap(), val("{}"));
 }
 
-#[rstest]
-fn replays_corpus(#[files("fuzz/corpus/batch_records/*")] path: PathBuf) {
-    let name = path.file_name().unwrap().to_str().unwrap();
-    let outcome = decode_batch_records(&fs::read(&path).unwrap(), &limits());
-    if name.starts_with("rows-") {
-        assert!(outcome.unwrap().unparsed.is_none(), "{name}");
-    } else if name.starts_with("tail-") {
-        assert!(outcome.unwrap().unparsed.is_some(), "{name}");
-    } else if name == "not-utf8" {
-        assert!(matches!(outcome, Err(BatchRecordsError::NotUtf8(_))));
-    } else {
-        assert!(outcome.unwrap().rows.is_empty(), "{name}");
-    }
+#[test]
+fn replays_corpus() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/batch_records");
+    let verdicts = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            let outcome = decode_batch_records(&fs::read(&path).unwrap(), &limits());
+            let expected = if name.starts_with("rows-") {
+                outcome.is_ok_and(|decoded| decoded.unparsed.is_none())
+            } else if name.starts_with("tail-") {
+                outcome.is_ok_and(|decoded| decoded.unparsed.is_some())
+            } else if name == "not-utf8" {
+                matches!(outcome, Err(BatchRecordsError::NotUtf8(_)))
+            } else {
+                outcome.is_ok_and(|decoded| decoded.rows.is_empty())
+            };
+            (name, expected)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(verdicts.len(), 8_usize);
+    let failed = verdicts
+        .into_iter()
+        .filter_map(|(name, expected)| (!expected).then_some(name))
+        .collect::<Vec<_>>();
+    assert!(failed.is_empty(), "{failed:?}");
 }
