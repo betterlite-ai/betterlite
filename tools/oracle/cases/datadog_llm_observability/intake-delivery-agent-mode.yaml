@@ -1,0 +1,115 @@
+{
+  "kind": "helper",
+  "name": "datadog-llm-observability-intake-delivery-agent-mode",
+  "call": {
+    "b3938": {
+      "scenarios": [
+        {
+          "name": "datadog-llm-observability-intake-delivery-agent-mode",
+          "environment": {
+            "LITELLM_DD_AGENT_HOST": "agent.local"
+          },
+          "replies": [
+            {
+              "status": 202,
+              "body": ""
+            }
+          ],
+          "actions": [
+            {
+              "do": "success",
+              "start_time": 1704067200.0,
+              "end_time": 1704067201.5,
+              "payload": {
+                "id": "chatcmpl-1",
+                "trace_id": "trace-1",
+                "session_id": "session-1",
+                "call_type": "completion",
+                "response_cost": 0.5,
+                "status": "success",
+                "status_fields": {
+                  "llm_api_status": "success",
+                  "guardrail_status": "not_run"
+                },
+                "total_tokens": 5,
+                "prompt_tokens": 2,
+                "completion_tokens": 3,
+                "startTime": 1704067200.0,
+                "endTime": 1704067201.5,
+                "completionStartTime": 1704067200.5,
+                "response_time": 1.5,
+                "model_map_information": {},
+                "model": "gpt-4o",
+                "api_base": "https://api.openai.com",
+                "saved_cache_cost": 0.0,
+                "request_tags": [],
+                "model_parameters": {},
+                "hidden_params": {},
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "hi"
+                  }
+                ],
+                "response": {
+                  "choices": [
+                    {
+                      "message": {
+                        "role": "assistant",
+                        "content": "hello"
+                      }
+                    }
+                  ]
+                },
+                "metadata": {
+                  "user_api_key_hash": null,
+                  "user_api_key_alias": null,
+                  "user_api_key_spend": null,
+                  "user_api_key_max_budget": null,
+                  "user_api_key_budget_reset_at": null,
+                  "user_api_key_user_spend": null,
+                  "user_api_key_user_max_budget": null,
+                  "user_api_key_team_spend": null,
+                  "user_api_key_team_max_budget": null,
+                  "user_api_key_org_id": null,
+                  "user_api_key_org_alias": null,
+                  "user_api_key_team_id": null,
+                  "user_api_key_project_id": null,
+                  "user_api_key_project_alias": null,
+                  "user_api_key_user_id": null,
+                  "user_api_key_user_email": null,
+                  "user_api_key_team_alias": null,
+                  "user_api_key_end_user_id": null,
+                  "user_api_key_request_route": null,
+                  "user_api_key_auth_metadata": null,
+                  "spend_logs_metadata": null,
+                  "requester_ip_address": null,
+                  "user_agent": null,
+                  "requester_metadata": null,
+                  "requester_custom_headers": null,
+                  "prompt_management_metadata": null,
+                  "mcp_tool_call_metadata": null,
+                  "vector_store_request_metadata": null,
+                  "routing_decision": null,
+                  "applied_guardrails": null,
+                  "usage_object": null,
+                  "cold_storage_object_key": null,
+                  "team_alias": null,
+                  "team_id": null,
+                  "used_client_oauth_token": null
+                }
+              }
+            },
+            {
+              "do": "flush"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

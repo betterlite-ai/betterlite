@@ -1,0 +1,56 @@
+kind: helper
+name: location-file-id-name
+call:
+  bedrock_services_vector_stores:
+    operation: location_file_id_name
+    metadata:
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/dir/report.txt"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/dir/"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket"}
+      - {x-amz-bedrock-kb-source-uri: "https://example.com/a/b.pdf"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/a%20b.txt"}
+      - {x-amz-bedrock-kb-source-uri: "a/b"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[1.2.3.4]/x"}
+      - {x-amz-bedrock-kb-source-uri: " s3://bucket/dir/"}
+      - {x-amz-bedrock-kb-source-uri: "\u0001s3://bucket/k.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[fe80::1%eth0]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[fe80::1%]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[v1.x]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[v1.]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[vz.x]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[v.x]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "https://host/a;b.pdf"}
+      - {x-amz-bedrock-kb-source-uri: "a/b;c"}
+      - {x-amz-bedrock-kb-source-uri: "https://host/x;"}
+      - {x-amz-bedrock-kb-source-uri: "https://host/;x"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/a;b.txt"}
+      - {x-amz-bedrock-kb-source-uri: "HTTPS://host/a;b"}
+      - {x-amz-bedrock-kb-source-uri: "a;b"}
+      - {x-amz-bedrock-kb-source-uri: ";x"}
+      - {x-amz-bedrock-kb-source-uri: "ftp://h/d;t/e;f.txt"}
+      - {x-amz-bedrock-kb-source-uri: "https://host/dir;x/"}
+      - {x-amz-bedrock-kb-source-uri: "https://host/a;b/c"}
+      - {x-amz-bedrock-kb-source-uri: "http://host;x"}
+      - {x-amz-bedrock-kb-source-uri: "/;x"}
+      - {x-amz-bedrock-kb-source-uri: "s3://bucket/dir;x/"}
+      - {x-amz-bedrock-kb-source-uri: "http://u@[::1]:80/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://a[::1]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1]x/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1]:80/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://u[x@host]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1%a%b]/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[::1]:80@x/box.txt"}
+      - {x-amz-bedrock-kb-source-uri: "http://[g::1]/box.txt"}
+      - {x-amz-bedrock-kb-chunk-id: chunk-1}
+      - {x-amz-bedrock-kb-chunk-id: null}
+      - {x-amz-bedrock-kb-source-uri: ""}
+      - {x-amz-bedrock-kb-data-source-id: ds-1}
+      - {x-amz-bedrock-kb-source-uri: 0}
+      - {x-amz-bedrock-kb-source-uri: "a b://host/"}
+      - {}
+      - null
+env: {}
+compare: {ignore: []}

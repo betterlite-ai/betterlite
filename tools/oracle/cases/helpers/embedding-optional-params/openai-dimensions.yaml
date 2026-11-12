@@ -1,0 +1,77 @@
+kind: helper
+name: embedding-optional-params-openai-dimensions
+call:
+  b5363:
+    calls:
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        dimensions: 256
+        kwargs: {}
+      - model: text-embedding-3-large
+        custom_llm_provider: openai
+        dimensions: 0
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: openai
+        dimensions: 256
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: openai
+        dimensions: 256
+        drop_params: true
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: openai
+        dimensions: 256
+        litellm_drop_params: true
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: openai
+        dimensions: 256
+        allowed_openai_params: [dimensions]
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: openai
+        dimensions: 256
+        allowed_openai_params: [temperature]
+        kwargs: {}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        user: u
+        kwargs: {}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        user: null
+        kwargs: {}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        dimensions: 256
+        user: u
+        kwargs: {custom_field: 1, extra_body: {a: 1}}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        kwargs: {extra_body: {}}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        kwargs: {extra_body: null}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        additional_drop_params: [extra_body]
+        kwargs: {extra_body: {a: 1}}
+      - model: text-embedding-3-small
+        custom_llm_provider: openai
+        additional_drop_params: [custom_field]
+        kwargs: {custom_field: 1}
+      - model: text-embedding-ada-002
+        custom_llm_provider: azure
+        dimensions: 256
+        kwargs: {}
+      - model: text-embedding-ada-002
+        custom_llm_provider: azure
+        kwargs: {custom_field: 1}
+      - model: m
+        custom_llm_provider: openai
+        encoding_format: float
+        kwargs: {vertex_project: p, vertex_location: l, aws_region_name: r, hf_model_name: h}
+env: {}
+compare: {ignore: []}
