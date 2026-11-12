@@ -1,0 +1,43 @@
+kind: helper
+name: realtime-contract-defaults
+call:
+  realtime_contracts:
+    function: records
+    groups:
+      - kind: expiry
+        documents:
+          - {}
+          - {anchor: null}
+          - {anchor: created_at, seconds: 30}
+          - {anchor: "", seconds: null}
+          - {future: 1}
+      - kind: session
+        documents:
+          - {future: 1}
+          - {type: realtime, model: m, instructions: hi, audio: {input: {format: pcm16}}, include: [a], max_output_tokens: 12, output_modalities: [audio], tool_choice: auto, tools: [{type: function}], tracing: auto, truncation: {type: retention_ratio}, prompt: {id: p}, future: {deep: true}}
+          - {max_output_tokens: twelve}
+      - kind: client_secret_request
+        documents:
+          - {model: m, bogus: 1, session: {model: s, future: 2}}
+      - kind: client_secret_response
+        documents:
+          - {value: ""}
+          - {expires_at: 30, value: ephemeral, session: {client_secret: {value: v}}}
+          - {value: ephemeral, future: 1}
+      - kind: transcription_request
+        documents:
+          - {model: m, input_audio_transcription: {model: "n"}}
+          - {model: "", input_audio_transcription: {model: "n"}}
+          - {input_audio_transcription: {model: ""}}
+          - {input_audio_transcription: {language: en}}
+          - {model: solo, future: 1}
+      - kind: transcription_response
+        documents:
+          - {client_secret: {value: v}, future: 2}
+      - kind: usage
+        usage:
+          - {type: tokens, input_tokens: 3, output_tokens: 4, total_tokens: 7, text_tokens: 2, audio_tokens: 1, seconds: 0.0}
+          - {type: duration, input_tokens: 0, output_tokens: 0, total_tokens: 0, text_tokens: 0, audio_tokens: 0, seconds: 1.5}
+          - {type: duration, input_tokens: 0, output_tokens: 0, total_tokens: 0, text_tokens: 0, audio_tokens: 0, seconds: 2}
+env: {}
+compare: {ignore: []}
