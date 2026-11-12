@@ -1,0 +1,17 @@
+kind: helper
+name: shared-output-metadata
+call:
+  response_chat_history:
+    operation: shared_output_metadata
+    responses:
+      - fields: {id: bad, output: [], instructions: x, choices: [], usage: {total_tokens: 1}, status: completed, vendor: 7, nested: {a: 1}, empty: null}
+        id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpncHQtNG87cmVzcG9uc2VfaWQ6cmVzcF9h
+        payload: {incomplete_details: {reason: content_filter}}
+      - {fields: null, id: null, payload: {incomplete_details: {reason: max_output_tokens}}}
+      - {payload: {incomplete_details: {reason: 7}}}
+      - {payload: {incomplete_details: null}}
+      - {payload: {}}
+      - {payload: not-a-map}
+      - {fields: {}, id: resp_a, payload: {incomplete_details: {reason: unknown}}}
+env: {}
+compare: {ignore: []}

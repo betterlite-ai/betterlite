@@ -1,0 +1,16 @@
+kind: helper
+name: assistant-call-history
+call:
+  response_chat_history:
+    operation: assistant_call_history
+    histories:
+      - - {role: assistant, content: hi, reasoning_items: [{id: rs_a, type: reasoning, summary: [{type: summary_text, text: s}]}], tool_calls: [{id: c1, type: function, function: {name: f, arguments: "{}"}}, {id: c2, type: custom, custom: {name: g, input: x}}]}
+      - - {role: assistant, content: "", tool_calls: [{id: c1, function: {name: f}}]}
+      - - {role: assistant, content: null, reasoning_items: [{id: rs_a, type: reasoning, summary: null}]}
+      - - {role: assistant, content: ""}
+      - - {role: user, content: null}
+      - - {role: assistant, content: null, tool_calls: [{id: c9, function: {}, custom: {name: g, input: i}}]}
+      - - {role: assistant, content: null, tool_calls: [{id: c9, function: {name: f}, custom: {name: g}}]}
+        - {role: tool, tool_call_id: c9, content: ok}
+env: {}
+compare: {ignore: []}

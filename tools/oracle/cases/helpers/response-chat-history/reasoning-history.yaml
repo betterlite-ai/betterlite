@@ -1,0 +1,21 @@
+kind: helper
+name: reasoning-history
+call:
+  response_chat_history:
+    operation: reasoning_history
+    messages:
+      - {role: assistant, content: null, reasoning_items: [{id: rs_a, type: reasoning, summary: null, encrypted_content: ""}, {type: reasoning, summary: [{type: summary_text, text: t}]}, {id: rs_b, type: reasoning, summary: [{type: custom, text: u}], encrypted_content: cipher}, {id: "", type: reasoning, summary: [], encrypted_content: null}]}
+      - {role: assistant, content: null, thinking_blocks: [{type: thinking, thinking: x, signature: ""}, {type: thinking, thinking: y, signature: "litellm_encrypted_reasoning:cipher"}, {type: redacted_thinking, data: "litellm_encrypted_reasoning:red"}, {type: thinking, thinking: z, signature: sig}]}
+      - {role: assistant, content: null, reasoning_items: [], thinking_blocks: [{type: thinking, thinking: w, signature: sig}]}
+      - {role: assistant, content: null, reasoning_items: []}
+    output_item_groups:
+      - - {kind: dict, value: {type: reasoning, id: rs_d, summary: [{text: dict}], encrypted_content: null}}
+        - {kind: typed, value: {id: rs_t, type: reasoning, summary: [{type: summary_text, text: typed}], encrypted_content: enc}}
+        - {kind: dict, value: {type: message, role: assistant}}
+        - {kind: typed_other}
+      - []
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/reasoning_input/0/1/id, why: "LiteLLM mints the fallback from the item's process address; betterlite uses an opaque rs_ identifier"}
+    - {pointer: /value/reasoning_input/0/3/id, why: "LiteLLM mints the fallback from the item's process address; betterlite uses an opaque rs_ identifier"}
