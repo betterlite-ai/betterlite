@@ -36,14 +36,18 @@ struct FakeTransport {
 
 impl FakeTransport {
     fn new(probe: &Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
-        let mut headers = HeaderMap::new();
-        for (name, value) in &probe.reply.headers {
-            let header_name = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|error| invalid(error.to_string()))?;
-            let header_value =
-                HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
-            headers.insert(header_name, header_value);
-        }
+        let headers = probe
+            .reply
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                let header_name = HeaderName::from_bytes(name.as_bytes())
+                    .map_err(|error| invalid(error.to_string()))?;
+                let header_value =
+                    HeaderValue::from_str(value).map_err(|error| invalid(error.to_string()))?;
+                Ok((header_name, header_value))
+            })
+            .collect::<Result<HeaderMap, Box<crate::helpers::HelperError>>>()?;
         Ok(Self {
             status: probe.reply.status,
             headers,

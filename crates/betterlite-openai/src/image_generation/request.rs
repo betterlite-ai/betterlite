@@ -4,6 +4,7 @@ use betterlite_models::call_helpers::headers::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::Deserialize;
 
 use super::call::{
     ImageGenerationCall, PreparedImageCall, authorization_headers, prepare_image_call,
@@ -152,24 +153,23 @@ fn checked_reply(
     }
 }
 
+#[derive(Deserialize)]
+struct StatusBody {
+    error: Option<StatusError>,
+}
+
+#[derive(Deserialize)]
+struct StatusError {
+    message: Option<String>,
+}
+
+// the error object's text message when the body carries one, else the body itself
 fn status_message(text: &str) -> String {
-    let body = serde_json::from_str::<Json>(text)
+    serde_json::from_str::<StatusBody>(text)
         .ok()
-        .and_then(|value| match value {
-            Json::Object(fields) => fields.get("error").cloned(),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-        });
-    body.and_then(|error| match error {
-        Json::Object(fields) => match fields.get("message") {
-            Some(Json::Text(message)) => Some(message.clone()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    })
-    .unwrap_or_else(|| text.to_owned())
+        .and_then(|body| body.error)
+        .and_then(|error| error.message)
+        .unwrap_or_else(|| text.to_owned())
 }
 
 fn response_headers(
