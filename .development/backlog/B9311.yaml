@@ -1,13 +1,13 @@
 id: B9311
 milestone: M0 oracle helpers
 title: Bedrock AWS settings helper on LiteLLM's public API
-status: todo
+status: done
 depends_on: [B590]
 file: tasks/B9311-bedrock-aws-settings-public-api.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1346

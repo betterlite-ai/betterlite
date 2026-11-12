@@ -1,0 +1,12 @@
+kind: helper
+name: transcription-contract-defaults
+call:
+  transcription_contract:
+    function: defaults
+    data_object: {}
+    data_bytes: abc
+    named_files: {a.wav: abc}
+    content_type: audio/wav
+    api_bases: [null, "", https://mock/transcribe]
+env: {}
+compare: {ignore: []}

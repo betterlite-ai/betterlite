@@ -146,36 +146,29 @@ fn add_page_routes(builder: &mut RouteBuilder) {
         return;
     };
     if let Some(docs_url) = builder.config.urls.docs_url.clone() {
-        for path in route_variants(&builder.config.server_root_path, &docs_url) {
-            let route = page_router(&builder.config, &openapi_url, DocsPage::Swagger);
-            builder.add(&path, route);
-        }
-        for path in route_variants(&builder.config.server_root_path, "/docs/oauth2-redirect") {
-            builder.add(
-                &path,
-                get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
-            );
-        }
+        let route = page_router(&builder.config, &openapi_url, DocsPage::Swagger);
+        builder.add(&docs_url, route);
+        builder.add(
+            "/docs/oauth2-redirect",
+            get(|| async { Html(oauth2_redirect_page()) }).fallback(method_not_allowed),
+        );
     }
     if let Some(redoc_url) = builder.config.urls.redoc_url.clone() {
-        for path in route_variants(&builder.config.server_root_path, &redoc_url) {
-            let route = page_router(&builder.config, &openapi_url, DocsPage::Redoc);
-            builder.add(&path, route);
-        }
+        let route = page_router(&builder.config, &openapi_url, DocsPage::Redoc);
+        builder.add(&redoc_url, route);
     }
 }
 
 fn add_mount_routes(builder: &mut RouteBuilder) {
-    for path in route_variants(&builder.config.server_root_path, "/swagger/") {
-        builder.add(
-            &path,
-            get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
-                .fallback(method_not_allowed),
-        );
-    }
-    for path in route_variants(&builder.config.server_root_path, "/swagger/{*path}") {
-        builder.add(&path, get(swagger_file).fallback(method_not_allowed));
-    }
+    builder.add(
+        "/swagger/",
+        get(|| async { detail_response(StatusCode::NOT_FOUND, "Not Found") })
+            .fallback(method_not_allowed),
+    );
+    builder.add(
+        "/swagger/{*path}",
+        get(swagger_file).fallback(method_not_allowed),
+    );
 }
 
 fn add_root_redirect(builder: &mut RouteBuilder) {
@@ -185,11 +178,8 @@ fn add_root_redirect(builder: &mut RouteBuilder) {
     let Some(url) = builder.config.urls.root_redirect_url.clone() else {
         return;
     };
-    let location = redirect_location(None, &url);
-    for path in route_variants(&builder.config.server_root_path, "/") {
-        let route = redirect_router(location.clone());
-        builder.add(&path, route);
-    }
+    let route = redirect_router(redirect_location(None, &url));
+    builder.add("/", route);
 }
 
 fn redirect_router(location: String) -> MethodRouter {
@@ -209,24 +199,6 @@ fn page_router(config: &DocsRouteConfig, openapi_url: &str, page: DocsPage) -> M
         async move { Html(content) }
     })
     .fallback(method_not_allowed)
-}
-
-fn route_variants(server_root_path: &str, path: &str) -> Vec<String> {
-    let prefix = route_prefix(server_root_path);
-    if prefix.is_empty() {
-        return vec![path.to_owned()];
-    }
-    vec![path.to_owned(), format!("{prefix}{path}")]
-}
-
-// FastAPI gets the scalar root path as root_path, so it strips a whole-segment prefix while matching
-fn route_prefix(server_root_path: &str) -> &str {
-    let trimmed = server_root_path.trim_end_matches('/');
-    if trimmed.starts_with('/') {
-        trimmed
-    } else {
-        ""
-    }
 }
 
 fn swagger_base(server_root_path: &str) -> String {
