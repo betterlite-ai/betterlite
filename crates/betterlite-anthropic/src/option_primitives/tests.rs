@@ -139,40 +139,31 @@ fn assert_resolved_providers() {
 
 fn model_output_capacity_case() {
     let catalog = catalog();
-    assert_eq!(
-        get_max_tokens_for_model(&catalog, None, 4096),
-        4096,
-        "no model takes the configured default"
-    );
+    assert_eq!(get_max_tokens_for_model(&catalog, None, 4096), 4096);
     assert_eq!(
         get_max_tokens_for_model(&catalog, Some("zero-limit"), 4096),
-        0,
-        "a catalog zero wins over the default"
+        0
     );
     assert_eq!(
         get_max_tokens_for_model(&catalog, Some("max-only"), 4096),
-        7,
-        "max_tokens stands in when max_output_tokens is absent"
+        7
     );
     assert_eq!(
         get_max_tokens_for_model(&catalog, Some("no-limits"), 4096),
-        4096,
-        "a mapped model without limits falls back"
+        4096
     );
     assert_eq!(
         get_max_tokens_for_model(&catalog, Some("missing-model"), 1234),
-        1234,
-        "an unmapped model falls back"
+        1234
     );
-    assert_eq!(
-        get_max_tokens_for_model(&catalog, None, 1234),
-        1234,
-        "the fallback is the configured default, not 4096"
-    );
+    assert_eq!(get_max_tokens_for_model(&catalog, None, 1234), 1234);
     assert_eq!(
         get_max_tokens_for_model(&catalog, Some("wide-limit"), 1234),
-        1234,
-        "a limit past i64 falls back instead of wrapping"
+        1234
+    );
+    assert_eq!(
+        get_max_tokens_for_model(&catalog, Some("huggingface/anything"), 1234),
+        1234
     );
 }
 
@@ -349,24 +340,25 @@ fn assert_context_thresholds() {
 }
 
 fn assert_context_overrides() {
-    assert_eq!(
-        context(
-            r#"[{"type": "compaction", "compact_threshold": 5, "trigger": {"type": "custom"}, "note": "kept"}]"#
+    let cases = [
+        (
+            r#"[{"type": "compaction", "compact_threshold": 5, "trigger": {"type": "custom"}, "note": "kept"}]"#,
+            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "custom"}, "note": "kept"}]}"#,
         ),
-        json(
-            r#"{"edits": [{"type": "compact_20260112", "trigger": {"type": "custom"}, "note": "kept"}]}"#
-        )
-    );
-    assert_eq!(
-        context(r#"[{"type": "compaction", "compact_threshold": "100"}]"#),
-        json(r#"{"edits": [{"type": "compact_20260112"}]}"#)
-    );
-    assert_eq!(
-        context(
-            r#"[5, "x", null, {"type": "other", "compact_threshold": 1}, {"type": "compaction"}]"#
+        (
+            r#"[{"type": "compaction", "compact_threshold": "100"}]"#,
+            r#"{"edits": [{"type": "compact_20260112"}]}"#,
         ),
-        json(r#"{"edits": [{"type": "compact_20260112"}]}"#)
-    );
+        (
+            r#"[5, "x", null, {"type": "other", "compact_threshold": 1}, {"type": "compaction"}]"#,
+            r#"{"edits": [{"type": "compact_20260112"}]}"#,
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(context(input), json(expected));
+    }
+    let huge = json(r#"[{"type": "compaction", "compact_threshold": 1e30}]"#);
+    map_context_management(&huge).unwrap_err();
 }
 
 fn user_identifier_filter_case() {
