@@ -1,0 +1,10 @@
+kind: helper
+name: openai-reasoning-models-search-allowlist
+call:
+  openai_reasoning_models:
+    gpt5_search_allowlist:
+      probes:
+      - {model: gpt-5-search-api, chat_models: [gpt-5-search-api], requested: {max_tokens: 4, temperature: 0.2, reasoning_effort: high, web_search_options: {search_context_size: low}, store: true, service_tier: default}, existing: {max_tokens: 9, user: caller}}
+      - {model: proxy/gpt-5-search}
+env: {}
+compare: {ignore: []}

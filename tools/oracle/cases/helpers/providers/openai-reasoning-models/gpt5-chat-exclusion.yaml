@@ -1,0 +1,12 @@
+kind: helper
+name: openai-reasoning-models-chat-exclusion
+call:
+  openai_reasoning_models:
+    gpt5_chat_exclusion:
+      probes:
+      - {model: gpt-5-chat, chat_models: [gpt-5-chat]}
+      - {model: proxy/gpt-5-chat}
+      - {model: gpt-5-search-api, chat_models: [gpt-5-search-api]}
+      - {model: gpt-5.1}
+env: {}
+compare: {ignore: []}
