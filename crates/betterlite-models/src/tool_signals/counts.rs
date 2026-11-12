@@ -57,22 +57,14 @@ fn pydantic_integer(value: &Json) -> Option<i64> {
 }
 
 fn pydantic_number(number: &Number) -> Option<i64> {
-    let literal = number.to_string();
     if let Some(value) = number.as_i64() {
         return Some(value);
     }
-    if !literal.contains(['.', 'e', 'E']) {
+    let value: f64 = number.to_string().parse().ok()?;
+    if value.fract() != 0.0_f64 {
         return None;
     }
-    let value: f64 = literal.parse().ok()?;
-    if !value.is_finite() || value.fract() != 0.0_f64 {
-        return None;
-    }
-    let decimal = Decimal::try_from(value).ok()?;
-    if decimal <= Decimal::from(i64::MIN) || decimal >= Decimal::from(i64::MAX) {
-        return None;
-    }
-    decimal.to_i64()
+    Decimal::try_from(value).ok()?.to_i64()
 }
 
 fn pydantic_text(text: &str) -> Option<i64> {

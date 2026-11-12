@@ -230,6 +230,9 @@ fn chat_server_tool_counts_including_zero_signal_web_search() {
 #[case::negative(r#"{"web_search_calls":-1}"#, false)]
 #[case::numeric_string(r#"{"web_search_calls":"3"}"#, false)]
 #[case::integral_float(r#"{"web_search_calls":3.0}"#, false)]
+#[case::beyond_i64(r#"{"web_search_calls":99999999999999999999}"#, true)]
+#[case::negative_beyond_i64(r#"{"web_search_calls":-99999999999999999999}"#, false)]
+#[case::exponent(r#"{"web_search_calls":1e2}"#, false)]
 #[case::null(r#"{"web_search_calls":null}"#, false)]
 #[case::missing("{}", false)]
 fn the_server_side_counter_accepts_only_positive_integers(

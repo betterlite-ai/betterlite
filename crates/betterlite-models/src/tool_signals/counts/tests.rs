@@ -98,6 +98,14 @@ fn an_empty_output_floors_at_one_call() {
 #[case::list_search(r#"{"web_search":[]}"#)]
 #[case::not_a_mapping("5")]
 #[case::null_tool_usage("null")]
+#[case::beyond_i64(r#"{"web_search":{"num_requests":99999999999999999999}}"#)]
+#[case::beyond_i64_float(r#"{"web_search":{"num_requests":1e30}}"#)]
+#[case::overflowing_float(r#"{"web_search":{"num_requests":1e400}}"#)]
+#[case::fractional_text(r#"{"web_search":{"num_requests":"3.5"}}"#)]
+#[case::empty_fraction_text(r#"{"web_search":{"num_requests":"3."}}"#)]
+#[case::late_fraction_digit_text(r#"{"web_search":{"num_requests":"3.05"}}"#)]
+#[case::letter_fraction_text(r#"{"web_search":{"num_requests":"3.0x"}}"#)]
+#[case::negative_text(r#"{"web_search":{"num_requests":"-3"}}"#)]
 fn invalid_tool_usage_falls_back_to_counting_items(#[case] tool_usage: &str) {
     let response = responses_with(vec![web_search_item(), web_search_item()], Some(tool_usage));
     assert_eq!(count_web_search_calls(&response), Ok(2));
@@ -106,11 +114,29 @@ fn invalid_tool_usage_falls_back_to_counting_items(#[case] tool_usage: &str) {
 #[rstest]
 #[case::integral_float(r#"{"web_search":{"num_requests":3.0}}"#)]
 #[case::numeric_string(r#"{"web_search":{"num_requests":"3"}}"#)]
-#[case::boolean(r#"{"web_search":{"num_requests":true}}"#)]
+#[case::zero_fraction_text(r#"{"web_search":{"num_requests":"3.0"}}"#)]
+#[case::long_zero_fraction_text(r#"{"web_search":{"num_requests":"3.00"}}"#)]
 fn pydantic_lax_counts_are_reported(#[case] tool_usage: &str) {
     let response = responses_with(Vec::new(), Some(tool_usage));
-    let expected = if tool_usage.contains("true") { 1 } else { 3 };
-    assert_eq!(count_web_search_calls(&response), Ok(expected));
+    assert_eq!(count_web_search_calls(&response), Ok(3));
+}
+
+#[test]
+fn a_reported_true_is_a_single_call() {
+    let response = responses_with(Vec::new(), Some(r#"{"web_search":{"num_requests":true}}"#));
+    assert_eq!(count_web_search_calls(&response), Ok(1));
+}
+
+#[test]
+fn a_reported_count_keeps_full_integer_precision() {
+    let response = responses_with(
+        Vec::new(),
+        Some(r#"{"web_search":{"num_requests":1234567890123456789}}"#),
+    );
+    assert_eq!(
+        count_web_search_calls(&response),
+        Ok(1_234_567_890_123_456_789)
+    );
 }
 
 #[test]

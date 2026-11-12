@@ -68,10 +68,12 @@ fn non_finite_quantities_are_typed_errors(#[case] source: &str, #[case] field: Q
         QuantityField::StorageGb => "storage_gb",
         QuantityField::Days => "days",
     };
-    let usage = json(&format!("{{{key}:{source}}}"));
+    let usage = json(&format!(r#"{{"{key}":{source}}}"#));
+    let error = extract_file_search_params(Some(&usage)).expect_err("a non-finite quantity fails");
+    assert_eq!(error, ToolSignalError::NonFiniteQuantity { field });
     assert_eq!(
-        extract_file_search_params(Some(&usage)),
-        Err(ToolSignalError::NonFiniteQuantity { field })
+        error.to_string(),
+        format!("the {key} file-search quantity is not a finite number")
     );
 }
 
@@ -150,6 +152,7 @@ fn int_conversion_follows_the_source_rules(#[case] source: &str, #[case] expecte
 #[rstest]
 #[case::huge_integer("9223372036854775808")]
 #[case::huge_float("1e19")]
+#[case::overflowing_float("1e400")]
 #[case::huge_text(r#""999999999999999999999999""#)]
 fn counters_past_the_signed_range_are_typed_errors(#[case] source: &str) {
     assert_eq!(

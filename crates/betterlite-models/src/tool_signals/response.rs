@@ -262,7 +262,7 @@ fn integer_above_zero(number: &Number) -> bool {
     if literal.contains(['.', 'e', 'E']) {
         return false;
     }
-    !literal.starts_with('-') && literal != "0"
+    !literal.starts_with('-')
 }
 
 mod tests;

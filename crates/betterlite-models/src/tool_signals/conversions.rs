@@ -103,9 +103,6 @@ fn int_text(text: &str) -> Result<Option<i64>, ToolSignalError> {
 }
 
 fn finite_int(value: f64) -> Result<Option<i64>, ToolSignalError> {
-    if !value.is_finite() {
-        return Err(ToolSignalError::CounterOutOfRange);
-    }
     let decimal = Decimal::try_from(value).map_err(|_error| ToolSignalError::CounterOutOfRange)?;
     decimal
         .trunc()
@@ -127,9 +124,10 @@ fn quantity_from_json(
 }
 
 fn number_quantity(number: &Number, field: QuantityField) -> Result<Decimal, ToolSignalError> {
-    let value = number
-        .as_f64()
-        .ok_or(ToolSignalError::QuantityOutOfRange { field })?;
+    let value: f64 = number
+        .to_string()
+        .parse()
+        .map_err(|_error| ToolSignalError::QuantityOutOfRange { field })?;
     finite_decimal(value, field)
 }
 

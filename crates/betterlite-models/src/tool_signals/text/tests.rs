@@ -37,6 +37,8 @@ fn magnitudes_read_digits_without_underscores(#[case] text: &str, #[case] expect
 #[case::hex("0x10", false)]
 #[case::empty("", false)]
 #[case::bare_dot(".", false)]
+#[case::invalid_integer_part("a.5", false)]
+#[case::invalid_fraction_part("5.a", false)]
 #[case::empty_exponent("1e", false)]
 #[case::signed_sign("+-1", false)]
 #[case::double_underscore("1__0", false)]
