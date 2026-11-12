@@ -18,5 +18,10 @@ call:
       api_base: null
       upstream_url: ""
       messages: []
+    - function: query_identity
+      query: keyterm=a&model=x&keyterm=b&language=en&redact=pci&language=fr&redact=pii
+      api_base: null
+      upstream_url: ""
+      messages: []
 compare: {ignore: []}
 env: {}

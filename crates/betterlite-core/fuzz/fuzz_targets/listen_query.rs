@@ -3,7 +3,7 @@
 use std::str::from_utf8;
 
 use betterlite_core::api::deepgram::listen_metadata::pricing::{
-    addon_pricing_models, registry_key,
+    addon_pricing_models, pricing_model,
 };
 use betterlite_core::api::deepgram::listen_metadata::query::decode_listen_query;
 use betterlite_core::api::deepgram::listen_metadata::target::{
@@ -30,5 +30,5 @@ fuzz_target!(|bytes: &[u8]| {
         return;
     };
     drop(addon_pricing_models(&target));
-    drop(registry_key(&target));
+    drop(pricing_model(&target));
 });

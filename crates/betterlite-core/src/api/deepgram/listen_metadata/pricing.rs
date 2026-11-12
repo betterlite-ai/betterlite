@@ -30,16 +30,10 @@ pub fn pricing_model(target: &ListenTarget) -> String {
     }
 }
 
-#[must_use]
-pub fn registry_key(target: &ListenTarget) -> String {
-    let model = pricing_model(target);
-    format!("{PROVIDER}/{model}")
-}
-
 // only a catalog name equal to the registry key counts; a missing name has no price at all
 #[must_use]
 pub fn is_priced(catalog: &ModelCatalog, target: &ListenTarget) -> bool {
-    let key = registry_key(target);
+    let key = format!("{PROVIDER}/{}", pricing_model(target));
     let Some(metadata) = catalog.metadata(&key) else {
         return false;
     };

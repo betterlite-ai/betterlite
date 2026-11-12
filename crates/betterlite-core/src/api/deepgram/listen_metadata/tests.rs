@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 
 use super::error::ListenMetadataError;
 use super::frames::{ListenFrame, audio_seconds, channel_count, transcript};
-use super::pricing::{addon_pricing_models, is_priced, pricing_model, registry_key};
+use super::pricing::{addon_pricing_models, is_priced, pricing_model};
 use super::query::{DEFAULT_MODEL, decode_listen_query};
 use super::target::{ListenTarget, parse_listen_target, websocket_target};
 use crate::api::deepgram::common::DeepgramException;
@@ -64,9 +64,16 @@ fn first_occurrences_keeps_only_the_first_model_and_language() {
     assert_eq!(kept.values("model"), vec!["nova-3"]);
     assert_eq!(kept.values("language"), vec!["en"]);
     assert_eq!(kept.values("redact"), vec!["true", "false"]);
+}
+
+#[test]
+fn first_occurrences_groups_repeated_keys_where_the_first_one_appears() {
+    let decoded = decode_listen_query(
+        b"keyterm=a&model=x&keyterm=b&language=en&redact=pci&language=fr&redact=pii",
+    );
     assert_eq!(
-        kept.encode(),
-        "model=nova-3&language=en&redact=true&redact=false"
+        decoded.first_occurrences().encode(),
+        "keyterm=a&keyterm=b&model=x&language=en&redact=pci&redact=pii"
     );
 }
 
@@ -209,17 +216,6 @@ fn pricing_model_builds_the_streaming_registry_name(#[case] query: &str, #[case]
 }
 
 #[rstest]
-#[case::plain("model=nova-3", "deepgram/streaming/nova-3")]
-#[case::multilingual(
-    "model=nova-3&language=multi",
-    "deepgram/streaming/nova-3-multilingual"
-)]
-fn registry_key_prefixes_the_provider(#[case] query: &str, #[case] expected: &str) {
-    let upstream_url = format!("wss://api.deepgram.com/v1/listen?{query}");
-    assert_eq!(registry_key(&target(&upstream_url)), expected);
-}
-
-#[rstest]
 #[case::streaming("model=nova-3", true)]
 #[case::multilingual("model=nova-3&language=multi", true)]
 #[case::prerecorded_only("model=nova-2", false)]
@@ -276,6 +272,27 @@ fn declared_channels_accepts_only_positive_ascii_digits(
 ) {
     let decoded = decode_listen_query(query.as_bytes());
     assert_eq!(decoded.declared_channels(), expected);
+}
+
+#[test]
+fn mistyped_fields_leave_the_rest_of_the_frame_usable() {
+    let mistyped = frames(
+        r#"[
+            {"type": "Metadata", "channels": "2", "duration": 3.0},
+            {"type": "Results", "channel_index": [0, "x"], "start": 0.0, "duration": 4.0, "is_final": 1},
+            {"type": "Results", "channel_index": "01", "start": "0", "duration": 9.0, "is_final": true,
+             "channel": {"alternatives": [{"transcript": "hi"}]}},
+            {"type": "Results", "is_final": true, "channel": []},
+            {"type": "Results", "is_final": true, "channel": {"alternatives": "x"}},
+            {"type": "Results", "is_final": true, "channel": {"alternatives": ["x", {"transcript": "no"}]}},
+            {"type": "Results", "is_final": true, "channel": {"alternatives": [{"transcript": 5}]}}
+        ]"#,
+    );
+    assert_eq!(audio_seconds(&mistyped), Decimal::new(3, 0));
+    assert_eq!(channel_count(&mistyped, None), 1);
+    assert_eq!(transcript(&mistyped), "hi");
+    let results_only = &mistyped[1..];
+    assert_eq!(audio_seconds(results_only), Decimal::new(4, 0));
 }
 
 #[test]

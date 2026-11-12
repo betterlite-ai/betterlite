@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use url::form_urlencoded;
 
 pub const DEFAULT_MODEL: &str = "nova-3";
@@ -40,17 +42,30 @@ impl ListenQuery {
         found
     }
 
-    // authorization and pricing read the first model and language, so Deepgram never sees a second one
+    // httpx.QueryParams groups repeated keys at the first one's place; a second model or language is dropped
     #[must_use]
     pub fn first_occurrences(&self) -> Self {
-        let mut kept = Self::default();
+        let mut order = Vec::new();
+        let mut grouped: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
         for (name, value) in &self.pairs {
-            let single_valued = SINGLE_VALUED.contains(&name.as_str());
-            let repeated = kept.pairs.iter().any(|(pair, _)| pair == name);
-            if single_valued && repeated {
-                continue;
+            grouped
+                .entry(name.as_str())
+                .or_insert_with(|| {
+                    order.push(name.as_str());
+                    Vec::new()
+                })
+                .push(value.as_str());
+        }
+        let mut kept = Self::default();
+        for name in order {
+            let limit = if SINGLE_VALUED.contains(&name) {
+                1
+            } else {
+                usize::MAX
+            };
+            for value in grouped.get(name).into_iter().flatten().take(limit) {
+                kept.pairs.push((name.to_owned(), (*value).to_owned()));
             }
-            kept.pairs.push((name.clone(), value.clone()));
         }
         kept
     }

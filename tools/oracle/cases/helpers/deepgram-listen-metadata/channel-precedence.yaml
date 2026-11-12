@@ -50,5 +50,22 @@ call:
       api_base: null
       upstream_url: wss://api.deepgram.com/v1/listen
       messages: []
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen?channels=5
+      messages:
+      - {type: Metadata, channels: "2", duration: 3.0}
+      - {type: Metadata, channels: [2]}
+      - {type: Results, channel_index: [0, "x"]}
+      - {type: Results, channel_index: "01"}
+      - {type: Results, channel_index: [0, 4], start: "0", is_final: 1}
+    - function: channel_precedence
+      query: ""
+      api_base: null
+      upstream_url: wss://api.deepgram.com/v1/listen
+      messages:
+      - {type: Metadata, channels: 3.0}
+      - {type: Metadata, channels: "2"}
 compare: {ignore: []}
 env: {}

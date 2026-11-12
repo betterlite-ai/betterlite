@@ -20,5 +20,18 @@ call:
       api_base: null
       upstream_url: ""
       messages: []
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, start: "0", duration: 1.0, channel_index: [0, "x"], channel: {alternatives: [{transcript: hi}]}}
+      - {type: Results, is_final: 1, channel: {alternatives: [{transcript: skipped}]}}
+      - {type: Results, is_final: true, channel: []}
+      - {type: Results, is_final: true, channel: skipped}
+      - {type: Results, is_final: true, channel: {alternatives: skipped}}
+      - {type: Results, is_final: true, channel: {alternatives: [skipped, {transcript: later}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: 5}]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: there}]}}
 compare: {ignore: []}
 env: {}

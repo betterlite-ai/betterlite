@@ -1,12 +1,13 @@
 use betterlite_core::api::deepgram::listen_metadata::frames::{
     ListenFrame, audio_seconds, channel_count, transcript,
 };
+use betterlite_core::api::deepgram::listen_metadata::pricing::PROVIDER;
 use betterlite_core::api::deepgram::listen_metadata::pricing::{
-    addon_pricing_models, is_priced, registry_key,
+    addon_pricing_models, is_priced, pricing_model,
 };
-use betterlite_core::api::deepgram::listen_metadata::query::{ListenQuery, decode_listen_query};
+use betterlite_core::api::deepgram::listen_metadata::query::decode_listen_query;
 use betterlite_core::api::deepgram::listen_metadata::target::{
-    ListenTarget, parse_listen_target, websocket_target,
+    parse_listen_target, websocket_target,
 };
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use rust_decimal::prelude::ToPrimitive as _;
@@ -64,21 +65,30 @@ impl crate::helpers::Helper for Op {
 fn run_call(call: &Call, catalog: &ModelCatalog) -> Result<Value, Failure> {
     match call.function {
         Function::QueryIdentity | Function::BlankModel => {
-            let query = decode(call)?;
+            let query = decode_listen_query(required(call.query.as_ref(), "query")?.as_bytes());
             let built = websocket_target(call.api_base.as_deref(), &query).map_err(failure)?;
             Ok(Value::String(built))
         }
-        Function::Callbacks => Ok(json!(decode(call)?.callback_params())),
+        Function::Callbacks => {
+            let query = decode_listen_query(required(call.query.as_ref(), "query")?.as_bytes());
+            Ok(json!(query.callback_params()))
+        }
         Function::ExactStreamingPrice => {
-            let target = upstream(call)?;
+            let upstream_url = required(call.upstream_url.as_ref(), "upstream_url")?;
+            let target = parse_listen_target(upstream_url).map_err(failure)?;
             Ok(json!({
-                "registry_key": registry_key(&target),
+                "registry_key": format!("{PROVIDER}/{}", pricing_model(&target)),
                 "priced": is_priced(catalog, &target),
             }))
         }
-        Function::AddonFlags => Ok(json!(addon_pricing_models(&upstream(call)?))),
+        Function::AddonFlags => {
+            let upstream_url = required(call.upstream_url.as_ref(), "upstream_url")?;
+            let target = parse_listen_target(upstream_url).map_err(failure)?;
+            Ok(json!(addon_pricing_models(&target)))
+        }
         Function::ChannelPrecedence => {
-            let target = upstream(call)?;
+            let upstream_url = required(call.upstream_url.as_ref(), "upstream_url")?;
+            let target = parse_listen_target(upstream_url).map_err(failure)?;
             let declared = target.query.declared_channels();
             Ok(json!(channel_count(messages(call)?, declared)))
         }
@@ -88,18 +98,6 @@ fn run_call(call: &Call, catalog: &ModelCatalog) -> Result<Value, Failure> {
         }
         Function::FinalTranscript => Ok(Value::String(transcript(messages(call)?))),
     }
-}
-
-fn decode(call: &Call) -> Result<ListenQuery, Failure> {
-    let query = required(call.query.as_ref(), "query")?;
-    let decoded = decode_listen_query(query.as_bytes());
-    Ok(decoded)
-}
-
-fn upstream(call: &Call) -> Result<ListenTarget, Failure> {
-    let url = required(call.upstream_url.as_ref(), "upstream_url")?;
-    let parsed = parse_listen_target(url).map_err(failure)?;
-    Ok(parsed)
 }
 
 fn messages(call: &Call) -> Result<&[ListenFrame], Failure> {
