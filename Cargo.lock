@@ -2485,6 +2485,7 @@ dependencies = [
  "async-trait",
  "aws-lc-rs",
  "base64 0.23.1",
+ "betterlite-auth",
  "betterlite-config",
  "betterlite-env",
  "betterlite-error",
