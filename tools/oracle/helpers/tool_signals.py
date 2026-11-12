@@ -101,39 +101,36 @@ def usage_record(value: ToolUsageInput | None) -> Usage | None:
     cost = value["cost"]
     details = cost["prompt_details"]
     server_tool_use = value["server_tool_use"]
+    prompt_details = (
+        None
+        if details is None
+        else PromptTokensDetailsWrapper(web_search_requests=details["web_search_requests"])
+    )
+    tools = (
+        None
+        if server_tool_use is None
+        else ServerToolUse(
+            web_search_requests=server_tool_use.get("web_search_requests"),
+            tool_search_requests=server_tool_use.get("tool_search_requests"),
+            browser_open_requests=server_tool_use.get("browser_open_requests"),
+        )
+    )
     return Usage(
         prompt_tokens=cost["prompt_tokens"],
         completion_tokens=cost["completion_tokens"],
         total_tokens=cost["total_tokens"],
-        prompt_tokens_details=(
-            None
-            if details is None
-            else PromptTokensDetailsWrapper(web_search_requests=details["web_search_requests"])
-        ),
-        server_tool_use=(
-            None
-            if server_tool_use is None
-            else ServerToolUse(
-                web_search_requests=server_tool_use.get("web_search_requests"),
-                tool_search_requests=server_tool_use.get("tool_search_requests"),
-                browser_open_requests=server_tool_use.get("browser_open_requests"),
-            )
-        ),
+        prompt_tokens_details=prompt_details,
+        server_tool_use=tools,
         server_side_tool_usage_details=value["server_side_tool_usage_details"],
     )
-
-
-def annotations_value(
-    annotations: list[dict[str, Json]] | None,
-) -> list[ChatCompletionAnnotation] | None:
-    return cast("list[ChatCompletionAnnotation] | None", annotations)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L734-L740
 
 
 def choice_record(choice: ChoiceInput) -> Choices:
     message = choice["message"]
     built_message = Message(role="assistant", content="")
-    built_message.annotations = annotations_value(
-        None if message is None else message["annotations"]
+    built_message.annotations = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L734-L740
+        "list[ChatCompletionAnnotation] | None",
+        None if message is None else message["annotations"],
     )
     built_choice = Choices(finish_reason="stop", index=0, message=built_message)
     if message is None:
@@ -164,12 +161,18 @@ def output_item(entry: OutputItemInput) -> OutputItem:
 
 
 def responses_response(view: ResponsesInput) -> ResponsesAPIResponse:
-    items = [output_item(entry) for entry in view["output"]]
-    response = ResponsesAPIResponse(id="resp_1", created_at=0, output=[])
+    # the base model allows extras, so tool_usage rides along beside the validated fields
+    payload: dict[str, Json] = {
+        "id": "resp_1",
+        "created_at": 0,
+        "output": [],
+        "tool_usage": view["tool_usage"],
+    }
+    response = ResponsesAPIResponse.model_validate(payload)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L29-L39
     response.output = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1397-L1410
-        "list[ResponseOutputItem | dict[str, Json]]", items
+        "list[ResponseOutputItem | dict[str, Json]]",
+        [output_item(entry) for entry in view["output"]],
     )
-    object.__setattr__(response, "tool_usage", view["tool_usage"])
     return response
 
 
@@ -252,10 +255,6 @@ def token_count_value(value: Json) -> Json:
     return [input_tokens, output_tokens]
 
 
-def int_value(value: Json) -> Json:
-    return Tracker._safe_convert_to_int(value)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L372
-
-
 def kwargs_value(kwargs: dict[str, Json]) -> Json:
     options = Tracker._get_web_search_options(kwargs)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L742
     tool = Tracker._get_file_search_tool_call(kwargs)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L764
@@ -269,6 +268,8 @@ def run(input_value: Input) -> Json:
             file_search_value(value) for value in input_value["file_search_params"]
         ],
         "token_counts": [token_count_value(value) for value in input_value["token_counts"]],
-        "values": [int_value(value) for value in input_value["values"]],
+        "values": [
+            Tracker._safe_convert_to_int(value) for value in input_value["values"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L372
+        ],
         "kwargs": [kwargs_value(value) for value in input_value["kwargs"]],
     }
