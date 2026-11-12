@@ -32,9 +32,16 @@ fn helper_seeds_select_anthropic_option_primitives() {
         .collect();
     assert!(!seeds.is_empty(), "no anthropic_option_primitives seeds");
     assert!(seeds.iter().all(|case| {
-        let function = case.call.input.get("function").and_then(Value::as_str);
+        let calls = case.call.input.get("calls").and_then(Value::as_array);
         case.call.operation == "anthropic_option_primitives"
-            && function.is_some_and(|name| VARIANTS.contains(&name))
+            && calls.is_some_and(|calls| {
+                !calls.is_empty()
+                    && calls.iter().all(|call| {
+                        call.get("function")
+                            .and_then(Value::as_str)
+                            .is_some_and(|name| VARIANTS.contains(&name))
+                    })
+            })
             && validate_helper(Path::new("<helper>"), case).is_ok()
     }));
 }

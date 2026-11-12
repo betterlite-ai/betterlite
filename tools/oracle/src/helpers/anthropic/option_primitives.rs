@@ -14,8 +14,13 @@ use crate::helpers::{HelperError, HelperResult};
 mod tests;
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct Input {
+    calls: Vec<Call>,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub(crate) enum Input {
+pub(crate) enum Call {
     Defaults(Box<DefaultsCase>),
     ModelOutputCapacity(CapacityCase),
     StopSequenceFilter(StopCase),
@@ -72,14 +77,23 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
-            Input::Defaults(case) => defaults_answer(case),
-            Input::ModelOutputCapacity(case) => Ok(capacity_answer(case)),
-            Input::StopSequenceFilter(case) => Ok(stop_answers(case)),
-            Input::WebSearchContextSize(case) => Ok(web_search_answers(case)),
-            Input::ContextCompactionEdit(case) => Ok(context_answers(case)),
-            Input::UserIdentifierFilter(case) => user_id_answer(case),
-        }
+        let answers = input
+            .calls
+            .iter()
+            .map(answer)
+            .collect::<Result<Vec<Value>, _>>()?;
+        Ok(json!({ "calls": answers }))
+    }
+}
+
+fn answer(call: &Call) -> HelperResult {
+    match call {
+        Call::Defaults(case) => defaults_answer(case),
+        Call::ModelOutputCapacity(case) => Ok(capacity_answer(case)),
+        Call::StopSequenceFilter(case) => Ok(stop_answers(case)),
+        Call::WebSearchContextSize(case) => Ok(web_search_answers(case)),
+        Call::ContextCompactionEdit(case) => Ok(context_answers(case)),
+        Call::UserIdentifierFilter(case) => user_id_answer(case),
     }
 }
 

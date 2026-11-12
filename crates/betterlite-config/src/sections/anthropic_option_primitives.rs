@@ -2,10 +2,9 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::env_integer::get_env_int;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number};
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 use crate::sections::Section;
 
 mod tests;
@@ -81,12 +80,21 @@ impl Section for Raw {
         Ok(Settings {
             deployments,
             litellm_settings: option_values(self.litellm_settings, "litellm_settings", lookup)?,
-            default_chat_max_tokens: get_env_int(
-                lookup.lookup(DEFAULT_CHAT_MAX_TOKENS_ENV).as_deref(),
-                DEFAULT_CHAT_MAX_TOKENS,
-            ),
+            default_chat_max_tokens: default_chat_max_tokens(lookup)?,
         })
     }
+}
+
+// LiteLLM reads the constant with int(os.getenv(...)) at import, so a non-numeric value stops the load
+fn default_chat_max_tokens<L>(lookup: &L) -> Result<i64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(text) = lookup.lookup(DEFAULT_CHAT_MAX_TOKENS_ENV) else {
+        return Ok(DEFAULT_CHAT_MAX_TOKENS);
+    };
+    Ok(betterlite_env::number(DEFAULT_CHAT_MAX_TOKENS_ENV, &text)?
+        .unwrap_or(DEFAULT_CHAT_MAX_TOKENS))
 }
 
 fn option_values<L>(raw: RawValues, prefix: &str, lookup: &L) -> Result<OptionValues, ConfigError>
@@ -107,15 +115,64 @@ where
     )?;
     let top_p = resolve_number(raw.top_p, &format!("{prefix}.top_p"), lookup, parse_float)?;
     let top_k = resolve_number(raw.top_k, &format!("{prefix}.top_k"), lookup, integer)?;
+    let system = raw
+        .system
+        .map(|text| resolve_string(text, &format!("{prefix}.system"), lookup))
+        .transpose()?;
     Ok(OptionValues {
         max_tokens,
         stop_sequences: raw.stop_sequences,
         temperature,
         top_p,
         top_k,
-        metadata: raw.metadata,
-        system: raw.system,
+        metadata: metadata_values(raw.metadata, prefix, lookup)?,
+        system,
     })
+}
+
+fn metadata_values<L>(
+    value: Option<IndexMap<String, Json>>,
+    prefix: &str,
+    lookup: &L,
+) -> Result<Option<IndexMap<String, Json>>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let Some(fields) = value else {
+        return Ok(None);
+    };
+    let base = format!("{prefix}.metadata");
+    let mut resolved = IndexMap::with_capacity(fields.len());
+    for (key, value) in fields {
+        let path = format!("{base}.{key}");
+        resolved.insert(key, resolved_json(value, &path, lookup)?);
+    }
+    Ok(Some(resolved))
+}
+
+// LiteLLM resolves every os.environ/ string in the config tree, nested objects and lists included
+fn resolved_json<L>(value: Json, path: &str, lookup: &L) -> Result<Json, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match value {
+        Json::Text(text) => Ok(Json::Text(resolve_string(text, path, lookup)?)),
+        Json::List(items) => {
+            let mut resolved = Vec::with_capacity(items.len());
+            for item in items {
+                resolved.push(resolved_json(item, path, lookup)?);
+            }
+            Ok(Json::List(resolved))
+        }
+        Json::Object(fields) => {
+            let mut resolved = IndexMap::with_capacity(fields.len());
+            for (key, item) in fields {
+                resolved.insert(key, resolved_json(item, path, lookup)?);
+            }
+            Ok(Json::Object(resolved))
+        }
+        Json::Null | Json::Bool(_) | Json::Number(_) => Ok(value),
+    }
 }
 
 fn integer(text: &str, path: &str) -> Result<i64, ConfigError> {

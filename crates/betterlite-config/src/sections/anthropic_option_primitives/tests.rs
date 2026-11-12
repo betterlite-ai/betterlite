@@ -104,7 +104,13 @@ fn default_chat_max_tokens_case() {
     assert_eq!(set(" 2048 "), 2048);
     assert_eq!(set("-1"), -1);
     assert_eq!(set(""), 4096, "an empty value counts as unset");
-    assert_eq!(set("not-a-number"), 4096);
+    let error = load("", &[(variable, "not-a-number")]).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS"),
+        "{error}"
+    );
 }
 
 fn max_tokens_case() {
@@ -183,6 +189,24 @@ fn metadata_case() {
             .metadata,
         Some(IndexMap::new())
     );
+    let reference = load(
+        &deployment(
+            "metadata",
+            "{user_id: os.environ/ANTHROPIC_USER, nested: {note: os.environ/ANTHROPIC_NOTE}, tags: [os.environ/ANTHROPIC_TAG]}",
+        ),
+        &[
+            ("ANTHROPIC_USER", "from-env"),
+            ("ANTHROPIC_NOTE", "hi"),
+            ("ANTHROPIC_TAG", "a"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        reference.deployments[0].metadata,
+        Some(metadata(
+            r#"{"user_id": "from-env", "nested": {"note": "hi"}, "tags": ["a"]}"#
+        ))
+    );
 }
 
 fn system_case() {
@@ -200,6 +224,20 @@ fn system_case() {
             .deployments[0]
             .system,
         Some(String::new())
+    );
+    let reference = load(
+        &deployment("system", "os.environ/ANTHROPIC_SYSTEM"),
+        &[("ANTHROPIC_SYSTEM", "be from env")],
+    )
+    .unwrap();
+    assert_eq!(
+        reference.deployments[0].system,
+        Some("be from env".to_owned())
+    );
+    let error = load(&deployment("system", "os.environ/ANTHROPIC_MISSING"), &[]).unwrap_err();
+    assert!(
+        matches!(&error, ConfigError::MissingEnvironment { variable, .. } if variable == "ANTHROPIC_MISSING"),
+        "{error}"
     );
 }
 
