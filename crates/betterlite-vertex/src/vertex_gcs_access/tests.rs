@@ -348,6 +348,16 @@ fn decode_refuses_an_identifier_over_the_limit() {
     );
 }
 
+#[test]
+fn decode_accepts_an_identifier_at_the_limit() {
+    let at_limit = vec![b'a'; MAX_FILE_ID_BYTES];
+
+    assert!(matches!(
+        decode_vertex_gcs_id(&at_limit, "bucket", None),
+        Err(GcsAccessError::Storage(CloudStorageError::Scheme(_)))
+    ));
+}
+
 #[rstest]
 fn replays_the_vertex_gcs_id_corpus(#[files("fuzz/corpus/vertex_gcs_id/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
