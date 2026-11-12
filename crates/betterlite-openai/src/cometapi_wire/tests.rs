@@ -633,6 +633,19 @@ fn decode_embedding_reply_rejects_an_oversized_body() {
 }
 
 #[test]
+fn decode_embedding_reply_accepts_a_body_at_the_byte_limit() {
+    let mut body = String::from(r#"{"usage":{"prompt_tokens":3,"total_tokens":4}}"#).into_bytes();
+    body.resize(MAX_REPLY_BYTES, b' ');
+    let parsed = decode_comet_embedding_reply(&EmbeddingReplyInput {
+        body: &body,
+        status: 200,
+        headers: &Headers::new(),
+    })
+    .unwrap();
+    assert_eq!(parsed.usage.prompt_tokens, 3);
+}
+
+#[test]
 fn embedding_error_class_keeps_the_supplied_status_and_headers() {
     let supplied = headers_of(&[("retry-after", "2")]);
     let error = get_error_class("rate limited", 429, &supplied);

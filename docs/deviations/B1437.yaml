@@ -1,0 +1,17 @@
+task: B1437
+deviations:
+  - what: A present `extra_body` that is not an object is a 400 that names the field, where LiteLLM hands it to `dict.update` and the proxy answers 500 when that raises TypeError or ValueError.
+    why: An unhandled exception is the wrong answer for input the caller can fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/chat/transformation.py#L81-L84
+  - what: A stream chunk whose declared fields hold the wrong type fails with a typed error naming the field, where LiteLLM raises a raw AttributeError, TypeError or pydantic ValidationError out of chunk_parser; an `error.code` outside u16 or a non-integer code is refused the same way, where LiteLLM copies any value.
+    why: betterlite decodes the chunk into a typed record, so a shape LiteLLM only fails on at attribute access is refused where it is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/chat/transformation.py#L157-L195
+  - what: An embedding reply whose `usage` is not an object, or whose counters are not integers, fails with a typed error naming the field, where LiteLLM raises AttributeError or a pydantic ValidationError from the transform.
+    why: betterlite decodes the reply into typed records, so a shape LiteLLM only fails on at attribute access is refused where it is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L126-L145
+  - what: An embedding reply over 16 MiB is refused with a typed error, where LiteLLM reads and parses a body of any size.
+    why: Every reply betterlite decodes has a bounded size, so an oversized body cannot allocate without limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L126-L133
+  - what: The embedding usage counters are i64, so a reply whose count is outside that range is a typed error naming the field, where Python's arbitrary-size integers take it.
+    why: A counter that large only comes from a corrupt reply, and betterlite's typed records carry fixed-width counters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L139-L144
