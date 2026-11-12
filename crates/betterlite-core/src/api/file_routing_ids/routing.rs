@@ -1,8 +1,9 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
+use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
+
 use super::RoutingIdType;
-use super::base64::decode_urlsafe_text;
-use super::legacy::PYTHON_SPACE;
+use super::legacy::is_strip_whitespace;
 
 const ROUTING_PREFIX: &str = "litellm:";
 const MODEL_FIELD: &str = ";model,";
@@ -28,7 +29,7 @@ pub fn encode_file_id_with_model(file_id: &str, model: &str, id_type: RoutingIdT
 #[must_use]
 pub fn decode_model_from_file_id(encoded_id: &str) -> Option<String> {
     model_field(&decode_payload(encoded_id)?)
-        .map(|model| model.trim_matches(PYTHON_SPACE).to_owned())
+        .map(|model| model.trim_matches(is_strip_whitespace).to_owned())
 }
 
 #[must_use]
@@ -53,8 +54,8 @@ fn decode_payload(encoded_id: &str) -> Option<String> {
         .strip_prefix(FILE_ID_PREFIX)
         .or_else(|| encoded_id.strip_prefix(BATCH_ID_PREFIX))
         .unwrap_or(encoded_id);
-    let decoded = decode_urlsafe_text(payload)?;
-    (decoded.starts_with(ROUTING_PREFIX) && decoded.contains(MODEL_FIELD)).then_some(decoded)
+    let decoded = is_base64_encoded_unified_id(payload, ROUTING_PREFIX)?;
+    decoded.contains(MODEL_FIELD).then_some(decoded)
 }
 
 fn model_field(decoded: &str) -> Option<&str> {

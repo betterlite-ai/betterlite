@@ -158,6 +158,8 @@ fn target_model_text(#[case] text: &str, #[case] expected: Vec<&str>) {
 #[case::empty_value("litellm_proxy;model_id:;llm_batch_id:b", Some(""))]
 #[case::missing("no marker here", None)]
 #[case::first_occurrence("xmodel_id:a;model_id:b", Some("a"))]
+#[case::repeated_marker("model_id:a-model_id:b;c", Some("a-"))]
+#[case::repeated_marker_boundary("model_id:a;model_id:b", Some("a"))]
 fn batch_identifier_fields(#[case] file_id: &str, #[case] expected: Option<&str>) {
     assert_eq!(unified_batch_model_id(file_id), expected.map(str::to_owned));
 }
@@ -261,6 +263,7 @@ fn model_embedded_detection(#[case] encoded: &str, #[case] expected: bool) {
     "file-a"
 )]
 #[case::unicode_space("file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsIG3jgIA", Some("m"), "file-a")]
+#[case::unstripped_original("file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA", Some("m"), " file-a ")]
 fn embedded_value_edges(
     #[case] encoded: &str,
     #[case] model: Option<&str>,

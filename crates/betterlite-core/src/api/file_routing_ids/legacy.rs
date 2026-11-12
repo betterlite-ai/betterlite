@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use super::base64::decode_urlsafe_text;
+use crate::api::managed_resource_ids::is_base64_encoded_unified_id;
+
 use super::error::FileRoutingIdsError;
 use super::{EXECUTED_BATCH_ID_PREFIX, MAX_FILE_LIST_LIMIT};
 
@@ -15,12 +16,13 @@ const BATCH_ID_MARKER: &str = "llm_batch_id";
 const BATCH_ID_TERMINATORS: [char; 2] = [';', ','];
 
 // str.strip() also removes U+001C to U+001F, which char::is_whitespace keeps
-pub(super) const PYTHON_SPACE: [char; 29] = [
-    '\u{9}', '\u{a}', '\u{b}', '\u{c}', '\u{d}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ',
-    '\u{85}', '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
-    '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}',
-    '\u{202f}', '\u{205f}', '\u{3000}',
-];
+pub(super) fn is_strip_whitespace(candidate: char) -> bool {
+    if candidate.is_whitespace() {
+        true
+    } else {
+        ('\u{1c}'..='\u{1f}').contains(&candidate)
+    }
+}
 
 pub fn validate_file_list_limit(limit: Option<i64>) -> Result<(), FileRoutingIdsError> {
     let Some(requested) = limit else {
@@ -56,11 +58,10 @@ pub fn validate_file_list_limit(limit: Option<i64>) -> Result<(), FileRoutingIds
 
 #[must_use]
 pub fn decode_legacy_unified_id(resource_id: &str) -> Option<String> {
-    let decoded = decode_urlsafe_text(resource_id)?;
-    if !decoded.starts_with(MANAGED_FILE_ID_PREFIX) {
-        return None;
+    if let Some(decoded) = is_base64_encoded_unified_id(resource_id, MANAGED_FILE_ID_PREFIX) {
+        return Some(decoded);
     }
-    Some(decoded)
+    None
 }
 
 #[must_use]
@@ -83,7 +84,7 @@ pub fn target_model_names(text: &str) -> Vec<String> {
         .map(|names| {
             names
                 .split(',')
-                .map(|name| name.trim_matches(PYTHON_SPACE).to_owned())
+                .map(|name| name.trim_matches(is_strip_whitespace).to_owned())
                 .collect()
         })
         .unwrap_or_default()
@@ -108,8 +109,9 @@ pub fn resolve_output_model(
 #[must_use]
 pub fn unified_batch_model_id(file_id: &str) -> Option<String> {
     file_id
-        .split_once(MODEL_ID_FIELD)
-        .and_then(|(_, after)| after.split(';').next())
+        .split(MODEL_ID_FIELD)
+        .nth(1)
+        .and_then(|after| after.split(';').next())
         .map(str::to_owned)
 }
 

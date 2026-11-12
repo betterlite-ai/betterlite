@@ -26,6 +26,9 @@ call:
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsIHB1YmxpYyA"}
       - {"function": "original_id", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsIHB1YmxpYyA"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsIG3jgIA"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "model_embedded", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}
       - {"function": "original_id", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}
       - {"function": "model_embedded", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}

@@ -6,7 +6,6 @@ use betterlite_auth::auth_identity::records::Principal;
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use error::FileRoutingIdsError;
 
-mod base64;
 pub mod batch;
 pub mod error;
 pub mod legacy;

@@ -9,6 +9,9 @@ call:
       - {"function": "model_id", "value": "no marker here"}
       - {"function": "model_id", "value": 5}
       - {"function": "model_id", "value": null}
+      - {"function": "model_id", "value": "xmodel_id:a;model_id:b"}
+      - {"function": "model_id", "value": "model_id:a-model_id:b;c"}
+      - {"function": "model_id", "value": "model_id:a;model_id:b"}
       - {"function": "batch_id", "value": "llm_batch_id:b;other"}
       - {"function": "batch_id", "value": "llm_batch_id:b,other"}
       - {"function": "batch_id", "value": "generic_response_id:g,other"}

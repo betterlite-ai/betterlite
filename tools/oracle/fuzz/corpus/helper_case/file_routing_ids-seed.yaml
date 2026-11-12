@@ -21,6 +21,9 @@ call:
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7bW9kZWwsO21vZGVsLHR3bw"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTphO2xsbV9iYXRjaF9pZDpsaXRlbGxtOmI7bW9kZWwsYw"}
       - {"function": "original_id", "value": "file-bGl0ZWxsbTphO2xsbV9iYXRjaF9pZDpsaXRlbGxtOmI7bW9kZWwsYw"}
+      - {"function": "decode_model", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "original_id", "value": "file-bGl0ZWxsbTogZmlsZS1hIDttb2RlbCwgbSA"}
+      - {"function": "model_id", "value": "model_id:a-model_id:b;c"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTpmaWxlLWE7eDttb2RlbCxi"}
       - {"function": "original_id", "value": "file-bGl0ZWxsbTpmaWxlLWE7eDttb2RlbCxi"}
       - {"function": "decode_model", "value": "file-bGl0ZWxsbTo7bW9kZWwseA"}
