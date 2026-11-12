@@ -45,7 +45,7 @@ enum Expected {
 type Row = (&'static str, &'static str, &'static str, Expected);
 
 #[rustfmt::skip]
-const MINIMUM_ROWS: [Row; 14] = [
+const MINIMUM_ROWS: [Row; 16] = [
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 1}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 15}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 16}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
@@ -54,6 +54,8 @@ const MINIMUM_ROWS: [Row; 14] = [
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 17}"#, Expected::Mapped(r#"{"max_output_tokens": 17}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 18446744073709551615}"#, Expected::Mapped(r#"{"max_output_tokens": 18446744073709551615}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 15.5}"#, Expected::Mapped(r#"{"max_output_tokens": 15.5}"#)),
+    (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 15.0}"#, Expected::Mapped(r#"{"max_output_tokens": 15.0}"#)),
+    (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": 1e1}"#, Expected::Mapped(r#"{"max_output_tokens": 1e1}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": -99999999999999999999}"#, Expected::Mapped(r#"{"max_output_tokens": 16}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": -3.5}"#, Expected::Mapped(r#"{"max_output_tokens": -3.5}"#)),
     (MINIMUM_CATALOG, "gpt-4o", r#"{"max_output_tokens": "8"}"#, Expected::Mapped(r#"{"max_output_tokens": "8"}"#)),

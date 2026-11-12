@@ -55,17 +55,15 @@ fn enforce_min_max_output_tokens(params: &mut ResponsesParams) {
     let Some(Some(Value::Number(number))) = &params.max_output_tokens else {
         return;
     };
-    let Some(value) = number.as_f64() else {
-        return;
-    };
-    // an integer past i64 still arrives as a float, so only a fraction marks a caller's float
-    if value.fract() != 0.0_f64 {
-        return;
-    }
     // ast-grep-ignore: no-long-names
     let minimum = OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS;
-    let clamped = value.max(f64::from(minimum));
-    if clamped.to_bits() == value.to_bits() {
+    if let Some(tokens) = number.as_i64() {
+        params.max_output_tokens = Some(Some(Value::from(tokens.max(i64::from(minimum)))));
+        return;
+    }
+    // past i64, only a literal with no '.' or exponent is still an int to LiteLLM
+    let literal = number.to_string();
+    if literal.contains(['.', 'e', 'E']) || !literal.starts_with('-') {
         return;
     }
     params.max_output_tokens = Some(Some(Value::from(minimum)));
