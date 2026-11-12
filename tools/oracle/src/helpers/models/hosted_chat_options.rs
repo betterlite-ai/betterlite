@@ -103,24 +103,31 @@ fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
 }
 fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     let explicit = call.api_key.clone().map(SecretString::from);
-    let chat_host = match call.host.as_str() {
-        "featherless" => Some(ChatIdentity::Featherless),
-        "aiml" => Some(ChatIdentity::Aiml),
-        "empower" | "friendliai" | "galadriel" | "github" => None,
+    let (base, secret) = match call.host.as_str() {
+        "featherless" | "aiml" => {
+            let host = if call.host == "aiml" {
+                ChatIdentity::Aiml
+            } else {
+                ChatIdentity::Featherless
+            };
+            let hosted = &sections.hosted_chat_settings;
+            let (base, key) = featherless::chat_identity(
+                host,
+                hosted,
+                call.api_base.as_deref(),
+                explicit.as_ref(),
+            );
+            (Some(base), key)
+        }
+        "empower" | "friendliai" | "galadriel" | "github" => {
+            let (base, key) = sections
+                .openai_like_settings
+                .resolve(call.api_base.as_deref(), explicit.as_ref());
+            (base, Some(key))
+        }
         _ => return Err(failure(None, String::from("the host has no identity"))),
     };
-    let (base, key) = if let Some(host) = chat_host {
-        let hosted = &sections.hosted_chat_settings;
-        let (base, key) =
-            featherless::chat_identity(host, hosted, call.api_base.as_deref(), explicit.as_ref());
-        (Some(base), key)
-    } else {
-        let (base, key) = sections
-            .openai_like_settings
-            .resolve(call.api_base.as_deref(), explicit.as_ref());
-        (base, Some(key))
-    };
-    let key = key.map(|secret| secret.expose_secret().to_owned());
+    let key = secret.map(|key| key.expose_secret().to_owned());
     Ok(json!({"ok": true, "value": {"base": base, "key": key}}))
 }
 fn token_limit_map<Settings>(call: &Call, supported: &[&str]) -> Result<Value, Box<HelperError>>

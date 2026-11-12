@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-#[derive(Debug, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum HostedChatOptionsError {
     #[error("Featherless AI does not support the {name} parameter")]
     UnsupportedParam { name: String },
