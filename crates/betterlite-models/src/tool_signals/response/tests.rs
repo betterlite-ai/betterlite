@@ -5,10 +5,9 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::{
-    Annotation, AnnotationType, ChatChoice, ChatMessage, ChatView, OtherView, OutputItem,
-    OutputItemType, RawView, ResponsesView, ToolBillingResponse, anthropic_search_usage,
-    includes_annotation_type, includes_file_search_call, includes_output_type,
-    includes_web_search_call,
+    AnnotationType, ChatChoice, ChatMessage, ChatView, OtherView, OutputItem, OutputItemType,
+    RawView, ResponsesView, ToolBillingResponse, anthropic_search_usage, includes_annotation_type,
+    includes_file_search_call, includes_output_type, includes_web_search_call,
 };
 use crate::cost_usage::CostUsage;
 use crate::cost_usage::server_tool_projection::ServerToolUse;
@@ -74,9 +73,7 @@ fn annotations(items: &[&str]) -> ChatMessage {
         annotations: Some(
             items
                 .iter()
-                .map(|source| Annotation {
-                    annotation_type: Some(json(source)),
-                })
+                .map(|source| serde_json::from_str(source).expect("the annotation is valid JSON"))
                 .collect(),
         ),
     }
