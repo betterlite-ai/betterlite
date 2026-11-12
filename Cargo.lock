@@ -3149,6 +3149,7 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "url",
  "uuid",

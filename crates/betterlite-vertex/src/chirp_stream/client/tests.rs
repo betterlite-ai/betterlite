@@ -14,26 +14,38 @@ use google_cloud_speech_v2::model::{
 };
 use google_cloud_speech_v2::stub::Speech as StubSpeech;
 use http::header::AUTHORIZATION;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio::sync::mpsc;
 
 use super::{
     RequestSink as _, ResponseSource as _, SdkRequestSink, SdkResponseSource, SdkSpeechClient,
-    SpeechStreamingClient as _, bearer_headers,
+    SpeechStreamingClient as _, bearer_headers, speech_endpoint,
 };
 use crate::chirp_stream::error::ChirpStreamError;
 
 #[test]
-fn bearer_headers_sends_the_authorization_header() {
+fn bearer_headers_sends_a_sensitive_authorization_header() {
     let headers = bearer_headers(&SecretString::from("token-value".to_owned())).expect("a header");
     let CacheableResource::New { data, .. } = headers else {
         panic!("the token header is always new");
     };
-    assert_eq!(
-        data.get(AUTHORIZATION)
-            .and_then(|value| value.to_str().ok()),
-        Some("Bearer token-value")
-    );
+    let header = data.get(AUTHORIZATION).expect("an authorization header");
+    assert_eq!(header.to_str().ok(), Some("Bearer token-value"));
+    assert!(header.is_sensitive(), "the token must not print in debug");
+}
+
+#[rstest]
+#[case::host_only(
+    "us-central1-speech.googleapis.com",
+    "https://us-central1-speech.googleapis.com"
+)]
+#[case::with_scheme(
+    "https://speech.googleapis.com:443",
+    "https://speech.googleapis.com:443"
+)]
+fn a_host_only_endpoint_dials_https(#[case] given: &str, #[case] expected: &str) {
+    assert_eq!(speech_endpoint(given), expected);
 }
 
 #[tokio::test]

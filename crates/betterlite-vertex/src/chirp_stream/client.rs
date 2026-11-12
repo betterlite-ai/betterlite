@@ -61,8 +61,9 @@ impl CredentialsProvider for StaticToken {
 }
 
 fn bearer_headers(token: &SecretString) -> Result<CacheableResource<HeaderMap>, CredentialsError> {
-    let header = HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))
+    let mut header = HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))
         .map_err(|source| CredentialsError::from_source(false, source))?;
+    header.set_sensitive(true);
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, header);
     Ok(CacheableResource::New {
@@ -138,12 +139,21 @@ impl SpeechStreamingClient for SdkSpeechClient {
     }
 }
 
+// LiteLLM's target carries a bare host and grpc_asyncio dials it over TLS on 443
+fn speech_endpoint(api_endpoint: &str) -> String {
+    if api_endpoint.contains("://") {
+        api_endpoint.to_owned()
+    } else {
+        format!("https://{api_endpoint}")
+    }
+}
+
 pub async fn open_speech_client(
     target: &SpeechStreamingTarget,
     access_token: SecretString,
 ) -> Result<SdkSpeechClient, ChirpStreamError> {
     let speech = Speech::builder()
-        .with_endpoint(target.api_endpoint.clone())
+        .with_endpoint(speech_endpoint(&target.api_endpoint))
         .with_credentials(StaticToken {
             token: access_token,
         })
