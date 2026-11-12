@@ -1,0 +1,14 @@
+task: B511
+deviations:
+  - what: A 2xx image reply with no created field, or a null one, takes the supplied clock
+      instead of being refused.
+    why: The SDK's ImagesResponse model requires created, and a family transform defaults it to the
+      current time. betterlite has one decoder for both paths, so it takes the injected clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1432
+  - what: A non-integer code inside an error object in a 2xx image reply becomes status 422.
+    why: LiteLLM copies the code into status_code as it is, and a string status then fails where the
+      error is built. betterlite keeps the converter's 422 default; no working setup relies on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L607
+  - what: A 2xx image reply whose usage lacks input_tokens, input_tokens_details, output_tokens or total_tokens is decoded with zeros.
+    why: The OpenAI ImagesResponse model requires those usage fields, and LiteLLM wraps its ValidationError as a 500; no working OpenAI setup receives such a usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1432
