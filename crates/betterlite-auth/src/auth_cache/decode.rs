@@ -3,12 +3,15 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::{CachedValue, DecodeError, decode_cached_value};
+use serde::de::IgnoredAny;
 
 use super::payload::{ReadOperation, log_decode_miss};
 use crate::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 
 pub const MAX_PAYLOAD_BYTES: usize = 0x0010_0000;
 pub const MAX_PAYLOAD_DEPTH: usize = 64;
+// the python literal parser behind the shared decoder backtracks, so its time doubles with each level
+pub const MAX_LITERAL_DEPTH: usize = 8;
 
 const AUTH_MODEL: &str = "UserAPIKeyAuth";
 
@@ -17,13 +20,7 @@ pub fn decode_cached_auth(
     bytes: &[u8],
     operation: ReadOperation,
 ) -> Result<Option<UserAPIKeyAuth>, AuthError> {
-    if bytes.len() > MAX_PAYLOAD_BYTES {
-        tracing::error!(
-            operation = operation.label(),
-            bytes = bytes.len(),
-            limit = MAX_PAYLOAD_BYTES,
-            "cached auth payload exceeds the cache payload limits"
-        );
+    if !within_input_limits(bytes, operation) {
         return Ok(None);
     }
     let decoded = match decode_cached_value(Some(bytes)) {
@@ -90,6 +87,56 @@ fn construct_auth(
             Ok(None)
         }
     }
+}
+
+// both bounds run before the shared decoder parses, since its literal fallback backtracks
+fn within_input_limits(bytes: &[u8], operation: ReadOperation) -> bool {
+    if bytes.len() > MAX_PAYLOAD_BYTES {
+        tracing::error!(
+            operation = operation.label(),
+            bytes = bytes.len(),
+            limit = MAX_PAYLOAD_BYTES,
+            "cached auth payload exceeds the cache payload limits"
+        );
+        return false;
+    }
+    if serde_json::from_slice::<IgnoredAny>(bytes).is_err()
+        && bracket_depth(bytes) > MAX_LITERAL_DEPTH
+    {
+        tracing::error!(
+            operation = operation.label(),
+            limit = MAX_LITERAL_DEPTH,
+            "cached auth payload exceeds the literal nesting limit"
+        );
+        return false;
+    }
+    true
+}
+
+// brackets inside quoted strings do not count, and a backslash escapes the next byte of a string
+fn bracket_depth(bytes: &[u8]) -> usize {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut level = 0_usize;
+    let mut maximum = 0;
+    for &byte in bytes {
+        match quote {
+            Some(_) if escaped => escaped = false,
+            Some(_) if byte == b'\\' => escaped = true,
+            Some(open) if byte == open => quote = None,
+            Some(_) => {}
+            None => match byte {
+                b'\'' | b'"' => quote = Some(byte),
+                b'[' | b'{' | b'(' => {
+                    level = level.saturating_add(1);
+                    maximum = maximum.max(level);
+                }
+                b']' | b'}' | b')' => level = level.saturating_sub(1),
+                _ => {}
+            },
+        }
+    }
+    maximum
 }
 
 // iterative so a hostile payload bounded only by the byte limit cannot overflow the stack

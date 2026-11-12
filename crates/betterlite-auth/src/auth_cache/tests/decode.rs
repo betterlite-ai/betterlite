@@ -7,7 +7,9 @@ use rstest::rstest;
 
 use super::support::{capture, local_cache};
 use crate::auth_cache::WriteOptions;
-use crate::auth_cache::decode::{MAX_PAYLOAD_BYTES, MAX_PAYLOAD_DEPTH, decode_cached_auth, depth};
+use crate::auth_cache::decode::{
+    MAX_LITERAL_DEPTH, MAX_PAYLOAD_BYTES, MAX_PAYLOAD_DEPTH, decode_cached_auth, depth,
+};
 use crate::auth_cache::payload::ReadOperation;
 
 fn auth_payload(bytes: usize) -> Vec<u8> {
@@ -22,8 +24,8 @@ fn auth_payload(bytes: usize) -> Vec<u8> {
     text.into_bytes()
 }
 
-fn nested(depth: usize) -> Vec<u8> {
-    let mut text = "1".to_owned();
+fn wrapped(core: &str, depth: usize) -> Vec<u8> {
+    let mut text = core.to_owned();
     for _level in 0..depth {
         text = format!("[{text}]");
     }
@@ -46,17 +48,17 @@ fn auth_cache_payload_over_byte_limit() {
 
 #[test]
 fn auth_cache_payload_over_depth_limit() {
-    let at_limit = decode_cached_value(Some(&nested(MAX_PAYLOAD_DEPTH)))
+    let at_limit = decode_cached_value(Some(&wrapped("1", MAX_PAYLOAD_DEPTH)))
         .unwrap()
         .unwrap();
     assert_eq!(depth(&at_limit), MAX_PAYLOAD_DEPTH);
     let (allowed, allowed_log) =
-        capture(|| decode_cached_auth(&nested(MAX_PAYLOAD_DEPTH), ReadOperation::Get));
+        capture(|| decode_cached_auth(&wrapped("1", MAX_PAYLOAD_DEPTH), ReadOperation::Get));
     assert!(allowed.unwrap().is_none());
     assert!(!allowed_log.contains("depth limit"), "{allowed_log}");
     let (over, log) = capture(|| {
         decode_cached_auth(
-            &nested(MAX_PAYLOAD_DEPTH.saturating_add(1)),
+            &wrapped("1", MAX_PAYLOAD_DEPTH.saturating_add(1)),
             ReadOperation::Get,
         )
     });
@@ -64,6 +66,53 @@ fn auth_cache_payload_over_depth_limit() {
     assert!(
         log.contains("exceeds the cache payload depth limit"),
         "{log}"
+    );
+}
+
+#[test]
+fn literal_fallback_nesting_is_bounded() {
+    let (over, log) = capture(|| {
+        decode_cached_auth(
+            &wrapped("None", MAX_LITERAL_DEPTH.saturating_add(1)),
+            ReadOperation::Get,
+        )
+    });
+    assert!(over.unwrap().is_none());
+    assert!(log.contains("literal nesting limit"), "{log}");
+    let (deep, deep_log) = capture(|| decode_cached_auth(&wrapped("None", 24), ReadOperation::Get));
+    assert!(deep.unwrap().is_none());
+    assert!(deep_log.contains("literal nesting limit"), "{deep_log}");
+    let (at_limit, at_log) =
+        capture(|| decode_cached_auth(&wrapped("None", MAX_LITERAL_DEPTH), ReadOperation::Get));
+    assert!(at_limit.unwrap().is_none());
+    assert!(!at_log.contains("literal nesting limit"), "{at_log}");
+    let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
+    let (flat, flat_log) = capture(|| decode_cached_auth(siblings, ReadOperation::Get));
+    assert!(flat.unwrap().is_none());
+    assert!(!flat_log.contains("literal nesting limit"), "{flat_log}");
+}
+
+#[test]
+fn json_nesting_is_not_held_to_the_literal_bound() {
+    let (decoded, log) = capture(|| {
+        decode_cached_auth(
+            &wrapped("1", MAX_LITERAL_DEPTH.saturating_add(4)),
+            ReadOperation::Get,
+        )
+    });
+    assert!(decoded.unwrap().is_none());
+    assert!(!log.contains("literal nesting limit"), "{log}");
+}
+
+#[test]
+fn literal_brackets_inside_strings_do_not_count() {
+    let payload = br#"{"team_id": 'it\'s ((((((((((', "api_key": None}"#;
+    let decoded = decode_cached_auth(payload, ReadOperation::Get)
+        .unwrap()
+        .expect("the literal payload decodes");
+    assert_eq!(
+        decoded.view.token.team_id.as_deref(),
+        Some("it's ((((((((((")
     );
 }
 

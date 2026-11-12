@@ -11,10 +11,10 @@ use betterlite_cache::backend::memory::MemoryCacheOps as _;
 
 use super::redis::{FakeRedis, connect_cache};
 use super::support::{
-    LocalCache, assert_backend_failure, backend_failure, local_cache, lock, memory,
+    LocalCache, assert_backend_failure, backend_failure, failure_label, local_cache, lock, memory,
     recording_cache, redis_handle, settings,
 };
-use crate::auth_cache::backend::PreCall;
+use crate::auth_cache::backend::{AuthCacheTier as _, PreCall};
 use crate::auth_cache::keys::CacheKey;
 use crate::auth_cache::{AuthCacheError, WriteOptions, WriteTtl, gateway_cache};
 
@@ -409,13 +409,24 @@ async fn absent_batch_direct_write() {
 #[tokio::test]
 async fn single_delete_partition_and_result() {
     let fixture = recording_cache();
-    fixture.cache.delete(&hex_key("e")).unwrap();
+    let key_object = hex_key("e");
+    fixture.cache.tier(&key_object).delete(&key_object).unwrap();
     assert_eq!(fixture.operations(), ["key:delete"]);
     let ordinary_key = CacheKey::Tag("gone").render();
     lock(&fixture.ordinary).delete_failure = Some(backend_failure("ordinary delete"));
-    let result = fixture.cache.delete(&ordinary_key);
-    assert_backend_failure(result, "ordinary delete");
-    fixture.cache.async_delete(&hex_key("f")).await.unwrap();
+    let error = fixture
+        .cache
+        .tier(&ordinary_key)
+        .delete(&ordinary_key)
+        .unwrap_err();
+    assert_eq!(failure_label(&error), Some("ordinary delete"));
+    let async_key = hex_key("f");
+    fixture
+        .cache
+        .tier(&async_key)
+        .async_delete(&async_key)
+        .await
+        .unwrap();
     assert_eq!(
         fixture.operations(),
         ["key:delete", "ordinary:delete", "key:async_delete"]
@@ -425,11 +436,20 @@ async fn single_delete_partition_and_result() {
 #[test]
 fn single_pre_call_delete_partition_and_result() {
     let fixture = recording_cache();
-    let queued = fixture.cache.delete_pre_call(&hex_key("g")).unwrap();
+    let key_object = hex_key("g");
+    let queued = fixture
+        .cache
+        .tier(&key_object)
+        .delete_pre_call(&key_object)
+        .unwrap();
     assert!(queued.is_none());
     assert_eq!(fixture.operations(), ["key:delete_pre_call"]);
     let ordinary_key = CacheKey::Tag("gone").render();
-    let ordinary = fixture.cache.delete_pre_call(&ordinary_key).unwrap();
+    let ordinary = fixture
+        .cache
+        .tier(&ordinary_key)
+        .delete_pre_call(&ordinary_key)
+        .unwrap();
     assert!(ordinary.is_none());
     assert_eq!(
         fixture.operations(),
@@ -440,7 +460,7 @@ fn single_pre_call_delete_partition_and_result() {
 #[test]
 fn delete_pre_call_without_batch_returns_none() {
     let cache = local_cache(Some(60.0_f64));
-    let queued = cache.delete_pre_call("tag:gone").unwrap();
+    let queued = cache.tier("tag:gone").delete_pre_call("tag:gone").unwrap();
     assert!(queued.is_none());
 }
 

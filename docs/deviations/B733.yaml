@@ -15,3 +15,6 @@ deviations:
   - what: The typed read's error line names the operation and model but not the cache key, where LiteLLM prints key=%r.
     why: Management-object keys can carry user ids and secrets; the deviation above keeps the key out of every native diagnostic.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L144-L151
+  - what: A Redis auth payload that is not JSON and nests brackets deeper than 8 levels becomes a typed cache miss with an error diagnostic, where LiteLLM literal-evals it.
+    why: The shared Python literal parser in betterlite-redis (cache_primitives/decode.rs) backtracks, so 24 nested lists around None take about a minute and the time doubles with each level. That file is outside this task, so the wrapper bounds nesting before the parser runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L206

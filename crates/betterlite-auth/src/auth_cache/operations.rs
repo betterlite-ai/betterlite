@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
-use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -19,7 +18,8 @@ type AuthResult<T> = Result<Option<T>, AuthError>;
 type PayloadResult<T> = Result<Option<T>, PayloadError>;
 
 impl<T: AuthCacheTier> AuthCache<T> {
-    pub(crate) fn tier(&self, key: &str) -> &T {
+    #[must_use]
+    pub fn tier(&self, key: &str) -> &T {
         match partition(key) {
             Partition::KeyObject => &self.key_objects,
             Partition::Ordinary => &self.ordinary,
@@ -203,27 +203,6 @@ impl<T: AuthCacheTier> AuthCache<T> {
                 .await?;
         }
         Ok(())
-    }
-
-    pub fn delete(&self, key: &str) -> Result<(), AuthCacheError> {
-        match self.tier(key).delete(key) {
-            Ok(()) => Ok(()),
-            Err(error) => Err(AuthCacheError::from(error)),
-        }
-    }
-
-    pub async fn async_delete(&self, key: &str) -> Result<(), AuthCacheError> {
-        match self.tier(key).async_delete(key).await {
-            Ok(()) => Ok(()),
-            Err(error) => Err(AuthCacheError::from(error)),
-        }
-    }
-
-    pub fn delete_pre_call(&self, key: &str) -> Result<Option<BatchResult<()>>, AuthCacheError> {
-        match self.tier(key).delete_pre_call(key) {
-            Ok(queued) => Ok(queued),
-            Err(error) => Err(AuthCacheError::from(error)),
-        }
     }
 
     // both partitions are attempted at once, and the first failure in partition order is the one raised

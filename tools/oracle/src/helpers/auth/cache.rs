@@ -8,7 +8,7 @@ use betterlite_auth::auth_cache::keys::{
 };
 use betterlite_auth::auth_cache::payload;
 use betterlite_auth::auth_cache::{AuthCache, gateway_cache};
-use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::codec::CodecError;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
@@ -17,7 +17,7 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 #[derive(Deserialize)]
 pub(crate) struct KeyIds {
@@ -68,36 +68,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-enum Failure {
-    Payload(payload::PayloadError),
-    Auth(AuthError),
-    Memory,
-    Encoding(serde_json::Error),
-}
-
-impl From<Failure> for Box<HelperError> {
-    fn from(failure: Failure) -> Self {
-        let (class, message) = match failure {
-            Failure::Payload(error) => ("ValueError", error.to_string()),
-            Failure::Auth(error) => ("ValueError", error.to_string()),
-            Failure::Memory => ("OSError", "the local memory tier did not build".to_owned()),
-            Failure::Encoding(error) => ("ValueError", error.to_string()),
-        };
-        Self::new(HelperError {
-            class: class.to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message,
-        })
-    }
-}
-
 fn codec(payloads: &[Json]) -> HelperResult {
     let mut projections = Vec::with_capacity(payloads.len());
     for payload in payloads {
-        let untyped = payload::encode(payload).map_err(Failure::Payload)?;
+        let untyped = payload::encode(payload).or_value_error()?;
         let (typed, error) =
             match payload::encode_validated::<LiteLLMObjectPermissionTable>(payload) {
                 Ok(typed) => (Some(typed), None),
@@ -107,14 +81,13 @@ fn codec(payloads: &[Json]) -> HelperResult {
                 Err(payload::PayloadError::Codec(CodecError::Serialize(_source))) => {
                     (None, Some("serialize"))
                 }
-                Err(other) => return Err(Box::<HelperError>::from(Failure::Payload(other))),
+                Err(other) => return Err(other).or_value_error(),
             };
-        let decoded = match payload::decode::<LiteLLMObjectPermissionTable>(payload)
-            .map_err(Failure::Payload)?
-        {
-            Some(row) => Some(serde_json::to_value(row).map_err(Failure::Encoding)?),
-            None => None,
-        };
+        let decoded =
+            match payload::decode::<LiteLLMObjectPermissionTable>(payload).or_value_error()? {
+                Some(row) => Some(serde_json::to_value(row).or_value_error()?),
+                None => None,
+            };
         projections.push(json!({
             "typed": typed,
             "error": error,
@@ -180,11 +153,10 @@ fn keys(ids: &KeyIds) -> serde_json::Value {
 }
 
 fn copy(fields: &BTreeMap<String, JsonData>) -> HelperResult {
-    let original =
-        UserAPIKeyAuth::construct(AuthInput::Dict(fields.clone())).map_err(Failure::Auth)?;
+    let original = UserAPIKeyAuth::construct(AuthInput::Dict(fields.clone())).or_value_error()?;
     let copied = copy_for_cache(&original);
-    let original_dump = serde_json::to_value(&original).map_err(Failure::Encoding)?;
-    let copied_dump = serde_json::to_value(&copied).map_err(Failure::Encoding)?;
+    let original_dump = serde_json::to_value(&original).or_value_error()?;
+    let copied_dump = serde_json::to_value(&copied).or_value_error()?;
     Ok(json!({
         "dump_equal": copied_dump == original_dump,
     }))
@@ -214,5 +186,5 @@ fn local_memory() -> Result<Arc<LocalMemoryOps>, Box<HelperError>> {
     let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 0.0_f64);
     LocalMemoryOps::new(1024, clock)
         .map(Arc::new)
-        .map_err(|_source| Box::<HelperError>::from(Failure::Memory))
+        .or_value_error()
 }
