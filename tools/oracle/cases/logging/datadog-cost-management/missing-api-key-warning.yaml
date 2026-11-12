@@ -1,0 +1,45 @@
+kind: helper
+name: datadog-cost-missing-api-key-warning
+call:
+  b3940:
+    scenarios:
+      - name: missing-credentials
+        environment:
+          DD_SITE: test.datadoghq.com
+          DD_ENV: prod
+          DD_SERVICE: gateway
+          HOSTNAME: host-1
+          POD_NAME: pod-1
+        init: {}
+        replies: []
+        actions:
+          - do: success
+            payload:
+              id: chatcmpl-1
+              trace_id: trace-1
+              session_id: session-1
+              call_type: completion
+              response_cost: 0.5
+              status: success
+              status_fields: {llm_api_status: success, guardrail_status: not_run}
+              total_tokens: 5
+              prompt_tokens: 2
+              completion_tokens: 3
+              startTime: 1704110400.0
+              endTime: 1704110401.0
+              completionStartTime: 1704110400.5
+              response_time: 0.5
+              model_map_information: {}
+              model: gpt-4o
+              model_group: null
+              custom_llm_provider: openai
+              model_id: router-1
+              api_base: "https://api.openai.com"
+              metadata: {}
+              saved_cache_cost: 0.0
+              request_tags: []
+              model_parameters: {}
+              hidden_params: {}
+          - do: flush
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: knowledge-base-response-error
+call:
+  bedrock_services_vector_stores:
+    operation: knowledge_base_response_error
+    responses:
+      - {status: 200, body: "{"}
+      - {status: 200, body: "[]"}
+      - {status: 503, headers: [[x-test, present]], body: '{"retrievalResults":"x"}'}
+      - {status: 503, body: '{"retrievalResults":["x"]}'}
+      - {status: 503, body: '{"retrievalResults":[{"content":"x"}]}'}
+      - {status: 503, body: '{"retrievalResults":[{"content":{"text":"x"},"metadata":["x"]}]}'}
+      - {status: 200, body: '{"retrievalResults":[{"content":{"text":"ok"},"metadata":{"x-amz-bedrock-kb-source-uri":"s3://bucket/a.txt"},"score":0.25}]}'}
+      - {status: 500, body: '{"retrievalResults":[]}'}
+      - {status: 200, body: '{"retrievalResults":0}'}
+env: {}
+compare: {ignore: []}

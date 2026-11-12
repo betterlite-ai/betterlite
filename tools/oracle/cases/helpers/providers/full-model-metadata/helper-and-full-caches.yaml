@@ -1,0 +1,21 @@
+kind: helper
+name: full-model-metadata-helper-and-full-caches
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
+        gpt-4: {litellm_provider: openai, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
+        gpt-3.5-turbo: {litellm_provider: openai, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
+      cache_maxsize: 2
+    steps:
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: helper_call, model: gpt-4, custom_llm_provider: openai}
+      - {op: helper_call, model: gpt-3.5-turbo, custom_llm_provider: openai}
+      - {op: helper_call, model: gpt-4o, custom_llm_provider: openai}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+      - {op: invalidate}
+      - {op: call, model: gpt-4o, custom_llm_provider: openai, parameters: {kind: absent}}
+env: {}
+compare: {ignore: []}

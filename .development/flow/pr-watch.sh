@@ -2,9 +2,10 @@
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 export GH_REPO=betterlite-ai/betterlite
-# Wrong means: a new failed run on its branch (a failed queue run counts once the PR has left the queue, since a PR ahead in the group can cause it), a conflict with main, or leaving the queue without auto-merge.
-# Usage: bash pr-watch.sh <pr>
+# Wrong means: a new failed run on its branch (a failed queue run counts once the PR has left the queue, since a PR ahead in the group can cause it), a conflict with main, leaving the queue without auto-merge, or a run GitHub never started.
+# Usage: bash pr-watch.sh <pr> [merge]; with merge it stops at the merge and leaves main's run to a second call
 pr=$1
+mode=${2:-}
 # the land enables auto-merge seconds before this starts, and the queue can drop the PR within that time
 since=$(date -u -d "-2 min" +%Y-%m-%dT%H:%M:%SZ)
 self=$(readlink -f "$0") || exit 1
@@ -16,7 +17,7 @@ query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){p
 # One REST call per poll: gh run list --workflow spends a second call resolving the workflow, and 28 watchers listing twice a minute used up the account's 5000 calls an hour
 branch_runs() {
   gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=$1&per_page=30" \
-    -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion)"' 2> /dev/null
+    -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion) \(.status) \(.created_at)"' 2> /dev/null
 }
 last_queue_failure() {
   gh run list --workflow gate.yml --limit 30 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-${pr}-\"))][0].databaseId // empty" 2> /dev/null
@@ -38,6 +39,7 @@ known=$(awk '$3 == "failure" {print $1 ":" $2} NR == 1 && $3 == "cancelled" {pri
 outside=0
 stuck=0
 rearmed=0
+queued_polls=0
 while true; do
   info=$(gh api graphql -F n="${pr}" -f query="${query}" -q '.data.repository.pullRequest | "\(.state) \(.mergeStateStatus) \(.autoMergeRequest != null) \(.mergeQueueEntry != null) \(.mergeCommit.oid // "-")"' 2> /dev/null)
   if [[ -z "${info}" ]]; then
@@ -50,6 +52,10 @@ while true; do
     exit 1
   fi
   if [[ "${state}" = MERGED ]]; then
+    if [[ "${mode}" = merge ]]; then
+      echo "PR ${pr} merged as ${commit:0:8}"
+      exit 0
+    fi
     polls=0
     while [[ "${polls}" -lt 60 ]]; do
       git fetch -q origin main 2> /dev/null
@@ -92,6 +98,17 @@ while true; do
   if [[ -n "${newest}" ]] && ! grep -qx "${newest}" <<< "${known}"; then
     echo "PR ${pr} run ${newest} failed: cancelled, a job hit its time limit (a hung test or check)"
     exit 1
+  fi
+  # GitHub sometimes accepts a run and never creates its jobs, and cancel and rerun both refuse it, so only a new push starts CI; a run waiting for a runner has its jobs, and their count is read once every 10 polls
+  cutoff=$(date -u -d '-30 min' +%Y-%m-%dT%H:%M:%SZ)
+  ghost=$(awk -v cutoff="${cutoff}" 'NR == 1 && $4 == "queued" && $5 < cutoff {print $1}' <<< "${runs}")
+  if [[ -n "${ghost}" ]]; then queued_polls=$((queued_polls + 1)); else queued_polls=0; fi
+  if [[ $((queued_polls % 10)) -eq 1 ]]; then
+    jobs=$(gh api "repos/${GH_REPO}/actions/runs/${ghost}/jobs?per_page=1" -q .total_count 2> /dev/null)
+    if [[ "${jobs}" = 0 ]]; then
+      echo "PR ${pr} run ${ghost} failed: queued for over 30 minutes with no jobs, so GitHub never started it"
+      exit 1
+    fi
   fi
   if [[ "${merge_state}" = DIRTY ]]; then
     echo "PR ${pr} conflicts with main"

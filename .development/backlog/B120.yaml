@@ -1,7 +1,7 @@
 id: B120
 milestone: M8 platform
 title: Every config key, config includes and config reloads
-status: todo
+status: done
 depends_on: [B001, B004, B1630, B4142]
 file: tasks/B120-config-includes-http.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - ".env.example"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1321

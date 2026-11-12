@@ -203,7 +203,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_eval_logger::tests::control::/)'
     - id: helper-python
       why: the Python adapter for the hook is missing or fails ruff or basedpyright
-      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b118.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b118.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b118.py tools/oracle/helpers/b118)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b118.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: hook-oracle
       why: the hook's skips, funnel events or scheduled pipelines differ from pinned LiteLLM
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/shadow-eval-hook)" && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-eval-hook

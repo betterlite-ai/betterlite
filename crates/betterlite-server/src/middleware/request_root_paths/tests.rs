@@ -11,7 +11,8 @@ use axum::Json;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::OriginalUri;
-use axum::http::{Extensions, Method, Request, StatusCode};
+use axum::http::{Extensions, Method, Request, StatusCode, header};
+use axum::middleware::from_fn;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::request_root_paths::Settings;
 use rand::SeedableRng as _;
@@ -25,7 +26,7 @@ use tower::ServiceExt as _;
 use tracing::subscriber::with_default;
 
 use super::normalize::normalize_root_paths;
-use super::{RootPaths, get_request_root_path};
+use super::{RootPaths, RootSlashRedirect, get_request_root_path, redirect_root_slash};
 use crate::server::application;
 use crate::server::chat_setup::chat_executor;
 
@@ -69,6 +70,47 @@ async fn send(app: &Router, request: Request<Body>) -> (StatusCode, Vec<u8>) {
     let status = response.status();
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     (status, body.to_vec())
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct ExactSeen {
+    path: String,
+    root: String,
+    redirect: Option<String>,
+}
+
+fn exact_app() -> Router {
+    Router::new().fallback(|request: Request<Body>| async move {
+        let redirect = request
+            .extensions()
+            .get::<RootSlashRedirect>()
+            .map(|RootSlashRedirect(target)| target.clone());
+        Json(ExactSeen {
+            path: request.uri().path().to_owned(),
+            root: get_request_root_path(request.extensions(), "none"),
+            redirect,
+        })
+    })
+}
+
+async fn exact_seen(app: &Router, uri: &str, upgrade: bool) -> ExactSeen {
+    let mut builder = Request::builder().uri(uri);
+    if upgrade {
+        builder = builder.header(header::UPGRADE, "websocket");
+    }
+    let (status, body) = send(app, builder.body(Body::empty()).unwrap()).await;
+    assert_eq!(status, StatusCode::OK);
+    serde_json::from_slice(&body).unwrap()
+}
+
+async fn passed() -> &'static str {
+    "passed"
+}
+
+fn redirecting(scalar_root: &str) -> Router {
+    let paths = RootPaths::from_settings(&settings(scalar_root, &[])).unwrap();
+    let plain = Router::new().fallback(passed);
+    paths.wrap(plain.layer(from_fn(redirect_root_slash)))
 }
 
 async fn seen(app: &Router, uri: &str) -> Seen {
@@ -217,21 +259,17 @@ async fn root_path_middleware_unmatched_requests_keep_the_scalar_root(
 }
 
 #[test]
-fn root_path_middleware_installed_only_for_a_nonempty_prefix_list() {
+fn scalar_root_layer_is_installed_without_a_prefix_list() {
     assert!(RootPaths::from_settings(&settings("", &[])).is_none());
-    assert!(RootPaths::from_settings(&settings("/gateway", &[])).is_none());
+    assert!(RootPaths::from_settings(&settings("/proxy", &[])).is_some());
+    assert!(RootPaths::from_settings(&settings("/proxy/", &[])).is_some());
+    assert!(RootPaths::from_settings(&settings("/", &[])).is_some());
     assert!(RootPaths::from_settings(&settings("", &["", "tenant-a", "/"])).is_none());
     assert!(RootPaths::from_settings(&settings("", &["/tenant-a"])).is_some());
+    assert!(RootPaths::from_settings(&settings("/proxy", &["/tenant-a"])).is_some());
 }
 
-#[rstest]
-#[case::list_unset("{}", StatusCode::NOT_FOUND)]
-#[case::list_set("general_settings:\n  SERVER_ROOT_PATHS: /tenant-a\n", StatusCode::OK)]
-#[tokio::test]
-async fn root_path_middleware_is_installed_by_the_server_only_for_a_prefix_list(
-    #[case] source: &str,
-    #[case] expected: StatusCode,
-) {
+fn server_application(source: &str) -> Router {
     let environment = BTreeMap::new();
     let config = ConfigLoader {
         lookup: environment.clone(),
@@ -239,13 +277,175 @@ async fn root_path_middleware_is_installed_by_the_server_only_for_a_prefix_list(
     .load(source)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    let application = application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap();
+    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+}
+
+#[rstest]
+#[case::unset("{}", StatusCode::NOT_FOUND)]
+#[case::list_set("general_settings:\n  SERVER_ROOT_PATHS: /tenant-a\n", StatusCode::OK)]
+#[case::scalar_set("general_settings:\n  SERVER_ROOT_PATH: /tenant-a\n", StatusCode::OK)]
+#[tokio::test]
+async fn root_path_middleware_is_installed_by_the_server_for_any_root_setting(
+    #[case] source: &str,
+    #[case] expected: StatusCode,
+) {
+    let application = server_application(source);
     let request = Request::builder()
         .uri("/tenant-a/health/liveliness")
         .body(Body::empty())
         .unwrap();
     let (status, _body) = send(&application, request).await;
     assert_eq!(status, expected);
+}
+
+async fn get_status(application: &Router, uri: &str) -> StatusCode {
+    let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    send(application, request).await.0
+}
+
+#[tokio::test]
+async fn scalar_root_server_answers_both_the_prefixed_and_the_plain_path() {
+    let application = server_application("general_settings:\n  SERVER_ROOT_PATH: /tenant-a\n");
+    assert_eq!(
+        get_status(&application, "/tenant-a/health/liveliness").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        get_status(&application, "/health/liveliness").await,
+        StatusCode::OK
+    );
+}
+
+#[rstest]
+#[case::below_the_root("/proxy", "/proxy/v1/models", "/v1/models", "/proxy")]
+#[case::query_kept("/proxy", "/proxy/v1/models?x=1", "/v1/models?x=1", "/proxy")]
+#[case::unprefixed_whole("/proxy", "/v1/models", "/v1/models", "/proxy")]
+#[case::sibling_segment_whole("/proxy", "/proxyx/v1/models", "/proxyx/v1/models", "/proxy")]
+#[case::trailing_slash_root_keeps_whole(
+    "/proxy/",
+    "/proxy/v1/models",
+    "/proxy/v1/models",
+    "/proxy/"
+)]
+#[case::trailing_slash_root_strips_doubled("/proxy/", "/proxy//v1/models", "/v1/models", "/proxy/")]
+#[case::bare_root_keeps_whole("/", "/v1/models", "/v1/models", "/")]
+#[case::bare_root_strips_doubled("/", "//v1/models", "/v1/models", "/")]
+#[tokio::test]
+async fn scalar_root_strips_only_on_a_whole_segment(
+    #[case] scalar_root: &str,
+    #[case] uri: &str,
+    #[case] path: &str,
+    #[case] root: &str,
+) {
+    let app = wrapped(scalar_root, &[]);
+    let observed = seen(&app, uri).await;
+    assert_eq!(observed.path, path);
+    assert_eq!(observed.root, root);
+    assert_eq!(observed.original, uri);
+}
+
+#[tokio::test]
+async fn scalar_root_matched_prefix_wins_over_the_scalar() {
+    let app = wrapped("/gateway", &["/tenant-a"]);
+    let matched = seen(&app, "/tenant-a/models").await;
+    assert_eq!(matched.root, "/tenant-a");
+    assert_eq!(matched.path, "/models");
+    let scalar = seen(&app, "/gateway/models").await;
+    assert_eq!(scalar.root, "/gateway");
+    assert_eq!(scalar.path, "/models");
+}
+
+#[rstest]
+#[case::scalar("/proxy", "/proxy", "/proxy/")]
+#[case::scalar_with_query("/proxy", "/proxy?x=1", "/proxy/?x=1")]
+#[tokio::test]
+async fn exact_root_marks_a_scalar_root_request(
+    #[case] scalar_root: &str,
+    #[case] uri: &str,
+    #[case] target: &str,
+) {
+    let app = RootPaths::from_settings(&settings(scalar_root, &[]))
+        .unwrap()
+        .wrap(exact_app());
+    let observed = exact_seen(&app, uri, false).await;
+    assert_eq!(observed.redirect.as_deref(), Some(target));
+    assert_eq!(observed.path, "/");
+    assert_eq!(observed.root, scalar_root);
+}
+
+#[tokio::test]
+async fn exact_root_marks_a_matched_prefix_request() {
+    let app = RootPaths::from_settings(&settings("", &["/tenant-a"]))
+        .unwrap()
+        .wrap(exact_app());
+    let observed = exact_seen(&app, "/tenant-a", false).await;
+    assert_eq!(observed.redirect.as_deref(), Some("/tenant-a/"));
+    assert_eq!(observed.path, "/");
+    assert_eq!(observed.root, "/tenant-a");
+}
+
+#[tokio::test]
+async fn exact_root_websocket_handshake_is_not_redirected() {
+    let app = RootPaths::from_settings(&settings("/proxy", &[]))
+        .unwrap()
+        .wrap(exact_app());
+    let observed = exact_seen(&app, "/proxy", true).await;
+    assert_eq!(observed.redirect, None);
+    assert_eq!(observed.path, "/proxy");
+    assert_eq!(observed.root, "/proxy");
+}
+
+#[rstest]
+#[case::get(Method::GET, "/proxy", "http://proxy.example/proxy/")]
+#[case::query(Method::GET, "/proxy?x=1", "http://proxy.example/proxy/?x=1")]
+#[case::post(Method::POST, "/proxy", "http://proxy.example/proxy/")]
+#[tokio::test]
+async fn exact_root_redirect_answers_307_with_the_host(
+    #[case] method: Method,
+    #[case] uri: &str,
+    #[case] location: &str,
+) {
+    let app = redirecting("/proxy");
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::HOST, "proxy.example")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.headers()[header::LOCATION], location);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert!(body.is_empty());
+}
+
+#[tokio::test]
+async fn exact_root_redirect_passes_a_request_without_the_marker_through() {
+    let app = redirecting("/proxy");
+    let request = Request::builder()
+        .uri("/other")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(body.as_ref(), b"passed");
+}
+
+#[tokio::test]
+async fn exact_root_redirect_of_the_bare_root_doubles_the_slash() {
+    let app = redirecting("/");
+    let request = Request::builder()
+        .uri("/")
+        .header(header::HOST, "proxy.example")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(
+        response.headers()[header::LOCATION],
+        "http://proxy.example//"
+    );
 }
 
 #[rstest]

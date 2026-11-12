@@ -92,6 +92,8 @@ description: >-
   wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b3937.py"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/batch_status.rs
   - crates/betterlite-bedrock/src/batch_status/**
@@ -244,7 +246,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_errors_and_metadata$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py tools/oracle/helpers/bedrock_services_batch_status)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
