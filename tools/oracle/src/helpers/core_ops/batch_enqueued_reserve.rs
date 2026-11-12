@@ -13,11 +13,11 @@ use betterlite_core::api::batch_enqueued_reserve::{
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
+mod capture;
 mod tests;
 
 const OWNER: &str = "oracle-worker";
@@ -161,32 +161,6 @@ impl ReservationScripts for ScriptedScripts {
     }
 }
 
-#[derive(Clone)]
-struct Capture(Arc<Mutex<Vec<Value>>>);
-
-impl<Inner: Subscriber> Layer<Inner> for Capture {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let level = *event.metadata().level();
-        if level > Level::WARN {
-            return;
-        }
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({"event": "warning", "level": level_name(level)}));
-    }
-}
-
-const fn level_name(level: Level) -> &'static str {
-    match level {
-        Level::ERROR => "error",
-        Level::WARN => "warning",
-        Level::INFO => "info",
-        Level::DEBUG => "debug",
-        Level::TRACE => "trace",
-    }
-}
-
 fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "BatchEnqueuedReserveError".to_owned(),
@@ -281,7 +255,7 @@ impl Helper for Op {
             principal: input.principal.clone(),
         };
         let guard = tracing::subscriber::set_default(
-            tracing_subscriber::registry().with(Capture(Arc::clone(&events))),
+            tracing_subscriber::registry().with(capture::Capture(Arc::clone(&events))),
         );
         let result = runtime
             .block_on(store.reserve(&record))
