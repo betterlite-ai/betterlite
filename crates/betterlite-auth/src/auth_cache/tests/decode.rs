@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::{CachedValue, decode_cached_value};
@@ -7,9 +8,7 @@ use rstest::rstest;
 
 use super::support::{capture, local_cache};
 use crate::auth_cache::WriteOptions;
-use crate::auth_cache::decode::{
-    MAX_LITERAL_DEPTH, MAX_PAYLOAD_BYTES, MAX_PAYLOAD_DEPTH, decode_cached_auth, depth,
-};
+use crate::auth_cache::decode::{MAX_PAYLOAD_BYTES, MAX_PAYLOAD_DEPTH, decode_cached_auth, depth};
 use crate::auth_cache::payload::ReadOperation;
 
 fn auth_payload(bytes: usize) -> Vec<u8> {
@@ -69,39 +68,59 @@ fn auth_cache_payload_over_depth_limit() {
     );
 }
 
+fn padded_literal(depth: usize, total: usize) -> Vec<u8> {
+    let mut text = "[".repeat(depth);
+    text.push_str("None");
+    let inner = total
+        .saturating_sub(depth.saturating_mul(2))
+        .saturating_sub(4);
+    text.push_str(&" ".repeat(inner));
+    text.push_str(&"]".repeat(depth));
+    text.into_bytes()
+}
+
+fn hits_work_limit(payload: &[u8]) -> bool {
+    let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
+    assert!(decoded.unwrap().is_none());
+    log.contains("literal work limit")
+}
+
 #[test]
-fn literal_fallback_nesting_is_bounded() {
-    let (over, log) = capture(|| {
-        decode_cached_auth(
-            &wrapped("None", MAX_LITERAL_DEPTH.saturating_add(1)),
-            ReadOperation::Get,
-        )
-    });
-    assert!(over.unwrap().is_none());
-    assert!(log.contains("literal nesting limit"), "{log}");
-    let (deep, deep_log) = capture(|| decode_cached_auth(&wrapped("None", 24), ReadOperation::Get));
-    assert!(deep.unwrap().is_none());
-    assert!(deep_log.contains("literal nesting limit"), "{deep_log}");
-    let (at_limit, at_log) =
-        capture(|| decode_cached_auth(&wrapped("None", MAX_LITERAL_DEPTH), ReadOperation::Get));
-    assert!(at_limit.unwrap().is_none());
-    assert!(!at_log.contains("literal nesting limit"), "{at_log}");
+fn literal_fallback_work_is_bounded() {
+    let at_four = 15_000;
+    assert!(!hits_work_limit(&padded_literal(4, at_four)));
+    assert!(hits_work_limit(&padded_literal(
+        4,
+        at_four.saturating_add(1)
+    )));
+    assert!(!hits_work_limit(&padded_literal(1, at_four)));
+    assert!(hits_work_limit(&padded_literal(
+        1,
+        at_four.saturating_add(1)
+    )));
+    let at_eight = 185;
+    assert!(!hits_work_limit(&padded_literal(8, at_eight)));
+    assert!(hits_work_limit(&padded_literal(
+        8,
+        at_eight.saturating_add(1)
+    )));
+    assert!(hits_work_limit(&wrapped("None", 24)));
     let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
-    let (flat, flat_log) = capture(|| decode_cached_auth(siblings, ReadOperation::Get));
-    assert!(flat.unwrap().is_none());
-    assert!(!flat_log.contains("literal nesting limit"), "{flat_log}");
+    assert!(!hits_work_limit(siblings));
+}
+
+#[rstest]
+#[case(4)]
+#[case(8)]
+fn literal_fallback_inputs_that_took_a_minute_are_rejected_at_once(#[case] depth: usize) {
+    let started = Instant::now();
+    assert!(hits_work_limit(&padded_literal(depth, MAX_PAYLOAD_BYTES)));
+    assert!(started.elapsed().as_secs() < 5);
 }
 
 #[test]
 fn json_nesting_is_not_held_to_the_literal_bound() {
-    let (decoded, log) = capture(|| {
-        decode_cached_auth(
-            &wrapped("1", MAX_LITERAL_DEPTH.saturating_add(4)),
-            ReadOperation::Get,
-        )
-    });
-    assert!(decoded.unwrap().is_none());
-    assert!(!log.contains("literal nesting limit"), "{log}");
+    assert!(!hits_work_limit(&wrapped("1", 12)));
 }
 
 #[test]
@@ -118,10 +137,9 @@ fn literal_brackets_inside_strings_do_not_count() {
 
 #[test]
 fn literal_nesting_is_counted_after_a_closed_string() {
-    let payload = b"{'a': 'x', 'b': [[[[[[[[None]]]]]]]]}";
-    let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
-    assert!(decoded.unwrap().is_none());
-    assert!(log.contains("literal nesting limit"), "{log}");
+    assert!(hits_work_limit(
+        b"{'a': 'x', 'b': [[[[[[[[[[None]]]]]]]]]]}"
+    ));
 }
 
 #[test]

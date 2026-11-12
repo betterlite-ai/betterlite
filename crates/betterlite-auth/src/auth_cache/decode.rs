@@ -10,8 +10,9 @@ use crate::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 
 pub const MAX_PAYLOAD_BYTES: usize = 0x0010_0000;
 pub const MAX_PAYLOAD_DEPTH: usize = 64;
-// the python literal parser behind the shared decoder backtracks, so its time doubles with each level
-pub const MAX_LITERAL_DEPTH: usize = 8;
+// the shared literal parser backtracks (1 MiB took 6.7 s at 4 levels, 70 s at 8), so work is size times 3 per level, 4 levels at least
+pub const LITERAL_WORK_LIMIT: usize = 1_215_000;
+const LITERAL_MIN_LEVELS: usize = 4;
 
 const AUTH_MODEL: &str = "UserAPIKeyAuth";
 
@@ -100,15 +101,18 @@ fn within_input_limits(bytes: &[u8], operation: ReadOperation) -> bool {
         );
         return false;
     }
-    if serde_json::from_slice::<IgnoredAny>(bytes).is_err()
-        && bracket_depth(bytes) > MAX_LITERAL_DEPTH
-    {
-        tracing::error!(
-            operation = operation.label(),
-            limit = MAX_LITERAL_DEPTH,
-            "cached auth payload exceeds the literal nesting limit"
-        );
-        return false;
+    if serde_json::from_slice::<IgnoredAny>(bytes).is_err() {
+        let levels =
+            u32::try_from(bracket_depth(bytes).max(LITERAL_MIN_LEVELS)).unwrap_or(u32::MAX);
+        let work = bytes.len().saturating_mul(3_usize.saturating_pow(levels));
+        if work > LITERAL_WORK_LIMIT {
+            tracing::error!(
+                operation = operation.label(),
+                limit = LITERAL_WORK_LIMIT,
+                "cached auth payload exceeds the literal work limit"
+            );
+            return false;
+        }
     }
     true
 }
