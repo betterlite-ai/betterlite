@@ -600,11 +600,14 @@ async fn embedding_preset_key_does_not_override_per_input_keys() {
     assert!(backend.reads().iter().all(|read| read.key != "preset"));
 }
 
+#[rstest]
+#[case::at_limit(2048, false)]
+#[case::over_limit(2049, true)]
 #[tokio::test]
-async fn embedding_input_count_is_capped() {
+async fn embedding_input_count_is_capped(#[case] count: usize, #[case] rejected: bool) {
     let backend = Arc::new(RecordingBackend::new(ReadSupport::Both));
     let cache = build_cache(Arc::clone(&backend));
-    let inputs: Vec<KeyValue> = vec![text("x"); 2049];
+    let inputs: Vec<KeyValue> = vec![text("x"); count];
     let request_kwargs = kwargs(&[
         ("model", text("text-embedding-3-small")),
         ("input", KeyValue::Array(inputs)),
@@ -618,11 +621,15 @@ async fn embedding_input_count_is_capped() {
         &[],
     )
     .await;
-    assert!(matches!(
-        result,
-        Err(HandlerError::FieldType { field: "input", .. })
-    ));
-    assert!(backend.reads().is_empty());
+    if rejected {
+        assert!(matches!(
+            result,
+            Err(HandlerError::FieldType { field: "input", .. })
+        ));
+        assert!(backend.reads().is_empty());
+    } else {
+        assert_eq!(result.expect("the retrieval runs"), Retrieval::Miss);
+    }
 }
 
 #[rstest]
