@@ -2,14 +2,13 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use betterlite_openai::api::rerank_contracts::records::{
     RerankBilledUnits, RerankDocument, RerankResponse,
 };
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde::de::Error as _;
 use serde_json::Number;
 use thiserror::Error;
 
@@ -20,19 +19,20 @@ pub type Headers = BTreeMap<String, String>;
 // LiteLLM's ModelInfo prices a rerank query with input_cost_per_query and spells a missing price as null.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct RerankModelInfo {
-    #[serde(default, deserialize_with = "optional_price")]
-    pub input_cost_per_query: Option<Decimal>,
+    #[serde(default)]
+    pub input_cost_per_query: Option<ExactDecimal>,
 }
 
-fn optional_price<'de, Input>(deserializer: Input) -> Result<Option<Decimal>, Input::Error>
-where
-    Input: serde::Deserializer<'de>,
-{
-    Option::<Number>::deserialize(deserializer)?.map_or(Ok(None), |value| {
-        parse_decimal_lexeme(&value.to_string())
-            .map(Some)
-            .map_err(Input::Error::custom)
-    })
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Number")]
+pub struct ExactDecimal(pub Decimal);
+
+impl TryFrom<Number> for ExactDecimal {
+    type Error = DecimalLexemeError;
+
+    fn try_from(number: Number) -> Result<Self, Self::Error> {
+        parse_decimal_lexeme(&number.to_string()).map(Self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -148,7 +148,7 @@ pub trait BaseRerankConfig: Send + Sync {
         api_base.unwrap_or_default().to_owned()
     }
 
-    fn get_supported_cohere_rerank_params(&self, model: &str) -> Vec<String>;
+    fn supported_rerank_params(&self, model: &str) -> Vec<String>;
 
     fn map_cohere_rerank_params(
         &self,
@@ -178,7 +178,9 @@ pub trait BaseRerankConfig: Send + Sync {
         let Some(search_units) = billed_units.and_then(|units| units.search_units.flatten()) else {
             return (Decimal::ZERO, Decimal::ZERO);
         };
-        let Some(price) = model_info.and_then(|info| info.input_cost_per_query) else {
+        let Some(price) =
+            model_info.and_then(|info| info.input_cost_per_query.map(|value| value.0))
+        else {
             return (Decimal::ZERO, Decimal::ZERO);
         };
         let Some(prompt_cost) = price.checked_mul(Decimal::from(search_units)) else {

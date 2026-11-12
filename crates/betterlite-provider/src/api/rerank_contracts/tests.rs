@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::{
-    BaseLlmException, BaseRerankConfig, EnvironmentRequest, HeaderMap, Headers,
+    BaseLlmException, BaseRerankConfig, EnvironmentRequest, ExactDecimal, HeaderMap, Headers,
     MapCohereRerankParams, OptionalRerankParams, Params, RerankLogging, RerankModelInfo,
     RerankProviderResponse, ResponseTransform, ReturnDocuments, get_optional_rerank_params,
 };
@@ -154,7 +154,7 @@ impl BaseRerankConfig for Fixture {
         Ok(request.headers.clone())
     }
 
-    fn get_supported_cohere_rerank_params(&self, _model: &str) -> Vec<String> {
+    fn supported_rerank_params(&self, _model: &str) -> Vec<String> {
         Vec::new()
     }
 
@@ -496,14 +496,14 @@ fn an_unrepresentable_cost_saturates() {
     let fixture = Fixture::default();
     let counted = billed_units(r#"{"search_units":2}"#);
     let maximum = RerankModelInfo {
-        input_cost_per_query: Some(Decimal::MAX),
+        input_cost_per_query: Some(ExactDecimal(Decimal::MAX)),
     };
     assert_eq!(
         fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&maximum)),
         (Decimal::MAX, Decimal::ZERO)
     );
     let minimum = RerankModelInfo {
-        input_cost_per_query: Some(Decimal::MIN),
+        input_cost_per_query: Some(ExactDecimal(Decimal::MIN)),
     };
     assert_eq!(
         fixture.calculate_rerank_cost("m", None, Some(&counted), Some(&minimum)),

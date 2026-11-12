@@ -245,27 +245,31 @@ fn compatibility_deviations() {
     assert_eq!(details.param, Some("score"));
     assert_eq!(details.code, Some("decimal_out_of_range"));
     assert_eq!(details.location, None);
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e100_f64] {
-        let _error = Score::try_from(value).unwrap_err();
-    }
     assert_eq!(Score::try_from(0.125_f64).unwrap().0.to_string(), "0.125");
     assert_eq!(Score::try_from(-0.5_f64).unwrap().0.to_string(), "-0.5");
+}
+
+#[rstest]
+#[case::nan(f64::NAN)]
+#[case::infinity(f64::INFINITY)]
+#[case::negative_infinity(f64::NEG_INFINITY)]
+#[case::beyond_exact_range(1e100_f64)]
+fn non_finite_scores_are_refused(#[case] value: f64) {
+    let _error = Score::try_from(value).unwrap_err();
 }
 
 #[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/rerank_contracts");
-    let mut decoded = 0_usize;
-    for entry in fs::read_dir(corpus).unwrap() {
-        let bytes = fs::read(entry.unwrap().path()).unwrap();
-        let Some((&kind_byte, json)) = bytes.split_first() else {
-            continue;
-        };
-        let Ok(kind) = RerankRecordKind::try_from(kind_byte) else {
-            continue;
-        };
-        let _outcome = decode_rerank_contracts(json, kind, limits());
-        decoded = decoded.saturating_add(1);
-    }
+    let decoded = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
+        .filter_map(|bytes| {
+            let (&kind_byte, json) = bytes.split_first()?;
+            let kind = RerankRecordKind::try_from(kind_byte).ok()?;
+            let _outcome = decode_rerank_contracts(json, kind, limits());
+            Some(())
+        })
+        .count();
     assert!(decoded >= 4);
 }
