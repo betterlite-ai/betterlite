@@ -1,0 +1,5 @@
+task: B1319
+deviations:
+  - what: Character, token and grounding charges multiply the fixture's exact decimal rates, so an amount Python's binary float rounds keeps every digit, and a product beyond the decimal range returns GooglePricingError::Overflow instead of an infinite or absurdly rounded float.
+    why: Money and price arithmetic is decimal everywhere in betterlite, and an infinity is not a cost any client can read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/cost_calculator.py#L84-L200

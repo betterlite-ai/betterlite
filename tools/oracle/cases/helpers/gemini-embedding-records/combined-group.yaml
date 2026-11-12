@@ -1,0 +1,36 @@
+kind: helper
+name: gemini-embedding-records-combined-group
+call:
+  gemini_embedding_records:
+    calls:
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - - beta
+        - data:image/png;base64,AAAA
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - - data:image/jpeg;base64,AA
+        - caption
+      optional: {}
+      resolved_files: {}
+      response: null
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - first
+      - - second
+        - third
+      - fourth
+      optional:
+        title: doc
+      resolved_files: {}
+      response: null
+compare:
+  ignore: []
+env: {}

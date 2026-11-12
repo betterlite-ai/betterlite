@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-gcs-access-trusted-legacy
+call:
+  vertex_gcs_access:
+    operation: trusted_legacy
+    params: {gcs_bucket_name: "bucket/tenant"}
+    environment: {}
+    trusted: [["allow_legacy_cloud_file_ids", "TRUE"]]
+    plain: []
+    file_ids: ["gs://bucket/tenant/legacy-input.jsonl"]
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}
