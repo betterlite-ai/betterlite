@@ -110,19 +110,19 @@ mod _native {
     use super::{native_api, register_first_families, register_last_families};
 
     #[pyfunction]
-    const fn core_version() -> &'static str {
+    pub(super) const fn core_version() -> &'static str {
         // The logic stays in native_api so its tests need no interpreter.
         native_api::core_version()
     }
 
     #[pyfunction]
-    fn bundled_model_cost_json() -> PyResult<String> {
+    pub(super) fn bundled_model_cost_json() -> PyResult<String> {
         native_api::bundled_model_cost_json()
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))
     }
 
     #[pyfunction]
-    fn provider_model_sets() -> BTreeMap<String, Vec<String>> {
+    pub(super) fn provider_model_sets() -> BTreeMap<String, Vec<String>> {
         // The logic stays in native_api so its tests need no interpreter.
         native_api::provider_model_sets()
     }

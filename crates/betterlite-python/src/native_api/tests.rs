@@ -8,6 +8,7 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::provider_model_sets::{ProviderModelSet, ProviderModelSets};
 
 use super::{bundled_model_cost_json, core_version, provider_model_sets};
+use crate::_native;
 
 fn pinned_text() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -55,4 +56,11 @@ fn provider_model_sets_folds_the_bundled_catalog() {
     assert_eq!(sets, want);
     let chat = &sets[&ProviderModelSet::OpenAiChatCompletion.to_string()];
     assert!(chat.iter().any(|name| name == "gpt-4o"));
+}
+
+#[test]
+fn the_module_functions_return_what_native_api_returns() {
+    assert_eq!(_native::core_version(), core_version());
+    assert_eq!(_native::bundled_model_cost_json().unwrap(), pinned_text());
+    assert_eq!(_native::provider_model_sets(), provider_model_sets());
 }
