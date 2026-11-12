@@ -1,0 +1,25 @@
+kind: helper
+name: gemini-response-parts-signed-tool-call
+call:
+  gemini_response_parts:
+    parts:
+      - functionCall:
+          name: lookup
+          args: {b: "lλ", a: 1}
+          id: native-1
+        thoughtSignature: sig-a
+      - functionCall:
+          name: search
+          args: {}
+      - functionCall:
+          name: signed
+          args: {q: x}
+          id: native-2
+        thoughtSignature: sig-b
+    legacy_function: false
+    cumulative_tool_call_idx: 4
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    logprobs: null
+env: {}
+compare: {ignore: []}

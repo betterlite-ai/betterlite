@@ -1,7 +1,7 @@
 id: B502
 milestone: M3 providers
 title: OpenAI reasoning and audio model parameters
-status: todo
+status: done
 depends_on: [B175, B193, B171, B668, B174, B503, B206, B2221]
 file: tasks/B502-openai-reasoning-models.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/openai/chat/gpt_audio_transformation.py"
 parent: B024
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1376

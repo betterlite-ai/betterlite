@@ -1,0 +1,12 @@
+kind: helper
+name: openai-reasoning-models-gpt6-family-selection
+call:
+  openai_reasoning_models:
+    gpt6_family_selection:
+      probes:
+      - {model: gpt-6}
+      - {model: azure_ai/gpt-6-astra}
+      - {model: gpt-5.6}
+      - {model: gpt-5.3}
+env: {}
+compare: {ignore: []}
