@@ -1,0 +1,21 @@
+kind: helper
+name: hosted-chat-options-seed-featherless-tools
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: map
+            host: featherless
+            model: seed-featherless-model
+            config: {}
+            drop_params: false
+            params:
+              - [tools, [{type: function, function: {name: seed}}]]
+          - op: map
+            host: featherless
+            model: seed-featherless-model
+            config: {}
+            params:
+              - [tool_choice, auto]
+env: {}
+compare: {ignore: []}

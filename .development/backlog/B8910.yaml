@@ -2,7 +2,7 @@ id: B8910
 milestone: M7 observability
 title: OTel logger factory and published provider ownership
 status: todo
-depends_on: [B3840, B3842, B3844, B3847, B3849, B3850, B3851, B3853, B3854, B8250]
+depends_on: [B3840, B3842, B3844, B3847, B3849, B3850, B3851, B3853, B3854, B8250, B3857]
 file: tasks/B8910-otel-logger-runtime.yaml
 covers:
   - "litellm/integrations/otel/{logger,runtime}.py"

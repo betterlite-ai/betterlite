@@ -12,7 +12,8 @@ description: >-
   LifespanError>`, which runs every startup step in B8374's order, and `stop(started: Started)`, which runs every
   shutdown step in B8374's order. `Started` is a struct in lifespan/started.rs with one public field per value startup
   builds and later code needs: the Config and env overlay, the database store when DATABASE_URL was set, the usage and
-  buffer Redis clients, the auth cache, the guardrail handler and factories, B8230's PluginRegistry, the values listed
+  buffer Redis clients, the auth cache, the guardrail handler and factories, B8230's PluginRegistry, the
+  `python_hooks: Arc<PythonHooks>` that LifespanInputs brought (B8375 built it; start makes none), the values listed
   below, and the private handles stop uses (jobs, subscribers, drains). run_proxy becomes start, then server::run with
   the same arguments it passes today, then stop. Keep every existing lifespan test green; move none of B8374's steps.
 
@@ -28,7 +29,7 @@ description: >-
   3. Proxy config state. One B8380 `ProxyConfigState` before config boot; when B8374's merged code already makes one,
   keep that one.
   4. Registries. One B4776 `AgentRegistry`, B8614's `McpRegistry::new(&config, db, http)`, `VectorStores::new()` and `PassThroughState::new()`, and B8614's
-  `BootRegistries` over the first three, passed to B8590's load_non_llm_configs. B8374's agent grant id migration and B8384's
+  `BootRegistries` over the first three and a clone of the LifespanInputs `python_hooks` Arc, passed to B8590's load_non_llm_configs. B8374's agent grant id migration and B8384's
   _init_mcp_servers_in_db use these same values. The PassThroughState goes to every call B8374 makes into B3616's initialize_pass_through_endpoints and to B8384's database load, and at the default_vertex_config line of load_config (L6964-L6965) B3602's set_default_vertex_config runs on its credential router unless B8374 already calls it.
   One B4059 `InMemoryPromptRegistry`, in the RwLock wrapper Shared holds it in (B8610), made with the registries. At
   the prompts position of load_config (L7027-L7034, after the policy engine setup and before credentials), when
@@ -43,9 +44,13 @@ description: >-
   merged code builds one another way, replace that call. Make B4304's one `CacheWriteTracker` here too.
   7. Router. When a config file was loaded, in load_config order (L6905-L6928): B8378's check_capability_limits over the
   model_list with B377's unlicensed limit; for each entry B8378's check_max_agentic_loops, check_complexity_placement,
-  check_access_windows and pin_complexity_model_id; B8587's complexity router plugin resolution with the config file
-  path; then call B8384's `parse_search_tools(&config)`, set the entries on the parts (`parts.search_tools`, an empty list
-  when it returns none), and `handle.install(ProxyRouter::build(parts)?)` with `parts = RouterParts::from_config(&config,
+  check_access_windows and pin_complexity_model_id; B8587's `resolve_complexity_plugins` with
+  `Some(&*python_hooks)` (the LifespanInputs Arc) and the config file path; when router_settings.plugins is a list,
+  B8587's `resolve_routing_plugins` with the same Arc, that list, the config file path and the label
+  "router_settings.plugins" (L6974-L6981), and the handles go in order to B363's router-level plugin list through the
+  parts (read B363's merged field); then call B8384's
+  `parse_search_tools(&config)`, set the entries on the parts (`parts.search_tools`, an empty list when it returns
+  none), and `handle.install(ProxyRouter::build(parts)?)` with `parts = RouterParts::from_config(&config,
   slot.get().is_some())`, the Router(...) call at L6992. The search tools are supplied this way even when no database is
   configured, so GET /v1/search/tools sees the config tools. Install B3008's fallback budget predicate in RouterParts as the router's
   fallback_budget_check (L7001). A check error stops startup with its text. When B8377's selection returns a usage Redis,
@@ -65,7 +70,13 @@ description: >-
   that Arc and the database store and implements B8611's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
   add_deployment with the store, and does nothing without a database. Started carries it as `deployment_sync: Arc<dyn
   DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
-  implements B379's trait).
+  implements B379's trait). lifespan/pass_through_port.rs holds `RouteInstaller` over the one
+  PassThroughState and implements B8379's PassThroughInstaller: install calls B3616's initialize_pass_through_endpoints with
+  that state's routes handle, the database list and no config file path, logs B3616's error with its cause and returns B8379's
+  EndpointInstallError. DeploymentSync gets it as Arc<dyn PassThroughInstaller> wherever it is built. One B8379
+  `OverlayPortAdapter` is built here over the ProxyConfigState from step 3, the config source B8374's config source
+  step chose, the database store, the env and the same RouteInstaller, and Started carries it as `config_overlay:
+  Arc<dyn ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port).
   12. Gateway requests. One B3102 `GatewayRequestAccumulator` as an Arc, before the background jobs. Every flush B8374
   and B8372 run takes this one, and Started carries it for B8680's billable sink. Also make one B3067 `VantageLoggers`
   Arc here, pass it to B8372, and carry it in Started so B8610 exposes it as shared.vantage_loggers.
@@ -79,7 +90,7 @@ description: >-
   returns. Started carries it; B8662 fills it from app::spend::start once the server starts.
   16. Config-load steps. B8873's raw secret-manager bootstrap runs before whole-config reference resolution (before
   B8590's env_overlay resolves the file), and B8872's audit-callback installation runs at its config-load position
-  (proxy_server.py L6518-L6547). Both go through B8590's config_boot calls; neither builds a second manager or callback list.
+  (proxy_server.py L6518-L6547) with the LifespanInputs `python_hooks` Arc as its PythonHooks. Both go through B8590's config_boot calls; neither builds a second manager or callback list.
   17. Agent tracing session. B8374 starts B8911's tracing receiver at its position; Started carries the returned session
   for stop.
 
@@ -108,10 +119,12 @@ description: >-
   load_non_llm_configs, the handle before the cache and the router after it with cache_responses following the cache,
   a failing deployment check stops startup before the router is installed, attach_redis gets the usage Redis,
   startup_event runs between the Redis selection and the buffer check, a config with prompts fills the registry Started
-  holds, the DeploymentSyncPort in Started reaches DeploymentSync's add_deployment, the guardrail callback source
+  holds, the DeploymentSyncPort in Started reaches DeploymentSync's add_deployment, the ConfigOverlayPort in Started
+  reloads into the same ProxyConfigState Started holds, a config with router_settings.plugins hands the resolved
+  plugins to the router parts in order, the guardrail callback source
   answers a guardrail added after start, the tracker drains before the response cache disconnect, the gateway
-  accumulator and the spend producer drain once each, and run_proxy still calls start, server::run and stop in that
-  order. lifespan collector tests (names
+  accumulator and the spend producer drain once each, Started.python_hooks is Arc::ptr_eq with the LifespanInputs
+  python_hooks, and run_proxy still calls start, server::run and stop in that order. lifespan collector tests (names
   start with `collector_`) assert startup and shutdown map to start and stop. No oracle case: the order is not visible
   to a client.
 scope:
@@ -137,7 +150,7 @@ references:
 dod:
   - text: start and stop run B8374's steps in the same order, Started carries every value the server and stop need, and run_proxy is start, server::run and stop.
     proof: [handoff-tests, lifespan-regression]
-  - text: The Redis factory, secret lookup, proxy config state, registries, router handle, cache runtime, cache write tracker, JWT signer slot, ProxyLogging, guardrail classes, prompt registry, periodic reloads, deployment sync port, gateway accumulator, Prometheus registry, shutdown state and the empty spend producer slot are made once at LiteLLM's positions; the deployment checks and plugin resolution run before the router is installed; the router gets the usage Redis; startup_event runs after the Redis selection.
+  - text: The Redis factory, secret lookup, proxy config state, registries, router handle, cache runtime, cache write tracker, JWT signer slot, ProxyLogging, guardrail classes, prompt registry, periodic reloads, deployment sync port, config overlay port, gateway accumulator, Prometheus registry, shutdown state and the empty spend producer slot are made once at LiteLLM's positions; Started holds the PythonHooks Arc from LifespanInputs; the deployment checks and plugin resolution run before the router is installed; the router gets the usage Redis; startup_event runs after the Redis selection.
     proof: [handoff-tests]
   - text: Stop drains the cache write tracker before the response cache disconnects, and drains the spend event producer and the gateway accumulator once each at LiteLLM's positions.
     proof: [handoff-tests]
@@ -161,7 +174,7 @@ out_of_scope:
   - "Calling init_callbacks: B8742's callback_loggers slot, from app::callbacks::start. Filling the GuardrailClasses embedder slot: B8790. The Shared fields: B8610."
 pitfalls:
   - The usage Redis can come from three places (the coordination block, the database block, the response cache backend); attach_redis must get whichever won, after the last of them, or the router keeps a client that rate limits do not use.
-  - A second AgentRegistry, McpRegistry, JwtSignerSlot, CacheSettingsManager, ProxyLogging, GuardrailClasses, prompt registry, PeriodicReloads, GatewayRequestAccumulator, CollectorRegistry or ShutdownState built anywhere later splits state between startup and request handling; Started is the only owner until B8610 moves them into Shared.
+  - A second AgentRegistry, McpRegistry, JwtSignerSlot, CacheSettingsManager, ProxyLogging, GuardrailClasses, prompt registry, PeriodicReloads, GatewayRequestAccumulator, CollectorRegistry, ShutdownState or PythonHooks built anywhere later splits state between startup and request handling; Started is the only owner until B8610 moves them into Shared.
   - Installing the router before init_cache gives it cache_responses false even when litellm_settings.cache is true.
   - pin_complexity_model_id must run on the raw params before B8587 swaps plugin paths for instances, or B8381's later reconcile hashes different params and evicts the deployment.
 review_level: security

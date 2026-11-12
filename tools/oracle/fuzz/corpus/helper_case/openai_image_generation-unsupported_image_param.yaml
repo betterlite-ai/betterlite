@@ -1,0 +1,12 @@
+kind: helper
+name: openai-image-generation-seed-unsupported-image-param
+call:
+  openai_image_generation:
+    function: unsupported_image_param
+    probes:
+      - model: dall-e-2
+        existing_params: {quality: low}
+        non_default_params: {style: vivid}
+        drop_params: false
+env: {}
+compare: {ignore: []}

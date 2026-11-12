@@ -1,0 +1,55 @@
+kind: probe
+name: retry-policy-subclass-content-policy
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: content_policy_violation, status: 400}
+          model_group: null
+          retry_policy: {ContentPolicyViolationErrorRetries: 2, BadRequestErrorRetries: 7}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: content_policy_violation, status: 400}
+          model_group: null
+          retry_policy: {BadRequestErrorRetries: 7}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: context_window_exceeded, status: 400}
+          model_group: null
+          retry_policy: {BadRequestErrorRetries: 7}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: count
+        count:
+          error: {class: content_policy_violation, status: 400}
+          model_group: null
+          retry_policy: {DefaultRetries: 3}
+          model_group_retry_policy: null
+          request_num_retries: null
+          router_num_retries: 0
+          deployment_num_retries: null
