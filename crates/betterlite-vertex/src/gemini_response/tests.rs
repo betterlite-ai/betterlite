@@ -233,6 +233,20 @@ fn decode_rejects_a_non_object_candidate(#[case] source: &str) {
     ));
 }
 
+#[rstest]
+#[case::nan(
+    r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"f","args":{"x":NaN}}}]}}]}"#
+)]
+#[case::infinity(
+    r#"{"candidates":[{"content":{"parts":[{"functionCall":{"name":"f","args":{"x":Infinity}}}]}}]}"#
+)]
+fn decode_rejects_a_nonstandard_number_literal(#[case] source: &str) {
+    assert!(matches!(
+        decode_generate_content(source.as_bytes()),
+        Err(GenerateContentError::Json { .. })
+    ));
+}
+
 #[test]
 fn decode_rejects_a_trailing_document() {
     assert!(matches!(

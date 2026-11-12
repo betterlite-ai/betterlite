@@ -9,3 +9,6 @@ deviations:
   - what: A response body over 16 MiB is refused with Vertex 422 before it is decoded, where LiteLLM decodes any size.
     why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2394-L2402
+  - what: A body nested past serde_json's 128 levels, or holding the non-standard NaN or Infinity literals, answers Vertex 422 as unreadable JSON, where LiteLLM's raw_response.json() parses it through Python's json.loads.
+    why: Rule bounded-inputs gives the decoder a depth cap so an adversarial body cannot exhaust the stack, and betterlite reads and writes standard JSON; a Gemini reply that deep or carrying NaN is nothing a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2396
