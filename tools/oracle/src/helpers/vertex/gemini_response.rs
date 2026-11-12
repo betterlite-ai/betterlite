@@ -77,16 +77,7 @@ fn vertex_error(error: VertexAiError) -> Box<HelperError> {
 }
 
 fn state(response: CompleteResponse) -> Value {
-    let CompleteResponse {
-        id,
-        model,
-        choices,
-        usage,
-        metadata: lists,
-        provider_specific_fields,
-        service_tier,
-    } = response;
-    let metadata = lists.map(|found| {
+    let metadata = response.metadata.map(|found| {
         json!({
             "grounding_metadata": found.grounding_metadata,
             "url_context_metadata": found.url_context_metadata,
@@ -95,18 +86,18 @@ fn state(response: CompleteResponse) -> Value {
         })
     });
     json!({
-        "id": id,
-        "model": model,
-        "choices": choices,
+        "id": response.id,
+        "model": response.model,
+        "choices": response.choices,
         "usage": {
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-            "prompt_tokens_details": usage.prompt_tokens_details.is_some(),
-            "completion_tokens_details": usage.completion_tokens_details.is_some(),
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+            "prompt_tokens_details": response.usage.prompt_tokens_details.is_some(),
+            "completion_tokens_details": response.usage.completion_tokens_details.is_some(),
         },
         "metadata": metadata,
-        "traffic_type": provider_specific_fields.map(|fields| fields.traffic_type),
-        "service_tier": service_tier,
+        "traffic_type": response.provider_specific_fields.map(|fields| fields.traffic_type),
+        "service_tier": response.service_tier,
     })
 }

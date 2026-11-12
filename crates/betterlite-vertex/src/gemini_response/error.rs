@@ -54,8 +54,10 @@ fn header_map(headers: &HeaderMap) -> BTreeMap<String, String> {
     headers
         .keys()
         .filter_map(|name| {
-            let value = header_text(headers, name.as_str())?;
-            Some((name.as_str().to_owned(), value))
+            Some((
+                name.as_str().to_owned(),
+                header_text(headers, name.as_str())?,
+            ))
         })
         .collect()
 }
