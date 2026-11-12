@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 use serde::Deserialize;
@@ -45,15 +47,9 @@ pub struct ResultsFrame {
     pub channel: Option<Lenient<ResultsChannel>>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ResultsChannel {
-    pub alternatives: Option<Lenient<Vec<Lenient<Alternative>>>>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Alternative {
-    pub transcript: Option<Lenient<String>>,
-}
+// a map type reads only a JSON object, so a derived struct's read of an array by position never applies
+pub type Alternative = BTreeMap<String, Lenient<String>>;
+pub type ResultsChannel = BTreeMap<String, Lenient<Vec<Lenient<Alternative>>>>;
 
 // a bool or a string is no candidate; a negative or non-finite number is none either
 fn candidate_seconds(field: Option<&Lenient<Number>>) -> Option<Decimal> {
@@ -153,8 +149,8 @@ fn results_end(results: &ResultsFrame) -> Option<Decimal> {
 
 fn final_transcript(results: &ResultsFrame) -> Option<&str> {
     let channel = results.channel.as_ref()?.value()?;
-    let alternatives = channel.alternatives.as_ref()?.value()?;
+    let alternatives = channel.get("alternatives")?.value()?;
     let alternative = alternatives.first()?.value()?;
-    let text = alternative.transcript.as_ref()?.value()?.as_str();
+    let text = alternative.get("transcript")?.value()?.as_str();
     (!text.is_empty()).then_some(text)
 }

@@ -410,6 +410,18 @@ fn transcript_joins_final_first_alternatives_in_frame_order() {
 }
 
 #[test]
+fn transcript_skips_a_channel_or_alternative_given_as_an_array() {
+    let frames = frames(
+        r#"[
+            {"type": "Results", "is_final": true, "channel": [[["hi"]]]},
+            {"type": "Results", "is_final": true, "channel": {"alternatives": [["hi"]]}},
+            {"type": "Results", "is_final": true, "channel": {"alternatives": [{"transcript": "ok"}]}}
+        ]"#,
+    );
+    assert_eq!(transcript(&frames), "ok");
+}
+
+#[test]
 fn transcript_ignores_every_other_frame() {
     let frames =
         frames(r#"[{"type": "Metadata", "channel": {"alternatives": [{"transcript": "meta"}]}}]"#);

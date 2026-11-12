@@ -33,5 +33,13 @@ call:
       - {type: Results, is_final: true, channel: {alternatives: [skipped, {transcript: later}]}}
       - {type: Results, is_final: true, channel: {alternatives: [{transcript: 5}]}}
       - {type: Results, is_final: true, channel: {alternatives: [{transcript: there}]}}
+    - function: final_transcript
+      query: ""
+      api_base: null
+      upstream_url: ""
+      messages:
+      - {type: Results, is_final: true, channel: [[[hi]]]}
+      - {type: Results, is_final: true, channel: {alternatives: [[hi]]}}
+      - {type: Results, is_final: true, channel: {alternatives: [{transcript: valid}]}}
 compare: {ignore: []}
 env: {}
