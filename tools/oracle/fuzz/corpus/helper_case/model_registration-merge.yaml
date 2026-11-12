@@ -1,0 +1,9 @@
+kind: helper
+name: model-registration-merge-seed
+call:
+  b5365:
+    function: update_dictionary
+    existing: {a: 1, nested: {x: 1}}
+    new: {a: 2, nested: {y: 2}, b: "3"}
+env: {}
+compare: {ignore: []}

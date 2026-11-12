@@ -43,6 +43,7 @@ betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-oracle-helper-api = { path = "helper-api" }
 betterlite-oracle-redact = { path = "src/helpers/redact" }
+betterlite-oracle-server = { path = "src/helpers/server" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-policy = { path = "../../crates/betterlite-policy" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }

@@ -1,0 +1,22 @@
+kind: probe
+name: retry-policy-last-error-becomes-nonretryable
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      retry_policy:
+        function: eligibility
+        eligibility:
+          steps:
+            - error: {class: rate_limit, status: 429}
+              healthy_deployments: 1
+              all_deployments: 2
+            - error: {class: bad_request, status: 400}
+              healthy_deployments: 1
+              all_deployments: 2
+            - error: {class: internal_server, status: 500}
+              healthy_deployments: 2
+              all_deployments: 3
+            - error: {class: timeout, status: 408}
+              healthy_deployments: 0
+              all_deployments: 3

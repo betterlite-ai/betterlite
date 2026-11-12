@@ -1,0 +1,36 @@
+kind: helper
+name: aiml-chat-key-and-inherited-aliases
+call:
+  hosted_chat_options:
+    scenarios:
+      - environment: {AIML_API_BASE: "https://aiml.env/v1", AIML_API_KEY: sk-aiml, AIMLAPI_KEY: sk-image-only}
+        calls:
+          - op: info
+            host: aiml
+          - op: info
+            host: aiml
+            api_base: https://aiml.explicit/v1
+            api_key: sk-explicit
+      - environment: {AIMLAPI_KEY: sk-image-only}
+        calls:
+          - op: info
+            host: aiml
+      - environment: {OPENAI_LIKE_API_BASE: "https://like.example/v1", OPENAI_LIKE_API_KEY: sk-like}
+        calls:
+          - op: info
+            host: empower
+          - op: info
+            host: friendliai
+          - op: info
+            host: galadriel
+          - op: info
+            host: github
+      - calls:
+          - op: info
+            host: empower
+          - op: info
+            host: github
+            api_base: https://github.explicit/v1
+            api_key: sk-gh
+env: {}
+compare: {ignore: []}

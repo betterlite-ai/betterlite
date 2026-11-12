@@ -1,0 +1,8 @@
+task: B1001
+deviations:
+  - what: calculate_request_duration returns None for FLAC, OGG and MP3 audio, where LiteLLM decodes them with soundfile and reports a duration.
+    why: betterlite's bounded native decoder reads the WAV container only; the other containers are the injected decoder's job, and a request without one gets no audio_transcription_duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L323-L327
+  - what: The native decoder returns None for every other container libsndfile reads (AIFF, AU, W64 and RF64 among them) and for WAV files that hold A-law, mu-law, ADPCM or GSM audio. LiteLLM reports a duration for all of them.
+    why: The native decoder reads integer PCM and 32-bit float WAV through hound, and those are the codecs the bounded decode covers. Anything else is left to the injected decoder, so a request without one gets no audio_transcription_duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L323-L327

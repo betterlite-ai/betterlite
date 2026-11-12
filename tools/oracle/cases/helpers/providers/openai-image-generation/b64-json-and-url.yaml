@@ -1,0 +1,12 @@
+kind: helper
+name: openai-image-generation-b64-json-and-url
+call:
+  openai_image_generation:
+    function: b64_json_and_url
+    probes:
+      - model: dall-e-2
+        prompt: a cat
+        optional_params: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="},{"url":"https://example.test/b.png","revised_prompt":"a red cat"}]}'}
+env: {}
+compare: {ignore: []}

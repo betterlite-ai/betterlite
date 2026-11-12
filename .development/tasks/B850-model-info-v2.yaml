@@ -10,6 +10,15 @@ description: >-
   proxy_config.get_config before processing. This route has no local except block and never calls
   handle_exception_on_proxy. Preserve HTTP detail errors, propagated collaborator errors and auth's
   separate error envelope; do not synthesize auth_error or invalid-target responses.
+  get_config lives in the binary crate this crate cannot depend on, so the load is reload_config on
+  B8379's ConfigOverlayPort (betterlite-server's config_overlay_port). The handler takes it as
+  `&dyn ConfigOverlayPort` beside its other inputs, and the returned config is dropped as LiteLLM
+  drops it. A port error is the propagated collaborator error, answered as LiteLLM's
+  unhandled-error handler does (proxy_server.py L2049-L2080): DatabaseUnavailable is 503 with
+  B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503"), and Reload and PassThrough are 500
+  {"error": {"message": "Internal server error", "type": "internal_server_error"}}.
 
   A non-null modelId, including '', uses B1216 _find_model_by_id and bypasses the model-name branch;
   unknown ids produce an empty list, not 404. Otherwise deepcopy router rows, append user_model when
@@ -43,7 +52,8 @@ description: >-
   Use B001 HTTP cases against booted proxies, comparing application/json bodies and exact detail versus
   auth-error shapes, including absent type/param/code on detail errors. There are no cookies, redirects,
   changed-by headers or writes here. Native call-order tests inject config/enrichment failures and
-  assert later helpers were not called. B860 fixtures use POSTGRES_TEST_URL, else testcontainers;
+  assert later helpers were not called; the config failures come from a ConfigOverlayPort fake,
+  and config_database_unavailable_answers_503 and config_failure_answers_500 check both answers. B860 fixtures use POSTGRES_TEST_URL, else testcontainers;
   unavailable Postgres fails. Preserve deployment credentials only in fixtures, never response snapshots.
 
 
@@ -75,6 +85,8 @@ references:
     why: B4784 appends accessible agents after deployment sorting and logs/drops append failures.
 dod:
   - text: config_failure_stops_pipeline, enrichment_failure_stops_pipeline and agent_append_failure_preserves_rows prove ordered collaborators without inventing a route error mapper.
+    proof: [behavior-tests]
+  - text: The config load goes only through ConfigOverlayPort::reload_config; config_database_unavailable_answers_503 and config_failure_answers_500 show DatabaseUnavailable answers 503 no_db_connection and the other port errors 500 internal_server_error.
     proof: [behavior-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: v2_info_page, v2_info_model_id,
       v2_team_scope, v2_filter_sort, v2_unauthorized, v2_secrets_redacted.'
