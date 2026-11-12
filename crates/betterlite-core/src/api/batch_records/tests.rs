@@ -149,6 +149,7 @@ fn preserve_custom_id(#[case] row: &str, #[case] expected: &str) {
 #[case::vision(FilesPurpose::Vision, false, false)]
 #[case::user_data(FilesPurpose::UserData, false, false)]
 #[case::evals(FilesPurpose::Evals, false, false)]
+#[case::messages(FilesPurpose::Messages, false, false)]
 #[case::vision_passthrough(FilesPurpose::Vision, true, false)]
 fn native_model_no_replace(
     #[case] purpose: FilesPurpose,
