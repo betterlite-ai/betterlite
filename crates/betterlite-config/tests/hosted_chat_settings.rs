@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::hosted_chat_settings::Settings;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret;
 
 fn success(source: &str, environment: &[(&str, &str)]) -> Settings {
     ConfigLoader {
@@ -24,19 +24,33 @@ fn settings(environment: &[(&str, &str)]) -> Settings {
     success("", environment)
 }
 
-fn revealed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|secret| secret.expose_secret().to_owned())
-}
-
 #[test]
 fn every_alias_defaults_absent() {
     let loaded = settings(&[]);
     assert_eq!(loaded.featherless_ai_api_base, None);
     assert_eq!(loaded.featherless_api_base, None);
-    assert_eq!(revealed(loaded.featherless_ai_api_key.as_ref()), None);
-    assert_eq!(revealed(loaded.featherless_api_key.as_ref()), None);
+    assert_eq!(
+        loaded
+            .featherless_ai_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        None
+    );
+    assert_eq!(
+        loaded
+            .featherless_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        None
+    );
     assert_eq!(loaded.aiml_api_base, None);
-    assert_eq!(revealed(loaded.aiml_api_key.as_ref()), None);
+    assert_eq!(
+        loaded
+            .aiml_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        None
+    );
     assert!(!loaded.drop_params);
 }
 
@@ -91,11 +105,17 @@ fn featherless_aliases_load_independently(
     assert_eq!(loaded.featherless_ai_api_base.as_deref(), primary_base);
     assert_eq!(loaded.featherless_api_base.as_deref(), secondary_base);
     assert_eq!(
-        revealed(loaded.featherless_ai_api_key.as_ref()).as_deref(),
+        loaded
+            .featherless_ai_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         primary_key
     );
     assert_eq!(
-        revealed(loaded.featherless_api_key.as_ref()).as_deref(),
+        loaded
+            .featherless_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
         secondary_key
     );
 }
@@ -117,13 +137,25 @@ fn aiml_aliases_load(
 ) {
     let loaded = settings(environment);
     assert_eq!(loaded.aiml_api_base.as_deref(), base);
-    assert_eq!(revealed(loaded.aiml_api_key.as_ref()).as_deref(), key);
+    assert_eq!(
+        loaded
+            .aiml_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        key
+    );
 }
 
 #[test]
 fn the_image_only_aimlapi_key_is_not_a_chat_credential() {
     let loaded = settings(&[("AIMLAPI_KEY", "sk-image-only")]);
-    assert_eq!(revealed(loaded.aiml_api_key.as_ref()), None);
+    assert_eq!(
+        loaded
+            .aiml_api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        None
+    );
 }
 
 #[rstest]

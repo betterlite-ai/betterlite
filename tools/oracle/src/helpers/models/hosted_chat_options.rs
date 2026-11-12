@@ -102,7 +102,7 @@ fn map(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
     }
 }
 fn info(call: &Call, sections: &Sections) -> Result<Value, Box<HelperError>> {
-    let explicit = call.api_key.as_ref().map(SecretString::from);
+    let explicit = call.api_key.clone().map(SecretString::from);
     let chat_host = match call.host.as_str() {
         "featherless" => Some(ChatIdentity::Featherless),
         "aiml" => Some(ChatIdentity::Aiml),
