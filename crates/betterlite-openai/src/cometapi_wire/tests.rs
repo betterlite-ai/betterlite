@@ -591,13 +591,14 @@ fn decode_embedding_reply_wraps_json_failure_with_the_response() {
 #[case::total_text(r#"{"usage":{"total_tokens":"x"}}"#, "total_tokens")]
 #[case::body_list("[]", "body")]
 fn decode_embedding_reply_names_a_wrong_typed_field(#[case] body: &str, #[case] field: &str) {
-    let error = reply(body, 200, &Headers::new()).unwrap_err();
     assert_eq!(
-        error.message,
-        format!("the CometAPI embedding reply field {field} has an unexpected shape")
+        reply(body, 200, &Headers::new()),
+        Err(CometApiError {
+            message: format!("the CometAPI embedding reply field {field} has an unexpected shape"),
+            status_code: None,
+            headers: Headers::new(),
+        })
     );
-    assert_eq!(error.status_code, None);
-    assert!(error.headers.is_empty());
 }
 
 #[test]
