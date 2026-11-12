@@ -1,0 +1,39 @@
+kind: helper
+name: query-api-version-wins
+call:
+  azure_urls:
+    query_api_version_wins:
+      - params: {api_base: "https://example.openai.azure.com/openai/responses?api-version=2024-02-01", api_version: 2025-01-01}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com/openai/responses?api-version=", api_version: 2025-01-01}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com/openai/responses?api-version=first&api-version=second", api_version: 2025-01-01}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com/openai/responses?x=1&y=2", api_version: 2025-01-01}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com/openai/responses?x=1&y=2"}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_version: 2025-01-01}
+        globals: {}
+        environment: {AZURE_API_BASE: https://environment.example}
+        route: /openai/responses
+      - params: {api_version: 2025-01-01}
+        globals: {api_base: https://module.example}
+        environment: {AZURE_API_BASE: https://environment.example}
+        route: /openai/responses
+env: {}
+compare: {ignore: []}

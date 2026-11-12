@@ -1,0 +1,9 @@
+kind: helper
+name: azure-urls-deployment-base-url-seed
+call:
+  azure_urls:
+    deployment_base_url:
+      - azure_endpoint: https://seed.example/openai/deployments/seed
+        base_url: https://previous.example
+env: {}
+compare: {ignore: []}

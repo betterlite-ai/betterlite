@@ -22,6 +22,7 @@ jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_
 lru = "0.18.5"
 p12-keystore = "0.4.1"
 pem = "4.0.0"
+percent-encoding.workspace = true
 pkcs8 = { version = "0.11.0", default-features = false, features = ["encryption"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true

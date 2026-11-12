@@ -1,0 +1,5 @@
+kind: helper
+name: endpoint-us-cloud-default
+call: {"b3910": {"operation": "get_config", "environment": {"LANGFUSE_PUBLIC_KEY": "pk-lf-1", "LANGFUSE_SECRET_KEY": "sk-lf-2"}}}
+env: {}
+compare: {ignore: []}
