@@ -1,0 +1,13 @@
+kind: helper
+name: client-id-before-certificate
+call:
+  azure_default_chain:
+    infer:
+      steps:
+        - environment: {AZURE_CLIENT_ID: c, AZURE_CERTIFICATE_PATH: /certs/pem, AZURE_CERTIFICATE_PASSWORD: pw}
+        - environment: {AZURE_CERTIFICATE_PASSWORD: pw}
+        - environment: {AZURE_CERTIFICATE_PATH: /certs/pem}
+        - environment: {AZURE_CLIENT_ID: "", AZURE_CERTIFICATE_PATH: /certs/pem}
+        - environment: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: gemini-embedding-records-requests-seed
+call:
+  gemini_embedding_records:
+    calls:
+    - kind: batch_request
+      model: gemini-embedding-001
+      input:
+      - alpha
+      - - beta
+        - gs://bucket/photo.png
+      optional:
+        dimensions: 4
+        task_type: CLUSTERING
+      resolved_files: {}
+      response: null
+    - kind: embed_request
+      model: gemini-embedding-001
+      input:
+      - data:video/mp4;base64,AA
+      optional:
+        taskType: RETRIEVAL_QUERY
+      resolved_files: {}
+      response: null
+compare:
+  ignore: []
+env: {}

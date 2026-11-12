@@ -1,0 +1,78 @@
+task: B4580
+deviations:
+  - what: >-
+      On an HTTP error the teams commands print "Error: HTTP {status}" to stderr, then the whole
+      response body: JSON to stdout when it parses and the raw text to stderr when it doesn't.
+      LiteLLM prints "Error: HTTP {status}" then "Details: {detail or 'Unknown error'}" to stderr for a
+      JSON body, and its e.response.json() call raises a second, unhandled exception for a non-JSON
+      body.
+    why: >-
+      A working setup where the proxy always answers HTTP errors with a JSON body never reaches the
+      non-JSON path, so the raw-text fallback has nothing to break; a proxy or a gateway that answers
+      with a plain text page would otherwise crash the command outright. The JSON case prints the full
+      body to stdout instead of a "Details" line, because the response carries fields betterlite does
+      not model and the body's own text keeps them.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L97-L101
+  - what: >-
+      On a 401, credentials create and delete print "Error: HTTP 401" then the body and abort, the
+      same handled HTTP error every other status gets. LiteLLM's CredentialsManagementClient.create
+      and delete raise UnauthorizedError on a 401, and the command's except requests.exceptions.HTTPError
+      does not catch it, so the command crashes with an unhandled traceback.
+    why: >-
+      A working setup never relies on a command crashing with a traceback for a bad key. betterlite
+      reports the 401 as the handled HTTP error it is, matching the other statuses.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/credentials.py#L113-L114
+  - what: >-
+      Teams assign_key prints "Error: HTTP {status}" and the body when /key/update answers an HTTP
+      error. LiteLLM's KeysManagementClient.update wraps every failure, HTTP errors included, in a
+      plain Exception("Error updating key: {response text}"), so its command takes the generic
+      exception branch and prints "Error: Error updating key: ..." instead.
+    why: >-
+      Both paths end in click.Abort() and exit 1; only the wording of the one stderr line differs. The
+      task's behavior list fixes the HTTP wording so assign_key reports a failed update the same way it
+      reports a failed team list.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L289-L290
+  - what: >-
+      The shared client's pkce_login::Http transport never follows a redirect: a 3xx comes back as the
+      HttpResponse for follow_redirects true and false alike. B4573's callers pass false for discovery,
+      registration, token and revocation calls, so the login and logout flows are unchanged.
+    why: >-
+      betterlite-http's ProxiedClient::build pins reqwest's redirect policy to none for every client it
+      builds, outbound included, and the OAuth calls must never replay a token request's form, the
+      authorization code included, at a redirect target.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L525
+  - what: >-
+      The Users, Credentials, Available Teams and Accessible Model Groups tables keep LiteLLM's titles,
+      columns, row order and cell values, but comfy-table draws the borders and picks the column widths
+      and wrapping, so the frame looks different from rich's, nothing is colored and no cell is parsed
+      as rich markup. The title is a line above the table, since comfy-table has no title of its own.
+    why: >-
+      Porting rich's layout engine buys nothing for output a person reads, and the models and keys
+      commands use the same crate, so every table in the CLI looks alike. Scripts read --format json
+      where a command has it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/teams.py#L37-L83
+  - what: >-
+      requests applies LiteLLM's timeout=30 to the connect and to each socket read and has no body cap.
+      The shared client connects within ProxiedClient::outbound's 10 seconds, bounds each whole request
+      at 30 seconds and stops reading a body past 64 MiB. Proxies come from ProxyPolicy, so only
+      http:// proxy URLs work; an https:// or socks proxy variable fails the request with
+      betterlite-http's unsupported-scheme error instead of being used.
+    why: >-
+      deny.toml lets only betterlite-http, betterlite-oracle and betterlite-guardrails depend on
+      reqwest, so the CLI goes through ProxiedClient and its fixed connect timeout, and the request
+      builder's timeout is the one it can set. Management responses are small JSON bodies a person
+      waits for, so a bound on the whole request and a body cap change nothing for a working proxy.
+    link: >-
+      https://github.com/betterlite-ai/betterlite/blob/a1684ff3e/deny.toml#L74
+  - what: >-
+      Commands that print a proxy response write the response body's own JSON text, with one trailing
+      newline, instead of re-formatting it the way rich.print_json does.
+    why: >-
+      docs/compatibility.md leaves JSON key order and formatting outside the contract, and the response
+      carries fields betterlite does not model, so printing the body's text keeps them.
+    link: ""

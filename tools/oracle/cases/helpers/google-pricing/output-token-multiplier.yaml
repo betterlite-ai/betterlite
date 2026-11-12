@@ -1,0 +1,18 @@
+kind: helper
+name: google-pricing-output-token-multiplier
+call:
+  google_pricing:
+    operation: cost_per_character
+    model: gemini-1.5-pro-002
+    custom_llm_provider: vertex_ai
+    record:
+      input_cost_per_character: 0.000000625
+      output_cost_per_character: 0.0000025
+      output_cost_per_character_above_128k_tokens: 0.000004
+    usage:
+      prompt_tokens: 100
+      completion_tokens: 8
+    prompt_characters: 100
+    completion_characters: 32001
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: option-mapping
+call:
+  bedrock_services_vector_stores:
+    operation: option_mapping
+    options:
+      - {non_default_params: {max_num_results: 3, filters: {operator: gte, key: year, value: 2020}, ranking_options: {ranker: default}, drop_params: true}, optional_params: {filters: {old: 1}, kept: true}}
+      - {non_default_params: {max_num_results: null}, optional_params: {}}
+      - {non_default_params: {filters: null}, optional_params: {filters: kept}}
+      - {non_default_params: {filters: oops}, optional_params: {}}
+      - {non_default_params: {filters: {and: [{operator: eq, key: a, value: 1}, {operator: eq, key: b, value: 2}]}}, optional_params: {}}
+      - {non_default_params: {filters: {equals: {key: a, value: 1}}}, optional_params: {}}
+      - {non_default_params: {ranking_options: {a: 1}, rewrite_query: true, temperature: 0.2}, optional_params: {}}
+      - {non_default_params: {filters: {operator: eq, key: a}}, optional_params: {}}
+env: {}
+compare: {ignore: []}

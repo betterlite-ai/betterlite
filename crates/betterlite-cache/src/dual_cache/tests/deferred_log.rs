@@ -23,7 +23,7 @@ impl io::Write for Capture {
     }
 }
 
-pub(super) fn capture_warnings() -> (impl Subscriber + Send + Sync, Arc<Mutex<Vec<u8>>>) {
+pub(crate) fn capture_warnings() -> (impl Subscriber + Send + Sync, Arc<Mutex<Vec<u8>>>) {
     let bytes = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&bytes);
     let subscriber = tracing_subscriber::fmt()
@@ -35,7 +35,7 @@ pub(super) fn capture_warnings() -> (impl Subscriber + Send + Sync, Arc<Mutex<Ve
     (subscriber, bytes)
 }
 
-pub(super) fn captured(bytes: &Mutex<Vec<u8>>) -> String {
+pub(crate) fn captured(bytes: &Mutex<Vec<u8>>) -> String {
     let log = bytes.lock().unwrap_or_else(PoisonError::into_inner).clone();
     String::from_utf8(log).expect("the log is utf-8")
 }

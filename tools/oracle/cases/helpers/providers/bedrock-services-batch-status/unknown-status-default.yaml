@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-services-batch-status-unknown-status-default
+call:
+  bedrock_services_batch_status:
+    operation: decode
+    now: 1700000000
+    status_code: 200
+    bodies:
+      - '{"jobArn":"a"}'
+      - '{"jobArn":"a","status":null}'
+      - '{"jobArn":"a","status":"Queued"}'
+      - '{"jobArn":"a","status":"Queued","lastModifiedTime":"2024-01-15T10:30:00Z"}'
+      - not json at all
+      - '{"jobArn":"a"'
+      - '["Submitted"]'
+      - '{"jobArn":null,"status":"Submitted"}'
+      - '{"jobArn":5,"status":"Submitted"}'
+env: {}
+compare: {ignore: []}

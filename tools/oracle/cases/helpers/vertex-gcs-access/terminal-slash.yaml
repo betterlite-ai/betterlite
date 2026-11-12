@@ -1,0 +1,17 @@
+kind: helper
+name: terminal-slash
+call:
+  vertex_gcs_access:
+    operation: terminal_slash
+    params: {}
+    environment: {GCS_BATCH_BUCKET_NAME: batch-bucket, GCS_BUCKET_NAME: plain-bucket}
+    trusted: []
+    plain: []
+    file_ids:
+      - "gs://batch-bucket/litellm-vertex-files/dir/"
+      - "gs://batch-bucket/litellm-vertex-files/"
+      - "gs://plain-bucket/litellm-vertex-files/dir/"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}
