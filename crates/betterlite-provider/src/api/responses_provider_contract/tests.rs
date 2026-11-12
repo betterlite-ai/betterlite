@@ -12,13 +12,14 @@ use rstest::rstest;
 use secrecy::SecretString;
 use thiserror::Error;
 
-use super::config::{
+use super::config::ResponsesProviderConfig;
+use super::error::{BaseLlmException, ResponsesContractError};
+use super::records::{
     CompactRequest, CreateRequest, Headers, IdRequest, InputItemsOrder, InputItemsQuery,
     InputItemsRequest, Params, PreparedRequest, ResponsesLogging, ResponsesOperation,
-    ResponsesProviderConfig, ResponsesUpstream, SignRequest, api_base_or_required,
-    normalize_responses_request, strip_custom_call_namespace,
+    ResponsesUpstream, SignRequest, api_base_or_required, normalize_responses_request,
+    strip_custom_call_namespace,
 };
-use super::error::{BaseLlmException, ResponsesContractError};
 use crate::openai_dispatch::OpenAi;
 use crate::provider::Provider;
 
@@ -30,127 +31,132 @@ enum FixtureError {
     Unused,
 }
 
-// The provider transformations the defaults never call, so every check that only exercises a default uses them
+macro_rules! unused_transformations {
+    () => {
+        fn provider(&self) -> Provider {
+            Provider::OpenAi(OpenAi)
+        }
+
+        fn supported_params(&self, _model: &str) -> Result<Vec<String>, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn map_params(
+            &self,
+            _optional_params: &ResponsesApiRequestParams,
+            _model: &str,
+            _drop_params: bool,
+        ) -> Result<Params, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_create_response(
+            &self,
+            _model: &str,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<ResponsesApiResponse, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_streaming_response(
+            &self,
+            _model: &str,
+            _chunk: &Json,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<ResponsesAPIStreamingResponse, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_get_request(
+            &self,
+            _request: &IdRequest<'_>,
+        ) -> Result<PreparedRequest, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_get_response(
+            &self,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<ResponsesApiResponse, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_delete_request(
+            &self,
+            _request: &IdRequest<'_>,
+        ) -> Result<PreparedRequest, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_delete_response(
+            &self,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<DeleteResponseResult, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_input_items_request(
+            &self,
+            _request: &InputItemsRequest<'_>,
+        ) -> Result<PreparedRequest, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_input_items_response(
+            &self,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<Params, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_cancel_request(
+            &self,
+            _request: &IdRequest<'_>,
+        ) -> Result<PreparedRequest, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_cancel_response(
+            &self,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<ResponsesApiResponse, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_compact_request(
+            &self,
+            _request: &CompactRequest<'_>,
+        ) -> Result<PreparedRequest, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+
+        fn transform_compact_response(
+            &self,
+            _response: &ResponsesUpstream,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<ResponsesApiResponse, FixtureError> {
+            Err(FixtureError::Unused)
+        }
+    };
+}
+
 struct Defaults;
 
 #[async_trait]
 impl ResponsesProviderConfig for Defaults {
     type Error = FixtureError;
 
-    fn provider(&self) -> Provider {
-        Provider::OpenAi(OpenAi)
-    }
-
-    fn supported_params(&self, _model: &str) -> Result<Vec<String>, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn map_params(
-        &self,
-        _optional_params: &ResponsesApiRequestParams,
-        _model: &str,
-        _drop_params: bool,
-    ) -> Result<Params, FixtureError> {
-        Err(FixtureError::Unused)
-    }
+    unused_transformations!();
 
     fn transform_create_request(
         &self,
         _request: &CreateRequest<'_>,
     ) -> Result<Params, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_create_response(
-        &self,
-        _model: &str,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_streaming_response(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesAPIStreamingResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_get_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_get_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_delete_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_delete_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<DeleteResponseResult, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_input_items_request(
-        &self,
-        _request: &InputItemsRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_input_items_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<Params, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_cancel_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_cancel_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_compact_request(
-        &self,
-        _request: &CompactRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_compact_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
         Err(FixtureError::Unused)
     }
 }
@@ -180,9 +186,7 @@ impl Fixture {
 impl ResponsesProviderConfig for Fixture {
     type Error = FixtureError;
 
-    fn provider(&self) -> Provider {
-        Provider::OpenAi(OpenAi)
-    }
+    unused_transformations!();
 
     fn complete_url(
         &self,
@@ -217,112 +221,6 @@ impl ResponsesProviderConfig for Fixture {
             "transformed".to_owned(),
             Json::Text(request.model.to_owned()),
         )]))
-    }
-
-    fn transform_input_items_request(
-        &self,
-        _request: &InputItemsRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn supported_params(&self, _model: &str) -> Result<Vec<String>, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn map_params(
-        &self,
-        _optional_params: &ResponsesApiRequestParams,
-        _model: &str,
-        _drop_params: bool,
-    ) -> Result<Params, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_create_response(
-        &self,
-        _model: &str,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_streaming_response(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesAPIStreamingResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_get_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_get_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_delete_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_delete_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<DeleteResponseResult, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_input_items_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<Params, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_cancel_request(
-        &self,
-        _request: &IdRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_cancel_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_compact_request(
-        &self,
-        _request: &CompactRequest<'_>,
-    ) -> Result<PreparedRequest, FixtureError> {
-        Err(FixtureError::Unused)
-    }
-
-    fn transform_compact_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, FixtureError> {
-        Err(FixtureError::Unused)
     }
 }
 

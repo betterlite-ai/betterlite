@@ -6,11 +6,12 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use betterlite_openai::api::responses_shapes::DeleteResponseResult;
-use betterlite_provider::api::responses_provider_contract::config::{
-    CompactRequest, CreateRequest, Headers, IdRequest, InputItemsRequest, Params, PreparedRequest,
-    ResponsesLogging, ResponsesProviderConfig, ResponsesUpstream, api_base_or_required,
-};
+use betterlite_provider::api::responses_provider_contract::config::ResponsesProviderConfig;
 use betterlite_provider::api::responses_provider_contract::error::ResponsesContractError;
+use betterlite_provider::api::responses_provider_contract::records::{
+    CompactRequest, CreateRequest, Headers, IdRequest, InputItemsRequest, Params, PreparedRequest,
+    ResponsesLogging, ResponsesUpstream, api_base_or_required,
+};
 use betterlite_provider::openai_dispatch::OpenAi;
 use betterlite_provider::provider::Provider;
 use thiserror::Error;

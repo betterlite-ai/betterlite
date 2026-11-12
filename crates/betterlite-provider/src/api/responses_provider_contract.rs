@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod records;
 mod tests;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

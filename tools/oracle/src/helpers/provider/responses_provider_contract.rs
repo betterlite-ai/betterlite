@@ -1,9 +1,12 @@
 use betterlite_models::decisions::Json;
-use betterlite_provider::api::responses_provider_contract::config::{
-    CreateRequest, Headers, InputItemsQuery, Params, ResponsesProviderConfig as _, SignRequest,
-    api_base_or_required, normalize_responses_request,
+use betterlite_provider::api::responses_provider_contract::config::ResponsesProviderConfig as _;
+use betterlite_provider::api::responses_provider_contract::error::{
+    BaseLlmException, ResponsesContractError,
 };
-use betterlite_provider::api::responses_provider_contract::error::ResponsesContractError;
+use betterlite_provider::api::responses_provider_contract::records::{
+    CreateRequest, Headers, InputItemsQuery, Params, SignRequest, api_base_or_required,
+    normalize_responses_request,
+};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -86,15 +89,24 @@ impl crate::helpers::Helper for Op {
             Input::WebsocketUrl(fields) => Ok(websocket(fields)),
             Input::RequestNormalization(fields) => normalization(fields),
             Input::AsyncRequestForwarding(fields) => forwarding(fields),
-            Input::BaseErrorFields(fields) => error_fields(fields),
+            Input::BaseErrorFields(fields) => {
+                let fixture = Fixture::default();
+                Ok(exception_fields(&exception_of(raise_class(
+                    &fixture, fields,
+                ))?))
+            }
         }
     }
 }
 
+fn input_items_query() -> crate::helpers::HelperResult {
+    serde_json::to_value(InputItemsQuery::default())
+        .map_err(|error| helper_error(error.to_string()))
+}
+
 fn capabilities(fields: &BaseCapabilitiesInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let query = serde_json::to_value(InputItemsQuery::default())
-        .map_err(|error| helper_error(error.to_string()))?;
+    let query = input_items_query()?;
     Ok(json!({
         "provider": fixture.provider().name(),
         "native_file_search": fixture.supports_native_file_search(),
@@ -163,59 +175,76 @@ fn websocket(fields: &WebsocketInput) -> Value {
 }
 
 fn normalization(fields: &NormalizationInput) -> crate::helpers::HelperResult {
-    let results: Vec<Value> = fields
-        .steps
-        .iter()
-        .map(|step| {
-            serde_json::to_value(normalize_responses_request(step))
-                .map_err(|error| helper_error(error.to_string()))
-        })
-        .collect::<Result<_, _>>()?;
-    Ok(Value::Array(results))
+    let mut steps = Vec::with_capacity(fields.steps.len());
+    for step in &fields.steps {
+        let value = serde_json::to_value(normalize_responses_request(step))
+            .map_err(|error| helper_error(error.to_string()))?;
+        steps.push(value);
+    }
+    Ok(Value::Array(steps))
 }
 
-fn forwarding(fields: &ForwardingInput) -> crate::helpers::HelperResult {
-    let fixture = Fixture::default();
-    let request = CreateRequest {
+fn forwarding_request(fields: &ForwardingInput) -> CreateRequest<'_> {
+    CreateRequest {
         model: &fields.model,
         input: &fields.input,
         optional_params: &fields.optional_params,
         litellm_params: &fields.litellm_params,
         headers: &fields.headers,
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    }
+}
+
+fn block_on_create(
+    fixture: &Fixture,
+    fields: &ForwardingInput,
+) -> Result<Params, Box<crate::helpers::HelperError>> {
+    tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|error| helper_error(error.to_string()))?;
-    let result = runtime
-        .block_on(fixture.transform_create_request_async(&request))
-        .map_err(|error| helper_error(error.to_string()))?;
-    let calls: Vec<Value> = fixture
+        .map_err(|error| helper_error(error.to_string()))?
+        .block_on(fixture.transform_create_request_async(&forwarding_request(fields)))
+        .map_err(|error| helper_error(error.to_string()))
+}
+
+fn forwarded_calls(fixture: &Fixture) -> Result<Vec<Value>, Box<crate::helpers::HelperError>> {
+    fixture
         .forwarded()
         .iter()
         .map(|call| serde_json::to_value(call).map_err(|error| helper_error(error.to_string())))
-        .collect::<Result<_, _>>()?;
-    Ok(json!({"calls": calls, "result": result}))
+        .collect()
 }
 
-fn error_fields(fields: &ErrorInput) -> crate::helpers::HelperResult {
+fn forwarding(fields: &ForwardingInput) -> crate::helpers::HelperResult {
     let fixture = Fixture::default();
-    let error =
-        match fixture.error_class(&fields.message, fields.status_code, fields.headers.clone()) {
-            Err(error) => error,
-            Ok(never) => match never {},
-        };
-    let exception = match error {
-        FixtureError::Contract(ResponsesContractError::BaseLlm(exception)) => exception,
-        FixtureError::Contract(other) => return Err(helper_error(other.to_string())),
-        unused @ FixtureError::Unused => return Err(helper_error(unused.to_string())),
-    };
+    let result = block_on_create(&fixture, fields)?;
     Ok(json!({
+        "calls": forwarded_calls(&fixture)?,
+        "result": result,
+    }))
+}
+
+fn raise_class(fixture: &Fixture, fields: &ErrorInput) -> FixtureError {
+    match fixture.error_class(&fields.message, fields.status_code, fields.headers.clone()) {
+        Err(error) => error,
+        Ok(never) => match never {},
+    }
+}
+
+fn exception_of(error: FixtureError) -> Result<BaseLlmException, Box<crate::helpers::HelperError>> {
+    match error {
+        FixtureError::Contract(ResponsesContractError::BaseLlm(exception)) => Ok(exception),
+        FixtureError::Contract(other) => Err(helper_error(other.to_string())),
+        unused @ FixtureError::Unused => Err(helper_error(unused.to_string())),
+    }
+}
+
+fn exception_fields(exception: &BaseLlmException) -> Value {
+    json!({
         "raised": true,
         "status_code": exception.status_code,
         "message": exception.message,
         "headers": exception.headers,
-    }))
+    })
 }
 
 fn helper_error(message: String) -> Box<crate::helpers::HelperError> {

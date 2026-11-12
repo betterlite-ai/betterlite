@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use super::config::Headers;
+use super::records::Headers;
 
 // LiteLLM's BaseLLMException carries exactly a status, a message and the upstream headers
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
