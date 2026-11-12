@@ -1,0 +1,22 @@
+kind: helper
+name: cerebras-reasoning-capability
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: supported
+            host: cerebras
+            model: hosted-reasoning-model
+            supports_reasoning: true
+          - op: supported
+            host: cerebras
+            model: hosted-plain-model
+            supports_reasoning: false
+          - op: supported
+            host: baseten
+            model: baseten/abcd1234
+          - op: supported
+            host: featherless
+            model: any-featherless-model
+env: {}
+compare: {ignore: []}

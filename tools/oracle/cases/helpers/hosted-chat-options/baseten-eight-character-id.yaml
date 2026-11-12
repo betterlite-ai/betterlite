@@ -1,0 +1,24 @@
+kind: helper
+name: baseten-eight-character-id
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: baseten_models
+            models:
+              - baseten/abcd1234
+              - abcd1234
+              - baseten/ABCD1234
+              - baseten/abc1234
+              - baseten/abcd12345
+              - baseten/abcd-123
+              - baseten/abcd_123
+              - baseten/
+              - ""
+              - baseten/baseten/abcd1234
+              - abcd1234xyz
+              - baseten/абвг1234
+              - "12345678"
+              - baseten/1234abcd
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: hosted-chat-options-seed-baseten-ids
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: baseten_models
+            models: [baseten/abcd1234, baseten/abcd123, baseten/baseten/1234abcd]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: hosted-chat-options-seed-cerebras-capability
+call:
+  hosted_chat_options:
+    scenarios:
+      - calls:
+          - op: supported
+            host: cerebras
+            model: seed-capability-model
+            supports_reasoning: true
+          - op: map
+            host: cerebras
+            model: seed-capability-model
+            supports_reasoning: true
+            config: {reasoning_effort: low}
+            params:
+              - [reasoning_effort, high]
+              - [max_completion_tokens, 2]
+env: {}
+compare: {ignore: []}

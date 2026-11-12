@@ -1,0 +1,5 @@
+task: B1432
+deviations:
+  - what: Constructor settings belong to the config that supplied them; a later config never inherits a value an earlier one passed.
+    why: LiteLLM writes every non-None constructor argument onto the class, so constructing a second config of the same provider silently reuses the first one's values through get_config. No working setup can depend on one config's settings leaking into another, and per-config snapshots are what B668's policy requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/baseten/chat.py#L26-L47
