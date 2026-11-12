@@ -1,0 +1,26 @@
+task: B3484
+deviations:
+  - what: A content whose role is neither user nor model is silently dropped, producing no message and no log line.
+    why: LiteLLM's role loop transforms only the user and model roles and has no branch that reports another role, so a working setup never sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L485-L584
+  - what: A response schema that is not a JSON object or whose type is not object drops response_format with no log line.
+    why: LiteLLM's _validated returns None on a validation error and _translate_response_format returns None without logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L118-L136
+  - what: A response schema or a functionDeclaration parameter schema past betterlite's SchemaLimits (bytes, nodes or depth) fails the whole translation with GenAiInputError::Schema instead of being forwarded.
+    why: betterlite bounds every inbound body, and LiteLLM's normalize_json_schema_types has no size check; a schema too large to normalize cannot be forwarded faithfully, so the request fails with an error that names the schema rather than dropping the field silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L7-L72
+  - what: topK in generationConfig is read and never forwarded to the completion request.
+    why: OpenAI chat completions has no topK parameter, and LiteLLM's config mapping has an empty branch for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L360-L362
+  - what: An unknown functionCallingConfig mode maps to the auto tool choice instead of failing.
+    why: LiteLLM looks the mode up in a three-entry map and falls back to auto for a mode it does not know.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L458-L469
+  - what: The adapter is a free function, translate_generate_content, returning a (ChatRequest, Option<GenerateLiteLLMParams>) tuple, rather than a GoogleGenAIAdapter instance with a translate_generate_content_to_completion method and a result record.
+    why: LiteLLM's class holds no state and its constructor is empty, so the Rust module passes every input explicitly; the typed parameters travel beside the chat request so api_key stays a SecretString.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/adapters/transformation.py#L290-L305
+  - what: litellm_params model api_base, api_key, api_version, custom_llm_provider, max_retries and organization and reject any other key with a serde error that names it.
+    why: LiteLLM merges every declared GenericLiteLLMParams field into the completion kwargs; betterlite models the credential and retry fields a completion call needs and refuses an unmodeled key by name instead of dropping it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-L426
+  - what: The response_format support check resolves the model with B174's resolver and asks B175's parameter list for the resolved provider, but B175 lists parameters only for OpenAI; for every other provider betterlite keeps response_format where LiteLLM consults that provider's config.
+    why: The providers betterlite has not built have no parameter list, which LiteLLM's get_supported_openai_params treats the same way when it returns None; the providers whose lists include response_format behave identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_supported_openai_params.py#L9-L62
