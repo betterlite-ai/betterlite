@@ -1,0 +1,16 @@
+kind: helper
+name: lakera-v2-on-flagged
+call:
+  b3661:
+    function: provider_config
+    model: lakera_v2
+    body: {on_flagged: inject_system_message, advisory_system_message: "Content was flagged: {reason}"}
+    extras: null
+    request_data: {}
+    user_api_key_dict: null
+    key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    other_key: {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    sink_mutated: {}
+    sink_holdback: {}
+env: {}
+compare: {ignore: []}

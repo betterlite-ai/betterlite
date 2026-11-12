@@ -1,0 +1,5 @@
+task: B3661
+deviations:
+  - what: StreamingScanKey.stream_ended and tool_calls_in_flight fields do not participate in equality comparison, only in observation logic.
+    why: These flags indicate protocol state (whether the stream ended, whether tool calls are in flight) rather than scannable content; they are used by the caller but do not affect whether a scan would be redundant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L39-L55

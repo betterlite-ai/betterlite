@@ -1420,6 +1420,7 @@ dependencies = [
  "serde-saphyr",
  "serde_ignored",
  "serde_json",
+ "serde_with",
  "shellexpand",
  "strum",
  "tempfile",
