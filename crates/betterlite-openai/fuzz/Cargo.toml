@@ -383,3 +383,10 @@ path = "fuzz_targets/volcengine_embedding_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_response_params"
+path = "fuzz_targets/openai_response_params.rs"
+test = false
+doc = false
+bench = false
