@@ -269,13 +269,8 @@ fn fallback_lists_change_eligibility(
     #[case] availability: Availability,
     #[case] stop: Option<StopReason>,
 ) {
-    match stop {
-        Some(reason) => assert_eq!(
-            decide(class, status, &availability),
-            RetryDecision::Stop(reason)
-        ),
-        None => assert_eq!(decide(class, status, &availability), RetryDecision::Retry),
-    }
+    let expected = stop.map_or(RetryDecision::Retry, RetryDecision::Stop);
+    assert_eq!(decide(class, status, &availability), expected);
 }
 
 struct SleepCase {

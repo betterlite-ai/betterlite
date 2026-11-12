@@ -32,20 +32,6 @@ fn empty_policy() -> RetryPolicySettings {
     }
 }
 
-fn policy(retries: i64) -> RetryPolicySettings {
-    RetryPolicySettings {
-        bad_request: Some(retries),
-        authentication: Some(retries),
-        timeout: Some(retries),
-        rate_limit: Some(retries),
-        content_policy: Some(retries),
-        internal_server: Some(retries),
-        service_unavailable: Some(retries),
-        not_found: Some(retries),
-        fallback: Some(retries),
-    }
-}
-
 fn fixed(value: f64) -> String {
     format!("{value:.6}")
 }
@@ -191,7 +177,20 @@ router_settings:
       DefaultRetries: 2
 ";
     let loaded = settings(source, &[]).unwrap();
-    assert_eq!(loaded.retry_policy, Some(policy(1)));
+    assert_eq!(
+        loaded.retry_policy,
+        Some(RetryPolicySettings {
+            bad_request: Some(1),
+            authentication: Some(1),
+            timeout: Some(1),
+            rate_limit: Some(1),
+            content_policy: Some(1),
+            internal_server: Some(1),
+            service_unavailable: Some(1),
+            not_found: Some(1),
+            fallback: Some(1),
+        })
+    );
     let mut expected = BTreeMap::new();
     expected.insert(
         "gpt-4".to_owned(),
