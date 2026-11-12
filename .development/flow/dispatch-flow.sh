@@ -287,6 +287,11 @@ case "${result}" in
     [[ ${result} =~ run\ ([0-9]+)\ failed ]] && run_id=${BASH_REMATCH[1]}
     # in a GitHub Actions outage the check jobs never start, or all pass and the run still fails, so the flow runs CI again instead of spending a fix round
     lost=$(gh run view "${run_id}" --json jobs -q '[.jobs[] | select(.name != "gate" and (.conclusion == "failure" or .conclusion == "cancelled"))] | length' 2> /dev/null)
+    # a 5xx from GitHub's API in the job that picks the parts skips every check, so it is an outage too
+    if [[ "${lost}" != 0 ]]; then
+      picked=$(gh run view "${run_id}" --log-failed 2> /dev/null)
+      grep -q -E 'curl: \(22\) The requested URL returned error: 5[0-9]{2}' <<< "${picked}" && ! grep -q -E 'FAIL ' <<< "${picked}" && lost=0
+    fi
     if [[ "${lost}" = 0 ]] && [[ "${OUTAGES:-0}" -lt 6 ]]; then
       say "CI run ${run_id} on PR #${pr} failed with no failed check, a GitHub outage; running CI again in 15 minutes"
       sleep 900

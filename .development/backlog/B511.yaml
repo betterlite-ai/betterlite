@@ -1,7 +1,7 @@
 id: B511
 milestone: M3 providers
 title: OpenAI image generation variants
-status: todo
+status: done
 depends_on: [B500, B173, B171, B004, B206, B668, B249]
 file: tasks/B511-openai-image-generation.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/openai/openai.py"
 parent: B024
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1415
