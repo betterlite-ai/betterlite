@@ -34,19 +34,26 @@ fn config_path_does_not_restore_an_openai_embedding_param() {
     assert_eq!(embedding_optional_params(&request).unwrap(), Params::new());
 }
 
-#[rstest]
-#[case::null_value(r#"{"timeout": null}"#, "{}")]
-#[case::already_mapped(r#"{"timeout": 2}"#, r#"{"timeout": 1, "extra_body": {"timeout": 2}}"#)]
-fn config_path_does_not_restore_a_null_or_mapped_param(
-    #[case] passed_json: &str,
-    #[case] expected: &str,
-) {
-    let (passed, special) = parse_pair(passed_json, "{}");
+#[test]
+fn config_path_does_not_restore_a_null_param() {
+    let (passed, special) = parse_pair(r#"{"timeout": null}"#, "{}");
+    let fixture = FixtureMapper::mapper(&["timeout"], "{}");
+    let mut request = base("m", "hosted_vllm", &passed, &special);
+    request.provider_config = Some(&fixture);
+    assert_eq!(embedding_optional_params(&request).unwrap(), Params::new());
+}
+
+#[test]
+fn config_path_keeps_a_mapped_value_over_the_passed_one() {
+    let (passed, special) = parse_pair(r#"{"timeout": 2}"#, "{}");
     let fixture = FixtureMapper::mapper(&["timeout"], r#"{"timeout": 1}"#);
     let mut request = base("m", "hosted_vllm", &passed, &special);
     request.provider_config = Some(&fixture);
     let result = embedding_optional_params(&request).unwrap();
-    assert_eq!(result, params(expected));
+    assert_eq!(
+        result,
+        params(r#"{"timeout": 1, "extra_body": {"timeout": 2}}"#)
+    );
 }
 
 #[test]
