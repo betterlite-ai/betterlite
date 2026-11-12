@@ -150,7 +150,10 @@ pub(crate) fn value(probe: &Probe) -> HelperResult {
         .build()
         .map_err(|error| invalid(error.to_string()))?;
     let mut recorder = Recorder::default();
-    let begun = begin_image_generation(call_for(probe)?, &mut recorder);
+    let seconds = probe
+        .timeout
+        .ok_or_else(|| invalid(String::from("a request probe needs timeout")))?;
+    let begun = begin_image_generation(call_for(probe, seconds), &mut recorder);
     let max_retries = begun.as_ref().ok().map(|prepared| prepared.max_retries);
     let outcome = match begun {
         Ok(prepared) => {
@@ -198,11 +201,8 @@ fn outcome_parts(
     }
 }
 
-fn call_for(probe: &Probe) -> Result<ImageGenerationCall, Box<crate::helpers::HelperError>> {
-    let seconds = probe
-        .timeout
-        .ok_or_else(|| invalid(String::from("a request probe needs timeout")))?;
-    Ok(ImageGenerationCall {
+fn call_for(probe: &Probe, seconds: i64) -> ImageGenerationCall {
+    ImageGenerationCall {
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
         optional_params: probe.optional_params.clone(),
@@ -213,5 +213,5 @@ fn call_for(probe: &Probe) -> Result<ImageGenerationCall, Box<crate::helpers::He
         timeout: Duration::from_secs(u64::try_from(seconds).unwrap_or_default()),
         delegate_async: probe.is_async,
         now_seconds: NOW,
-    })
+    }
 }

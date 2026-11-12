@@ -11,8 +11,6 @@ use super::error::ImageGenerationSource;
 
 mod tests;
 
-const IMAGES_PATH: &str = "/images/generations";
-
 // the request the OpenAI SDK sends: extra_headers, extra_query and extra_body leave the body for their own places
 pub fn outbound_request(
     prepared: &PreparedImageCall,
@@ -31,7 +29,7 @@ pub fn outbound_request(
     let extra_body = take_extra(&mut body, "extra_body")?;
     body.extend(extra_body);
     let mut url = Url::parse(&prepared.api_base).map_err(ImageGenerationSource::Url)?;
-    let path = format!("{}{IMAGES_PATH}", url.path().trim_end_matches('/'));
+    let path = format!("{}/images/generations", url.path().trim_end_matches('/'));
     url.set_path(&path);
     Ok(OutboundRequest {
         method: Method::POST,
