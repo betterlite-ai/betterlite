@@ -4,14 +4,11 @@ use std::fs;
 use std::path::Path;
 
 use rstest::rstest;
-use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::Op;
-use super::native::local_source;
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
-use betterlite_config::sections::bedrock_settings::AwsSettings;
 
 #[test]
 fn helper_seeds_select_bedrock_aws_settings() {
@@ -40,59 +37,173 @@ fn helper_seeds_select_bedrock_aws_settings() {
 }
 
 #[rstest]
-#[case::web_identity(json!({"aws_web_identity_token": "token", "aws_role_name": "role", "aws_session_name": "session"}), "web_identity")]
-#[case::role(json!({"aws_role_name": "role"}), "role")]
-#[case::profile(json!({"aws_profile_name": "profile"}), "profile")]
-#[case::session_token(json!({"aws_access_key_id": "access", "aws_secret_access_key": "secret", "aws_session_token": "token"}), "session_token")]
-#[case::static_pair(json!({"aws_access_key_id": "access", "aws_secret_access_key": "secret", "aws_region_name": "us-west-2"}), "static")]
-#[case::environment(json!({}), "env")]
-fn auth_selector_reports_the_first_matching_source(#[case] params: Value, #[case] source: &str) {
+#[case::web_identity(
+    json!({
+        "aws_web_identity_token": "oidc/env/BEDROCK_TOKEN",
+        "aws_role_name": "arn:aws:iam::123:role/demo",
+        "aws_session_name": "session",
+        "environment": {
+            "BEDROCK_TOKEN": "fixture-token",
+            "AWS_ACCESS_KEY_ID": "signer",
+            "AWS_SECRET_ACCESS_KEY": "signer-secret",
+        },
+    }),
+    "web_identity",
+)]
+#[case::role(
+    json!({
+        "aws_role_name": "arn:aws:iam::123:role/demo",
+        "aws_session_name": "session",
+        "environment": {"AWS_ACCESS_KEY_ID": "signer", "AWS_SECRET_ACCESS_KEY": "signer-secret"},
+    }),
+    "role",
+)]
+#[case::profile(
+    json!({
+        "aws_profile_name": "profile",
+        "environment": {"AWS_SHARED_CREDENTIALS_FILE": "/credentials"},
+        "files": {"/credentials": "[profile]\naws_access_key_id = profile\naws_secret_access_key = private\n"},
+    }),
+    "profile",
+)]
+#[case::session_token(
+    json!({
+        "aws_access_key_id": "access",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+    }),
+    "session_token",
+)]
+#[case::static_pair(
+    json!({
+        "aws_access_key_id": "access",
+        "aws_secret_access_key": "secret",
+        "aws_region_name": "us-west-2",
+    }),
+    "static",
+)]
+#[case::environment(
+    json!({"environment": {"AWS_ACCESS_KEY_ID": "ambient", "AWS_SECRET_ACCESS_KEY": "private"}}),
+    "env",
+)]
+#[case::role_before_profile(
+    json!({
+        "aws_role_name": "arn:aws:iam::123:role/demo",
+        "aws_session_name": "session",
+        "aws_profile_name": "profile",
+        "environment": {
+            "AWS_ACCESS_KEY_ID": "signer",
+            "AWS_SECRET_ACCESS_KEY": "signer-secret",
+            "AWS_SHARED_CREDENTIALS_FILE": "/credentials",
+        },
+        "files": {"/credentials": "[profile]\naws_access_key_id = profile\naws_secret_access_key = private\n"},
+    }),
+    "role",
+)]
+#[case::profile_before_session_token(
+    json!({
+        "aws_profile_name": "profile",
+        "aws_access_key_id": "access",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+        "environment": {"AWS_SHARED_CREDENTIALS_FILE": "/credentials"},
+        "files": {"/credentials": "[profile]\naws_access_key_id = profile\naws_secret_access_key = private\n"},
+    }),
+    "profile",
+)]
+#[case::session_token_before_static(
+    json!({
+        "aws_access_key_id": "access",
+        "aws_secret_access_key": "secret",
+        "aws_session_token": "token",
+        "aws_region_name": "us-west-2",
+    }),
+    "session_token",
+)]
+fn auth_selector_reports_the_source_the_resolver_ran(#[case] params: Value, #[case] source: &str) {
     let input = json!({"operation": "auth_selector", "params": params});
     let output = Op::decode_and_run(&input).unwrap();
     assert_eq!(output["source"], source);
 }
 
-#[derive(Clone, Copy, Debug)]
-enum LocalIdentity {
-    Profile,
-    SessionToken,
-    StaticPair,
-    Environment,
-}
-
-fn configured_local(identity: LocalIdentity) -> AwsSettings {
-    let (profile, session_token, region) = match identity {
-        LocalIdentity::Profile => (true, false, true),
-        LocalIdentity::SessionToken => (false, true, false),
-        LocalIdentity::StaticPair => (false, false, true),
-        LocalIdentity::Environment => (false, false, false),
-    };
-    AwsSettings {
-        access_key_id: Some(SecretString::from("access".to_owned())),
-        secret_access_key: Some(SecretString::from("secret".to_owned())),
-        session_token: session_token.then(|| SecretString::from("token".to_owned())),
-        region_name: region.then(|| "us-west-2".to_owned()),
-        session_name: None,
-        profile_name: profile.then(|| "profile".to_owned()),
-        role_name: None,
-        web_identity_token: None,
-        sts_endpoint: None,
-        external_id: None,
-        session_tags: None,
-        role_arn: None,
-        web_identity_token_file: None,
-        bearer_token: None,
-    }
-}
-
 #[rstest]
-#[case::profile(LocalIdentity::Profile, "profile")]
-#[case::session_token(LocalIdentity::SessionToken, "session_token")]
-#[case::static_pair(LocalIdentity::StaticPair, "static")]
-#[case::environment(LocalIdentity::Environment, "env")]
-fn local_source_reports_the_source_that_resolves(
-    #[case] identity: LocalIdentity,
+#[case::static_pair(
+    json!({
+        "settings": {"aws_access_key_id": "static", "aws_secret_access_key": "private", "aws_region_name": "us-west-2"},
+        "environment": {},
+        "files": {},
+        "fixture": ["static", "private", null],
+    }),
+    "static",
+    json!(3_540_u64),
+)]
+#[case::environment(
+    json!({
+        "settings": {},
+        "environment": {"AWS_ACCESS_KEY_ID": "ambient", "AWS_SECRET_ACCESS_KEY": "private"},
+        "files": {},
+        "fixture": ["ambient", "private", null],
+    }),
+    "env",
+    json!(600_u64),
+)]
+#[case::profile(
+    json!({
+        "settings": {"aws_profile_name": "profile"},
+        "environment": {"AWS_SHARED_CREDENTIALS_FILE": "/credentials"},
+        "files": {"/credentials": "[profile]\naws_access_key_id = profile\naws_secret_access_key = private\n"},
+        "fixture": ["profile", "private", null],
+    }),
+    "profile",
+    json!(null),
+)]
+#[case::session_token(
+    json!({
+        "settings": {"aws_access_key_id": "access", "aws_secret_access_key": "secret", "aws_session_token": "token"},
+        "environment": {},
+        "files": {},
+        "fixture": ["access", "secret", "token"],
+    }),
+    "session_token",
+    json!(null),
+)]
+#[case::profile_over_static(
+    json!({
+        "settings": {
+            "aws_profile_name": "profile",
+            "aws_access_key_id": "ignored",
+            "aws_secret_access_key": "ignored",
+            "aws_region_name": "us-west-2",
+        },
+        "environment": {"AWS_SHARED_CREDENTIALS_FILE": "/credentials"},
+        "files": {"/credentials": "[profile]\naws_access_key_id = profile\naws_secret_access_key = private\n"},
+        "fixture": ["profile", "private", null],
+    }),
+    "profile",
+    json!(null),
+)]
+#[case::session_token_with_region(
+    json!({
+        "settings": {
+            "aws_access_key_id": "access",
+            "aws_secret_access_key": "secret",
+            "aws_session_token": "token",
+            "aws_region_name": "us-west-2",
+        },
+        "environment": {},
+        "files": {},
+        "fixture": ["access", "secret", "token"],
+    }),
+    "session_token",
+    json!(null),
+)]
+fn local_reports_the_source_and_cache_ttl_the_resolver_produced(
+    #[case] params: Value,
     #[case] source: &str,
+    #[case] ttl: Value,
 ) {
-    assert_eq!(local_source(&configured_local(identity)), source);
+    let input = json!({"operation": "local", "params": params});
+    let output = Op::decode_and_run(&input).unwrap();
+    assert_eq!(output["source"], source);
+    assert_eq!(output["ttl"], ttl);
 }

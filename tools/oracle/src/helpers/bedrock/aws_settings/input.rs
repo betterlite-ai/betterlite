@@ -74,6 +74,10 @@ pub(crate) struct Config {
     pub(crate) session_name: Option<String>,
     #[serde(rename = "aws_web_identity_token")]
     pub(crate) web_identity_token: Option<SecretString>,
+    #[serde(default)]
+    pub(crate) environment: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) files: BTreeMap<String, String>,
 }
 
 impl From<&Config> for AwsSettings {

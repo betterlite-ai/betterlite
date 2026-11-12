@@ -5,7 +5,7 @@ use betterlite_bedrock::aws_settings::{
     sources::{Credentials, ResolvedCredentials, SourceError},
 };
 use betterlite_context::local_ttl_cache::{
-    CacheValue, LocalTtlCache,
+    LocalTtlCache,
     dual::{Diagnostics, DualLocalCache},
 };
 use betterlite_redact::secret::Redactor;
@@ -80,26 +80,10 @@ async fn replay(
     Ok(json!({"fetches": fetches, "results": results}))
 }
 
-pub(super) fn cache_default_ttl() -> Result<u64, Box<HelperError>> {
-    let mut memory = LocalTtlCache::with_clock(Some(1000), None, None, 1024, Arc::new(|| 0.0_f64))
-        .map_err(failure)?;
-    memory
-        .set("default", CacheValue::Null, None)
-        .map_err(failure)?;
-    let entry = memory
-        .ttl_entries()
-        .into_iter()
-        .map(|(_key, seconds)| seconds)
-        .next();
-    let Some(expiry) = entry else {
-        return Err(failure("credential cache has no default ttl"));
-    };
-    Ok(Duration::try_from_secs_f64(expiry)
-        .map_err(failure)?
-        .as_secs())
-}
-
-fn memory_ttl(memory: &Mutex<LocalTtlCache>, now: u32) -> Result<Option<u64>, Box<HelperError>> {
+pub(super) fn memory_ttl(
+    memory: &Mutex<LocalTtlCache>,
+    now: u32,
+) -> Result<Option<u64>, Box<HelperError>> {
     let Ok(held) = memory.lock() else {
         return Err(failure("credential cache unavailable"));
     };

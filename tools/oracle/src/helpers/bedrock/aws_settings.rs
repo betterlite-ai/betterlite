@@ -8,7 +8,6 @@ use betterlite_bedrock::aws_settings::{
     credential_cache::cache_key,
     error::{AWS_CONSOLE_URL, AwsAuthError},
     policy::web_identity_policy,
-    sources::auth_selector_presence,
 };
 use betterlite_config::sections::{
     bedrock_aws_settings::AwsS3Settings, bedrock_settings::AwsSettings,
@@ -24,6 +23,7 @@ use tokio::runtime::Builder;
 mod input;
 mod io;
 mod native;
+mod resolver;
 mod tests;
 
 pub(crate) struct Op;
@@ -49,7 +49,7 @@ impl Helper for Op {
                 json!({"value": bedrock_bearer_token(token.api_key.as_ref(), token.configured_token.as_ref()).map(|value| value.expose_secret().to_owned())}),
             ),
             Input::PopAuth(params) => Ok(pop(params)),
-            Input::AuthSelector(config) => Ok(selector(config)),
+            Input::AuthSelector(config) => selector(config),
             Input::AuthError(error) => auth_error(error),
             Input::CacheKey(keys) => {
                 let left = cache_key(&keys.left).map_err(failure)?;
@@ -58,7 +58,7 @@ impl Helper for Op {
                 )
             }
             Input::Cache(cache) => runtime.block_on(io::cache(cache)),
-            Input::Local(local) => runtime.block_on(native::local(local)),
+            Input::Local(local) => native::local(local),
         }
     }
 }
@@ -121,21 +121,8 @@ fn pair(input: &input::Pair) -> Value {
     json!({"value": s3_static_key_pair(&settings).map(|(access, secret)| [access.expose_secret().to_owned(), secret.expose_secret().to_owned()])})
 }
 
-fn selector(input: &input::Config) -> Value {
-    let [web_identity, role, profile, session_token, static_pair] =
-        auth_selector_presence(&AwsSettings::from(input));
-    let source = if web_identity {
-        "web_identity"
-    } else if role {
-        "role"
-    } else if profile {
-        "profile"
-    } else if session_token {
-        "session_token"
-    } else if static_pair {
-        "static"
-    } else {
-        "env"
-    };
-    json!({"source": source})
+fn selector(input: &input::Config) -> HelperResult {
+    let settings = AwsSettings::from(input);
+    let observed = resolver::credentials(&settings, &input.environment, &input.files, 0)?;
+    Ok(json!({"source": resolver::source(&observed, &settings)}))
 }
