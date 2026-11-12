@@ -12,7 +12,7 @@ use crate::callable_handle::CallableHandle;
 use crate::host::{HostConfig, PythonHost};
 use crate::json_values::{JsonObject, JsonValue, ValueError};
 
-const ERROR_CODE: &CStr = c"class BoomBase(Exception):\n    pass\n\nclass Boom(BoomBase):\n    def __str__(self):\n        return 'boom!'\n\ndef fail():\n    raise Boom('ignored')\n\ndef fail_value():\n    raise ValueError('nope')\n\ndef quit_now():\n    raise SystemExit(3)\n\nasync def quit_async():\n    raise SystemExit(4)\n\nasync def interrupt_async():\n    raise KeyboardInterrupt()\n\ndef returns_bytes():\n    return b'raw'\n";
+const ERROR_CODE: &CStr = c"class BoomBase(Exception):\n    pass\n\nclass Boom(BoomBase):\n    def __str__(self):\n        return 'boom!'\n\ndef fail():\n    raise Boom('ignored')\n\ndef fail_value():\n    raise ValueError('nope')\n\ndef quit_now():\n    raise SystemExit(3)\n\nasync def quit_async():\n    raise SystemExit(4)\n\nasync def interrupt_async():\n    raise KeyboardInterrupt()\n\nasync def fail_async():\n    raise ValueError('async-nope')\n\ndef returns_bytes():\n    return b'raw'\n";
 
 fn start_host() -> PythonHost {
     PythonHost::start(&HostConfig::default()).unwrap()
@@ -120,6 +120,20 @@ async fn keyboard_interrupt_from_an_async_hook_is_a_python_error() {
     let module = code_module(&host, c"hook_errors", ERROR_CODE);
     let error = python_error(&host, &module, "interrupt_async").await;
     assert_eq!(error.type_name, "KeyboardInterrupt");
+}
+
+#[tokio::test]
+async fn an_async_hook_that_raises_an_exception_is_a_python_error_not_a_timeout() {
+    let host = start_host();
+    let module = code_module(&host, c"hook_errors", ERROR_CODE);
+    let error = python_error(&host, &module, "fail_async").await;
+    assert_eq!(error.type_name, "ValueError");
+    assert_eq!(error.message, "async-nope");
+    assert!(
+        error.traceback.contains("ValueError: async-nope"),
+        "traceback was: {}",
+        error.traceback
+    );
 }
 
 #[tokio::test]
