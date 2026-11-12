@@ -1,0 +1,27 @@
+kind: helper
+name: one-custom-side-keeps-other-side-free
+call:
+  tool_fees:
+    computer_use:
+      - input_tokens: 1000
+        output_tokens: 500
+        provider: azure
+        model_info: {computer_use_input_cost_per_1k_tokens: 2}
+      - input_tokens: 1000
+        output_tokens: 500
+        provider: azure
+        model_info: {computer_use_output_cost_per_1k_tokens: 4}
+      - input_tokens: 1000
+        output_tokens: 500
+        provider: azure
+        model_info: {computer_use_input_cost_per_1k_tokens: 2, computer_use_output_cost_per_1k_tokens: 4}
+      - input_tokens: 0
+        output_tokens: 500
+        provider: azure
+        model_info: {computer_use_input_cost_per_1k_tokens: 2}
+      - input_tokens: 1000
+        output_tokens: 500
+        provider: openai
+        model_info: {computer_use_input_cost_per_1k_tokens: 2}
+compare: {ignore: []}
+env: {}

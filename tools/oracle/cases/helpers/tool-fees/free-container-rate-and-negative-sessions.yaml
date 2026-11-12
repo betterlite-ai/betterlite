@@ -1,0 +1,18 @@
+kind: helper
+name: free-container-rate-and-negative-sessions
+call:
+  tool_fees:
+    code_interpreter:
+      - {sessions: 3, provider: azure, model_info: null}
+      - {sessions: 3, provider: openai, model_info: null}
+      - {sessions: 3, provider: nobody, model_info: null}
+      - {sessions: 3, provider: null, model_info: null}
+      - {sessions: 3, provider: "", model_info: null}
+      - {sessions: 2, provider: azure, model_info: {code_interpreter_cost_per_session: 0}}
+      - {sessions: -2, provider: azure, model_info: {code_interpreter_cost_per_session: 0.5}}
+      - {sessions: -2, provider: azure, model_info: null}
+      - {sessions: 0, provider: azure, model_info: null}
+      - {sessions: null, provider: azure, model_info: null}
+      - {sessions: 4, provider: nobody, model_info: {}}
+compare: {ignore: []}
+env: {}

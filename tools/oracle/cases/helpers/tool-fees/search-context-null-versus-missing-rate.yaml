@@ -1,0 +1,25 @@
+kind: helper
+name: search-context-null-versus-missing-rate
+call:
+  tool_fees:
+    web_search:
+      - options: {search_context_size: low}
+        model_info: {search_context_cost_per_query: {search_context_size_low: 0.5, search_context_size_medium: 0.25, search_context_size_high: 1}}
+      - options: {search_context_size: high}
+        model_info: {search_context_cost_per_query: {search_context_size_low: 0.5, search_context_size_medium: 0.25, search_context_size_high: 1}}
+      - options: {search_context_size: gigantic}
+        model_info: {search_context_cost_per_query: {search_context_size_low: 0.5, search_context_size_medium: 0.25}}
+      - options: null
+        model_info: {search_context_cost_per_query: {search_context_size_medium: null}}
+      - options: {search_context_size: low}
+        model_info: {search_context_cost_per_query: {search_context_size_low: null}}
+      - options: {search_context_size: high}
+        model_info: {search_context_cost_per_query: {search_context_size_low: 0.5}}
+      - options: {search_context_size: low}
+        model_info: {search_context_cost_per_query: null}
+      - options: {search_context_size: low}
+        model_info: {}
+      - options: {search_context_size: low}
+        model_info: null
+compare: {ignore: []}
+env: {}
