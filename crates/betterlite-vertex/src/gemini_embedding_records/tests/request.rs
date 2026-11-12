@@ -58,7 +58,7 @@ fn embed_content(
         {"model":"models/gemini-embedding-001","content":{"parts":[{"text":"d"}]}}
     ]}"#
 )]
-#[case::empty_list(r#"[]"#, r#"{"requests":[]}"#)]
+#[case::empty_list("[]", r#"{"requests":[]}"#)]
 fn batch_requests_follow_the_input_grouping(#[case] source: &str, #[case] expected: &str) {
     assert_eq!(batch(source, "{}", "{}").unwrap(), json(expected));
 }
@@ -145,7 +145,7 @@ fn batch_parameters_filter_to_embedding_fields(#[case] optional: &str, #[case] e
 }
 
 #[rstest]
-#[case::empty_group(r#"[[]]"#)]
+#[case::empty_group("[[]]")]
 #[case::empty_group_after_text(r#"["a",[]]"#)]
 fn batch_rejects_empty_groups(#[case] source: &str) {
     let error = batch(source, "{}", "{}").unwrap_err();
@@ -210,7 +210,7 @@ fn batch_rejects_mistyped_text_parameters(#[case] optional: &str) {
 #[rstest]
 #[case::text(r#""hello""#, r#"{"content":{"parts":[{"text":"hello"}]}}"#)]
 #[case::texts(r#"["a","b"]"#, r#"{"content":{"parts":[{"text":"a"},{"text":"b"}]}}"#)]
-#[case::empty(r#"[]"#, r#"{"content":{"parts":[]}}"#)]
+#[case::empty("[]", r#"{"content":{"parts":[]}}"#)]
 #[case::media(
     r#"["data:image/jpeg;base64,AA","gs://bucket/a.pdf"]"#,
     r#"{"content":{"parts":[
@@ -251,23 +251,22 @@ fn embed_content_rejects_nested_groups(#[case] source: &str) {
 #[case::texts(r#"["a","b"]"#, false)]
 #[case::group(r#"[["a","b"]]"#, true)]
 #[case::mixed(r#"["a",["b"]]"#, true)]
-#[case::empty(r#"[]"#, false)]
+#[case::empty("[]", false)]
 fn input_decodes_the_declared_shapes(#[case] source: &str, #[case] nested: bool) {
     let decoded: EmbeddingInput = serde_json::from_str(source).unwrap();
-    let mut found = false;
-    if let EmbeddingInput::Entries(entries) = &decoded {
-        found = entries
-            .iter()
-            .any(|entry| matches!(entry, InputEntry::Group(_)));
-    }
+    let found = matches!(
+        &decoded,
+        EmbeddingInput::Entries(entries)
+            if entries.iter().any(|entry| matches!(entry, InputEntry::Group(_)))
+    );
     assert_eq!(found, nested);
 }
 
 #[rstest]
-#[case::number(r#"[1]"#)]
-#[case::booleans(r#"[true]"#)]
-#[case::numbers_as_group(r#"[[1,2]]"#)]
+#[case::number("[1]")]
+#[case::booleans("[true]")]
+#[case::numbers_as_group("[[1,2]]")]
 #[case::object(r#"{"input":"a"}"#)]
 fn input_rejects_values_outside_the_declared_shapes(#[case] source: &str) {
-    assert!(serde_json::from_str::<EmbeddingInput>(source).is_err());
+    serde_json::from_str::<EmbeddingInput>(source).unwrap_err();
 }

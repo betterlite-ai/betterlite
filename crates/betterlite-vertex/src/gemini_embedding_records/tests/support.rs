@@ -41,13 +41,25 @@ pub(super) fn resolved_files(source: &str) -> ResolvedFiles {
     serde_json::from_str(source).unwrap()
 }
 
-pub(super) fn serialized<T: Serialize>(value: &T) -> Json {
+pub(super) fn serialized<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }
 
 pub(super) fn rejection(error: GeminiEmbeddingError) -> String {
     match error {
         GeminiEmbeddingError::Rejected { reason } => reason,
-        other => panic!("expected a rejected transformation, got {other:?}"),
+        other @ (GeminiEmbeddingError::ReplyNotObject
+        | GeminiEmbeddingError::MissingField { .. }
+        | GeminiEmbeddingError::WrongType { .. }
+        | GeminiEmbeddingError::TokenRange { .. }
+        | GeminiEmbeddingError::TokenOverflow
+        | GeminiEmbeddingError::IndexOverflow
+        | GeminiEmbeddingError::Formatting { .. }
+        | GeminiEmbeddingError::Counting { .. }) => {
+            panic!("expected a rejected transformation, got {other:?}")
+        }
     }
 }

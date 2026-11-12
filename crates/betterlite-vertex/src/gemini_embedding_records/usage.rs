@@ -42,7 +42,7 @@ pub enum Modality {
     Video,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct ModalityCount {
     pub modality: Modality,
     #[serde(rename = "tokenCount")]
@@ -59,23 +59,23 @@ pub struct UsageMetadata {
     #[serde(rename = "promptTokensDetails")]
     pub prompt_tokens_details: Option<Vec<ModalityCount>>,
     #[serde(rename = "candidatesTokenCount")]
-    _candidates_token_count: Option<i64>,
+    pub candidates_token_count: Option<i64>,
     #[serde(rename = "responseTokenCount")]
-    _response_token_count: Option<i64>,
+    pub response_token_count: Option<i64>,
     #[serde(rename = "cachedContentTokenCount")]
-    _cached_content_token_count: Option<i64>,
+    pub cached_content_token_count: Option<i64>,
     #[serde(rename = "toolUsePromptTokenCount")]
-    _tool_use_prompt_token_count: Option<i64>,
+    pub tool_use_prompt_token_count: Option<i64>,
     #[serde(rename = "thoughtsTokenCount")]
-    _thoughts_token_count: Option<i64>,
+    pub thoughts_token_count: Option<i64>,
     #[serde(rename = "toolUsePromptTokensDetails")]
-    _tool_use_details: Option<Vec<ModalityCount>>,
+    pub tool_use_details: Option<Vec<ModalityCount>>,
     #[serde(rename = "cacheTokensDetails")]
-    _cache_tokens_details: Option<Vec<ModalityCount>>,
+    pub cache_tokens_details: Option<Vec<ModalityCount>>,
     #[serde(rename = "responseTokensDetails")]
-    _response_tokens_details: Option<Vec<ModalityCount>>,
+    pub response_tokens_details: Option<Vec<ModalityCount>>,
     #[serde(rename = "candidatesTokensDetails")]
-    _candidates_tokens_details: Option<Vec<ModalityCount>>,
+    pub candidates_tokens_details: Option<Vec<ModalityCount>>,
 }
 
 #[must_use]
@@ -124,7 +124,7 @@ pub fn embed_content_usage(
         metadata
             .total_token_count
             .filter(|count| *count != 0)
-            .unwrap_or(i64::from(prompt_tokens)),
+            .unwrap_or_else(|| i64::from(prompt_tokens)),
     )?;
     let prompt_tokens_details = match metadata
         .prompt_tokens_details

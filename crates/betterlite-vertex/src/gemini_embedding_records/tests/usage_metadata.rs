@@ -153,7 +153,7 @@ fn integers_keep_the_record_range(
 ) {
     let metadata = parse_usage_metadata(Some(&json(&format!("{{\"promptTokenCount\": {value}}}"))));
     assert_eq!(metadata.is_some(), valid);
-    if let Some(metadata) = metadata {
-        assert_eq!(metadata.prompt_token_count, expected);
+    if let Some(found) = metadata {
+        assert_eq!(found.prompt_token_count, expected);
     }
 }

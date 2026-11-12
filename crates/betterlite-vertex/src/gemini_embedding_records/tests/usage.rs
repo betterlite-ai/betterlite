@@ -45,8 +45,8 @@ fn batch_counts_text_elements_only(#[case] source: &str, #[case] counted: &str) 
 
 #[rstest]
 #[case::all_media(r#"["data:image/png;base64,AAAA","gs://bucket/x.png","files/f"]"#)]
-#[case::empty_group(r#"[[]]"#)]
-#[case::empty_list(r#"[]"#)]
+#[case::empty_group("[[]]")]
+#[case::empty_list("[]")]
 fn batch_counts_nothing_without_text(#[case] source: &str) {
     assert_eq!(count_usage(source).prompt_tokens, 0);
 }

@@ -21,6 +21,7 @@ const EXTENSION_MIME_TYPES: [(&str, &str); 8] = [
     (".wav", "audio/wav"),
 ];
 
+#[derive(Debug)]
 pub struct EmbeddingDataUrl<'url> {
     pub mime_type: &'url str,
     pub payload: &'url str,

@@ -134,7 +134,7 @@ pub fn is_image_element(element: &str, resolved_files: &ResolvedFiles) -> bool {
     } else {
         None
     };
-    mime_type.is_some_and(|mime_type| IMAGE_MIME_TYPES.contains(&mime_type))
+    mime_type.is_some_and(|found| IMAGE_MIME_TYPES.contains(&found))
 }
 
 #[must_use]

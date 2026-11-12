@@ -66,7 +66,7 @@ fn a_string_embedding_is_kept_as_base64() {
 }
 
 #[rstest]
-#[case::missing_embeddings(r#"{}"#, "embeddings")]
+#[case::missing_embeddings("{}", "embeddings")]
 #[case::missing_values(r#"{"embeddings":[{}]}"#, "values")]
 fn batch_replies_require_their_fields(#[case] response: &str, #[case] field: &str) {
     assert!(matches!(
@@ -146,7 +146,7 @@ fn embed_content_replies_require_the_embedding_field() {
 #[test]
 fn embed_content_replies_that_are_not_objects_are_rejected() {
     assert!(matches!(
-        embed_reply(r#""a""#, r#"[]"#, "{}"),
+        embed_reply(r#""a""#, "[]", "{}"),
         Err(GeminiEmbeddingError::ReplyNotObject)
     ));
 }
