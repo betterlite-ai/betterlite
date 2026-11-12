@@ -1,0 +1,5 @@
+kind: helper
+name: headers-authorization-and-version
+call: {"b3910": {"operation": "build_headers", "auth_header": "Basic cGstbGYtMTpzay1sZi0y"}}
+env: {}
+compare: {ignore: []}

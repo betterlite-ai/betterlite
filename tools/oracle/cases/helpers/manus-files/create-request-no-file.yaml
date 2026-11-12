@@ -1,0 +1,14 @@
+kind: helper
+name: manus-files-create-request-no-file
+env: {}
+compare: {ignore: []}
+call:
+  b8105:
+    op: create_plan
+    environment: {MANUS_API_KEY: env-key}
+    now: 1700000000
+    cases:
+      - file: {present: false, filename: null, content: []}
+        api_key: params-key
+        api_base: "http://params:1"
+        sdk: {api_base: null, api_key: global-key}
