@@ -191,11 +191,28 @@ impl HistoryConversion {
             .get("function")
             .is_some_and(|function| is_truthy(Some(function)))
         {
-            self.push_function_call(object, call_id);
+            let fields = match object.get("function") {
+                Some(Value::Object(function)) => ["name", "arguments"]
+                    .into_iter()
+                    .filter_map(|field| function.get(field).map(|value| (field, value.clone())))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            self.push_tool_call_item("function_call", call_id, fields);
             return Ok(());
         }
         if let Some(Value::Object(custom)) = object.get("custom") {
-            self.push_custom_call(custom, call_id);
+            let fields = ["name", "input"]
+                .into_iter()
+                .map(|field| {
+                    let value = custom
+                        .get(field)
+                        .cloned()
+                        .unwrap_or_else(|| Value::String(String::new()));
+                    (field, value)
+                })
+                .collect();
+            self.push_tool_call_item("custom_tool_call", call_id, fields);
             return Ok(());
         }
         let unsupported =
@@ -205,34 +222,16 @@ impl HistoryConversion {
         })
     }
 
-    fn push_function_call(&mut self, object: &Map<String, Value>, call_id: &str) {
-        let function = match object.get("function") {
-            Some(Value::Object(function)) => Some(function),
-            _ => None,
-        };
+    fn push_tool_call_item(
+        &mut self,
+        kind: &str,
+        call_id: &str,
+        fields: Vec<(&'static str, Value)>,
+    ) {
         let mut item = Map::new();
-        item.insert("type".to_owned(), Value::String("function_call".to_owned()));
+        item.insert("type".to_owned(), Value::String(kind.to_owned()));
         item.insert("call_id".to_owned(), Value::String(call_id.to_owned()));
-        for field in ["name", "arguments"] {
-            if let Some(value) = function.and_then(|fields| fields.get(field)) {
-                item.insert(field.to_owned(), value.clone());
-            }
-        }
-        self.input.push(Value::Object(item));
-    }
-
-    fn push_custom_call(&mut self, custom: &Map<String, Value>, call_id: &str) {
-        let mut item = Map::new();
-        item.insert(
-            "type".to_owned(),
-            Value::String("custom_tool_call".to_owned()),
-        );
-        item.insert("call_id".to_owned(), Value::String(call_id.to_owned()));
-        for field in ["name", "input"] {
-            let value = custom
-                .get(field)
-                .cloned()
-                .unwrap_or_else(|| Value::String(String::new()));
+        for (field, value) in fields {
             item.insert(field.to_owned(), value);
         }
         self.input.push(Value::Object(item));
