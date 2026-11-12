@@ -418,6 +418,27 @@ async fn register_new_model_warns_about_missing_cache_pricing(
     true,
     false
 )]
+#[case::a_dated_snapshot_is_stripped(
+    r#"{"gpt-5-mini":{"litellm_provider":"openai","cache_read_input_token_cost":0.0000001}}"#,
+    "gpt-5-mini-2025-08-07",
+    "openai",
+    true,
+    false
+)]
+#[case::a_bare_provider_name_has_no_candidate(
+    r#"{"":{"litellm_provider":"openai","cache_read_input_token_cost":0.0000001}}"#,
+    "openai",
+    "openai",
+    false,
+    true
+)]
+#[case::only_provider_prefixes_are_stripped(
+    r#"{"bar":{"litellm_provider":"openai","cache_read_input_token_cost":0.0000001}}"#,
+    "foo/bar",
+    "openai",
+    false,
+    true
+)]
 #[case::the_exact_key_is_not_a_candidate(
     r#"{"gpt-5-mini":{"litellm_provider":"openai","cache_read_input_token_cost":0.0000001}}"#,
     "gpt-5-mini",
@@ -527,6 +548,16 @@ async fn register_skips_the_lookup_for_providers_that_authenticate_on_provider_i
     assert_eq!(registry.model_cost.get(key), Some(&json(expected)));
     assert_eq!(registry.model_cost.contains_key("other-key"), !skips_lookup);
     assert_eq!(registered.warnings, warnings(&[]));
+}
+
+#[tokio::test]
+async fn register_merges_nested_fields_into_the_live_entry_of_a_provider_info_model() {
+    let mut registry = live_registry(r#"{"gpt-5":{"nested":{"x":1}}}"#);
+    let world = World::new("{}", NO_RULES);
+    let value = r#"{"gpt-5":{"litellm_provider":"chatgpt","nested":{"y":2}}}"#;
+    register_entries(&mut registry, &world, value).await;
+    let expected = r#"{"nested":{"x":1,"y":2},"litellm_provider":"chatgpt"}"#;
+    assert_eq!(registry.model_cost.get("gpt-5"), Some(&json(expected)));
 }
 
 #[tokio::test]
