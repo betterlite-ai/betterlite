@@ -1,0 +1,71 @@
+kind: helper
+name: ollama-generate-embedding
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: embedding
+    cases:
+      - api_base: "http://h"
+        model: m
+        prompts: ["a b"]
+        options: {}
+        status: 200
+        body: '{"embeddings": [[0.5, 1]], "prompt_eval_count": 2}'
+        encoder: none
+      - api_base: "http://h/api/embed"
+        model: m
+        prompts: ["a"]
+        options: {temperature: 0.5}
+        status: 200
+        body: '{"embeddings": [[0.5]]}'
+        encoder: words
+      - api_base: "http://h/api/embed/"
+        model: m
+        prompts: ["a", "b c"]
+        options: {options: {num_ctx: 2}, truncate: true, keep_alive: 5m, dimensions: 3}
+        status: 200
+        body: '{"embeddings": [], "prompt_eval_count": 0}'
+        encoder: words
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {}
+        status: 200
+        body: '{"embeddings": [[0.1]], "prompt_eval_count": null}'
+        encoder: words
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {}
+        status: 200
+        body: '{"embeddings": [[0.1]]}'
+        encoder: none
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {}
+        status: 200
+        body: '{"embeddings": [[0.1]]}'
+        encoder: failing
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {}
+        status: 200
+        body: not json
+        encoder: none
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {}
+        status: 200
+        body: '{"prompt_eval_count": 3}'
+        encoder: none
+      - api_base: "http://h"
+        model: m
+        prompts: ["a"]
+        options: {other: 1}
+        status: 200
+        body: '{"embeddings": [[0.25]], "prompt_eval_count": 1}'
+        encoder: none

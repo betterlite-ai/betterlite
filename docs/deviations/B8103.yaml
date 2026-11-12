@@ -1,0 +1,14 @@
+task: B8103
+deviations:
+  - what: A non-200 stream response raises LangGraphError whose message is the lossy UTF-8 text of the body, not Python's str(bytes) repr with its b prefix and escapes.
+    why: LiteLLM formats the raw bytes with str(), so the caller sees b'...' text; betterlite decodes the body so a client reads the provider's message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L315-L316
+  - what: A non-200 stream response body is read up to 16 MiB; a larger body gives a typed too-large error instead of the LangGraphError.
+    why: LiteLLM reads the whole error body into memory without a cap, which an unbounded response can use up. betterlite bounds every input (rule bounded-inputs) and the cap is far above any provider error message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L316
+  - what: A single SSE line longer than 16 MiB ends the stream with the stream error log instead of being parsed.
+    why: The shared httpx line decoder that betterlite reuses carries a line cap so an unbounded line cannot grow memory without limit (rule bounded-inputs). LangGraph sends one small JSON event per line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/sse_iterator.py#L181
+  - what: Chunk ids are chatcmpl- plus a uuid4 as in LiteLLM, but tests and oracle cases ignore the id and keep created at 0.
+    why: The id is random in both implementations, so only its prefix and the fixed creation time are comparable.
+    link: ""

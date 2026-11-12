@@ -1,0 +1,5 @@
+task: B1313
+deviations:
+  - what: A functionCall part without args projects arguments "{}"; LiteLLM raises KeyError and answers 500, and an explicit null projects "null" there.
+    why: args is an optional key of LiteLLM's own HttpxFunctionCall type, so its default is an empty object, and a crash on it is a bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1564

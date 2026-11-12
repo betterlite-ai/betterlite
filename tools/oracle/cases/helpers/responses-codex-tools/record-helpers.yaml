@@ -1,0 +1,28 @@
+kind: helper
+name: record-helpers
+call:
+  responses_codex_tools:
+    operation: record_helpers
+    roles:
+      - {}
+      - {role: null}
+      - {role: ""}
+      - {role: assistant}
+      - {role: banana}
+      - {type: message, content: hi}
+    plain:
+      - x
+      - 3
+      - null
+      - {a: 1}
+      - [1, 2]
+      - true
+      - 1.5
+    records:
+      - {}
+      - {a: 1}
+      - {a: null, b: {c: [1]}}
+      - {é: x}
+env: {}
+compare:
+  ignore: []

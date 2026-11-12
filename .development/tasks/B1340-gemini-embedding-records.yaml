@@ -82,5 +82,5 @@ pitfalls:
   - An HTTP URL is plain embedding text here, not a fetchable media input.
   - A data URL without the literal ;base64, marker also remains ordinary text.
   - Batch usage ignores media while single embedContent can report image-only prompt tokens from usageMetadata.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1200, max_new_expects: 1}
 review_level: standard
