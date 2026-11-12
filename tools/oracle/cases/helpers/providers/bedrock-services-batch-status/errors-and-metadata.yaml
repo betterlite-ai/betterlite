@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-services-batch-status-errors-and-metadata
+call:
+  bedrock_services_batch_status:
+    operation: decode
+    now: 1700000000
+    status_code: 500
+    bodies:
+      - '{"jobArn":"a","message":"job failed","jobName":"name","clientRequestToken":"token","modelId":"model","roleArn":"role","timeoutDurationInHours":24,"vpcConfig":{"securityGroupIds":["sg-1"],"subnetIds":["subnet-1"]},"unusedField":"ignored"}'
+      - '{"jobArn":"a","message":"boom"}'
+      - '{"jobArn":"a","message":""}'
+      - '{"jobArn":"a","message":null}'
+      - '{"jobArn":"a"}'
+      - '{"jobArn":"a","vpcConfig":["a"]}'
+      - '{"jobArn":"a","timeoutDurationInHours":true}'
+      - '{"jobArn":"a","jobName":null,"modelId":"model"}'
+env: {}
+compare: {ignore: []}

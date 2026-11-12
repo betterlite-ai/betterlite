@@ -1,0 +1,63 @@
+kind: helper
+name: bedrock-services-batch-status-retrieve-signed-request
+call:
+  bedrock_services_batch_status:
+    operation: retrieve_signed_request
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+    requests:
+      - batch_id: "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+        litellm_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-west-2
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+        litellm_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-west-2
+        optional_params:
+          aws_region_name: eu-west-1
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+        litellm_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        optional_params:
+          aws_region_name: eu-west-1
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:us-east-1:123456789012:model-invocation-job/job-abc"
+        litellm_params:
+          aws_access_key_id: {bad: 1}
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-west-2
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "arn:aws-cn:bedrock:cn-north-1:1:model-invocation-job/x"
+        litellm_params:
+          aws_access_key_id: AKIDEXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-west-2
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "not-an-arn"
+        litellm_params: {}
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:us-east-1:acct"
+        litellm_params: {}
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:US-EAST-1:acct:model-invocation-job/x"
+        litellm_params: {}
+        optional_params: {}
+        now: 1767225600
+      - batch_id: "arn:aws:bedrock:1east:acct:model-invocation-job/x"
+        litellm_params: {}
+        optional_params: {}
+        now: 1767225600
+env: {}
+compare: {ignore: []}

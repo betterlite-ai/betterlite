@@ -1,0 +1,11 @@
+# PostHogLogger.__init__ reads POSTHOG_API_KEY, keeps the batch size at 100 and registers the atexit handler
+kind: helper
+name: initialization-with-atexit-handler
+call:
+  b3971:
+    operation: init
+    settings: {api_key: phk-test, api_url: "https://us.i.posthog.com", mock: false}
+    events: []
+    replies: []
+env: {POSTHOG_API_KEY: phk-test, POSTHOG_API_URL: "https://us.i.posthog.com"}
+compare: {ignore: []}
