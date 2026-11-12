@@ -12,7 +12,7 @@ fn input(value: serde_json::Value) -> Input {
 fn a_raw_zero_count_projects_a_repaired_usage() {
     let request = input(json!({
         "responses": [
-            {"raw": {"body": {"usage": {"server_tool_use": {"web_search_requests": 0}}}, "usage": null}},
+            {"raw": {"body": {"usage": {"server_tool_use": {"web_search_requests": 0_i64}}}, "usage": null}},
         ],
     }));
     let output = Op::run(&request).expect("the probes succeed");
@@ -31,7 +31,7 @@ fn a_responses_reported_count_beats_its_items() {
         "responses": [
             {"responses": {
                 "output": [{"mapping": {"type": "web_search_call"}}, {"mapping": {"type": "web_search_call"}}],
-                "tool_usage": {"web_search": {"num_requests": 0}},
+                "tool_usage": {"web_search": {"num_requests": 0_i64}},
                 "usage": null,
             }},
         ],
@@ -45,7 +45,7 @@ fn a_responses_reported_count_beats_its_items() {
 fn kwargs_outputs_copy_every_field() {
     let request = input(json!({
         "kwargs": [
-            {"web_search_options": {"search_context_size": "gigantic", "extra": 1}},
+            {"web_search_options": {"search_context_size": "gigantic", "extra": 1_i64}},
             {"tools": [{"type": "file_search", "vector_store_ids": ["vs_1"], "extra": true}]},
         ],
     }));
@@ -69,9 +69,9 @@ fn kwargs_outputs_copy_every_field() {
 #[test]
 fn conversions_project_strings_and_counts() {
     let request = input(json!({
-        "file_search_params": [{"storage_gb": 2.5, "days": "3"}, {"storage_gb": "abc", "days": null}],
-        "token_counts": [{"input_tokens": 3.9, "output_tokens": "7"}],
-        "values": [3, " 1_0 ", "3.0"],
+        "file_search_params": [{"storage_gb": 2.5_f64, "days": "3"}, {"storage_gb": "abc", "days": null}],
+        "token_counts": [{"input_tokens": 3.9_f64, "output_tokens": "7"}],
+        "values": [3_i64, " 1_0 ", "3.0"],
     }));
     let output = Op::run(&request).expect("the conversions succeed");
     assert_eq!(

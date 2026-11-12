@@ -24,7 +24,7 @@ fn decimal(text: &str) -> Decimal {
 #[case::invalid_day(r#"{"storage_gb":2.5,"days":"abc"}"#, Some("2.5"), None)]
 #[case::null_storage(r#"{"storage_gb":null,"days":true}"#, None, Some("1"))]
 #[case::containers(r#"{"storage_gb":[1],"days":{}}"#, None, None)]
-#[case::missing(r#"{}"#, None, None)]
+#[case::missing("{}", None, None)]
 fn storage_and_days_convert_independently(
     #[case] source: &str,
     #[case] storage: Option<&str>,
@@ -93,7 +93,7 @@ fn a_quantity_past_the_decimal_range_is_a_typed_error() {
 #[case::booleans(r#"{"input_tokens":true,"output_tokens":false}"#, Some(1), Some(0))]
 #[case::null_stays_absent(r#"{"input_tokens":null,"output_tokens":null}"#, None, None)]
 #[case::containers(r#"{"input_tokens":[1],"output_tokens":"abc"}"#, None, None)]
-#[case::missing(r#"{}"#, None, None)]
+#[case::missing("{}", None, None)]
 fn token_counts_read_each_field_with_int_rules(
     #[case] source: &str,
     #[case] input: Option<i64>,

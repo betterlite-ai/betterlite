@@ -105,25 +105,28 @@ fn item(source: &str) -> OutputItem {
     OutputItem::Mapping(serde_json::from_str(source).expect("the item is a mapping"))
 }
 
-fn round_trip(view: ToolBillingResponse) {
-    let encoded = serde_json::to_value(&view).expect("the response serializes");
+fn round_trip(view: &ToolBillingResponse) {
+    let encoded = serde_json::to_value(view).expect("the response serializes");
     let decoded: ToolBillingResponse =
         serde_json::from_value(encoded).expect("the response deserializes");
-    assert_eq!(decoded, view);
+    assert_eq!(&decoded, view);
 }
 
 #[test]
 fn every_response_view_round_trips() {
-    round_trip(chat(
+    round_trip(&chat(
         vec![choice(Some(annotations(&[r#"{"type":"url_citation"}"#])))],
         Some(usage(cost(4, Some(prompts(0))))),
     ));
-    round_trip(responses(vec![item(r#"{"type":"web_search_call"}"#)], None));
-    round_trip(raw(
+    round_trip(&responses(
+        vec![item(r#"{"type":"web_search_call"}"#)],
+        None,
+    ));
+    round_trip(&raw(
         r#"{"usage":{"server_tool_use":{"web_search_requests":2}}}"#,
         None,
     ));
-    round_trip(ToolBillingResponse::Other(OtherView {
+    round_trip(&ToolBillingResponse::Other(OtherView {
         usage: Some(usage(cost(1, None))),
     }));
 }
@@ -187,7 +190,7 @@ fn annotation_scanning_skips_missing_messages_and_non_string_types() {
         vec![
             choice(None),
             choice(Some(ChatMessage { annotations: None })),
-            choice(Some(annotations(&[r#"{}"#, r#"{"type":5}"#]))),
+            choice(Some(annotations(&["{}", r#"{"type":5}"#]))),
         ],
         None,
     );
@@ -228,7 +231,7 @@ fn chat_server_tool_counts_including_zero_signal_web_search() {
 #[case::numeric_string(r#"{"web_search_calls":"3"}"#, false)]
 #[case::integral_float(r#"{"web_search_calls":3.0}"#, false)]
 #[case::null(r#"{"web_search_calls":null}"#, false)]
-#[case::missing(r#"{}"#, false)]
+#[case::missing("{}", false)]
 fn the_server_side_counter_accepts_only_positive_integers(
     #[case] details: &str,
     #[case] expected: bool,
@@ -293,22 +296,22 @@ fn other_kinds_use_the_supplied_usage_checks() {
 
 #[test]
 fn annotation_and_output_checks_reject_the_other_kinds() {
-    let response = raw(r#"{}"#, None);
+    let raw_response = raw("{}", None);
     assert!(!includes_annotation_type(
-        &response,
+        &raw_response,
         AnnotationType::UrlCitation
     ));
     assert!(!includes_output_type(
-        &response,
+        &raw_response,
         OutputItemType::WebSearchCall
     ));
-    let response = responses(Vec::new(), None);
+    let output_response = responses(Vec::new(), None);
     assert!(!includes_annotation_type(
-        &response,
+        &output_response,
         AnnotationType::FileCitation
     ));
     assert!(!includes_output_type(
-        &response,
+        &output_response,
         OutputItemType::FileSearchCall
     ));
 }

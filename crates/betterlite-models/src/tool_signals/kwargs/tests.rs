@@ -4,8 +4,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::{
-    get_file_search_tool_call, get_web_search_options, is_file_search_tool_call,
-    is_web_search_tool_call, tools_from_kwargs,
+    get_file_search_tool_call, get_web_search_options, is_web_search_tool_call, tools_from_kwargs,
 };
 use crate::decisions::Json;
 use crate::tool_signals::error::ToolSignalError;
@@ -20,11 +19,11 @@ fn fields(source: &str) -> IndexMap<String, Json> {
 
 #[test]
 fn an_explicit_empty_options_object_wins_over_the_tools() {
-    let options = get_web_search_options(&kwargs(
+    let chosen = get_web_search_options(&kwargs(
         r#"{"web_search_options":{},"tools":[{"type":"web_search"}]}"#,
     ))
     .expect("the options construct");
-    assert_eq!(options.map(|options| options.fields), Some(IndexMap::new()));
+    assert_eq!(chosen.map(|options| options.fields), Some(IndexMap::new()));
 }
 
 #[test]
@@ -54,7 +53,7 @@ fn a_non_mapping_explicit_options_value_is_an_error(#[case] source: &str) {
 
 #[test]
 fn no_tools_key_yields_no_options() {
-    assert_eq!(get_web_search_options(&kwargs(r#"{}"#)), Ok(None));
+    assert_eq!(get_web_search_options(&kwargs("{}")), Ok(None));
 }
 
 #[rstest]
@@ -153,7 +152,7 @@ fn tools_from_kwargs_preserves_an_explicit_null() {
         tools_from_kwargs(&kwargs(r#"{"tools":null}"#), "web_search"),
         Some(&Json::Null)
     );
-    assert_eq!(tools_from_kwargs(&kwargs(r#"{}"#), "web_search"), None);
+    assert_eq!(tools_from_kwargs(&kwargs("{}"), "web_search"), None);
 }
 
 #[rstest]
@@ -173,5 +172,6 @@ fn web_search_tool_detection_follows_the_source(#[case] tool: &str, #[case] expe
 #[case::other(r#"{"type":"web_search"}"#, false)]
 #[case::null_type(r#"{"type":null}"#, false)]
 fn file_search_tool_detection_follows_the_source(#[case] tool: &str, #[case] expected: bool) {
-    assert_eq!(is_file_search_tool_call(&fields(tool)), expected);
+    let found = get_file_search_tool_call(&kwargs(&format!(r#"{{"tools":[{tool}]}}"#))).unwrap();
+    assert_eq!(found.is_some(), expected);
 }

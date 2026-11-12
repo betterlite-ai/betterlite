@@ -138,20 +138,20 @@ pub fn includes_annotation_type(
     let ToolBillingResponse::Chat(view) = response else {
         return false;
     };
-    view.choices.iter().any(|choice| {
-        choice
-            .message
-            .as_ref()
-            .and_then(|message| message.annotations.as_ref())
-            .is_some_and(|annotations| {
-                annotations.iter().any(|annotation| {
-                    matches!(
-                        annotation.annotation_type.as_ref(),
-                        Some(Json::Text(text)) if text == annotation_type.as_str()
-                    )
-                })
-            })
-    })
+    for choice in &view.choices {
+        let Some(message) = &choice.message else {
+            continue;
+        };
+        for annotation in message.annotations.iter().flatten() {
+            if matches!(
+                annotation.annotation_type.as_ref(),
+                Some(Json::Text(text)) if text == annotation_type.as_str()
+            ) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[must_use]
@@ -184,15 +184,10 @@ pub fn includes_web_search_call(response: &ToolBillingResponse) -> bool {
 
 #[must_use]
 pub fn includes_file_search_call(response: &ToolBillingResponse) -> bool {
-    match response {
-        ToolBillingResponse::Chat(_) => {
-            includes_annotation_type(response, AnnotationType::FileCitation)
-        }
-        ToolBillingResponse::Responses(_) => {
-            includes_output_type(response, OutputItemType::FileSearchCall)
-        }
-        ToolBillingResponse::Raw(_) | ToolBillingResponse::Other(_) => false,
+    if matches!(response, ToolBillingResponse::Chat(_)) {
+        return includes_annotation_type(response, AnnotationType::FileCitation);
     }
+    includes_output_type(response, OutputItemType::FileSearchCall)
 }
 
 // The raw probe always wins; a typed chat or Responses object never falls through to the supplied usage.

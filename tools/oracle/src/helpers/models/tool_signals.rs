@@ -78,8 +78,8 @@ fn response_value(response: &ToolBillingResponse) -> Result<Value, Box<HelperErr
     }))
 }
 
-fn usage_value(usage: Option<&ToolUsage>) -> Value {
-    let Some(usage) = usage else {
+fn usage_value(supplied: Option<&ToolUsage>) -> Value {
+    let Some(usage) = supplied else {
         return Value::Null;
     };
     json!({
@@ -119,11 +119,11 @@ fn int_value(value: &Json) -> Result<Value, Box<HelperError>> {
 }
 
 fn kwargs_value(kwargs: &IndexMap<String, Json>) -> Result<Value, Box<HelperError>> {
-    let options = get_web_search_options(kwargs).map_err(signal_error)?;
-    let tool = get_file_search_tool_call(kwargs).map_err(signal_error)?;
+    let web = get_web_search_options(kwargs).map_err(signal_error)?;
+    let file = get_file_search_tool_call(kwargs).map_err(signal_error)?;
     Ok(json!({
-        "web_search_options": options.map(|options| options.fields),
-        "file_search": tool.map(|tool| tool.fields),
+        "web_search_options": web.map(|options| options.fields),
+        "file_search": file.map(|tool| tool.fields),
     }))
 }
 

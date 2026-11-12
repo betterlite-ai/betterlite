@@ -55,9 +55,9 @@ fn a_tool_usage_round_trips_through_json() {
 
 #[test]
 fn absent_server_fields_take_their_defaults() {
-    let decoded: ToolUsage = serde_json::from_value(json!({
-        "cost": {"prompt_tokens": 1_i64, "completion_tokens": 2_i64, "total_tokens": 3_i64},
-    }))
+    let decoded: ToolUsage = serde_json::from_str(
+        r#"{"cost":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
+    )
     .expect("a partial usage deserializes");
     assert_eq!(decoded.cost.prompt_tokens, 1);
     assert_eq!(decoded.server_tool_use, None);
@@ -66,8 +66,7 @@ fn absent_server_fields_take_their_defaults() {
 
 #[test]
 fn an_empty_usage_takes_every_default() {
-    let decoded: ToolUsage =
-        serde_json::from_value(json!({})).expect("an empty usage deserializes");
+    let decoded: ToolUsage = serde_json::from_str("{}").expect("an empty usage deserializes");
     assert_eq!(decoded, ToolUsage::default());
 }
 
