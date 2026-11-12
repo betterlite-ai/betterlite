@@ -243,6 +243,22 @@ async fn a_panicking_job_gives_panicked() {
     );
 }
 
+fn assert_not_timed_out_yet(runs: &mut JoinSet<Result<u8, WorkError>>, tracker: &WorkTracker) {
+    assert!(
+        runs.try_join_next().is_none(),
+        "the job returned before its deadline"
+    );
+    assert_eq!(
+        tracker.stats(),
+        Stats {
+            running: 1,
+            abandoned: 0,
+            completed: 0
+        },
+        "the job must still be running and not abandoned before its deadline"
+    );
+}
+
 async fn assert_the_abandoned_job_keeps_its_slot(
     tracker: &Arc<WorkTracker>,
     host: &PythonHost,
@@ -274,7 +290,10 @@ async fn run_times_out_at_the_deadline_and_counts_the_job_abandoned() {
     let (mut runs, release_sender, started) =
         spawn_one_blocked_job(&tracker, &host, Duration::from_secs(5), 7_u8);
     wait_until_started(&started).await;
-    advance(Duration::from_secs(5)).await;
+    advance(Duration::from_millis(4999)).await;
+    yield_times(100).await;
+    assert_not_timed_out_yet(&mut runs, &tracker);
+    advance(Duration::from_millis(1)).await;
     match join_one(&mut runs).await {
         Err(WorkError::TimedOut { after }) => assert_eq!(after, Duration::from_secs(5)),
         Ok(value) => panic!("the job must not finish before its deadline, got {value}"),
@@ -309,7 +328,10 @@ async fn a_run_that_times_out_while_queued_is_not_abandoned() {
     let (mut second_runs, _second_release, _second_started) =
         spawn_one_blocked_job(&tracker, &host, Duration::from_secs(5), 2_u8);
     yield_times(10).await;
-    advance(Duration::from_secs(5)).await;
+    advance(Duration::from_millis(4999)).await;
+    yield_times(100).await;
+    assert_not_timed_out_yet(&mut second_runs, &tracker);
+    advance(Duration::from_millis(1)).await;
     match join_one(&mut second_runs).await {
         Err(WorkError::TimedOut { .. }) => {}
         Ok(value) => panic!("the queued job must not run, got {value}"),
