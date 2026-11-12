@@ -36,12 +36,12 @@ const ALWAYS_UNSUPPORTED: [&str; 8] = [
 ];
 const SAMPLING: [&str; 3] = ["logprobs", "top_logprobs", "top_p"];
 
-pub struct Mapping<'a> {
-    pub model: &'a str,
-    pub non_default_params: &'a mut Object,
-    pub optional_params: &'a mut Object,
+pub struct Mapping<'request> {
+    pub model: &'request str,
+    pub non_default_params: &'request mut Object,
+    pub optional_params: &'request mut Object,
     pub drop_params: DropParams,
-    pub catalog: &'a CatalogCapabilities,
+    pub catalog: &'request CatalogCapabilities,
 }
 
 pub async fn supported_params<C>(
@@ -94,11 +94,7 @@ where
 {
     let model = mapping.model;
     if is_model_gpt_5_search_model(model) {
-        if let Some(value) = mapping.non_default_params.remove("max_tokens") {
-            mapping
-                .optional_params
-                .insert(String::from("max_completion_tokens"), value);
-        }
+        map_max_tokens(mapping);
         copy_supported(
             mapping.non_default_params,
             mapping.optional_params,
@@ -106,34 +102,94 @@ where
         );
         return Ok(());
     }
-    let raw = match mapping.non_default_params.get("reasoning_effort") {
-        Some(value) if !value.is_null() => Some(value.clone()),
-        _ => mapping.optional_params.get("reasoning_effort").cloned(),
-    };
-    let effective = effort_level(raw.as_ref());
-    if let Some(Value::Object(fields)) = &raw {
-        if let Some(normalized) = fields.get("effort").and_then(Value::as_str) {
-            let normalized = Value::String(normalized.to_owned());
-            if mapping.non_default_params.contains_key("reasoning_effort") {
-                mapping
-                    .non_default_params
-                    .insert(String::from("reasoning_effort"), normalized.clone());
-            }
-            if mapping.optional_params.contains_key("reasoning_effort") {
-                mapping
-                    .optional_params
-                    .insert(String::from("reasoning_effort"), normalized);
-            }
-        }
-    }
+    map_regular_params(capabilities, mapping, model).await
+}
+
+async fn map_regular_params<C>(
+    capabilities: &mut C,
+    mapping: &mut Mapping<'_>,
+    model: &str,
+) -> Result<(), ReasoningError>
+where
+    C: ReasoningCapabilities,
+{
+    let raw = raw_reasoning_effort(mapping);
+    let effective = effort_level(raw.as_ref()).map(str::to_owned);
+    normalize_effort(mapping, raw.as_ref());
     let request = CapabilityRequest {
         model,
         custom_llm_provider: None,
     };
-    match effective {
+    apply_effort_guard(capabilities, &request, effective.as_deref(), mapping).await?;
+    map_max_tokens(mapping);
+    let supports_none = capabilities
+        .supports_factory(&request, NamedCapability::NoneReasoningEffort.key())
+        .await;
+    apply_sampling_guard(
+        capabilities,
+        &request,
+        effective.as_deref(),
+        supports_none,
+        mapping,
+    )
+    .await?;
+    apply_temperature_guard(
+        capabilities,
+        &request,
+        effective.as_deref(),
+        supports_none,
+        mapping,
+    )
+    .await?;
+    let supported = supported_params(capabilities, model, mapping.catalog).await;
+    copy_supported(
+        mapping.non_default_params,
+        mapping.optional_params,
+        &supported,
+    );
+    Ok(())
+}
+
+fn raw_reasoning_effort(mapping: &Mapping<'_>) -> Option<Value> {
+    match mapping.non_default_params.get("reasoning_effort") {
+        Some(value) if !value.is_null() => Some(value.clone()),
+        Some(_) | None => mapping.optional_params.get("reasoning_effort").cloned(),
+    }
+}
+
+fn normalize_effort(mapping: &mut Mapping<'_>, raw: Option<&Value>) {
+    let Some(Value::Object(fields)) = raw else {
+        return;
+    };
+    let Some(normalized) = fields.get("effort").and_then(Value::as_str) else {
+        return;
+    };
+    let normalized_value = Value::String(normalized.to_owned());
+    if mapping.non_default_params.contains_key("reasoning_effort") {
+        mapping
+            .non_default_params
+            .insert(String::from("reasoning_effort"), normalized_value.clone());
+    }
+    if mapping.optional_params.contains_key("reasoning_effort") {
+        mapping
+            .optional_params
+            .insert(String::from("reasoning_effort"), normalized_value);
+    }
+}
+
+async fn apply_effort_guard<C>(
+    capabilities: &mut C,
+    request: &CapabilityRequest<'_>,
+    effort: Option<&str>,
+    mapping: &mut Mapping<'_>,
+) -> Result<(), ReasoningError>
+where
+    C: ReasoningCapabilities,
+{
+    match effort {
         Some("xhigh") => {
             let supported = capabilities
-                .supports_factory(&request, "supports_xhigh_reasoning_effort")
+                .supports_factory(request, "supports_xhigh_reasoning_effort")
                 .await;
             if !supported {
                 drop_or_reject_effort(mapping, "xhigh")?;
@@ -142,63 +198,87 @@ where
         Some(level @ ("minimal" | "low")) => {
             let key = format!("supports_{level}_reasoning_effort");
             if capabilities
-                .is_explicitly_disabled_factory(&request, &key)
+                .is_explicitly_disabled_factory(request, &key)
                 .await
             {
                 drop_or_reject_effort(mapping, level)?;
             }
         }
-        _ => {}
+        Some(_) | None => {}
     }
+    Ok(())
+}
+
+fn map_max_tokens(mapping: &mut Mapping<'_>) {
     if let Some(value) = mapping.non_default_params.remove("max_tokens") {
         mapping
             .optional_params
             .insert(String::from("max_completion_tokens"), value);
     }
-    let supports_none = capabilities
-        .supports_factory(&request, NamedCapability::NoneReasoningEffort.key())
-        .await;
+}
+
+async fn apply_sampling_guard<C>(
+    capabilities: &mut C,
+    request: &CapabilityRequest<'_>,
+    effort: Option<&str>,
+    supports_none: bool,
+    mapping: &mut Mapping<'_>,
+) -> Result<(), ReasoningError>
+where
+    C: ReasoningCapabilities,
+{
     let has_sampling = SAMPLING
         .iter()
         .any(|param| mapping.non_default_params.contains_key(*param));
-    if supports_none && has_sampling {
-        let resolves_to_none = effort_resolves_to_none(capabilities, model, effective).await;
-        if !resolves_to_none {
-            if mapping.drop_params.global || mapping.drop_params.request {
-                for param in SAMPLING {
-                    mapping.non_default_params.remove(param);
-                }
-            } else {
-                return Err(ReasoningError::UnsupportedSampling {
-                    model: model.to_owned(),
-                    effort: effective.map(str::to_owned),
-                });
-            }
-        }
+    if !(supports_none && has_sampling) {
+        return Ok(());
     }
-    if let Some(temperature) = mapping.non_default_params.remove("temperature") {
-        if !temperature.is_null() {
-            let retained = is_temperature_one(&temperature)
-                || (supports_none && effort_resolves_to_none(capabilities, model, effective).await);
-            if retained {
-                mapping
-                    .optional_params
-                    .insert(String::from("temperature"), temperature);
-            } else if !(mapping.drop_params.global || mapping.drop_params.request) {
-                return Err(ReasoningError::UnsupportedTemperature {
-                    model: model.to_owned(),
-                    temperature,
-                });
-            }
-        }
+    if effort_resolves_to_none(capabilities, request.model, effort).await {
+        return Ok(());
     }
-    let supported = supported_params(capabilities, model, mapping.catalog).await;
-    copy_supported(
-        mapping.non_default_params,
-        mapping.optional_params,
-        &supported,
-    );
-    Ok(())
+    if mapping.drop_params.global || mapping.drop_params.request {
+        for param in SAMPLING {
+            mapping.non_default_params.remove(param);
+        }
+        return Ok(());
+    }
+    Err(ReasoningError::UnsupportedSampling {
+        model: request.model.to_owned(),
+        effort: effort.map(str::to_owned),
+    })
+}
+
+async fn apply_temperature_guard<C>(
+    capabilities: &mut C,
+    request: &CapabilityRequest<'_>,
+    effort: Option<&str>,
+    supports_none: bool,
+    mapping: &mut Mapping<'_>,
+) -> Result<(), ReasoningError>
+where
+    C: ReasoningCapabilities,
+{
+    let Some(temperature) = mapping.non_default_params.remove("temperature") else {
+        return Ok(());
+    };
+    if temperature.is_null() {
+        return Ok(());
+    }
+    if is_temperature_one(&temperature)
+        || (supports_none && effort_resolves_to_none(capabilities, request.model, effort).await)
+    {
+        mapping
+            .optional_params
+            .insert(String::from("temperature"), temperature);
+        return Ok(());
+    }
+    if mapping.drop_params.global || mapping.drop_params.request {
+        return Ok(());
+    }
+    Err(ReasoningError::UnsupportedTemperature {
+        model: request.model.to_owned(),
+        temperature,
+    })
 }
 
 fn drop_or_reject_effort(mapping: &mut Mapping<'_>, effort: &str) -> Result<(), ReasoningError> {

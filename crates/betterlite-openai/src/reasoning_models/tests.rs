@@ -1,11 +1,14 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use rstest::rstest;
 use serde_json::Value;
+use tokio::runtime::Builder;
 use tracing::Level;
 use tracing::subscriber::with_default;
 
@@ -49,41 +52,54 @@ impl Fixture {
 }
 
 impl ReasoningCapabilities for Fixture {
-    async fn supports_factory(&mut self, request: &CapabilityRequest<'_>, key: &str) -> bool {
-        let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get(key))
-            .and_then(Value::as_bool)
-            == Some(true)
-    }
-
-    async fn declared_value_factory(
+    fn supports_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
         key: &str,
-    ) -> Option<String> {
-        let entry = self.entry(request)?;
-        entry.get(key)?.as_str().map(str::to_owned)
+    ) -> impl Future<Output = bool> + Send {
+        let entry = self.entry(request);
+        ready(
+            entry
+                .and_then(|fields| fields.get(key))
+                .and_then(Value::as_bool)
+                == Some(true),
+        )
     }
 
-    async fn is_explicitly_disabled_factory(
+    fn declared_value_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
         key: &str,
-    ) -> bool {
-        let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get(key))
-            .and_then(Value::as_bool)
-            == Some(false)
+    ) -> impl Future<Output = Option<String>> + Send {
+        let entry = self.entry(request).and_then(|fields| fields.get(key));
+        ready(entry.and_then(Value::as_str).map(str::to_owned))
     }
 
-    async fn supports_response_schema(&mut self, request: &CapabilityRequest<'_>) -> bool {
+    fn is_explicitly_disabled_factory(
+        &mut self,
+        request: &CapabilityRequest<'_>,
+        key: &str,
+    ) -> impl Future<Output = bool> + Send {
         let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get("supports_response_schema"))
-            .and_then(Value::as_bool)
-            == Some(true)
+        ready(
+            entry
+                .and_then(|fields| fields.get(key))
+                .and_then(Value::as_bool)
+                == Some(false),
+        )
+    }
+
+    fn supports_response_schema(
+        &mut self,
+        request: &CapabilityRequest<'_>,
+    ) -> impl Future<Output = bool> + Send {
+        let entry = self.entry(request);
+        ready(
+            entry
+                .and_then(|fields| fields.get("supports_response_schema"))
+                .and_then(Value::as_bool)
+                == Some(true),
+        )
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
@@ -100,10 +116,17 @@ impl ProviderResolution for Resolver {
     }
 }
 
+pub(super) fn request(source: &str) -> Object {
+    let value = serde_json::from_str(source).expect("request json");
+    object(value)
+}
+
 pub(super) fn object(value: Value) -> Object {
     match value {
         Value::Object(fields) => fields,
-        _ => panic!("expected an object"),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            panic!("expected an object")
+        }
     }
 }
 
@@ -128,11 +151,11 @@ pub(super) fn global_drop() -> DropParams {
     }
 }
 
-pub(super) fn resolved_o3() -> Option<ResolvedModel> {
-    Some(ResolvedModel {
+pub(super) fn resolved_o3() -> ResolvedModel {
+    ResolvedModel {
         model: String::from("o3"),
         provider: String::from("openai"),
-    })
+    }
 }
 
 pub(super) async fn gpt5_supported(fixture: &mut Fixture, model: &str) -> Vec<&'static str> {
@@ -145,24 +168,33 @@ pub(super) enum Family {
     OSeries,
 }
 
+pub(super) struct Requests<'request> {
+    pub(super) non_default: &'request mut Object,
+    pub(super) optional: &'request mut Object,
+    pub(super) drop_params: DropParams,
+}
+
 pub(super) async fn map_probe(
     fixture: &mut Fixture,
     resolver: &mut Resolver,
     model: &str,
-    non_default_params: &mut Object,
-    optional_params: &mut Object,
-    drop_params: DropParams,
+    requests: Requests<'_>,
     family: Family,
 ) -> Result<(), ReasoningError> {
     let catalog = fixture.catalog.clone();
+    let Requests {
+        non_default,
+        optional,
+        drop_params,
+    } = requests;
     match family {
         Family::Gpt => {
             gpt_5::map_params(
                 fixture,
                 &mut GptMapping {
                     model,
-                    non_default_params,
-                    optional_params,
+                    non_default_params: non_default,
+                    optional_params: optional,
                     drop_params,
                     catalog: &catalog,
                 },
@@ -175,8 +207,8 @@ pub(super) async fn map_probe(
                 resolver,
                 &mut OSeriesMapping {
                     model,
-                    non_default_params,
-                    optional_params,
+                    non_default_params: non_default,
+                    optional_params: optional,
                     drop_params,
                     catalog: &catalog,
                 },
@@ -193,16 +225,12 @@ pub(super) async fn map_gpt5(
     optional_params: &mut Object,
     drop_params: DropParams,
 ) -> Result<(), ReasoningError> {
-    map_probe(
-        fixture,
-        &mut Resolver(None),
-        model,
-        non_default_params,
-        optional_params,
+    let requests = Requests {
+        non_default: non_default_params,
+        optional: optional_params,
         drop_params,
-        Family::Gpt,
-    )
-    .await
+    };
+    map_probe(fixture, &mut Resolver(None), model, requests, Family::Gpt).await
 }
 
 enum Case {
@@ -275,9 +303,7 @@ fn o_series_provider_fallback_is_logged_at_debug() {
             r#"{"fixture-model": {"litellm_provider": "openai", "supports_function_calling": true}}"#,
         );
         let catalog = fixture.catalog.clone();
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("runtime");
+        let runtime = Builder::new_current_thread().build().expect("runtime");
         let supported = runtime.block_on(o_series::supported_params(
             &mut fixture,
             &mut Resolver(None),
@@ -286,7 +312,7 @@ fn o_series_provider_fallback_is_logged_at_debug() {
         ));
         assert!(supported.contains(&"tools"));
     });
-    let text = std::fs::read_to_string(log.path()).expect("log text");
+    let text = fs::read_to_string(log.path()).expect("log text");
     assert!(text.contains("o-series"), "{text}");
     assert!(text.contains("openai"), "{text}");
 }

@@ -1,4 +1,5 @@
 use betterlite_models::model_capability_predicates::{CapabilityRequest, NamedCapability};
+use serde_json::Value;
 
 use super::{
     DropParams, ProviderResolution, ReasoningCapabilities, ReasoningError, copy_supported,
@@ -17,12 +18,12 @@ const ALWAYS_UNSUPPORTED: [&str; 5] = [
     "top_logprobs",
 ];
 
-pub struct Mapping<'a> {
-    pub model: &'a str,
-    pub non_default_params: &'a mut Object,
-    pub optional_params: &'a mut Object,
+pub struct Mapping<'request> {
+    pub model: &'request str,
+    pub non_default_params: &'request mut Object,
+    pub optional_params: &'request mut Object,
     pub drop_params: DropParams,
-    pub catalog: &'a CatalogCapabilities,
+    pub catalog: &'request CatalogCapabilities,
 }
 
 pub async fn supported_params<C, R>(
@@ -45,22 +46,39 @@ where
     if !params.contains(&"reasoning_effort") {
         params.push("reasoning_effort");
     }
-    let resolved = resolver.resolve_provider(model);
-    let (lookup_model, provider) = match &resolved {
-        Some(target) => (target.model.as_str(), Some(target.provider.as_str())),
-        None => {
+    let unsupported = unsupported_params(capabilities, resolver, model).await;
+    params.retain(|param| !unsupported.contains(param));
+    params
+}
+
+async fn unsupported_params<C, R>(
+    capabilities: &mut C,
+    resolver: &mut R,
+    model: &str,
+) -> Vec<&'static str>
+where
+    C: ReasoningCapabilities,
+    R: ProviderResolution,
+{
+    let mut unsupported = ALWAYS_UNSUPPORTED.to_vec();
+    let resolved_target = resolver.resolve_provider(model);
+    let lookup_model = resolved_target
+        .as_ref()
+        .map_or(model, |target| target.model.as_str());
+    let provider = resolved_target.as_ref().map_or_else(
+        || {
             tracing::debug!(
                 model,
                 "no provider could be resolved for the o-series supported parameter check, so it falls back to openai"
             );
-            (model, Some("openai"))
-        }
-    };
+            String::from("openai")
+        },
+        |target| target.provider.clone(),
+    );
     let request = CapabilityRequest {
         model: lookup_model,
-        custom_llm_provider: provider,
+        custom_llm_provider: Some(provider.as_str()),
     };
-    let mut unsupported = ALWAYS_UNSUPPORTED.to_vec();
     let function_calling = capabilities
         .supports_factory(&request, NamedCapability::FunctionCalling.key())
         .await;
@@ -76,8 +94,7 @@ where
     if !capabilities.supports_response_schema(&request).await {
         unsupported.push("response_format");
     }
-    params.retain(|param| !unsupported.contains(param));
-    params
+    unsupported
 }
 
 pub async fn map_params<C, R>(
@@ -94,19 +111,10 @@ where
             .optional_params
             .insert(String::from("max_completion_tokens"), value);
     }
-    if let Some(temperature) = mapping.non_default_params.remove("temperature") {
-        if !temperature.is_null() {
-            if is_temperature_one(&temperature) {
-                mapping
-                    .optional_params
-                    .insert(String::from("temperature"), temperature);
-            } else if !(mapping.drop_params.global || mapping.drop_params.request) {
-                return Err(ReasoningError::UnsupportedTemperature {
-                    model: mapping.model.to_owned(),
-                    temperature,
-                });
-            }
-        }
+    if let Some(temperature) = mapping.non_default_params.remove("temperature")
+        && !temperature.is_null()
+    {
+        apply_temperature(mapping, temperature)?;
     }
     let supported = supported_params(capabilities, resolver, mapping.model, mapping.catalog).await;
     copy_supported(
@@ -115,6 +123,22 @@ where
         &supported,
     );
     Ok(())
+}
+
+fn apply_temperature(mapping: &mut Mapping<'_>, temperature: Value) -> Result<(), ReasoningError> {
+    if is_temperature_one(&temperature) {
+        mapping
+            .optional_params
+            .insert(String::from("temperature"), temperature);
+        return Ok(());
+    }
+    if mapping.drop_params.global || mapping.drop_params.request {
+        return Ok(());
+    }
+    Err(ReasoningError::UnsupportedTemperature {
+        model: mapping.model.to_owned(),
+        temperature,
+    })
 }
 
 pub async fn transform_messages<C>(

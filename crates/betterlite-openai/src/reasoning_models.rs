@@ -115,25 +115,25 @@ pub fn gpt_series_version(model: &str) -> Option<(u64, u64)> {
     if major_len == 0 {
         return None;
     }
-    let (major, after_major) = rest.split_at(major_len);
-    let (minor, remainder) = match after_major.strip_prefix('.') {
-        Some(after_dot) => {
-            let minor_len = after_dot.bytes().take_while(u8::is_ascii_digit).count();
-            if minor_len == 0 {
-                ("0", after_major)
-            } else {
-                let (digits, rest) = after_dot.split_at(minor_len);
-                (digits, rest)
-            }
+    let (major_text, after_major) = rest.split_at(major_len);
+    let major = major_text.parse::<u64>().ok()?;
+    let Some(after_dot) = after_major.strip_prefix('.') else {
+        if after_major.is_empty() || after_major.starts_with('-') {
+            return Some((major, 0));
         }
-        None => ("0", after_major),
-    };
-    if !(remainder.is_empty() || remainder.starts_with('.') || remainder.starts_with('-')) {
         return None;
+    };
+    let minor_len = after_dot.bytes().take_while(u8::is_ascii_digit).count();
+    if minor_len == 0 {
+        return Some((major, 0));
     }
-    let major = major.parse::<u64>().ok()?;
-    let minor = minor.parse::<u64>().ok()?;
-    Some((major, minor))
+    let (minor_text, remainder) = after_dot.split_at(minor_len);
+    if remainder.is_empty() || remainder.starts_with('.') || remainder.starts_with('-') {
+        let minor = minor_text.parse::<u64>().ok()?;
+        return Some((major, minor));
+    }
+    // a failed minor terminator backtracks to the major, whose '.' still satisfies the lookahead
+    Some((major, 0))
 }
 
 #[must_use]
@@ -174,19 +174,19 @@ pub fn effort_level(value: Option<&Value>) -> Option<&str> {
     match value? {
         Value::String(text) => Some(text),
         Value::Object(fields) => fields.get("effort").and_then(Value::as_str),
-        _ => None,
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_) => None,
     }
 }
 
 pub(crate) fn is_temperature_one(value: &Value) -> bool {
     if let Some(number) = value.as_f64() {
-        return number == 1.0;
+        return number.to_bits() == 1.0_f64.to_bits();
     }
     false
 }
 
-pub(crate) fn copy_supported(non_default: &mut Object, optional: &mut Object, supported: &[&str]) {
-    for (name, value) in non_default.iter() {
+pub(crate) fn copy_supported(non_default: &Object, optional: &mut Object, supported: &[&str]) {
+    for (name, value) in non_default {
         if supported.contains(&name.as_str()) {
             optional.insert(name.clone(), value.clone());
         }
@@ -194,9 +194,9 @@ pub(crate) fn copy_supported(non_default: &mut Object, optional: &mut Object, su
 }
 
 #[must_use]
-pub fn catalogue_declares_default<'entry, Entries>(entries: Entries) -> bool
+pub fn catalogue_declares_default<'catalogue, Entries>(entries: Entries) -> bool
 where
-    Entries: IntoIterator<Item = &'entry str>,
+    Entries: IntoIterator<Item = &'catalogue str>,
 {
     entries.into_iter().any(|entry| {
         serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(entry)

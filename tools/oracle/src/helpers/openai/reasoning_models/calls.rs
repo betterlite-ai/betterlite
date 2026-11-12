@@ -25,7 +25,7 @@ enum Mode {
 }
 
 impl Call {
-    fn mode(&self) -> Mode {
+    const fn mode(&self) -> Mode {
         match self {
             Self::Gpt5SearchAllowlist(_) => Mode::SearchMapping,
             Self::Gpt5ChatExclusion(_) => Mode::Policy,
@@ -45,7 +45,7 @@ impl Call {
         }
     }
 
-    fn probes(&self) -> &Probes {
+    const fn probes(&self) -> &Probes {
         match self {
             Self::Gpt5SearchAllowlist(probes)
             | Self::Gpt5ChatExclusion(probes)
@@ -75,7 +75,7 @@ pub(super) async fn run(call: &Call) -> HelperResult {
     Ok(Value::Array(results))
 }
 
-fn drop_params(probe: &Probe) -> DropParams {
+const fn drop_params(probe: &Probe) -> DropParams {
     DropParams {
         global: probe.global_drop_params,
         request: probe.drop_params,
@@ -129,8 +129,8 @@ async fn gpt_mapping(probe: &Probe, search: bool) -> Value {
         Ok(()) => json!({"non_default_params": non_default, "optional_params": optional}),
         Err(error) => json!({"error": error.status_code()}),
     };
-    if let Some(supported) = supported {
-        value["supported"] = json!(supported);
+    if let (Some(supported_list), Value::Object(fields)) = (supported, &mut value) {
+        fields.insert(String::from("supported"), json!(supported_list));
     }
     value
 }
@@ -178,7 +178,7 @@ async fn o_series_supported(probe: &Probe) -> Vec<&'static str> {
 
 fn audio_value(probe: &Probe) -> Value {
     let fixture = Fixture::new(probe);
-    let catalog = fixture.catalog.clone();
+    let catalog = fixture.catalog;
     let supported = audio::supported_params(&probe.model, &catalog);
     let mut non_default = probe.requested.clone();
     let mut optional = probe.existing.clone();
@@ -199,7 +199,12 @@ fn policy(probe: &Probe) -> Value {
 fn gpt6(probe: &Probe) -> Value {
     let fixture = Fixture::new(probe);
     let mut value = version_value(probe);
-    value["policy"] = json!(select_policy(&probe.model, &fixture.catalog));
+    if let Value::Object(fields) = &mut value {
+        fields.insert(
+            String::from("policy"),
+            json!(select_policy(&probe.model, &fixture.catalog)),
+        );
+    }
     value
 }
 

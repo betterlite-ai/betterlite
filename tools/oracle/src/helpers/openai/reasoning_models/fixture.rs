@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -38,41 +39,54 @@ impl Fixture {
 }
 
 impl ReasoningCapabilities for Fixture {
-    async fn supports_factory(&mut self, request: &CapabilityRequest<'_>, key: &str) -> bool {
-        let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get(key))
-            .and_then(Value::as_bool)
-            == Some(true)
-    }
-
-    async fn declared_value_factory(
+    fn supports_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
         key: &str,
-    ) -> Option<String> {
-        let entry = self.entry(request)?;
-        entry.get(key)?.as_str().map(str::to_owned)
+    ) -> impl Future<Output = bool> + Send {
+        let entry = self.entry(request);
+        ready(
+            entry
+                .and_then(|fields| fields.get(key))
+                .and_then(Value::as_bool)
+                == Some(true),
+        )
     }
 
-    async fn is_explicitly_disabled_factory(
+    fn declared_value_factory(
         &mut self,
         request: &CapabilityRequest<'_>,
         key: &str,
-    ) -> bool {
-        let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get(key))
-            .and_then(Value::as_bool)
-            == Some(false)
+    ) -> impl Future<Output = Option<String>> + Send {
+        let entry = self.entry(request).and_then(|fields| fields.get(key));
+        ready(entry.and_then(Value::as_str).map(str::to_owned))
     }
 
-    async fn supports_response_schema(&mut self, request: &CapabilityRequest<'_>) -> bool {
+    fn is_explicitly_disabled_factory(
+        &mut self,
+        request: &CapabilityRequest<'_>,
+        key: &str,
+    ) -> impl Future<Output = bool> + Send {
         let entry = self.entry(request);
-        entry
-            .and_then(|fields| fields.get("supports_response_schema"))
-            .and_then(Value::as_bool)
-            == Some(true)
+        ready(
+            entry
+                .and_then(|fields| fields.get(key))
+                .and_then(Value::as_bool)
+                == Some(false),
+        )
+    }
+
+    fn supports_response_schema(
+        &mut self,
+        request: &CapabilityRequest<'_>,
+    ) -> impl Future<Output = bool> + Send {
+        let entry = self.entry(request);
+        ready(
+            entry
+                .and_then(|fields| fields.get("supports_response_schema"))
+                .and_then(Value::as_bool)
+                == Some(true),
+        )
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
