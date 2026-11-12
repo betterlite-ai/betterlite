@@ -45,5 +45,9 @@ rstest = "=0.27.0"
 tempfile = "3.27.0"
 tracing-subscriber.workspace = true
 
+[[test]]
+name = "cache_prefix_settings"
+path = "src/sections/gemini_cache_prefix/tests.rs"
+
 [lints]
 workspace = true
