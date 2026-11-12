@@ -94,6 +94,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "langflow_chat_reply"
+path = "fuzz_targets/langflow_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "langgraph_stream"
 path = "fuzz_targets/langgraph_stream.rs"
 test = false
