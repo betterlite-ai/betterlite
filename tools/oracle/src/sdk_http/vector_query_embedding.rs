@@ -71,7 +71,9 @@ pub(crate) async fn send(
     })
 }
 
-fn outbound_client(env: &BTreeMap<String, String>) -> Result<ProxiedClient, SdkHttpError> {
+pub(super) fn outbound_client(
+    env: &BTreeMap<String, String>,
+) -> Result<ProxiedClient, SdkHttpError> {
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
     );

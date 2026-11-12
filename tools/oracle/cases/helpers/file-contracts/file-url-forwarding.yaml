@@ -1,0 +1,13 @@
+kind: helper
+name: file-url-forwarding
+call:
+  file_contracts:
+    function: file_url_forwarding
+    api_base: https://mock.invalid/v1
+    api_key: sk-test
+    model: file-model
+    optional_params: {purpose: batch}
+    litellm_params: {custom_llm_provider: openai}
+    data: {filename: ignored}
+env: {}
+compare: {ignore: []}

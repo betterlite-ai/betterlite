@@ -1,0 +1,41 @@
+kind: helper
+name: caching-embedding-format-validation
+call:
+  b4300:
+    function: retrieve
+    call_type: aembedding
+    parameters: [model, messages]
+    args: []
+    kwargs:
+      model: text-embedding-3-small
+      input: [alpha, beta, gamma]
+    entries:
+      - input: alpha
+        record:
+          embedding: [0.5, -1.25]
+          index: 0
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 3
+          prompt_tokens_details: null
+          format_version: 2
+      - input: beta
+        record:
+          embedding: [0.5]
+          index: 1
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 1
+          prompt_tokens_details: null
+          format_version: 1
+      - input: gamma
+        record:
+          embedding: 7
+          index: 2
+          object: embedding
+          model: text-embedding-3-small
+          prompt_tokens: 1
+          prompt_tokens_details: null
+          format_version: 2
+env: {}
+compare: {ignore: []}

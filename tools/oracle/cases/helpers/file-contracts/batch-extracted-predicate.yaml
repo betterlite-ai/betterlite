@@ -1,0 +1,29 @@
+kind: helper
+name: batch-extracted-predicate
+call:
+  file_contracts:
+    function: batch_extracted_predicate
+    cases:
+      - {purpose: batch, content_type: application/jsonl, content: ""}
+      - {purpose: batch, content_type: application/json, content: ""}
+      - {purpose: batch, content_type: application/octet-stream, content: ""}
+      - {purpose: batch, content_type: application/x-ndjson, content: ""}
+      - {purpose: batch, content_type: application/x-jsonlines, content: ""}
+      - {purpose: batch, content_type: text/plain, content: ""}
+      - {purpose: batch, content_type: application/jsonl, content: null}
+      - {purpose: batch, content_type: application/json, content: null}
+      - {purpose: batch, content_type: application/octet-stream, content: null}
+      - {purpose: batch, content_type: application/x-ndjson, content: null}
+      - {purpose: batch, content_type: application/x-jsonlines, content: null}
+      - {purpose: batch, content_type: text/plain, content: null}
+      - {purpose: batch, content_type: application/jsonl}
+      - {purpose: assistants, content_type: text/plain, content: ""}
+      - {purpose: Batch, content_type: text/plain, content: ""}
+      - {purpose: null, content_type: text/plain, content: ""}
+      - {content_type: text/plain, content: ""}
+      - {purpose: batch, content_type: null, content: ""}
+      - {purpose: batch, content_type: text/csv, content: ""}
+      - {purpose: batch, content_type: TEXT/PLAIN, content: ""}
+      - {purpose: batch, content_type: "application/json;charset=utf-8", content: ""}
+env: {}
+compare: {ignore: []}

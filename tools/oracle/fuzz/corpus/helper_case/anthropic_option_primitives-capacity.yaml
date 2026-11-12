@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-option-primitives-capacity
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: model_output_capacity
+        models: [null, gpt-4o]
+        default_chat_max_tokens: 4096
+env: {DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS: '4096'}
+compare: {ignore: []}
