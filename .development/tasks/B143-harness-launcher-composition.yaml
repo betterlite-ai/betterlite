@@ -1,0 +1,306 @@
+id: B143
+title: Agent harness launcher and session endpoint wiring
+description: >-
+  Finish the agent harness by composing what its parts built. Three things are missing on main once B4846 and B4848
+  land. The three CLI providers still read the caller's gateway target instead of the session's own model endpoint,
+  so the CLI process gets the real gateway key. Nothing turns a `Harness` value into the right handler, because
+  B4848's entry points take the handler from the caller and `CLIHarnessHandler` has no public constructor. And
+  `LocalSandbox` and `DockerSandbox` are not `Clone`, while B4846's `AsyncSession<S, H, E>` needs `S: Sandbox + Clone`.
+  This task fixes all three and proves the whole path end to end with fake CLIs, a real endpoint server and a fake
+  gateway. Read these on main first and use their exact names: context.rs (`SessionContext`, its `endpoint:
+  Option<EndpointAccess>` field from B4846), session_runtime.rs (B4846: `AsyncSession`, `ServedEndpoints`,
+  `EndpointAccess { url, port, token, model }`, `SessionRuntimeError`), agent_api.rs (B4848: `SessionArgs`, `RunArgs`,
+  `ResumeArgs`, `StateInput`, `aagent_session`, `aagent_resume`, `arun_agent`, `astream_agent`, `AsyncSession::arun`,
+  `AsyncSession::astream`, `AsyncEventStream`, `AgentBuildError`, `AgentRunError`), sync_bridge.rs (B4849:
+  `SyncRuntime`), relay.rs (B4842: `SdkCalls`), cli_handler.rs (B4839), deepagents/transformation.rs (B4837:
+  `DeepAgentsHarnessConfig`) and crates/betterlite-deepagents-harness/src/handler.rs (B4840: `DeepAgentsHandler`,
+  `AgentRuntime`, `Graph`, `MissingRuntime`). If a name differs, use the one on main and say so in your report.
+
+
+  Endpoint wiring. LiteLLM's CLI configs read `ctx.endpoint` and build the URL from the sandbox, never from the
+  gateway. The B4834, B4835 and B4836 stand-ins read `SessionSettings.gateway` instead and are recorded as deviations
+  that wait for this change. Replace them as follows, and drop every `GatewayTarget` import from the provider sources.
+
+  - Claude Code (providers/claude_code.rs, transformation.py L296-L322). `transform_session_setup` takes
+  `context.endpoint` and fails with the existing `HarnessError::ClaudeCodeEndpoint` when it is `None` or its token is
+  empty. `session_env` takes the base URL and the token instead of a `GatewayTarget`: ANTHROPIC_BASE_URL is
+  `context.sandbox.host_url(endpoint.port)` as is, with no `/v1`, ANTHROPIC_AUTH_TOKEN is `endpoint.token`, and
+  ANTHROPIC_API_KEY stays the empty string.
+
+  - Codex (providers/codex/transformation.rs and provider.rs, transformation.py L218-L280). Both
+  `transform_session_setup` and `transform_turn_request` fail first with a new `HarnessError::CodexEndpoint`,
+  displayed "Codex needs the session model endpoint", when `context.endpoint` is `None`. LiteLLM checks only for a
+  missing endpoint here, not for an empty token. Setup puts `endpoint.token` under LITELLM_HARNESS_TOKEN
+  (`CODEX_TOKEN_ENV`). `provider_overrides` builds the base URL as `host_url(port)` with trailing slashes trimmed, plus
+  `/v1`, and writes it with `toml_value` as before. Delete the "stands in for" comment in provider.rs.
+
+  - OpenCode (providers/opencode/transformation.rs, transformation.py L316-L375). Setup fails with a new
+  `HarnessError::OpenCodeEndpoint`, displayed "OpenCode needs the session model endpoint", when the endpoint is `None`.
+  Only after that check comes the model: `settings.model`, else `endpoint.model`, else a new
+  `HarnessError::OpenCodeModel`, displayed "Harness.OPENCODE needs model= (a gateway model group or litellm model)".
+  The token file holds `endpoint.token`, and `baseURL` is `host_url(port)` with trailing slashes trimmed, plus `/v1`.
+  `transform_turn_request` takes the model the same way, `settings.model` or the endpoint's model when there is an
+  endpoint, and returns `OpenCodeModel` when neither is set. Setup has already failed in that case, so a session
+  never reaches it. Rewrite the "gateway stand-in" comment so it no longer mentions the gateway.
+
+  Add the three variants to `HarnessError` in errors.rs next to `ClaudeCodeEndpoint`. Then delete exactly one entry
+  from each deviation log, the one that describes the stand-in: in docs/deviations/B4834.yaml the entry that starts
+  "ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN use SessionSettings.gateway.api_base", in B4835.yaml the one that
+  starts "_provider_overrides reads SessionSettings.gateway", and in B4836.yaml the one that starts "The session config
+  uses SessionSettings.gateway.api_base". Keep every other entry. Update the provider tests that built their context
+  with a gateway (the `session_context` fixtures, `claude_code_validation_rejects_empty_endpoint_token`,
+  `opencode_setup_rejects_missing_gateway` and the Codex token and base URL asserts) so they set
+  `endpoint: Some(EndpointAccess { .. })` and expect the new URLs. Add tests named `endpoint_base_url_and_token`,
+  `endpoint_docker_host` and `endpoint_missing_fails` to each provider's tests.rs, plus `endpoint_model_fallback` and
+  `endpoint_needs_model` for OpenCode. The Docker test builds a `DockerSandbox::new(...)` without starting it and
+  expects `http://host.docker.internal:<port>` (LiteLLM's unit test asserts the same at
+  tests/unit/llms/claude_code/harness/test_transformation.py L395).
+
+
+  Shared sandbox (crates/betterlite-harness/src/sandbox/shared.rs). Implement `Sandbox for Arc<T>` where `T:
+  Sandbox`. `type Process = T::Process`, and every method forwards to the inner sandbox: `workdir`, `is_container`,
+  `exec`, `run`, `read`, `write`, `host_url`, `which`, `snapshot`, `tempdir` and `close`. `Arc<LocalSandbox>` and
+  `Arc<DockerSandbox>` are then `Clone` and fit `AsyncSession`. Tests in sandbox/shared/tests.rs: `forwards_every_method`
+  uses a recording fake with `is_container` true and its own `host_url`, and `clones_share_state` writes through one
+  `Arc<LocalSandbox>` clone and reads the file through another.
+
+
+  Launcher (crates/betterlite-harness/src/launcher.rs and launcher/). This is the Rust side of LiteLLM's
+  `get_harness_handler` (handlers/__init__.py L22-L32) on top of B4848's entry points. B4846 already owns the
+  registry functions; the launcher only builds the handler and keeps the result in one closed enum.
+
+  - `LaunchArgs<S> { harness: Harness, sandbox: S, parameters: SessionParameters, proxy: ProxySettings, directory:
+  PathBuf }` and `ResumeLaunch<S> { state: StateInput, sandbox: S, parameters: SessionParameters, proxy:
+  ProxySettings, directory: PathBuf }`, plain structs with public fields in launcher/args.rs.
+
+  - `LaunchedSession<S, D>` with the variants `ClaudeCode`, `Codex`, `OpenCode` and `DeepAgents`. The first three hold
+  `AsyncSession<S, CLIHarnessHandler<ClaudeCodeHarnessConfig>, ServedEndpoints>` and its Codex and OpenCode
+  counterparts, the last holds `AsyncSession<S, D, ServedEndpoints>`. The bounds are B4848's on `S` plus `D:
+  BaseHarnessHandler<Config = DeepAgentsHarnessConfig> + Send + 'static`. The Deep Agents handler lives in
+  betterlite-deepagents-harness, a crate that depends on this one, so the caller passes it in as `D`. Build a CLI
+  handler with a struct literal: its fields are `pub(crate)`, and every one but `config` starts as `None`.
+
+  - `LaunchedSession::open(args: LaunchArgs<S>, endpoints: ServedEndpoints, deep_agents: D) -> Result<Self,
+  AgentBuildError>` matches `args.harness`, builds the handler, and calls `aagent_session` with a `SessionArgs`. For
+  a CLI harness the `deep_agents` value is dropped unused.
+
+  - `LaunchedSession::resume(args: ResumeLaunch<S>, endpoints, deep_agents)` loads the state first, with bytes going
+  through `State::loads` and its error returned as `AgentBuildError::State`. It picks the variant from
+  `state.harness` and calls `aagent_resume` with `StateInput::State(state)`, so the bytes are parsed once.
+
+  - `LaunchedSession::run_once(args, prompt: String, endpoints, deep_agents) -> Result<RunResult, AgentRunError>`
+  calls `arun_agent`, and `stream_once` with the same arguments returns `astream_agent`'s
+  `AsyncEventStream<'static>`. These are LiteLLM's `arun_agent` (runtime.py L832-L874) and `astream_agent`
+  (L877-L919): they build with `interactive` false or true exactly as B4848 does and close the session themselves.
+
+  - Instance methods in launcher/dispatch.rs forward to the inner session with plain exhaustive matches, no macro and
+  no wildcard arm: `harness`, `session_id`, `start`, `arun`, `astream`, `history`, `cost`, `usage`, `results`, `state`,
+  `close`, `detach` and `stop`, each with the signature `AsyncSession` has on main. The launcher has no failure of its
+  own, so it returns the parts' error types and adds no error enum.
+
+
+  End-to-end tests (launcher/tests.rs with the submodules gateway, sdk and lifecycle under launcher/tests/, plus a
+  support module for fixtures). Three fake CLIs live in launcher/tests/fakes/claude.sh, codex.sh and opencode.sh. The
+  tests load them with `include_str!` and write them as `claude`, `codex` and `opencode` into a temp bin folder with
+  mode 0755. Each fake reads the prompt from stdin to the end, finds its endpoint and token the way the real CLI
+  would, and POSTs one request with curl:
+
+  - Claude Code posts to `$ANTHROPIC_BASE_URL/v1/messages` with `authorization: Bearer $ANTHROPIC_AUTH_TOKEN`.
+
+  - Codex takes the `model_providers.litellm.base_url="..."` argument, strips the quotes, and posts to
+  `<base>/responses` with the token from LITELLM_HARNESS_TOKEN.
+
+  - OpenCode reads `provider.litellm.options.baseURL` and the `{file:<path>}` apiKey from OPENCODE_CONFIG_CONTENT
+  with jq, reads the token from that file, and posts to `<baseURL>/chat/completions`.
+
+  Every fake also sends `x-litellm-tags: forged` and a body whose `model` is `cli-chosen-model`. It writes hello.txt
+  into its working folder and prints the stream lines its provider's own tests feed `transform_stream_line`, so the
+  turn yields text, a native session id and a final result. With jq it writes a record into `$FAKE_RECORD_DIR`
+  holding its argv, the URL and token it used, the HTTP status curl got, the prompt and the output of `env`. The
+  sandbox is a `LocalSandbox` in an `Arc` whose env map is built from scratch: PATH set to the fake bin folder plus
+  `/usr/local/bin:/usr/bin:/bin`, HOME set to a temp folder, and FAKE_RECORD_DIR set to a temp folder outside the
+  workdir.
+
+  The fake gateway is an axum server on `127.0.0.1:0` that records each request's path, headers and JSON body. It
+  answers 200 with `{"id": "fake", "usage": {"input_tokens": 11, "output_tokens": 7}}` and
+  `x-litellm-response-cost: 0.25`. Build `ServedEndpoints` the way its own tests on main build it for gateway mode,
+  with a recording fake `SdkCalls` that fails any call.
+
+  - gateway (runtime.py L620-L651 for the endpoint start, endpoint.py L270-L288 and L548-L560 for the forward).
+  `gateway_turn` is an rstest over the three CLI harnesses. Open a session with model `litellm_proxy/team-group`,
+  api_key `sk-gateway-key`, api_base the fake gateway, and metadata `{"team": "qa"}`, then `arun` one prompt. The
+  gateway saw exactly one request, on `/v1/messages`, `/v1/responses` or `/v1/chat/completions`, with
+  `authorization: Bearer sk-gateway-key`, `x-litellm-tags: harness,claude_code` (or `codex`, `opencode`),
+  `x-litellm-spend-logs-metadata` that parses to `{"team": "qa"}`, and body model `team-group`. The fake got status
+  200 with a token that is not the gateway key. The result has stop reason Done, one created file hello.txt, usage
+  11 in, 7 out and 1 call, and cost 0.25. `gateway_key_not_in_cli` checks every fake's recorded argv and env for the
+  string `sk-gateway-key` and finds none.
+
+  - sdk. `sdk_turn` is an rstest over the three CLI harnesses with model `anthropic/test-model`, api_key `sk-sdk`, no
+  proxy, and a recording `SdkCalls` that answers `{"usage": {"input_tokens": 3, "output_tokens": 2}}` with a hidden
+  cost of 0.5. The fake SDK saw `messages`, `responses` or `chat` once, with model `anthropic/test-model` and api_key
+  `sk-sdk`, and the gateway saw nothing. The result has usage 3, 2 and 1 and cost 0.5. `sdk_key_not_in_cli` finds no
+  `sk-sdk` in any fake's argv or env.
+
+  - lifecycle (e2e flows at tests/harness_e2e/test_harness_e2e.py L31-L150).
+    - `two_turns_resume`: two `arun` calls on one Claude Code session, where the second argv carries `--resume`
+    with the fake's session id and `results()` has two entries.
+    - `detach_resume_from_bytes`: `detach`, `State::dumps`, then `LaunchedSession::resume` with
+    `StateInput::Bytes`. It comes back as the ClaudeCode variant and its next turn resumes the same id.
+    - `resume_bad_state_fails`: bytes that are not a state fail with `AgentBuildError::State` and no fake runs.
+    - `capability_before_start`: Codex with `disable_tools: ["bash"]` fails in `open` with
+    `CapabilityUnsupported`, before any fake or gateway call (L142-L150).
+    - `stream_ends_with_done`: `astream` yields the fake's events in order and exactly one Done, as the last item.
+    - `structured_output_parsed`: an output schema with `city` and `country` yields the parsed object in
+    `result.output` (L71-L84). When its argv asks for a schema, the Claude Code fake ends with a result line that
+    carries `{"city": "Paris", "country": "France"}` in the shape the provider's structured-output test uses.
+    - `run_once_closes` and `stream_once_closes`: after the result or the last item, a TCP connect to the
+    endpoint port the fake recorded is refused.
+    - `sync_run_once`: a plain `#[test]` runs `LaunchedSession::run_once` through `SyncRuntime::run` (sync.py
+    L209-L254) and gets Done.
+    - `docker_session_builds`: `open` with an `Arc<DockerSandbox>` that is never started returns the ClaudeCode
+    variant with a session id, and `close` succeeds without any docker call.
+    - `deep_agents_injected`: `Harness::DeepAgents` with a fake `D` that sets `ctx.outcome` usage runs on the injected
+    handler. The result carries that usage, and neither the SDK fake nor the gateway sees a call.
+
+
+  Deep Agents composition. crates/betterlite-deepagents-harness/src/launch.rs holds only `#[cfg(test)] mod tests;`,
+  and the tests live in launch/tests.rs. `fake_graph_turn` launches `Harness::DeepAgents` through
+  `LaunchedSession::open` with B4840's real `DeepAgentsHandler`, an `Arc<LocalSandbox>` and a small fake
+  `AgentRuntime` whose graph streams one AI message. `arun` returns Done with that text. `missing_runtime_hint` does
+  the same with `MissingRuntime`: `start` fails with `HarnessError::InstallFailed`, and its message contains B4837's
+  `INSTALL_HINT`. These two tests prove the real handler satisfies the launcher's `D` bound.
+scope:
+  paths:
+    - crates/betterlite-harness/src/providers/claude_code.rs
+    - crates/betterlite-harness/src/providers/claude_code/tests.rs
+    - crates/betterlite-harness/src/providers/codex/transformation.rs
+    - crates/betterlite-harness/src/providers/codex/provider.rs
+    - crates/betterlite-harness/src/providers/codex/transformation/tests.rs
+    - crates/betterlite-harness/src/providers/opencode/transformation.rs
+    - crates/betterlite-harness/src/providers/opencode/transformation/tests.rs
+    - crates/betterlite-harness/src/errors.rs
+    - crates/betterlite-harness/src/sandbox/shared.rs
+    - crates/betterlite-harness/src/sandbox/shared/**
+    - crates/betterlite-harness/src/launcher.rs
+    - crates/betterlite-harness/src/launcher/**
+    - crates/betterlite-harness/Cargo.toml
+    - crates/betterlite-deepagents-harness/src/launch.rs
+    - crates/betterlite-deepagents-harness/src/launch/**
+    - crates/betterlite-deepagents-harness/Cargo.toml
+    - Cargo.lock
+    - docs/deviations/B4834.yaml
+    - docs/deviations/B4835.yaml
+    - docs/deviations/B4836.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/claude_code/harness/transformation.py#L296-L322
+    why: Claude Code session setup reads ctx.endpoint, rejects a missing or empty token, and sets ANTHROPIC_BASE_URL from host_url(port).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L218-L280
+    why: Codex endpoint checks in setup and turn request, the token env and the provider base URL with /v1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opencode/harness/transformation.py#L316-L375
+    why: OpenCode endpoint check, model fallback to endpoint.model, token file and baseURL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/local.py#L229-L230
+    why: Local host_url is http://127.0.0.1:<port>.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L229-L230
+    why: Docker host_url uses the host.docker.internal alias, the reason EndpointAccess.url is never used.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/__init__.py#L22-L32
+    why: get_harness_handler builds CLIHarnessHandler(config) for the CLI configs and DeepAgentsHandler for Deep Agents; the launcher does the same per Harness variant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L620-L651
+    why: The session opens the endpoint before launching the handler and closes it when the launch fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L789-L973
+    why: aagent_session, arun_agent, astream_agent and aagent_resume, the entry points the launcher calls per variant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L270-L288
+    why: gateway_headers drops incoming x-litellm-* and auth headers and adds the gateway key, the harness tag and the metadata header the gateway test checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L548-L560
+    why: The forward replaces the body model with the session model and posts to {api_base}/v1/{route}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sync.py#L209-L254
+    why: The sync agent runs arun_agent on the loop thread; sync_run_once does the same through SyncRuntime.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/harness_e2e/test_harness_e2e.py#L31-L150
+    why: LiteLLM's end-to-end flows (file created with cost, stream order, structured output, two turns, detach and resume, capability check before start) that the launcher tests mirror with fake CLIs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/claude_code/harness/test_transformation.py#L378-L400
+    why: The token, empty API key and Docker host URL asserts for Claude Code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/opencode/harness/test_transformation.py#L405-L435
+    why: OpenCode token file, Docker baseURL with /v1, missing endpoint and the needs model= error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/llms/opencode/harness/test_transformation.py#L700-L707
+    why: OpenCode falls back to the endpoint model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2314-L2368
+    why: The Python names (_AGENT_EXPORTS and the harness module) that betterlite's Python package does not expose yet; see deviations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/__init__.py#L1-L98
+    why: Covered re-export list with no functions; B4830 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/__init__.py#L1-L25
+    why: Covered re-export list with no functions; B4830 owns it.
+dod:
+  - text: Claude Code, Codex and OpenCode take their base URL from the sandbox's host_url of the session endpoint port and their token from the endpoint, fail with LiteLLM's messages when the endpoint or the OpenCode model is missing, and no provider source or deviation log mentions the gateway stand-in any more.
+    proof: [endpoint-wiring, stand-ins-removed]
+  - text: An Arc of any sandbox is a sandbox that forwards every method, including is_container and host_url, and its clones share one sandbox.
+    proof: [shared-sandbox]
+  - text: In gateway mode a session opened through the launcher runs each fake CLI against its own endpoint with a scoped token, and the gateway gets the gateway key, the harness tag, the metadata and the routed model, while the CLI never sees the gateway key.
+    proof: [launcher-gateway]
+  - text: In SDK mode the same CLIs reach the SDK caller with the session model and key, and the result carries the SDK usage and hidden cost.
+    proof: [launcher-sdk]
+  - text: The launcher picks the handler per harness for open, resume from bytes, one-shot run and stream, and the sync runtime. It checks capabilities and state before anything runs, closes one-shot sessions, and builds a Docker session without starting it.
+    proof: [launcher-lifecycle]
+  - text: B4840's Deep Agents handler runs a turn through the launcher with a fake graph, and fails at start with the install hint when no runtime is wired in.
+    proof: [deep-agents-launch]
+checks:
+  optional: []
+  commands:
+    - id: endpoint-wiring
+      why: The providers do not read the session endpoint yet, or the provider, CLI handler and session tests no longer pass after the change.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::.*::endpoint_/)' && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^providers::/) | test(/^cli_handler::/) | test(/^session_runtime::/)'
+    - id: stand-ins-removed
+      why: A provider source still reads SessionSettings.gateway or a deviation log still describes the stand-in.
+      run: test -z "$(grep -rl --include='*.rs' --exclude=tests.rs -e 'settings\.gateway' -e GatewayTarget crates/betterlite-harness/src/providers)" && test -z "$(grep -l 'SessionSettings\.gateway' docs/deviations/B4834.yaml docs/deviations/B4835.yaml docs/deviations/B4836.yaml)"
+    - id: shared-sandbox
+      why: The Arc sandbox is missing or drops a method.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sandbox::shared::/)'
+    - id: launcher-gateway
+      why: The gateway-mode end-to-end tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^launcher::tests::gateway::/)'
+    - id: launcher-sdk
+      why: The SDK-mode end-to-end tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^launcher::tests::sdk::/)'
+    - id: launcher-lifecycle
+      why: The open, resume, one-shot, sync, Docker and Deep Agents launcher tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^launcher::tests::lifecycle::/)'
+    - id: deep-agents-launch
+      why: The real Deep Agents handler is not shown to run through the launcher.
+      run: cargo nextest run --locked -p betterlite-deepagents-harness --no-tests=fail -E 'test(/^launch::tests::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      betterlite's Python package does not expose litellm.agent, aagent, agent_session, aagent_session, agent_resume,
+      aagent_resume, agent_capabilities, Harness or the four *Options classes, nor the litellm.harness module and the
+      harness names in litellm.sandbox. Looking one up raises AttributeError. Rust callers start a harness through
+      betterlite_harness::launcher::LaunchedSession.
+    why: >-
+      No backlog entry builds the Python binding for the harness yet, and no proxy route reaches it at the pin. The
+      planner notes for B143 ask the architect for those entries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L2314-L2368
+out_of_scope:
+  - "sync.py (_LoopThread, run_sync, EventStream, Session, _run, _stream, agent_session, agent_resume, agent) is B4849's sync_bridge; this task only runs run_once on B4849's SyncRuntime in one test."
+  - "litellm/harness/__init__.py and litellm/harness/sandbox/__init__.py hold re-exports and no functions; B4830 owns them, and the Rust crate exposes the same names through its public modules."
+  - "get_harness_config, harness_capabilities, uses_model_endpoint, validate_for and handler_kind are B4846's registry in session_runtime; this task only constructs the handler get_harness_handler returns."
+  - "The AsyncSession lifecycle is B4846, the turn loop B4847, the async entry points B4848, and the endpoint primitives, relay and endpoint server B4841, B4842 and B4843. None is rebuilt, and no endpoint route is registered again."
+  - "The production SDK callers behind LiteLlmSdk (B1134, B5656 and B932 through B4842) and reading ProxySettings from LITELLM_PROXY_API_BASE, LITELLM_PROXY_API_KEY and litellm.use_litellm_proxy belong to whoever builds LaunchArgs; the launcher takes them as values."
+  - "A production Deep Agents AgentRuntime: B4840 ships MissingRuntime only, so outside tests a Deep Agents launch fails at start with the install hint."
+  - "Starting and stopping a Docker container is B4833's DockerSandbox; the launcher test builds one without starting it."
+  - "The Python import surface named in the deviation (litellm/__init__.py _AGENT_EXPORTS and __getattr__, litellm/sandbox/__init__.py) has no owner yet; see the planner notes."
+pitfalls:
+  - Use `context.sandbox.host_url(endpoint.port)`, never `EndpointAccess.url`, because the url field is always 127.0.0.1 and a Docker sandbox needs `http://host.docker.internal:<port>`.
+  - Codex and OpenCode trim trailing slashes and append `/v1`, while ANTHROPIC_BASE_URL stays the bare host URL since the Anthropic client adds `/v1/messages` itself.
+  - Claude Code rejects an endpoint whose token is empty, Codex and OpenCode only a missing endpoint, and OpenCode checks the endpoint before the model.
+  - The trait's default `is_container` returns false, so an Arc impl that forgets to forward it makes a shared DockerSandbox look local.
+  - The one-shot `run_once` must call `arun_agent`, not `aagent_session` and `arun`, because only `arun_agent` builds with interactive false and rejects the ask permission mode without an approval callback.
+  - The harness of a resumed session comes from the state, so `resume` loads the state before it picks a variant.
+  - A record folder inside the sandbox workdir makes the fakes' records show up as created files in `RunResult.files`.
+  - The CLI handler links its resume cache under `${HOME:-/tmp}/.cache/litellm-harness`, so the sandbox HOME must be a temp folder.
+  - Build the sandbox env map from scratch, so a developer's `http_proxy` or a real ANTHROPIC_API_KEY never reaches a fake's curl.
+  - A fake that exits before reading stdin to the end makes the CLI handler's prompt write fail with a broken pipe.
+  - The forged x-litellm-tags header and the `cli-chosen-model` body model are what prove the endpoint strips and rewrites; a fake that sends neither proves nothing.
+  - The fakes are .sh files, so they pass shellcheck with every optional check and `shfmt -i 2 -sr -ci` like every shell file in the repo.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
