@@ -31,10 +31,14 @@ pub fn map_renaming_token_limit(
     supported: &[&str],
 ) {
     for (name, value) in non_default {
-        if name == "max_completion_tokens" {
-            existing.insert(String::from("max_tokens"), value.clone());
-        } else if supported.contains(&name.as_str()) {
-            existing.insert(name.clone(), value.clone());
+        match name.as_str() {
+            "max_completion_tokens" => {
+                existing.insert(String::from("max_tokens"), value.clone());
+            }
+            _ if supported.contains(&name.as_str()) => {
+                existing.insert(name.clone(), value.clone());
+            }
+            _ => {}
         }
     }
 }

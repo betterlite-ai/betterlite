@@ -68,20 +68,17 @@ pub fn map_openai_params(
 ) -> Result<(), HostedChatOptionsError> {
     for (name, value) in non_default {
         match name.as_str() {
-            "tool_choice" | "tools" => {
-                if name == "tool_choice" && matches!(value.as_str(), Some("auto" | "none")) {
-                    existing.insert(name.clone(), value.clone());
-                } else if !(drop.argument || drop.global) {
-                    return Err(HostedChatOptionsError::UnsupportedParam { name: name.clone() });
-                }
+            "tool_choice" if matches!(value.as_str(), Some("auto" | "none")) => {
+                existing.insert(name.clone(), value.clone());
+            }
+            "tool_choice" | "tools" if !(drop.argument || drop.global) => {
+                return Err(HostedChatOptionsError::UnsupportedParam { name: name.clone() });
             }
             "max_completion_tokens" => {
                 existing.insert(String::from("max_tokens"), value.clone());
             }
-            _ if SUPPORTED_PARAMS.contains(&name.as_str()) => {
-                if !value.is_null() {
-                    existing.insert(name.clone(), value.clone());
-                }
+            _ if SUPPORTED_PARAMS.contains(&name.as_str()) && !value.is_null() => {
+                existing.insert(name.clone(), value.clone());
             }
             _ => {}
         }
