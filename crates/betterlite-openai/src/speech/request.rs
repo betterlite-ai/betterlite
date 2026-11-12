@@ -46,7 +46,7 @@ pub struct SpeechOptions {
     pub speed: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
-    #[serde(skip_serializing_if = "IndexMap::is_empty")]
+    #[serde(skip_serializing)]
     pub extra_headers: IndexMap<String, String>,
 }
 
