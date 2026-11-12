@@ -22,12 +22,15 @@ pub fn check_supported_params(
     let Some(supported) = request.supported else {
         return Ok(());
     };
-    let unsupported: Vec<&String> = request
+    let unsupported: Vec<&str> = request
         .params
         .keys()
+        .map(String::as_str)
         .filter(|key| {
-            !supported.iter().any(|name| name == *key)
-                && !request.allowed.iter().any(|name| name == *key)
+            !supported
+                .iter()
+                .chain(request.allowed)
+                .any(|name| name == key)
         })
         .collect();
     if unsupported.is_empty() || request.drop_params {
@@ -36,11 +39,7 @@ pub fn check_supported_params(
     Err(ResponsesParametersError::UnsupportedParams {
         provider: request.provider.to_owned(),
         model: request.model.to_owned(),
-        params: unsupported
-            .iter()
-            .map(|name| (*name).as_str())
-            .collect::<Vec<&str>>()
-            .join(", "),
+        params: unsupported.join(", "),
     })
 }
 
@@ -65,14 +64,8 @@ where
         drop_params,
     })
     .map_err(P::Error::from)?;
-    let mapped = provider.map_params(params, model, drop_params)?;
-    let mut normalized = Params::new();
-    let stream_options = normalize_stream_options(mapped.get("stream_options"));
-    for (key, value) in mapped {
-        if key != "stream_options" {
-            normalized.insert(key, value);
-        }
-    }
+    let mut normalized = provider.map_params(params, model, drop_params)?;
+    let stream_options = normalize_stream_options(normalized.remove("stream_options").as_ref());
     if let Some(Some(include_obfuscation)) =
         stream_options.and_then(|options| options.include_obfuscation)
     {

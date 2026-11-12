@@ -74,10 +74,10 @@ fn message_at((index, item): (usize, &JsonValue)) -> Option<ClientMessage> {
 }
 
 fn user_message(text: &str) -> JsonValue {
-    let mut fields = IndexMap::with_capacity(2);
-    fields.insert("role".to_owned(), JsonValue::Text("user".to_owned()));
-    fields.insert("content".to_owned(), JsonValue::Text(text.to_owned()));
-    JsonValue::Object(fields)
+    JsonValue::Object(IndexMap::from([
+        ("role".to_owned(), JsonValue::Text("user".to_owned())),
+        ("content".to_owned(), JsonValue::Text(text.to_owned())),
+    ]))
 }
 
 #[must_use]
@@ -130,34 +130,30 @@ pub fn merge_prompt_management_input(
     let mut client = input_to_chat_messages(Some(original_input))?;
     apply_hook_mutations(&mut client, merged_input)?;
     let positions: Vec<usize> = client.iter().filter_map(|entry| entry.position).collect();
-    if positions.len() == original_items.len() {
-        return Ok(PromptMergeOutcome {
-            input: shaped_sequence(merged_input),
-            warning: None,
-        });
-    }
-    if positions.is_empty() {
-        return Ok(PromptMergeOutcome {
-            input: original_input.clone(),
-            warning: Some(PromptMergeWarning::NoInputMessages),
-        });
-    }
-    if corresponding_messages(&client, merged_input) {
-        return Ok(PromptMergeOutcome {
-            input: corresponding_input(original_items, &positions, merged_input),
-            warning: None,
-        });
-    }
-    if all_messages_preserved(client.len(), merged_input) {
-        return Ok(PromptMergeOutcome {
-            input: preserved_input(original_items, &client, merged_input)?,
-            warning: None,
-        });
-    }
-    Ok(PromptMergeOutcome {
-        input: shaped_sequence(merged_input),
-        warning: Some(PromptMergeWarning::NonMessageItemsDropped),
-    })
+    let (input, warning) = if positions.len() == original_items.len() {
+        (shaped_sequence(merged_input), None)
+    } else if positions.is_empty() {
+        (
+            original_input.clone(),
+            Some(PromptMergeWarning::NoInputMessages),
+        )
+    } else if corresponding_messages(&client, merged_input) {
+        (
+            corresponding_input(original_items, &positions, merged_input),
+            None,
+        )
+    } else if all_messages_preserved(client.len(), merged_input) {
+        (
+            preserved_input(original_items, &client, merged_input)?,
+            None,
+        )
+    } else {
+        (
+            shaped_sequence(merged_input),
+            Some(PromptMergeWarning::NonMessageItemsDropped),
+        )
+    };
+    Ok(PromptMergeOutcome { input, warning })
 }
 
 fn apply_hook_mutations(

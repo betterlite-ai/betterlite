@@ -95,22 +95,19 @@ fn convert_metadata(params: &mut Params) -> Result<(), ResponsesParametersError>
         params.remove("metadata");
         return Ok(());
     };
-    let mut visible = IndexMap::with_capacity(fields.len());
-    for (key, value) in fields {
-        visible.insert(
-            key,
-            serde_json::to_value(value)
-                .map_err(|source| ResponsesParametersError::Json { source })?,
-        );
-    }
+    let visible = fields
+        .into_iter()
+        .map(|(key, value)| serde_json::to_value(value).map(|json| (key, json)))
+        .collect::<Result<IndexMap<_, _>, _>>()
+        .map_err(|source| ResponsesParametersError::Json { source })?;
     let Some(converted) = metadata_filter_limit(Some(&visible)) else {
         params.remove("metadata");
         return Ok(());
     };
-    let mut object = IndexMap::with_capacity(converted.len());
-    for (key, value) in converted {
-        object.insert(key, JsonValue::Text(value));
-    }
+    let object = converted
+        .into_iter()
+        .map(|(key, value)| (key, JsonValue::Text(value)))
+        .collect();
     params.insert("metadata".to_owned(), JsonValue::Object(object));
     Ok(())
 }

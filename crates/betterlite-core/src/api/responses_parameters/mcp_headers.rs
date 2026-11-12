@@ -36,10 +36,8 @@ pub fn extract_mcp_headers(
         headers.server_auth_headers = Some(server_auth_headers(&parsed));
         headers.oauth2_headers = Some(oauth2_headers(&parsed));
     }
-    if let Some(tool_list) = tools {
-        for tool in tool_list {
-            merge_tool_headers(&mut headers, tool)?;
-        }
+    for tool in tools.unwrap_or_default() {
+        merge_tool_headers(&mut headers, tool)?;
     }
     Ok(headers)
 }
@@ -64,14 +62,10 @@ const fn object_fields<'value>(
     value: &'value JsonValue,
     field: &'static str,
 ) -> Result<&'value IndexMap<String, JsonValue>, ResponsesParametersError> {
-    match value {
-        JsonValue::Object(fields) => Ok(fields),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Text(_)
-        | JsonValue::Array(_) => Err(ResponsesParametersError::NotAnObject { field }),
-    }
+    let JsonValue::Object(fields) = value else {
+        return Err(ResponsesParametersError::NotAnObject { field });
+    };
+    Ok(fields)
 }
 
 fn text_map(
