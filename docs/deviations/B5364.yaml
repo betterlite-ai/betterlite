@@ -9,8 +9,8 @@ deviations:
   - what: With a retry count of 1024 or more, the wait is capped at the maximum delay. LiteLLM raises OverflowError from pow(2.0, num_retries).
     why: No working setup depends on a crash from a huge exponent, and the cap is what the box around the delay is for.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7246-L7252
-  - what: A Retry-After HTTP date is read with the RFC 2822 parser of jiff, which is stricter than email.utils.parsedate_tz. It rejects a date with no zone and a day number past the month where Python normalises it, and both give -1.
-    why: Python reads a date with no zone as local time, which would make the wait depend on the machine. A proxy gets these dates from provider responses with a zone.
+  - what: A Retry-After HTTP date is read with the RFC 2822 parser of jiff, then with the httpdate crate for the RFC 850 and asctime forms. A date with no zone in the RFC 2822 shape and a day number past the month are refused and give -1, where email.utils.parsedate_tz reads the first as local time and normalises the second. An asctime date is read as GMT where Python reads it as local time, and the two-digit year 69 of an RFC 850 date is 2069 where Python gives 1969.
+    why: A wait that depends on the machine zone is wrong for a proxy, and RFC 9110 defines these dates as GMT. A provider sends a zone or one of the three RFC 9110 forms.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
   - what: A Retry-After integer outside the i64 range gives -1, and Python-only integer spellings such as "1_0" are not read as numbers.
     why: A wait of that size is outside the 1 to 60 second window either way, and the spelling is a Python parsing habit.

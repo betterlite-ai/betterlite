@@ -106,6 +106,18 @@ fn retry_after_header_date_counts_from_the_given_now() {
     );
 }
 
+// 06 Nov 1994 08:49:37 GMT, the example of RFC 9110 for its three date forms.
+#[rstest]
+#[case::imf_fixdate("Sun, 06 Nov 1994 08:49:37 GMT")]
+#[case::rfc_850("Sunday, 06-Nov-94 08:49:37 GMT")]
+#[case::asctime("Sun Nov  6 08:49:37 1994")]
+fn retry_after_header_reads_all_three_http_date_forms(#[case] header: &str) {
+    assert_eq!(
+        retry_after_from_header(Some(header), at(784_111_777 - 30)),
+        30
+    );
+}
+
 #[rstest]
 #[case::one_second(Some("1"), 1.0_f64)]
 #[case::mid_range(Some("30"), 30.0_f64)]

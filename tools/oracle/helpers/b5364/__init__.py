@@ -71,9 +71,9 @@ class BackoffCase:
     headers: dict[str, str] | None = None
     now: int
     random: float
-    initial_retry_delay: float | None = None
-    max_retry_delay: float | None = None
-    jitter: float | None = None
+    initial_retry_delay: float = 0.5
+    max_retry_delay: float = 8.0
+    jitter: float = 0.75
 
 
 @dataclass(kw_only=True)
@@ -226,12 +226,9 @@ def seconds_answer(operation: HeaderCase) -> SecondsAnswer:
 def wait_answer(operation: BackoffCase) -> WaitAnswer:
     UTILS.time = Clock(time=partial(float, operation.now))
     UTILS.random = Dice(random=partial(float, operation.random))
-    if operation.initial_retry_delay is not None:
-        UTILS.INITIAL_RETRY_DELAY = operation.initial_retry_delay
-    if operation.max_retry_delay is not None:
-        UTILS.MAX_RETRY_DELAY = operation.max_retry_delay
-    if operation.jitter is not None:
-        UTILS.JITTER = operation.jitter
+    UTILS.INITIAL_RETRY_DELAY = operation.initial_retry_delay
+    UTILS.MAX_RETRY_DELAY = operation.max_retry_delay
+    UTILS.JITTER = operation.jitter
     headers = None if operation.headers is None else httpx.Headers(operation.headers)
     wait = litellm_utils._calculate_retry_after(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7231-L7254
         remaining_retries=operation.remaining_retries,
