@@ -1,7 +1,7 @@
 id: B5369
 milestone: M12 python
 title: The betterlite Python crate, wheel build and version
-status: in-progress
+status: done
 depends_on: [B193, B5361]
 file: tasks/B5369-python-package.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/py.typed"
 parent: B157
 split_from: B157
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1414
