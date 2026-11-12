@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from operator import is_
 from types import SimpleNamespace
@@ -13,7 +13,6 @@ from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import AliasPath, Field, Json, JsonValue, TypeAdapter
 
 JSON_VALUE: Final = TypeAdapter(JsonValue)
-CANDIDATES: Final = TypeAdapter(list[JsonValue] | None)
 UNSET: Final = partial(is_, None)
 
 
@@ -47,6 +46,11 @@ STREAM_CONFIG: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a
 
 
 @dataclass
+class Body:
+    candidates: list[JsonValue] = field(default_factory=list)
+
+
+@dataclass
 class Function:
     name: str
     arguments: Json[JsonValue]
@@ -63,43 +67,15 @@ class ToolCall:
 
 
 @dataclass
-class Audio:
-    id: str
-    data: str
-    expires_at: int
-    transcript: str
-
-
-@dataclass
-class Top:
-    token: str
-    logprob: float
-
-
-@dataclass
 class Token:
     token: str
     logprob: float
-    top_logprobs: list[Top]
+    top_logprobs: Annotated[list["Token"] | None, Field(exclude_if=UNSET)] = None
 
 
 @dataclass
 class Logprobs:
     content: list[Token] | None = None
-
-
-@dataclass
-class Message:
-    role: str | None = None
-    content: str | None = None
-    reasoning_content: str | None = None
-    thinking_blocks: JsonValue = None
-    tool_calls: list[ToolCall] | None = None
-    function_call: Function | None = None
-    images: JsonValue = None
-    audio: Audio | None = None
-    annotations: JsonValue = None
-    provider_specific_fields: JsonValue = None
 
 
 @dataclass
@@ -112,6 +88,12 @@ class Delta:
     images: JsonValue = None
     annotations: JsonValue = None
     provider_specific_fields: JsonValue = None
+
+
+@dataclass
+class Message(Delta):
+    thinking_blocks: JsonValue = None
+    audio: JsonValue = None
 
 
 @dataclass
@@ -159,6 +141,7 @@ class Response:
     ] = None
 
 
+BODY: Final = TypeAdapter(Body)
 RESPONSE: Final = TypeAdapter(Response)
 COMPLETE: Final = TypeAdapter(Complete)
 USAGE: Final = TypeAdapter(Usage)
@@ -170,20 +153,18 @@ def _inject(input_value: Input) -> None:
         uuid4=partial(fastuuid.UUID, hex=input_value["generated_id"]),
         time=partial(float, input_value["now"]),
     )
-    # LiteLLM 1.105.1 draws its synthetic tool ids and audio ids from these module attributes
     gemini.uuid = fixed  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1581
     litellm_utils.uuid = fixed  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1358
     gemini.time = fixed  # type: ignore[attr-defined,assignment]  # pyright: ignore[reportAttributeAccessIssue, reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1524
 
 
 def _complete(input_value: Input, optional_params: dict[str, JsonValue]) -> JsonValue:
-    logging = SimpleNamespace(optional_params=optional_params)
     raw = VertexGeminiConfig()._transform_google_generate_content_to_openai_model_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2412
         input_value["body"],
         ModelResponse(),
         "gemini-2.5-flash",
         cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L109
-            "gemini.LoggingClass", logging
+            "gemini.LoggingClass", SimpleNamespace(optional_params=optional_params)
         ),
         httpx.Response(200),
     )
@@ -208,12 +189,11 @@ def _streamed(input_value: Input, optional_params: dict[str, JsonValue]) -> Json
     body = input_value["body"]
     blocked = STREAM_CONFIG._check_prompt_level_content_filter(body, None)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1936
     chunk = ModelResponseStream(choices=[]) if blocked is None else blocked
-    metadata: JsonValue = None
     next_index = input_value["cumulative_tool_call_idx"]
-    candidates = CANDIDATES.validate_python(body.get("candidates"))
-    if blocked is None and candidates is not None:
+    metadata: JsonValue = None
+    if blocked is None:
         processed = STREAM_CONFIG._process_candidates(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2189
-            candidates, chunk, optional_params, next_index
+            BODY.validate_python(body).candidates, chunk, optional_params, next_index
         )
         metadata = {
             "grounding_metadata": processed[0],
@@ -222,13 +202,6 @@ def _streamed(input_value: Input, optional_params: dict[str, JsonValue]) -> Json
             "citation_metadata": processed[3],
         }
         next_index = processed[4]
-    elif blocked is None:
-        metadata = {
-            "grounding_metadata": [],
-            "url_context_metadata": [],
-            "safety_ratings": [],
-            "citation_metadata": [],
-        }
     choices = [
         JSON_VALUE.validate_json(
             STREAMED.dump_json(STREAMED.validate_json(choice.model_dump_json()), round_trip=True)

@@ -1,7 +1,5 @@
-use betterlite_models::call_helpers::finish_reason::{FinishReason, map_finish_reason};
 use betterlite_vertex::gemini_candidates::blocked::{complete_block, stream_block};
 use betterlite_vertex::gemini_candidates::candidate::{Candidate, PromptFeedback};
-use betterlite_vertex::gemini_candidates::finish::FinishReasonMapper;
 use betterlite_vertex::gemini_candidates::process::{Mode, process_candidates};
 use betterlite_vertex::gemini_metadata::extension::MetadataExtension;
 use betterlite_vertex::gemini_response_parts::projection::{CallMode, PartContext};
@@ -35,14 +33,6 @@ pub(crate) struct Input {
     body: Body,
 }
 
-struct CoreMapper;
-
-impl FinishReasonMapper for CoreMapper {
-    fn map(&self, raw: &str) -> FinishReason {
-        map_finish_reason(raw).reason
-    }
-}
-
 impl Helper for Op {
     type Input = Input;
 
@@ -67,62 +57,47 @@ impl Helper for Op {
 
 fn complete(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
     let candidates = body.candidates.as_deref().unwrap_or_default();
-    let outcome = complete_block(
+    let blocked = complete_block(
         body.prompt_feedback.as_ref(),
         candidates,
         body.usage_metadata.as_ref(),
     )
     .or_value_error()?;
-    if let Some(blocked) = outcome {
+    if let Some(found) = blocked {
         return Ok(json!({
-            "choices": [blocked.choice],
+            "choices": [found.choice],
             "usage": {
-                "prompt_tokens": blocked.usage.prompt_tokens,
-                "completion_tokens": blocked.usage.completion_tokens,
-                "total_tokens": blocked.usage.total_tokens,
-                "prompt_tokens_details": blocked.usage.prompt_tokens_details.map(|_| "present"),
-                "completion_tokens_details": blocked.usage.completion_tokens_details.map(|_| "present"),
+                "prompt_tokens": found.usage.prompt_tokens,
+                "completion_tokens": found.usage.completion_tokens,
+                "total_tokens": found.usage.total_tokens,
+                "prompt_tokens_details": found.usage.prompt_tokens_details.map(|_| "present"),
+                "completion_tokens_details": found.usage.completion_tokens_details.map(|_| "present"),
             },
             "metadata": null,
         }));
     }
-    let processed = process_candidates(
-        candidates,
-        Mode::Complete,
-        context,
-        &CoreMapper,
-        &mut || uuid,
+    let processed =
+        process_candidates(candidates, Mode::Complete, context, &mut || uuid).or_value_error()?;
+    Ok(
+        json!({"choices": processed.choices, "usage": null, "metadata": metadata(&processed.metadata)}),
     )
-    .or_value_error()?;
-    Ok(json!({
-        "choices": processed.choices,
-        "usage": null,
-        "metadata": metadata(&processed.metadata),
-    }))
 }
 
 fn streamed(body: &Body, context: PartContext, uuid: Uuid) -> HelperResult {
-    if let Some(choice) = stream_block(body.prompt_feedback.as_ref()) {
-        return Ok(json!({
-            "choices": [choice],
-            "metadata": null,
-            "next_tool_call_index": context.cumulative_tool_call_index,
-        }));
-    }
+    let block = stream_block(body.prompt_feedback.as_ref());
     let candidates = body.candidates.as_deref().unwrap_or_default();
-    let processed = process_candidates(
-        candidates,
-        Mode::Streaming,
-        context,
-        &CoreMapper,
-        &mut || uuid,
+    let Some(choice) = block else {
+        let processed = process_candidates(candidates, Mode::Streaming, context, &mut || uuid)
+            .or_value_error()?;
+        return Ok(json!({
+            "choices": processed.choices,
+            "metadata": metadata(&processed.metadata),
+            "next_tool_call_index": processed.next_tool_call_index,
+        }));
+    };
+    Ok(
+        json!({"choices": [choice], "metadata": null, "next_tool_call_index": context.cumulative_tool_call_index}),
     )
-    .or_value_error()?;
-    Ok(json!({
-        "choices": processed.choices,
-        "metadata": metadata(&processed.metadata),
-        "next_tool_call_index": processed.next_tool_call_index,
-    }))
 }
 
 fn metadata(extension: &MetadataExtension) -> Value {

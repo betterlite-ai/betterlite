@@ -7,7 +7,7 @@ use crate::gemini_candidates::choice::{
     Choice, Choices, Delta, Message, Role, SpecificFields, StreamChoice,
 };
 use crate::gemini_candidates::error::CandidatesError;
-use crate::gemini_candidates::finish::{FinishReasonMapper, check_finish_reason};
+use crate::gemini_candidates::finish::check_finish_reason;
 use crate::gemini_metadata::annotations::grounding_annotations;
 use crate::gemini_metadata::extension::{MetadataExtension, MetadataField};
 use crate::gemini_metadata::extract::extract_candidate_metadata;
@@ -27,19 +27,11 @@ pub struct Processed {
     pub next_tool_call_index: u32,
 }
 
-struct Assembled {
-    message: Message,
-    logprobs: Option<Logprobs>,
-    extension: MetadataExtension,
-    next_tool_call_index: u32,
-}
-
 // the tool call index runs on across candidates, and a candidate with neither content nor finishReason adds nothing
 pub fn process_candidates(
     candidates: &[Candidate],
     mode: Mode,
     mut context: PartContext,
-    mapper: &dyn FinishReasonMapper,
     ids: &mut dyn FnMut() -> Uuid,
 ) -> Result<Processed, CandidatesError> {
     let mut metadata = MetadataExtension::default();
@@ -49,25 +41,22 @@ pub fn process_candidates(
         if candidate.content.is_none() && candidate.finish_reason.is_none() {
             continue;
         }
-        let assembled = assemble(candidate, context, ids)?;
-        context.cumulative_tool_call_index = assembled.next_tool_call_index;
-        merge_metadata(&mut metadata, &assembled.extension);
+        let (message, logprobs) = assemble(candidate, &mut context, &mut metadata, ids)?;
         let native = candidate.finish_reason.as_deref();
-        let finish_reason = check_finish_reason(mapper, &assembled.message, native).as_str();
+        let finish_reason = check_finish_reason(&message, native).as_str();
         let index = candidate.index.unwrap_or(position);
-        let logprobs = assembled.logprobs;
         match mode {
             Mode::Complete => complete.push(Choice {
                 index,
                 finish_reason,
-                message: assembled.message,
+                message,
                 logprobs,
                 native_finish_reason: candidate.finish_reason.clone(),
             }),
             Mode::Streaming => streaming.push(StreamChoice {
                 index,
                 finish_reason,
-                delta: delta_of(assembled.message),
+                delta: delta_of(message),
                 logprobs,
             }),
         }
@@ -82,19 +71,12 @@ pub fn process_candidates(
     })
 }
 
-fn merge_metadata(total: &mut MetadataExtension, extension: &MetadataExtension) {
-    for field in MetadataField::ALL {
-        total
-            .values_mut(field)
-            .extend_from_slice(extension.values(field));
-    }
-}
-
 fn assemble(
     candidate: &Candidate,
-    context: PartContext,
+    context: &mut PartContext,
+    total: &mut MetadataExtension,
     ids: &mut dyn FnMut() -> Uuid,
-) -> Result<Assembled, CandidatesError> {
+) -> Result<(Message, Option<Logprobs>), CandidatesError> {
     let extension = extract_candidate_metadata(&Json::Object(candidate.metadata.clone()));
     let parts = candidate
         .content
@@ -104,9 +86,15 @@ fn assemble(
     let projection = project_parts(
         parts.unwrap_or_default(),
         candidate.logprobs_result.as_ref(),
-        context,
+        *context,
         ids,
     )?;
+    context.cumulative_tool_call_index = projection.next_tool_call_index;
+    for field in MetadataField::ALL {
+        total
+            .values_mut(field)
+            .extend_from_slice(extension.values(field));
+    }
     let has_parts = parts.is_some();
     let annotations = has_parts
         .then(|| grounding_annotations(&extension.grounding_metadata))
@@ -129,38 +117,29 @@ fn assemble(
         annotations,
         provider_specific_fields: has_fields.then_some(fields),
     };
-    Ok(Assembled {
-        message,
-        logprobs: projection.logprobs,
-        extension,
-        next_tool_call_index: projection.next_tool_call_index,
-    })
+    Ok((message, projection.logprobs))
 }
 
 // a streamed choice rebuilds reasoning from the thinking blocks only when the parts gave none
-fn delta_of(mut message: Message) -> Delta {
-    if message.reasoning_content.is_none()
-        && let Some(blocks) = &message.thinking_blocks
-    {
-        message.reasoning_content = thinking_text(blocks);
-    }
+fn delta_of(message: Message) -> Delta {
+    let reasoning_content = message.reasoning_content.or_else(|| {
+        let texts: Vec<&str> = message
+            .thinking_blocks
+            .iter()
+            .flatten()
+            .map(|ThinkingBlock::Thinking { thinking, .. }| thinking.as_str())
+            .filter(|text| !text.is_empty())
+            .collect();
+        (!texts.is_empty()).then(|| texts.join("\n"))
+    });
     Delta {
         role: None,
         content: message.content,
-        reasoning_content: message.reasoning_content,
+        reasoning_content,
         tool_calls: message.tool_calls,
         function_call: message.function_call,
         images: message.images.filter(|images| !images.is_empty()),
         annotations: message.annotations,
         provider_specific_fields: message.provider_specific_fields,
     }
-}
-
-fn thinking_text(blocks: &[ThinkingBlock]) -> Option<String> {
-    let texts: Vec<&str> = blocks
-        .iter()
-        .map(|ThinkingBlock::Thinking { thinking, .. }| thinking.as_str())
-        .filter(|text| !text.is_empty())
-        .collect();
-    (!texts.is_empty()).then(|| texts.join("\n"))
 }

@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_models::call_helpers::finish_reason::FinishReason;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use uuid::Uuid;
@@ -8,7 +7,6 @@ use uuid::Uuid;
 use crate::gemini_candidates::blocked::{FLAGGED_FINISH_REASONS, complete_block, stream_block};
 use crate::gemini_candidates::candidate::{Candidate, PromptFeedback};
 use crate::gemini_candidates::error::CandidatesError;
-use crate::gemini_candidates::finish::FinishReasonMapper;
 use crate::gemini_candidates::process::{Mode, Processed, process_candidates};
 use crate::gemini_response_parts::projection::{CallMode, PartContext};
 use crate::gemini_usage::error::UsageError;
@@ -18,26 +16,6 @@ const NOW: i64 = 1_700_000_000;
 const HEX: &str = "0123456789abcdef0123456789abcdef";
 const AUDIO_ID: &str = "01234567-89ab-cdef-0123-456789abcdef";
 const NULL_MESSAGE: &str = r#"{"role":"assistant","content":null,"reasoning_content":null,"thinking_blocks":null,"tool_calls":null,"function_call":null,"images":null,"audio":null,"annotations":null,"provider_specific_fields":null}"#;
-
-struct FakeMapper;
-
-impl FinishReasonMapper for FakeMapper {
-    fn map(&self, raw: &str) -> FinishReason {
-        match raw {
-            "MAX_TOKENS" => FinishReason::Length,
-            "SAFETY" => FinishReason::ContentFilter,
-            _ => FinishReason::Stop,
-        }
-    }
-}
-
-struct ConstantMapper(FinishReason);
-
-impl FinishReasonMapper for ConstantMapper {
-    fn map(&self, _raw: &str) -> FinishReason {
-        self.0
-    }
-}
 
 fn candidates(source: &str) -> Vec<Candidate> {
     serde_json::from_str(source).unwrap()
@@ -82,18 +60,13 @@ fn context(cumulative_tool_call_index: u32, call_mode: CallMode) -> PartContext 
     }
 }
 
-fn run_with(
-    source: &str,
-    mode: Mode,
-    context: PartContext,
-    mapper: &dyn FinishReasonMapper,
-) -> Processed {
+fn run_with(source: &str, mode: Mode, context: PartContext) -> Processed {
     let mut ids = || Uuid::parse_str(HEX).unwrap();
-    process_candidates(&candidates(source), mode, context, mapper, &mut ids).unwrap()
+    process_candidates(&candidates(source), mode, context, &mut ids).unwrap()
 }
 
 fn run(source: &str, mode: Mode) -> Processed {
-    run_with(source, mode, context(0, CallMode::Tools), &FakeMapper)
+    run_with(source, mode, context(0, CallMode::Tools))
 }
 
 fn pick(source: &str, mode: Mode, path: &str) -> Json {
@@ -228,20 +201,17 @@ fn finish_reason_prefers_calls_over_the_native_reason(
 }
 
 #[test]
-fn finish_reason_asks_the_injected_mapper_only_with_a_native_reason() {
-    let mapper = ConstantMapper(FinishReason::Length);
+fn finish_reason_maps_the_native_reason_only_when_there_is_one() {
     let tools = context(0, CallMode::Tools);
     let with_native = run_with(
-        r#"[{"content":{"parts":[{"text":"a"}]},"finishReason":"ANYTHING"}]"#,
+        r#"[{"content":{"parts":[{"text":"a"}]},"finishReason":"MAX_TOKENS"}]"#,
         Mode::Complete,
         tools,
-        &mapper,
     );
     let without_native = run_with(
         r#"[{"content":{"parts":[{"text":"a"}]}}]"#,
         Mode::Complete,
         tools,
-        &mapper,
     );
     assert_eq!(
         at(&rendered(&with_native.choices), "0.finish_reason"),
@@ -260,7 +230,6 @@ fn legacy_function_mode_reports_a_function_call() {
         &source,
         Mode::Complete,
         context(0, CallMode::LegacyFunction),
-        &FakeMapper,
     );
     let found = rendered(&processed.choices);
     assert_eq!(
@@ -281,12 +250,7 @@ fn tool_call_indexes_continue_across_candidates() {
         {},
         {"content":{"parts":[{"functionCall":{"name":"forecast","args":{"days":3}}}]},"finishReason":"STOP"}
     ]"#;
-    let processed = run_with(
-        source,
-        Mode::Complete,
-        context(4, CallMode::Tools),
-        &FakeMapper,
-    );
+    let processed = run_with(source, Mode::Complete, context(4, CallMode::Tools));
     assert_eq!(processed.next_tool_call_index, 6);
     let found = rendered(&processed.choices);
     assert_eq!(at(&found, "0.message.tool_calls.0.index"), expected("4"));
@@ -304,12 +268,7 @@ fn tool_call_indexes_continue_across_candidates() {
 #[test]
 fn candidates_without_calls_keep_the_incoming_tool_call_index() {
     let source = with_parts(r#"[{"text":"a"}]"#);
-    let processed = run_with(
-        &source,
-        Mode::Streaming,
-        context(7, CallMode::Tools),
-        &FakeMapper,
-    );
+    let processed = run_with(&source, Mode::Streaming, context(7, CallMode::Tools));
     assert_eq!(processed.next_tool_call_index, 7);
 }
 
