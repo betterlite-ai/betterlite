@@ -49,7 +49,7 @@ impl<'de> Deserialize<'de> for ExactValue {
     }
 }
 
-struct ValueVisitor;
+pub(super) struct ValueVisitor;
 
 // ast-grep-ignore: no-custom-serde
 impl<'de> Visitor<'de> for ValueVisitor {

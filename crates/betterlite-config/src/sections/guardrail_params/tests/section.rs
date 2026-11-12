@@ -204,3 +204,15 @@ fn section_unknown_entry_key_fails_the_load() {
     assert!(matches!(error, ConfigError::Unsupported { paths }
         if paths == ["guardrails.0.surprise"]));
 }
+
+#[test]
+fn section_litellm_params_must_be_a_mapping() {
+    let source = "guardrails:\n  - guardrail_name: safety\n    litellm_params: 5\n";
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .unwrap_err();
+    assert!(matches!(error, ConfigError::Yaml { .. }));
+    assert!(error.to_string().contains("a litellm_params mapping"));
+}

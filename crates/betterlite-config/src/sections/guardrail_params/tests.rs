@@ -5,7 +5,9 @@ use std::fmt::Debug;
 use std::num::NonZeroU64;
 
 use rstest::rstest;
-use serde::Serialize;
+use serde::de::Visitor as _;
+use serde::de::value::{BytesDeserializer, Error as ValueError};
+use serde::{Deserialize as _, Serialize};
 
 use super::Settings;
 use super::base::{BaseLitellmParams, OnSensitiveData, UnreachableFallback};
@@ -14,7 +16,7 @@ use super::decode::decode_litellm_params;
 use super::error::GuardrailParamsError;
 use super::keys::{BASE_KEYS, BOOL_KEYS, NUMBER_KEYS, PARAM_KEYS};
 use super::mode::{LitellmParamsMode, Mode, ModeTarget};
-use super::opaque::OpaqueParams;
+use super::opaque::{ExactValue, OpaqueParams, ValueVisitor};
 use super::params::LitellmParams;
 use super::records::Guardrail;
 use crate::loader::ConfigLoader;
@@ -666,6 +668,34 @@ fn secret_error_text_hides_the_bad_value(#[case] fields: &str) {
     let from_decoder = decode_litellm_params(body.as_bytes()).unwrap_err();
     let shown = format!("{from_params} {from_params:?} {from_decoder} {from_decoder:?}");
     assert!(!shown.contains("leak-"), "{shown}");
+}
+
+#[test]
+fn values_expecting_text_names_the_parameter_value() {
+    let bytes = BytesDeserializer::<ValueError>::new(b"x");
+    let error = ExactValue::deserialize(bytes).err().unwrap();
+    assert!(error.to_string().contains("a guardrail parameter value"));
+}
+
+#[test]
+fn values_read_both_null_forms_as_null() {
+    let unit = ValueVisitor.visit_unit::<ValueError>().unwrap();
+    let none = ValueVisitor.visit_none::<ValueError>().unwrap();
+    assert_eq!(unit.0, GuardrailValue::Null);
+    assert_eq!(none.0, GuardrailValue::Null);
+}
+
+#[test]
+fn debug_text_lists_the_key_names_only() {
+    let shown = format!(
+        "{:?}",
+        opaque(r#"{"token": "leak-1", "api_base": "leak-2"}"#)
+    );
+    assert_eq!(shown, r#"["api_base", "token"]"#);
+    let held = format!("{:?}", base(r#"{"custom": "leak-3"}"#).unwrap());
+    assert!(held.starts_with("BaseLitellmParams"), "{held}");
+    assert!(held.contains("custom"), "{held}");
+    assert!(!held.contains("leak-"), "{held}");
 }
 
 mod env;
