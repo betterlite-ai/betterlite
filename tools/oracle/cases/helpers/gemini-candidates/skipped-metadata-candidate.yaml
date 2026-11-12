@@ -1,0 +1,35 @@
+kind: helper
+name: gemini-candidates-skipped-metadata-candidate
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - safetyRatings:
+            - category: HARM_CATEGORY_HARASSMENT
+              probability: LOW
+          citationMetadata:
+            citations:
+              - uri: https://example.test/skipped
+          groundingMetadata:
+            groundingChunks:
+              - web:
+                  uri: https://example.test/skipped
+                  title: Skipped
+        - content:
+            parts:
+              - text: kept answer
+          finishReason: STOP
+          safetyRatings:
+            - category: HARM_CATEGORY_HATE_SPEECH
+              probability: NEGLIGIBLE
+      usageMetadata:
+        promptTokenCount: 3
+        candidatesTokenCount: 2
+        totalTokenCount: 5
+env: {}
+compare: {ignore: []}

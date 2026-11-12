@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin==1.16.0"]
+build-backend = "maturin"
+
+[project]
+name = "betterlite"
+dynamic = ["version"]
+description = "betterlite: LiteLLM's SDK and proxy with Rust inside"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+  "python-dotenv==1.2.4",
+  "typing-extensions==4.16.0",
+]
+
+[tool.maturin]
+python-source = "python"
+module-name = "betterlite._native"
