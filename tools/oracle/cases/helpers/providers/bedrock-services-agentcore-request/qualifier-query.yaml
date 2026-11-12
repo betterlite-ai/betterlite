@@ -1,0 +1,19 @@
+kind: helper
+name: qualifier-query
+call:
+  bedrock_services_agentcore_request:
+    scenario: qualifier_query
+    runs:
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime'
+        api_base: https://ignored.example/v1
+        optional_params: {}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime'
+        optional_params: {qualifier: prod}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime'
+        optional_params: {qualifier: ''}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime'
+        optional_params: {qualifier: null}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime'
+        optional_params: {qualifier: 'a b&c=d?e#f'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: claude_platform_inputs_unsupported_override
+call:
+  claude_platform_inputs:
+    unsupported_override:
+      calls:
+        - deployment: {list: [context_management]}
+          optional: {set: [cache_control, max_tokens]}
+          log_invalid: true
+        - deployment: {list: [context_management]}
+          optional: {other: not-a-list}
+          log_invalid: false
+env: {}
+compare: {ignore: []}

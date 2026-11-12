@@ -1,0 +1,6 @@
+# ANTHROPIC_AWS_BASE_URL is read directly from the process environment
+model_list:
+  - model_name: claude-platform
+    litellm_params:
+      model: bedrock/claude_platform/anthropic.claude-3
+      api_base: https://aws-external-anthropic.us-west-2.api.aws
