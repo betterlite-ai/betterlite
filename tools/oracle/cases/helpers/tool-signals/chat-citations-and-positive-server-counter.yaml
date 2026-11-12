@@ -10,7 +10,7 @@ call:
       - chat:
           choices:
             - message: {annotations: [{type: file_citation}]}
-            - {}
+            - message: null
             - message: null
             - message: {annotations: []}
           usage: null
