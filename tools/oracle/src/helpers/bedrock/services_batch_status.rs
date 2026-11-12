@@ -1,9 +1,42 @@
+use serde::Deserialize;
+
+use crate::helpers::{Helper, HelperResult};
+
+mod fixtures;
+mod operations;
+mod tests;
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub(crate) enum Input {
+    Decode {
+        now: i64,
+        status_code: u16,
+        bodies: Vec<String>,
+    },
+    RecordCounts {
+        responses: Vec<fixtures::Object>,
+    },
+    OutputUriPrediction {
+        arns: Vec<String>,
+        predictions: Vec<fixtures::Prediction>,
+    },
+    RetrieveSignedRequest {
+        credentials: fixtures::CredentialInput,
+        requests: Vec<fixtures::Retrieve>,
+    },
+    RegionAndTime {
+        arns: Vec<String>,
+        times: Vec<fixtures::TimeInput>,
+    },
+}
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("bedrock_services_batch_status")
+    fn run(input: &Self::Input) -> HelperResult {
+        operations::run(input)
     }
 }

@@ -1,0 +1,10 @@
+kind: helper
+name: langgraph-stream-ends-no-metadata
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: {"content": "only"}'

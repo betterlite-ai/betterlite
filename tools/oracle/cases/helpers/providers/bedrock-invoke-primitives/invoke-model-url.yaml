@@ -1,0 +1,56 @@
+kind: helper
+name: bedrock-invoke-primitives-invoke-model-url
+call:
+  bedrock_invoke_primitives:
+    invoke_model_url:
+      cases:
+        - model: anthropic.claude-v2
+        - model: anthropic.claude-v2
+          api_base: https://proxy.example/
+          stream: true
+          optional_params:
+            aws_bedrock_runtime_endpoint: https://configured.example
+          environment:
+            AWS_BEDROCK_RUNTIME_ENDPOINT: https://environment.example
+        - model: anthropic.claude-v2
+          optional_params:
+            aws_bedrock_runtime_endpoint: https://configured.example
+          environment:
+            AWS_BEDROCK_RUNTIME_ENDPOINT: https://environment.example
+        - model: anthropic.claude-v2
+          environment:
+            AWS_BEDROCK_RUNTIME_ENDPOINT: https://environment.example
+        - model: ai21.j2-mid-v1
+          stream: true
+        - model: custom-model
+          stream: true
+        - model: anthropic.claude-v2
+          stream: false
+        - model: arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude
+        - model: invoke/anthropic.claude-v2
+        - model: anthropic.claude-v2
+          optional_params:
+            model_id: custom/id
+        - model: arn:aws:bedrock:eu-west-1:1:model/x
+          optional_params:
+            model_id: arn:aws:bedrock:us-east-1:1:model/y
+        - model: anthropic.claude-v2
+          optional_params:
+            aws_region_name: eu-central-1
+          environment:
+            AWS_REGION_NAME: ap-south-1
+        - model: anthropic.claude-v2
+          environment:
+            AWS_REGION_NAME: ap-south-1
+            AWS_REGION: ca-central-1
+        - model: anthropic.claude-v2
+          environment:
+            AWS_REGION: ca-central-1
+        - model: anthropic.claude-v2
+          optional_params:
+            aws_region_name: US-East-1
+        - model: anthropic.claude-v2
+          optional_params:
+            aws_region_name: 5
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-option-primitives-user-id
+call:
+  anthropic_option_primitives:
+    calls:
+      - function: user_identifier_filter
+        ids: [user-123, user@example.com, "1234567"]
+env: {}
+compare: {ignore: []}

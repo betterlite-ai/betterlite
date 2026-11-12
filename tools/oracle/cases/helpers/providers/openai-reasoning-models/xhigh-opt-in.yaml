@@ -1,0 +1,14 @@
+kind: helper
+name: openai-reasoning-models-xhigh-opt-in
+call:
+  openai_reasoning_models:
+    xhigh_opt_in:
+      probes:
+      - {model: gpt-5.2, chat_models: [gpt-5.2], model_cost: {gpt-5.2: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: true, default_reasoning_effort: none}}, requested: {reasoning_effort: xhigh}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: xhigh}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: xhigh}, existing: {reasoning_effort: xhigh}, drop_params: true}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: xhigh}, existing: {reasoning_effort: xhigh}, global_drop_params: true}
+      - {model: gpt-5.2, chat_models: [gpt-5.2], model_cost: {gpt-5.2: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: true, default_reasoning_effort: none}}, requested: {reasoning_effort: {effort: xhigh}}}
+      - {model: gpt-5.1, chat_models: [gpt-5.1], model_cost: {gpt-5.1: {litellm_provider: openai, supports_tool_choice: true, supports_none_reasoning_effort: true, supports_xhigh_reasoning_effort: false, default_reasoning_effort: none}}, requested: {reasoning_effort: {effort: xhigh}}}
+env: {}
+compare: {ignore: []}

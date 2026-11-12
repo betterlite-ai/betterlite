@@ -1,0 +1,19 @@
+kind: helper
+name: google-pricing-regional-once
+call:
+  google_pricing:
+    operation: cost_per_character
+    model: gemini-1.5-pro-002
+    custom_llm_provider: vertex_ai
+    record:
+      output_cost_per_character: 0.5
+      regional_endpoint_uplift_multiplier: 1.25
+    usage:
+      prompt_tokens: 5
+      completion_tokens: 10
+    prompt_characters: null
+    completion_characters: 10
+    service_tier: priority
+    vertex_location: us-east5
+env: {}
+compare: {ignore: []}

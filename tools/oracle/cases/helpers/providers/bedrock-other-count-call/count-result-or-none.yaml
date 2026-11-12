@@ -1,0 +1,55 @@
+kind: helper
+name: count-result-or-none
+call:
+  bedrock_other_count_call:
+    count_result_or_none:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          handler: none
+          reply: {status: 200, body: '{"inputTokens": 1}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          handler: empty_object
+          reply: {status: 200, body: '{"inputTokens": 1}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 0}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": null}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 401, body: denied}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

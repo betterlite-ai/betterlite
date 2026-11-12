@@ -14,10 +14,19 @@ cargo-fuzz = true
 [dependencies]
 betterlite-config = { path = "../../betterlite-config" }
 betterlite-core = { path = ".." }
+betterlite-models = { path = "../../betterlite-models" }
+betterlite-openai = { path = "../../betterlite-openai" }
 chrono = { version = "0.4.45", default-features = false }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+
+[[bin]]
+name = "anthropic_beta_config"
+path = "fuzz_targets/anthropic_beta_config.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "budget_reset_clock"
@@ -125,8 +134,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "genai_chat_input"
+path = "fuzz_targets/genai_chat_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_pse_reply"
 path = "fuzz_targets/google_pse_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "managed_resource_ids"
+path = "fuzz_targets/managed_resource_ids.rs"
 test = false
 doc = false
 bench = false
@@ -148,6 +171,20 @@ bench = false
 [[bin]]
 name = "serper_reply"
 path = "fuzz_targets/serper_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_codex_tools"
+path = "fuzz_targets/responses_codex_tools.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response_id_codecs"
+path = "fuzz_targets/response_id_codecs.rs"
 test = false
 doc = false
 bench = false

@@ -1,7 +1,7 @@
 id: B8102
 milestone: M3 providers
 title: LangGraph chat request and response mapping
-status: todo
+status: done
 depends_on: [B004, B010, B171, B196, B2202, B2214, B2230]
 file: tasks/B8102-langgraph-chat-config.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/langgraph/chat/__init__.py"
 parent: B050
 split_from: B050
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1349

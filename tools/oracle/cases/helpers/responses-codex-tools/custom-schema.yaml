@@ -1,0 +1,28 @@
+kind: helper
+name: custom-schema
+call:
+  responses_codex_tools:
+    operation: custom_schema
+    custom_tools:
+      - type: custom
+        name: apply_patch
+        description: Apply a patch
+        format: {type: grammar, syntax: lark, definition: "start: line+\nline: /.+/"}
+        allowed_callers: [direct, code_execution]
+      - {type: custom, name: no_format, description: Plain}
+      - {type: custom, name: string_format, description: Plain, format: lark}
+      - {type: custom, name: empty_definition, description: D, format: {syntax: lark, definition: ""}}
+      - {type: custom, name: missing_definition, description: D, format: {syntax: lark}}
+      - {type: custom, name: wrong_syntax_type, description: D, format: {syntax: 3, definition: x}}
+      - {type: custom, name: missing_syntax, format: {definition: x}}
+      - {type: custom, name: null_callers, allowed_callers: null}
+      - {type: custom, name: empty_callers, allowed_callers: []}
+      - {type: custom, name: 5, description: null}
+      - {type: custom}
+      - {type: custom, name: éditeur, description: café}
+      - {type: function, name: not_custom}
+      - {name: untyped}
+      - {type: 5}
+env: {}
+compare:
+  ignore: []

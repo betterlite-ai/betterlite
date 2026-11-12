@@ -1,0 +1,14 @@
+kind: helper
+name: google-pricing-maps-seed
+call:
+  google_pricing:
+    operation: maps_grounding_cost
+    record:
+      google_maps_grounding_cost_per_query: 0.014
+    usage:
+      prompt_tokens: 2
+      completion_tokens: 0
+      prompt_tokens_details:
+        google_maps_grounding_requests: 2
+env: {}
+compare: {ignore: []}

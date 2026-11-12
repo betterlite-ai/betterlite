@@ -1,0 +1,234 @@
+kind: helper
+name: embedding-optional-params-provider-branches
+call:
+  b5363:
+    calls:
+      - model: m
+        custom_llm_provider: triton
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: triton
+        user: u
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: databricks
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: databricks
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: nvidia_nim
+        user: u
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1, extra_body: {inner: 2}, input_type: query, truncate: END}
+        force_branch: true
+        supported: [encoding_format, user, dimensions]
+        mapper:
+          supported: [encoding_format, user, dimensions]
+          mapped:
+            dimensions: 8
+            encoding_format: float
+            user: u
+            extra_body: {custom_field: 1, extra_body: {inner: 2}, input_type: query, truncate: END}
+      - model: m
+        custom_llm_provider: nvidia_nim
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format, user, dimensions]
+        mapper: {supported: [encoding_format, user, dimensions], mapped: {extra_body: {}}}
+      - model: text-embedding-004
+        custom_llm_provider: vertex_ai
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {outputDimensionality: 8}}
+      - model: text-embedding-004
+        custom_llm_provider: vertex_ai
+        dimensions: 8
+        kwargs: {input_type: RETRIEVAL_DOCUMENT}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {outputDimensionality: 8, task_type: RETRIEVAL_DOCUMENT}}
+      - model: text-embedding-004
+        custom_llm_provider: vertex_ai
+        user: u
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {}}
+      - model: text-embedding-004
+        custom_llm_provider: vertex_ai
+        encoding_format: base64
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {}}
+      - model: text-embedding-004
+        custom_llm_provider: gemini
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {outputDimensionality: 8}}
+      - model: m
+        custom_llm_provider: lm_studio
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: lm_studio
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: mistral-embed
+        custom_llm_provider: mistral
+        encoding_format: float
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format]
+        mapper: {supported: [encoding_format], mapped: {encoding_format: float}}
+      - model: mistral-embed
+        custom_llm_provider: mistral
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format]
+        mapper: {supported: [encoding_format], mapped: {}}
+      - model: jina-embeddings-v3
+        custom_llm_provider: jina_ai
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {dimensions: 8}}
+      - model: jina-embeddings-v3
+        custom_llm_provider: jina_ai
+        user: u
+        kwargs: {}
+        force_branch: true
+        supported: [dimensions]
+        mapper: {supported: [dimensions], mapped: {}}
+      - model: m
+        custom_llm_provider: sap
+        encoding_format: float
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format]
+        mapper: {supported: [encoding_format], mapped: {}}
+      - model: text-embedding-3
+        custom_llm_provider: sap
+        encoding_format: float
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: [encoding_format, dimensions]
+        mapper: {supported: [encoding_format, dimensions], mapped: {}}
+      - model: m
+        custom_llm_provider: sap
+        encoding_format: float
+        kwargs: {custom_field: 1}
+        force_branch: true
+        supported: [encoding_format]
+        mapper: {supported: [encoding_format], mapped: {}}
+      - model: m
+        custom_llm_provider: infinity
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1}
+        force_branch: true
+        supported: [encoding_format, modality, dimensions]
+        mapper: {supported: [encoding_format, modality, dimensions], mapped: {encoding_format: float, output_dimension: 8}}
+      - model: m
+        custom_llm_provider: fireworks_ai
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: fireworks_ai
+        dimensions: 8
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: sambanova
+        kwargs: {}
+        force_branch: true
+        supported: []
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: ovhcloud
+        user: u
+        encoding_format: float
+        dimensions: 8
+        kwargs: {custom_field: 1, extra_body: {inner: 2}}
+        force_branch: true
+        mapper: {supported: [], mapped: {}}
+      - model: m
+        custom_llm_provider: ollama
+        dimensions: 2
+        kwargs: {}
+        force_branch: true
+      - model: m
+        custom_llm_provider: ollama
+        user: u
+        dimensions: 2
+        kwargs: {}
+        force_branch: true
+      - model: m
+        custom_llm_provider: ollama
+        user: u
+        dimensions: 2
+        drop_params: true
+        kwargs: {}
+        force_branch: true
+      - model: m
+        custom_llm_provider: own_provider
+        kwargs: {foo: 1}
+        force_branch: true
+      - model: m
+        custom_llm_provider: own_provider
+        user: u
+        kwargs: {}
+        force_branch: true
+      - model: m
+        custom_llm_provider: own_provider
+        user: u
+        drop_params: true
+        kwargs: {foo: 1}
+        force_branch: true
+      - model: m
+        custom_llm_provider: own_provider
+        kwargs: {extra_body: {a: 1}}
+        force_branch: true
+      - model: m
+        custom_llm_provider: groq
+        user: u
+        kwargs: {custom_field: 1}
+        force_branch: true
+env:
+  AICORE_AUTH_URL: https://auth.example.test/oauth/token
+  AICORE_CLIENT_ID: id
+  AICORE_CLIENT_SECRET: secret
+  AICORE_BASE_URL: https://api.example.test
+compare: {ignore: []}

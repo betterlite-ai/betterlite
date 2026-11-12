@@ -6,16 +6,20 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
 betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 google-cloud-auth = { version = "=1.18.0", default-features = false, features = ["default-rustls-provider"] }
 google-cloud-gax = { version = "=1.15.0", default-features = false }
 http = "1.5.0"
+indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true
 regex.workspace = true
@@ -27,10 +31,12 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 thiserror.workspace = true
 tracing.workspace = true
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["rt"] }
+uuid.workspace = true
 
 [lints]
 workspace = true

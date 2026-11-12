@@ -1,0 +1,20 @@
+kind: helper
+name: langgraph-chat-request-thread-id-config
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: request
+    cases:
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {thread_id: 't-1'}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {thread_id: ''}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {thread_id: null}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {thread_id: 7}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {config: {configurable: {model: 'x'}}}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {config: {}}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {config: null}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {metadata: {run: 'r1'}}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {metadata: {}}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {metadata: null}, stream: false}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {thread_id: 't-1', config: {a: 1}, metadata: {b: 2}, assistant_id: 'custom', stream_mode: 'values'}, stream: true}
+      - {model: 'langgraph/agent', messages: [{role: user, content: hi}], options: {unknown: 'ignored', temperature: 0.5}, stream: false}
