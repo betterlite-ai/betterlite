@@ -4,8 +4,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Extra;
 use betterlite_models::decisions::Json;
-use secrecy::ExposeSecret as _;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::MultimodalEmbeddingError as Error;
 
@@ -41,20 +40,18 @@ pub fn element(caption: Option<&str>, media: &str, kind: Option<MediaKind>) -> J
         fields.insert(String::from("text"), Json::Text(text.to_owned()));
     }
     let (name, payload) = match kind {
-        Some(MediaKind::GcsVideo) => (
-            "video",
-            Json::Object(Extra::from([(
+        Some(MediaKind::GcsVideo | MediaKind::GcsImage) => {
+            let name = if matches!(kind, Some(MediaKind::GcsVideo)) {
+                "video"
+            } else {
+                "image"
+            };
+            let payload = Json::Object(Extra::from([(
                 String::from("gcsUri"),
                 Json::Text(media.to_owned()),
-            )])),
-        ),
-        Some(MediaKind::GcsImage) => (
-            "image",
-            Json::Object(Extra::from([(
-                String::from("gcsUri"),
-                Json::Text(media.to_owned()),
-            )])),
-        ),
+            )]));
+            (name, payload)
+        }
         Some(MediaKind::Base64Image) => ("image", Json::Object(base64_fields(media))),
         None => ("text", Json::Text(media.to_owned())),
     };

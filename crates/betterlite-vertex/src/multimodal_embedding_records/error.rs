@@ -33,21 +33,10 @@ pub enum MultimodalEmbeddingError {
     Field(&'static str, &'static str, usize),
     #[error("the multimodal embedding {0} overflows")]
     Overflow(&'static str),
-    #[error("the multimodal embedding {what} does not fit its integer range: {source}")]
-    IntegerRange {
-        what: &'static str,
-        #[source]
-        source: TryFromIntError,
-    },
-    #[error(
-        "the multimodal embedding {field} of prediction {index} is not a decimal number: {source}"
-    )]
-    Decimal {
-        field: &'static str,
-        index: usize,
-        #[source]
-        source: rust_decimal::Error,
-    },
+    #[error("the multimodal embedding {0} does not fit its integer range: {1}")]
+    IntegerRange(&'static str, #[source] TryFromIntError),
+    #[error("the multimodal embedding {0} of prediction {1} is not a decimal number: {2}")]
+    Decimal(&'static str, usize, #[source] rust_decimal::Error),
 }
 
 impl MultimodalEmbeddingError {
@@ -64,8 +53,8 @@ impl MultimodalEmbeddingError {
             | Self::PredictionNotObject { .. }
             | Self::Field(..)
             | Self::Overflow(_)
-            | Self::IntegerRange { .. }
-            | Self::Decimal { .. } => 500,
+            | Self::IntegerRange(..)
+            | Self::Decimal(..) => 500,
         }
     }
 }

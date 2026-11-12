@@ -73,10 +73,8 @@ fn records(predictions: &[Json]) -> Result<Vec<EmbeddingRecord>, Error> {
         if fields.is_empty() {
             continue;
         }
-        let record_index = u32::try_from(index).map_err(|source| Error::IntegerRange {
-            what: "index",
-            source,
-        })?;
+        let record_index =
+            u32::try_from(index).map_err(|source| Error::IntegerRange("index", source))?;
         if let Some(vector) = fields.get("textEmbedding") {
             records.push(record(vector, record_index, "textEmbedding", index)?);
             continue;

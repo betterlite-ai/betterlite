@@ -64,10 +64,7 @@ fn count_characters(text: &str) -> Result<u64, Error> {
             !matches!(*character, '\u{1c}'..='\u{1f}') && !character.is_whitespace()
         })
         .count();
-    u64::try_from(count).map_err(|source| Error::IntegerRange {
-        what: "character count",
-        source,
-    })
+    u64::try_from(count).map_err(|source| Error::IntegerRange("character count", source))
 }
 
 fn video_length(predictions: &[Json]) -> Result<Decimal, Error> {
@@ -112,11 +109,7 @@ fn duration(value: Option<&Json>, field: &'static str, index: usize) -> Result<D
     let parsed = if text.contains(['e', 'E']) {
         Decimal::from_scientific(&text)
     } else {
-        text.parse::<Decimal>()
+        text.parse()
     };
-    parsed.map_err(|source| Error::Decimal {
-        field,
-        index,
-        source,
-    })
+    parsed.map_err(|source| Error::Decimal(field, index, source))
 }
