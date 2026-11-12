@@ -77,7 +77,7 @@ pub fn assemble_complete_response(
     let model = served_model_name(body.model_version.as_ref())
         .unwrap_or(request.model)
         .to_owned();
-    let id = format!("{CHAT_COMPLETION_ID_PREFIX}{}", ids());
+    let generated_id = format!("{CHAT_COMPLETION_ID_PREFIX}{}", ids());
     if let Some(blocked) = complete_block(
         body.prompt_feedback.as_ref(),
         body.candidates.as_deref().unwrap_or_default(),
@@ -85,7 +85,7 @@ pub fn assemble_complete_response(
     )? {
         // the blocked reply keeps the served model, the generated id and the raw counters only
         return Ok(CompleteResponse {
-            id,
+            id: generated_id,
             model,
             choices: Choices::Complete(vec![blocked.choice]),
             usage: blocked.usage,
@@ -95,6 +95,12 @@ pub fn assemble_complete_response(
         });
     }
     let (choices, usage, metadata) = project_ordinary(body, request, ids)?;
+    let id = body
+        .response_id
+        .as_deref()
+        .filter(|response_id| !response_id.is_empty())
+        .map(str::to_owned)
+        .unwrap_or(generated_id);
     Ok(CompleteResponse {
         id,
         model,
