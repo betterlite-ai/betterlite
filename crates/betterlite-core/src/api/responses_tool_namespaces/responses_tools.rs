@@ -52,17 +52,12 @@ fn tool_extras(tool: &Fields) -> ToolExtras {
     }
 }
 
-fn function_chat_tool(tool: &Fields) -> Result<ChatFunctionTool, NamespaceToolsError> {
-    let function = ChatFunction {
+fn chat_function(tool: &Fields) -> Result<ChatFunction, NamespaceToolsError> {
+    Ok(ChatFunction {
         name: text_field(tool, "name")?.to_owned(),
         description: text_field(tool, "description")?.to_owned(),
         parameters: schema_parameters(tool.get("parameters"))?,
         strict: present_value(tool, "strict").unwrap_or(Json::Bool(false)),
-    };
-    Ok(ChatFunctionTool {
-        kind: "function",
-        function,
-        extras: tool_extras(tool),
     })
 }
 
@@ -83,8 +78,13 @@ fn convert_tool(tool: &Fields, conversion: &mut ChatConversion) -> Result<(), Na
             conversion.web_search_options = Some(web_search_options(tool));
         }
         "function" => {
-            let function = function_chat_tool(tool)?;
-            conversion.chat_tools.push(ChatTool::Function(Box::new(function)));
+            conversion
+                .chat_tools
+                .push(ChatTool::Function(Box::new(ChatFunctionTool {
+                    kind: "function",
+                    function: chat_function(tool)?,
+                    extras: tool_extras(tool),
+                })));
         }
         "namespace" => conversion.chat_tools.extend(namespace_chat_tools(tool)?),
         "custom" => conversion
