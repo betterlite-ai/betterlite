@@ -1,0 +1,31 @@
+kind: helper
+name: gemini-candidates-explicit-index
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - content:
+            parts:
+              - text: supplied index
+          finishReason: MAX_TOKENS
+          index: 5
+        - safetyRatings: []
+        - content:
+            parts:
+              - text: counted position
+          finishReason: STOP
+        - content:
+            parts:
+              - text: index zero
+          index: 0
+      usageMetadata:
+        promptTokenCount: 1
+        candidatesTokenCount: 3
+        totalTokenCount: 4
+env: {}
+compare: {ignore: []}

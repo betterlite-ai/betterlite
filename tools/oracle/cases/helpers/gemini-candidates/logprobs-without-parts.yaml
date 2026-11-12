@@ -1,0 +1,25 @@
+kind: helper
+name: gemini-candidates-logprobs-without-parts
+call:
+  gemini_candidates:
+    streaming: false
+    legacy_function: false
+    cumulative_tool_call_idx: 0
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      candidates:
+        - finishReason: STOP
+          logprobsResult:
+            chosenCandidates:
+              - {token: alpha, tokenId: 1, logProbability: -0.5}
+            topCandidates:
+              - candidates:
+                  - {token: alpha, tokenId: 1, logProbability: -0.5}
+                  - {token: delta, tokenId: 4, logProbability: -0.9}
+      usageMetadata:
+        promptTokenCount: 1
+        candidatesTokenCount: 1
+        totalTokenCount: 2
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,7 @@
+extend = "../../ruff.toml"
+src = ["python"]
+
+[lint.per-file-ignores]
+"python/betterlite/__init__.py" = ["F403"] # each later task fills a module that this file star-imports
+"python/betterlite/*.pyi" = ["F403"] # _native.pyi star-imports one stub per native family
+"tests/*" = ["INP001", "S101"] # pytest finds test_package.py by path and checks with assert
