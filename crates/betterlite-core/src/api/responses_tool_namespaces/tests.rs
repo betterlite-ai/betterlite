@@ -605,6 +605,18 @@ fn hosted_search_output(#[case] fields: String, #[case] keys: &str) {
 }
 
 #[test]
+fn hosted_search_output_keeps_unknown_fields_at_every_level() {
+    let search = r#"{"id":"ws_c","type":"web_search_call","status":"completed","provider_note":"kept","action":{"type":"search","query":"q","action_note":"kept","sources":[{"type":"url","url":"u","source_note":"kept"}]}}"#;
+    let find = r#"{"id":"ws_f","type":"web_search_call","status":"completed","action":{"type":"find_in_page","pattern":"p","url":"u","find_note":"kept"}}"#;
+    let open = r#"{"id":"ws_o","type":"web_search_call","status":"completed","action":{"type":"open_page","url":"u","open_note":"kept"}}"#;
+    let fields = format!(r#"{{"web_search_calls":[{search},{find},{open}]}}"#);
+    let calls = calls_by_id(&[search_choice(&fields)]);
+    assert_eq!(serialized(&calls["c"]), parse(search));
+    assert_eq!(serialized(&calls["f"]), parse(find));
+    assert_eq!(serialized(&calls["o"]), parse(open));
+}
+
+#[test]
 fn hosted_search_output_later_entries_overwrite_earlier_ones() {
     let first = format!(r#"{{"web_search_calls":[{SEARCH}]}}"#);
     let second = r#"{"web_search_calls":{"k":{"id":"c","action":{"type":"search","query":"later"},"status":"failed","type":"web_search_call"}}}"#;

@@ -48,6 +48,25 @@ call:
               action: {type: search, query: listed}
         tool_calls:
           - {id: unprefixed_call, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+      - provider_specific_fields:
+          web_search_calls:
+            - id: ws_call_extra
+              type: web_search_call
+              status: completed
+              provider_note: kept
+              action:
+                type: search
+                query: extras
+                action_note: kept
+                sources:
+                  - {type: url, url: "https://example.com/d", source_note: kept}
+            - id: ws_call_extra_open
+              type: web_search_call
+              status: completed
+              action: {type: open_page, url: "https://example.com/e", open_note: kept}
+        tool_calls:
+          - {id: call_extra, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
+          - {id: call_extra_open, type: function, name: web_search, arguments: '{}', status: null, tool_fields: null, function_fields: null}
       - provider_specific_fields: {web_search_calls: text}
         tool_calls: []
       - provider_specific_fields: {other: 1}
