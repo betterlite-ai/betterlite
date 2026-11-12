@@ -1,7 +1,7 @@
 id: B678
 milestone: M3 providers
 title: Bedrock operation dispatcher foundation
-status: in-progress
+status: done
 depends_on: [B171, B591, B598, B010]
 file: tasks/B678-bedrock-dispatch-contract.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/bedrock/common_utils.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1384
