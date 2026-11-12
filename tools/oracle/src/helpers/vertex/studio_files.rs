@@ -8,9 +8,7 @@ use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
 use betterlite_vertex::studio_files::RequestParams;
 use betterlite_vertex::studio_files::metadata::{MetadataShape, decode_studio_file_metadata};
 use betterlite_vertex::studio_files::plan::create_file_plan;
-use betterlite_vertex::studio_files::urls::{
-    FileTarget, decode_delete_response, delete_target, retrieve_target,
-};
+use betterlite_vertex::studio_files::urls::{FileTarget, decode_delete_response, target};
 use jiff::tz::TimeZone;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -100,7 +98,13 @@ fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
             api_key,
             api_base,
             environment,
-        } => target_views(file_ids, api_key, api_base, environment, *delete),
+        } => target_views(
+            file_ids,
+            api_key.as_deref(),
+            api_base.as_deref(),
+            environment,
+            *delete,
+        ),
         Call::DeleteReply { replies } => delete_views(replies),
     }
 }
@@ -135,25 +139,20 @@ fn reply_views(
 
 fn target_views(
     file_ids: &[String],
-    api_key: Option<&String>,
-    api_base: Option<&String>,
+    api_key: Option<&str>,
+    api_base: Option<&str>,
     environment: &BTreeMap<String, String>,
     delete: bool,
 ) -> Result<Value, Box<HelperError>> {
     let settings = settings(environment);
     let params = RequestParams {
         api_key: api_key.map(SecretString::from),
-        api_base: api_base.cloned(),
+        api_base: api_base.map(str::to_owned),
     };
     let mut targets = Vec::with_capacity(file_ids.len());
     for file_id in file_ids {
-        let target = if delete {
-            delete_target(file_id, &params, &settings)
-        } else {
-            retrieve_target(file_id, &params, &settings)
-        }
-        .or_value_error()?;
-        targets.push(target_view(&target));
+        let found = target(file_id, &params, &settings, !delete).or_value_error()?;
+        targets.push(target_view(&found));
     }
     Ok(json!({ "targets": targets }))
 }

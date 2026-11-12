@@ -18,7 +18,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::error::StudioFilesError;
 use super::metadata::{METADATA_BODY_LIMIT, MetadataShape, decode_studio_file_metadata};
 use super::plan::{complete_upload_url, create_file_plan, validate_environment};
-use super::urls::{decode_delete_response, delete_target, normalize_file_id, retrieve_target};
+use super::urls::{decode_delete_response, normalize_file_id, target};
 use super::{RequestParams, SUPPORTED_OPENAI_PARAMS};
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::studio_identity::Headers;
@@ -142,14 +142,13 @@ fn validate_environment_requires_a_key(
     #[case] environment: Option<&str>,
 ) {
     let caller = BTreeMap::new();
-    assert!(matches!(
-        validate_environment(
-            &caller,
-            explicit.map(secret).as_ref(),
-            &settings(environment, None)
-        ),
-        Err(StudioFilesError::MissingSettingsKey)
-    ));
+    let failure = validate_environment(
+        &caller,
+        explicit.map(secret).as_ref(),
+        &settings(environment, None),
+    )
+    .expect_err("no key resolves");
+    assert!(matches!(failure, StudioFilesError::MissingSettingsKey));
 }
 
 #[rstest]
@@ -396,10 +395,11 @@ fn normalize_file_id_rejects_unusable_ids(#[case] input: &str) {
 
 #[test]
 fn retrieve_target_trims_the_base_and_ignores_the_id_host() {
-    let target = retrieve_target(
+    let target = target(
         "https://foreign.example/v1beta/files/abc123",
         &params(None, Some("https://studio.example///")),
         &settings(Some("env-key"), None),
+        true,
     )
     .expect("the target builds");
     assert_eq!(target.url, "https://studio.example/v1beta/files/abc123");
@@ -408,10 +408,11 @@ fn retrieve_target_trims_the_base_and_ignores_the_id_host() {
 
 #[test]
 fn retrieve_target_uses_the_default_base_and_params_key() {
-    let target = retrieve_target(
+    let target = target(
         "files/abc",
         &params(Some("params-key"), None),
         &settings(None, None),
+        false,
     )
     .expect("the target builds");
     assert_eq!(
@@ -424,17 +425,23 @@ fn retrieve_target_uses_the_default_base_and_params_key() {
 #[test]
 fn retrieve_target_requires_a_key() {
     assert!(matches!(
-        retrieve_target("files/abc", &params(None, None), &settings(Some(""), None)),
+        target(
+            "files/abc",
+            &params(None, None),
+            &settings(Some(""), None),
+            false
+        ),
         Err(StudioFilesError::MissingApiKey)
     ));
 }
 
 #[test]
 fn delete_target_keeps_the_base_as_the_helper_returns_it() {
-    let target = delete_target(
+    let target = target(
         "/files/abc/",
         &params(Some("params-key"), Some("https://studio.example///")),
         &settings(None, None),
+        false,
     )
     .expect("the target builds");
     assert_eq!(target.url, "https://studio.example////v1beta/files/abc");
@@ -444,7 +451,12 @@ fn delete_target_keeps_the_base_as_the_helper_returns_it() {
 #[test]
 fn delete_target_requires_a_key() {
     assert!(matches!(
-        delete_target("files/abc", &params(None, None), &settings(None, None)),
+        target(
+            "files/abc",
+            &params(None, None),
+            &settings(None, None),
+            true
+        ),
         Err(StudioFilesError::MissingApiKey)
     ));
 }

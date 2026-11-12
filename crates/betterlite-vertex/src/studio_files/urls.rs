@@ -55,28 +55,20 @@ fn without_params(path: &str) -> &str {
     path.get(..keep).unwrap_or(path)
 }
 
-pub fn retrieve_target(
+// Only retrieve trims the resolved base; delete keeps it as the base helper returns it.
+pub fn target(
     file_id: &str,
     params: &RequestParams,
     settings: &Settings,
+    trim_base: bool,
 ) -> Result<FileTarget, StudioFilesError> {
     require_key(params, settings)?;
-    let base = resolve_base(params.api_base.as_deref(), settings);
-    let normalized = normalize_file_id(file_id)?;
-    Ok(FileTarget {
-        url: format!("{}/{API_VERSION}/{normalized}", base.trim_end_matches('/')),
-        query: Vec::new(),
-    })
-}
-
-// The delete path keeps the base helper's result untouched, trailing slashes included.
-pub fn delete_target(
-    file_id: &str,
-    params: &RequestParams,
-    settings: &Settings,
-) -> Result<FileTarget, StudioFilesError> {
-    require_key(params, settings)?;
-    let base = resolve_base(params.api_base.as_deref(), settings);
+    let resolved = resolve_base(params.api_base.as_deref(), settings);
+    let base = if trim_base {
+        resolved.trim_end_matches('/')
+    } else {
+        resolved.as_str()
+    };
     let normalized = normalize_file_id(file_id)?;
     Ok(FileTarget {
         url: format!("{base}/{API_VERSION}/{normalized}"),

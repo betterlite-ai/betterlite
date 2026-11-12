@@ -65,32 +65,49 @@ pub fn decode_studio_file_metadata(
             limit: METADATA_BODY_LIMIT,
         });
     }
-    match shape {
-        MetadataShape::Create => decode_create(bytes, local),
-        MetadataShape::Retrieve => decode_retrieve(bytes, local),
-    }
+    let fields = match shape {
+        MetadataShape::Create => create_fields(bytes, local)?,
+        MetadataShape::Retrieve => retrieve_fields(bytes, local)?,
+    };
+    Ok(FileObject {
+        id: fields.id,
+        bytes: fields.bytes,
+        created_at: fields.created_at,
+        filename: fields.filename,
+        object: FileKind::File,
+        purpose: FilesPurpose::UserData,
+        status: Some(fields.status),
+        expires_at: None,
+        status_details: fields.status_details,
+    })
+}
+
+struct Fields {
+    id: String,
+    bytes: i64,
+    created_at: i64,
+    filename: String,
+    status: FileStatus,
+    status_details: Option<String>,
 }
 
 // A create reply wraps the record in `{"file": ...}` and requires every field the OpenAI object needs.
-fn decode_create(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
+fn create_fields(bytes: &[u8], local: &LocalTimeContext) -> Result<Fields, StudioFilesError> {
     let envelope: CreateEnvelope =
         serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
     let metadata = envelope.file;
-    Ok(FileObject {
+    Ok(Fields {
         id: metadata.uri,
         bytes: size_bytes(&metadata.size_bytes)?,
         created_at: decode_created_at(&metadata.create_time, local)?,
         filename: metadata.display_name,
-        object: FileKind::File,
-        purpose: FilesPurpose::UserData,
-        status: Some(FileStatus::Uploaded),
-        expires_at: None,
+        status: FileStatus::Uploaded,
         status_details: None,
     })
 }
 
 // A retrieve reply is the record itself; uri, displayName and sizeBytes fall back to empty.
-fn decode_retrieve(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
+fn retrieve_fields(bytes: &[u8], local: &LocalTimeContext) -> Result<Fields, StudioFilesError> {
     let metadata: RetrieveMetadata =
         serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
     let status = match metadata.state.as_deref() {
@@ -102,20 +119,17 @@ fn decode_retrieve(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject,
         Some(text) => size_bytes(text)?,
         None => 0,
     };
-    Ok(FileObject {
+    Ok(Fields {
         id: metadata.uri.unwrap_or_default(),
         bytes: size,
         created_at: decode_created_at(&metadata.create_time, local)?,
         filename: metadata.display_name.unwrap_or_default(),
-        object: FileKind::File,
-        purpose: FilesPurpose::UserData,
-        expires_at: None,
+        status,
         status_details: if status == FileStatus::Error {
             Some(error_details(metadata.error.as_ref())?)
         } else {
             None
         },
-        status: Some(status),
     })
 }
 
