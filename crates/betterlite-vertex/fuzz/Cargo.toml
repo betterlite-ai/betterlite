@@ -24,6 +24,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "studio_models"
+path = "fuzz_targets/studio_models.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "thinking_part"
 path = "fuzz_targets/thinking_part.rs"
 test = false
