@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_translation::provider_options::{
-    JavelinGuardrailConfigModel, LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel,
-    PillarGuardrailConfigModel, ZscalerAIGuardConfigModel,
-};
+use betterlite_config::sections::guardrail_translation::bedrock_streaming::BedrockGuardrailStreamParams;
 use betterlite_config::sections::guardrail_translation::{
-    BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams,
+    BedrockChecksConfigModel, BedrockGuardrailConfigModel, JavelinGuardrailConfigModel,
+    LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel, PillarGuardrailConfigModel,
+    ZscalerAIGuardConfigModel,
 };
 use betterlite_guardrails::guardrail_translation::{
     StreamTransformSink, StreamingScanKey, merge_user_key_metadata, transform_user_key_metadata,

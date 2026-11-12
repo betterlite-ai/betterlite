@@ -9,12 +9,15 @@ use super::bedrock_checks::{
     BedrockChecksError, BedrockContentFilterCategory, BedrockPromptAttackCategory,
     BedrockSensitiveInfoEntity,
 };
+use super::bedrock_streaming::BedrockGuardrailStreamParams;
 use super::provider_options::{
-    DeepKeepGuardrailConfigModel, JavelinGuardrailConfigModel, LakeraOnFlagged,
-    LakeraV2GuardrailConfigModel, LassoGuardrailConfigModel, NomaGuardrailConfigModel,
-    PillarGuardrailConfigModel, ZscalerAIGuardConfigModel,
+    DeepKeepGuardrailConfigModel, LakeraOnFlagged, LassoGuardrailConfigModel,
 };
-use super::{BedrockChecksConfigModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamParams};
+use super::{
+    BedrockChecksConfigModel, BedrockGuardrailConfigModel, JavelinGuardrailConfigModel,
+    LakeraV2GuardrailConfigModel, NomaGuardrailConfigModel, PillarGuardrailConfigModel,
+    ZscalerAIGuardConfigModel,
+};
 use crate::sections::guardrail_identity::item::GuardrailValue;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
