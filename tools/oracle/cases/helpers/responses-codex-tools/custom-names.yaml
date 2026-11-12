@@ -1,0 +1,34 @@
+kind: helper
+name: custom-names
+call:
+  responses_codex_tools:
+    operation: custom_names
+    tools:
+      - {type: custom, name: edit}
+      - {type: custom, name: Edit}
+      - {type: custom, name: éditeur}
+      - {type: custom, name: ""}
+      - {type: custom}
+      - {type: function, name: plain_function}
+      - {name: untyped}
+      - 7
+      - custom
+      - null
+      - {type: 5, name: wrong_type}
+      - {type: custom, name: null}
+      - {type: custom, name: kept_with_tools, tools: []}
+      - {type: custom, name: bad_tools, tools: 7}
+      - {type: custom, name: null_tools, tools: null}
+      - type: namespace
+        name: outer
+        tools:
+          - {type: custom, name: inner}
+          - 3
+          - type: namespace
+            tools:
+              - {type: custom, name: too_deep}
+      - {type: namespace, tools: [{type: custom, name: second_namespace}]}
+      - {type: namespace, tools: 5}
+env: {}
+compare:
+  ignore: []
