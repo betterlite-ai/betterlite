@@ -1,6 +1,7 @@
 mod attempt;
 mod chain;
 mod checkpoint;
+mod ci_failures;
 mod maintenance;
 pub(crate) mod overlap;
 mod preparation;
@@ -193,8 +194,10 @@ fn apply_round(
     progress.reviewer = Some(round.reviewer);
     progress.next = NextRun::Fix;
     progress.fix_turns = 0;
+    // a failed CI run on the reviewed head turns an approval into a fix turn too
+    let ci = ci_failures::take(places.journal, places.worktree)?;
     match round.verdict {
-        ReviewVerdict::Approve => {
+        ReviewVerdict::Approve if ci.is_empty() => {
             progress.feedback.clear();
             progress.earlier = Some(round.review);
             let mut lines = vec![format!(
@@ -206,8 +209,9 @@ fn apply_round(
             lines.append(&mut progress.litellm);
             Ok(ControlFlow::Break(lines))
         }
-        ReviewVerdict::Changes => {
+        ReviewVerdict::Approve | ReviewVerdict::Changes => {
             progress.feedback.clone_from(&round.review.findings);
+            progress.feedback.extend(ci);
             progress.earlier = Some(round.review);
             if progress.review_rounds >= agents.policy.max_review_rounds {
                 let reason = format!("review rounds ran out: {}", progress.feedback.join("; "));

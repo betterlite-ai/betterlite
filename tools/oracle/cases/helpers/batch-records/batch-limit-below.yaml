@@ -1,0 +1,8 @@
+kind: helper
+name: batch-limit-below
+call:
+  batch_records:
+    function: validate_list_limit
+    limit: -1
+env: {}
+compare: {ignore: []}
