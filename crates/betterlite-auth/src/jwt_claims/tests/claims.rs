@@ -149,6 +149,11 @@ fn marker_requires_a_configured_issuer() {
     let other = project(&unknown, &settings, &configured);
     assert_eq!(other.user_id(None).unwrap(), Some("raw-user".to_owned()));
     assert_eq!(other.team_id(None).unwrap(), Some("raw-team".to_owned()));
+    assert_eq!(other.team_ids().unwrap(), vec!["raw-plural"]);
+    assert_eq!(
+        other.all_team_ids().unwrap(),
+        vec!["raw-plural", "raw-team"]
+    );
 
     let none_configured = project(TRUSTED_CLAIMS, &settings, &[]);
     assert_eq!(
