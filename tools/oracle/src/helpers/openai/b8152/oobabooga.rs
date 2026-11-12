@@ -66,17 +66,14 @@ fn wire(url: &str, api_key: Option<&str>, body: &JsonObject) -> Value {
 pub(super) fn request_value(call: &RequestCall) -> Result<Value, Box<HelperError>> {
     match completion_url(&call.model, call.api_base.as_deref()) {
         Err(error) => Ok(failure(&error)),
-        Ok(url) => {
-            let messages = &call.messages;
-            let body = completion_body(
-                &call.model,
-                messages,
-                &call.optional_params,
-                &RefuseDownloads,
-            )
-            .map_err(|error| invalid(error.to_string()))?;
-            Ok(json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
-        }
+        Ok(url) => completion_body(
+            &call.model,
+            &call.messages,
+            &call.optional_params,
+            &RefuseDownloads,
+        )
+        .map(|body| json!({"ok": true, "request": wire(&url, call.api_key.as_deref(), &body)}))
+        .map_err(|error| invalid(error.to_string())),
     }
 }
 

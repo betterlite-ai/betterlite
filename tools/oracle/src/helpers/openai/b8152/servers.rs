@@ -113,17 +113,24 @@ pub(super) fn provider_value(call: &ProviderCall) -> Value {
     json!({"api_base": api_base, "api_key": api_key.expose_secret()})
 }
 
+impl ParamsCall {
+    fn config_parts(&self) -> (OpenAiConfig, CatalogCapabilities) {
+        let base = OpenAiConfig {
+            family: ConfigFamily::Other,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        };
+        let catalog = CatalogCapabilities {
+            chat_models: self.chat_models.clone(),
+            text_models: self.text_models.clone(),
+        };
+        (base, catalog)
+    }
+}
+
 pub(super) fn params_value(call: &ParamsCall) -> Value {
-    let catalog = CatalogCapabilities {
-        chat_models: call.chat_models.clone(),
-        text_models: call.text_models.clone(),
-    };
-    let base = OpenAiConfig {
-        family: ConfigFamily::Other,
-        api_key: None,
-        headers: Headers::new(),
-        settings: OpenAiSettings::default(),
-    };
+    let (base, catalog) = call.config_parts();
     let mut optional = call.preset.clone();
     match call.provider {
         ChatProvider::DockerModelRunner => {
