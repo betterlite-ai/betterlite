@@ -188,3 +188,10 @@ path = "fuzz_targets/response_id_codecs.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "listen_query"
+path = "fuzz_targets/listen_query.rs"
+test = false
+doc = false
+bench = false

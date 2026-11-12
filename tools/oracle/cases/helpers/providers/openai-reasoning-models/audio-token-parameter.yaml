@@ -1,0 +1,9 @@
+kind: helper
+name: openai-reasoning-models-audio-token-parameter
+call:
+  openai_reasoning_models:
+    audio_token_parameter:
+      probes:
+      - {model: gpt-audio, chat_models: [gpt-audio], model_cost: {gpt-audio: {litellm_provider: openai, supports_tool_choice: true, supports_function_calling: true}}, requested: {max_tokens: 7, audio: {voice: alloy}, temperature: 0.3, reasoning_effort: high}, existing: {existing: true}}
+env: {}
+compare: {ignore: []}

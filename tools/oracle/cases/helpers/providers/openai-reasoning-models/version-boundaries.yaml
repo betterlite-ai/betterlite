@@ -1,0 +1,25 @@
+kind: helper
+name: openai-reasoning-models-version-boundaries
+call:
+  openai_reasoning_models:
+    version_boundaries:
+      probes:
+      - {model: gpt-5}
+      - {model: gpt-5.3}
+      - {model: gpt-5.4}
+      - {model: gpt-5.6}
+      - {model: gpt-6}
+      - {model: gpt-6.1}
+      - {model: proxy/gpt-5.4}
+      - {model: gpt-5.4.1}
+      - {model: gpt-5.}
+      - {model: gpt-5-2025}
+      - {model: gpt-05.04}
+      - {model: gpt-5.4x}
+      - {model: gpt-5x}
+      - {model: GPT-5.4}
+      - {model: gpt-}
+      - {model: gpt-5/}
+      - {model: gpt-4.9}
+env: {}
+compare: {ignore: []}

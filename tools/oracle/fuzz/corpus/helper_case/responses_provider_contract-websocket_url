@@ -1,0 +1,8 @@
+kind: helper
+name: responses-provider-websocket-url
+call:
+  responses_provider_contract:
+    action: websocket_url
+    api_bases: [https://example.test/responses, null]
+env: {}
+compare: {ignore: []}
