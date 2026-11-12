@@ -1,0 +1,11 @@
+task: B1684
+deviations:
+  - what: Converted billing quantities use finite checked integers/decimals; nonfinite quantities and unrepresentable numeric values return typed conversion errors.
+    why: Permissive Python float conversion cannot introduce infinite storage or usage into spend, while ordinary malformed strings retain the source's None fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L265-L288
+  - what: A reported Responses tool_usage.web_search.num_requests outside the signed 64-bit range is treated as invalid and falls back to counting web_search_call output items.
+    why: Billing counters are signed 64-bit throughout betterlite, so a Python integer that cannot enter a count cannot be reported as one either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L38-L46
+  - what: Numeric strings convert with Python's int() and float() grammar for ASCII digits and PEP 515 underscores; a run of non-ASCII decimal digits converts to None instead of its digit value.
+    why: The shared lexers in betterlite read ASCII digits, and a Python-only digit script is not a value providers send in these billing inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L355-L380
