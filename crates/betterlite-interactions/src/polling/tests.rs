@@ -709,8 +709,8 @@ fn maybe_schedule_poll_returns_false_outside_the_runtime() {
     assert_eq!(script.calls(), 0);
 }
 
-#[test]
-fn maybe_schedule_poll_skips_a_disabled_polling_setting() {
+#[tokio::test(start_paused = true)]
+async fn maybe_schedule_poll_skips_a_disabled_polling_setting() {
     let mut registry = BackgroundPollRegistry::default();
     let script = Script::with_answers(Vec::new());
     let mut poll_request = request(answer("in_progress", false), Some(FakeHost::default()));
@@ -720,10 +720,11 @@ fn maybe_schedule_poll_skips_a_disabled_polling_setting() {
         poll_request,
         script.fetch()
     ));
+    assert!(registry.active_poll("interaction-1").is_none());
 }
 
-#[test]
-fn maybe_schedule_poll_skips_a_non_pollable_status() {
+#[tokio::test(start_paused = true)]
+async fn maybe_schedule_poll_skips_a_non_pollable_status() {
     let mut registry = BackgroundPollRegistry::default();
     let script = Script::with_answers(Vec::new());
     let poll_request = request(answer("completed", true), Some(FakeHost::default()));
@@ -732,10 +733,11 @@ fn maybe_schedule_poll_skips_a_non_pollable_status() {
         poll_request,
         script.fetch()
     ));
+    assert!(registry.active_poll("interaction-1").is_none());
 }
 
-#[test]
-fn maybe_schedule_poll_skips_a_pollable_status_without_a_host() {
+#[tokio::test(start_paused = true)]
+async fn maybe_schedule_poll_skips_a_pollable_status_without_a_host() {
     let mut registry = BackgroundPollRegistry::default();
     let script = Script::with_answers(Vec::new());
     let poll_request = request(answer("in_progress", false), None);
@@ -744,10 +746,11 @@ fn maybe_schedule_poll_skips_a_pollable_status_without_a_host() {
         poll_request,
         script.fetch()
     ));
+    assert!(registry.active_poll("interaction-1").is_none());
 }
 
-#[test]
-fn maybe_schedule_poll_skips_a_status_without_an_id() {
+#[tokio::test(start_paused = true)]
+async fn maybe_schedule_poll_skips_a_status_without_an_id() {
     let mut registry = BackgroundPollRegistry::default();
     let script = Script::with_answers(Vec::new());
     let missing = request(
@@ -760,6 +763,7 @@ fn maybe_schedule_poll_skips_a_status_without_an_id() {
         Some(FakeHost::default()),
     );
     assert!(!maybe_schedule_poll(&mut registry, empty, script.fetch()));
+    assert!(registry.active_poll("interaction-1").is_none());
 }
 
 #[tokio::test(start_paused = true)]
