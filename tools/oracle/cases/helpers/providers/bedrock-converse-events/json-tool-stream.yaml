@@ -1,0 +1,41 @@
+kind: helper
+name: bedrock-converse-events-json-tool-stream
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: true
+        ids:
+          - 00000000-0000-4000-8000-000000000071
+        steps:
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: j, name: json_tool_call}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {delta: {toolUse: {input: '{"a": 1}'}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: j2, name: json_tool_call}}, contentBlockIndex: 1}
+          - function: converse
+            chunk: {start: {}}
+          - function: state
+          - function: converse
+            chunk: {delta: {toolUse: {input: '{}'}}, contentBlockIndex: 1}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000072
+        steps:
+          - function: converse
+            chunk: {start: {toolUse: {toolUseId: j, name: json_tool_call}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {delta: {toolUse: {input: ''}}, contentBlockIndex: 0}
+          - function: converse
+            chunk: {contentBlockIndex: 0}
+          - function: state
+env: {}
+compare: {ignore: []}
