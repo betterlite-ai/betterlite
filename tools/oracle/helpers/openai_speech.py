@@ -239,13 +239,18 @@ def request_view(upstream: Upstream, request: Request) -> Json:
     if extra is None:
         extra = {}
     viewed: Fields = {name: sent.headers[name] for name in extra}
+    method = sent.method
+    url = str(sent.url)
+    accept = sent.headers["accept"]
+    authorization = sent.headers["authorization"]
+    body = cast("Json", json.loads(sent.content))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/json/__init__.pyi#L79
     return {
-        "method": sent.method,
-        "url": str(sent.url),
-        "accept": sent.headers["accept"],
-        "authorization": sent.headers["authorization"],
+        "method": method,
+        "url": url,
+        "accept": accept,
+        "authorization": authorization,
         "extra_headers": viewed,
-        "body": cast("Json", json.loads(sent.content)),  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/json/__init__.pyi#L79
+        "body": body,
     }
 
 
