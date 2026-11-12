@@ -10,6 +10,7 @@ call:
           - {anchor: null}
           - {anchor: created_at, seconds: 30}
           - {anchor: "", seconds: null}
+          - {future: 1}
       - kind: session
         documents:
           - {future: 1}
@@ -22,6 +23,7 @@ call:
         documents:
           - {value: ""}
           - {expires_at: 30, value: ephemeral, session: {client_secret: {value: v}}}
+          - {value: ephemeral, future: 1}
       - kind: transcription_request
         documents:
           - {model: m, input_audio_transcription: {model: n}}

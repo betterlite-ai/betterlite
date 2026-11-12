@@ -59,6 +59,21 @@ fn expiry_defaults_anchor_to_created_at() {
 }
 
 #[test]
+fn expiry_and_client_secret_response_drop_unknown_fields() {
+    assert_eq!(
+        encode(&decode(RealtimeContractKind::Expiry, r#"{"future":1}"#)),
+        parse(r#"{"anchor":"created_at","seconds":null}"#)
+    );
+    assert_eq!(
+        encode(&decode(
+            RealtimeContractKind::ClientSecretResponse,
+            r#"{"value":"v","future":1}"#,
+        )),
+        parse(r#"{"expires_at":null,"value":"v","session":null}"#)
+    );
+}
+
+#[test]
 fn empty_session_keeps_every_declared_field_null_and_unknown_fields() {
     assert_eq!(
         encode(&decode(RealtimeContractKind::Session, r#"{"future":1}"#)),
@@ -637,6 +652,7 @@ fn frame_decoder_accepts_every_json_value(#[case] payload: &str) {
 #[case::invalid_json(b"{bad")]
 #[case::trailing_bytes(b"{} x")]
 #[case::invalid_utf8(b"{\"a\":\"\xff\"}")]
+#[case::lone_surrogate_escape(b"\"\\ud800\"")]
 fn frame_decoder_rejects_malformed_input(#[case] payload: &[u8]) {
     decode_realtime_frame(payload, LIMITS).unwrap_err();
 }
