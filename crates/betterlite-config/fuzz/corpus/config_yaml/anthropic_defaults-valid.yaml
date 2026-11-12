@@ -1,0 +1,16 @@
+model_list:
+  - model_name: claude
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      max_tokens: 8192
+      stop_sequences:
+        - END
+      temperature: 0.4
+      top_p: 0.8
+      top_k: 40
+      metadata:
+        user_id: seed
+      system: be brief
+litellm_settings:
+  max_tokens: 1024
+  temperature: 0.2
