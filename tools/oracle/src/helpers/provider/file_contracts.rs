@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use betterlite_core::api::file_contracts::{is_batch_jsonl_file, valid_content_type};
+use betterlite_core::api::file_contracts::{is_batch_jsonl_file, is_batch_jsonl_request};
 use betterlite_openai::api::file_type_records::ByteStream;
 use betterlite_openai::files::records::{CreatePurpose, FileCreate, FileUpload};
 use betterlite_provider::api::file_contracts::config::{
@@ -96,11 +96,11 @@ fn predicate_results(cases: &[Case], predicate: Predicate) -> Value {
                 case.content_type.as_deref(),
                 case.content.as_deref().map(str::as_bytes),
             ),
-            Predicate::File => {
-                case.purpose.as_deref() == Some("batch")
-                    && valid_content_type(case.content_type.as_deref())
-                    && case.file.is_some()
-            }
+            Predicate::File => is_batch_jsonl_request(
+                case.purpose.as_deref(),
+                case.content_type.as_deref(),
+                case.file.as_ref(),
+            ),
         })
         .collect();
     json!(results)

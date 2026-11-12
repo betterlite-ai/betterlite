@@ -4,7 +4,7 @@ use std::io::{Error, Read, Result};
 
 use rstest::rstest;
 
-use super::{is_batch_jsonl_file, valid_content_type};
+use super::{is_batch_jsonl_file, is_batch_jsonl_request};
 
 struct LazyFile;
 
@@ -12,24 +12,6 @@ impl Read for LazyFile {
     fn read(&mut self, _buffer: &mut [u8]) -> Result<usize> {
         Err(Error::other("the batch predicate read the file"))
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Probe {
-    EmptyBytes,
-    Name,
-    Missing,
-    Lazy,
-}
-
-fn metadata_result(purpose: Option<&str>, content_type: Option<&str>, probe: Probe) -> bool {
-    let file_present = match probe {
-        Probe::EmptyBytes => Some(&Vec::<u8>::new()).is_some(),
-        Probe::Name => Some(&String::from("upload.bin")).is_some(),
-        Probe::Missing => None::<&LazyFile>.is_some(),
-        Probe::Lazy => Some(&LazyFile).is_some(),
-    };
-    purpose == Some("batch") && valid_content_type(content_type) && file_present
 }
 
 #[rstest]
@@ -71,26 +53,40 @@ fn batch_extracted_predicate(
 }
 
 #[rstest]
-#[case::empty_bytes((Some("batch"), Some("text/plain"), Probe::EmptyBytes), true)]
-#[case::file_name((Some("batch"), Some("text/plain"), Probe::Name), true)]
-#[case::null_file((Some("batch"), Some("text/plain"), Probe::Missing), false)]
-#[case::absent_file((Some("batch"), Some("text/plain"), Probe::Missing), false)]
-#[case::lazy_file_is_not_read((Some("batch"), Some("text/plain"), Probe::Lazy), true)]
-#[case::assistants_purpose((Some("assistants"), Some("text/plain"), Probe::Name), false)]
-#[case::capitalized_purpose((Some("Batch"), Some("text/plain"), Probe::Name), false)]
-#[case::null_purpose((None, Some("text/plain"), Probe::Name), false)]
-#[case::absent_purpose((None, Some("text/plain"), Probe::Name), false)]
-#[case::null_content_type((Some("batch"), None, Probe::Name), false)]
-#[case::csv_content_type((Some("batch"), Some("text/csv"), Probe::Name), false)]
-#[case::capitalized_content_type((Some("batch"), Some("TEXT/PLAIN"), Probe::Name), false)]
+#[case::empty_bytes(Some("batch"), Some("text/plain"), Some(""), true)]
+#[case::file_name(Some("batch"), Some("text/plain"), Some("upload.bin"), true)]
+#[case::null_file(Some("batch"), Some("text/plain"), None, false)]
+#[case::absent_file(Some("batch"), Some("text/plain"), None, false)]
+#[case::assistants_purpose(Some("assistants"), Some("text/plain"), Some("upload.bin"), false)]
+#[case::capitalized_purpose(Some("Batch"), Some("text/plain"), Some("upload.bin"), false)]
+#[case::null_purpose(None, Some("text/plain"), Some("upload.bin"), false)]
+#[case::absent_purpose(None, Some("text/plain"), Some("upload.bin"), false)]
+#[case::null_content_type(Some("batch"), None, Some("upload.bin"), false)]
+#[case::csv_content_type(Some("batch"), Some("text/csv"), Some("upload.bin"), false)]
+#[case::capitalized_content_type(Some("batch"), Some("TEXT/PLAIN"), Some("upload.bin"), false)]
 #[case::parameterized_content_type(
-    (Some("batch"), Some("application/json;charset=utf-8"), Probe::Name),
+    Some("batch"),
+    Some("application/json;charset=utf-8"),
+    Some("upload.bin"),
     false
 )]
 fn batch_metadata_predicate(
-    #[case] scenario: (Option<&str>, Option<&str>, Probe),
+    #[case] purpose: Option<&str>,
+    #[case] content_type: Option<&str>,
+    #[case] file: Option<&str>,
     #[case] expected: bool,
 ) {
-    let (purpose, content_type, probe) = scenario;
-    assert_eq!(metadata_result(purpose, content_type, probe), expected);
+    assert_eq!(
+        is_batch_jsonl_request(purpose, content_type, file),
+        expected
+    );
+}
+
+#[test]
+fn batch_metadata_lazy_file_is_not_read() {
+    assert!(is_batch_jsonl_request(
+        Some("batch"),
+        Some("text/plain"),
+        Some(&LazyFile)
+    ));
 }
