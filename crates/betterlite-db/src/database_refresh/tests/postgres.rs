@@ -1,3 +1,4 @@
+use std::future::ready;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,7 +9,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::database_refresh::access;
 use crate::database_refresh::endpoint::DatabaseUrlSlot;
 use crate::database_refresh::generation::PoolGeneration;
-use crate::database_refresh::handle::{PoolFuture, PoolHandle, PoolProvider, PoolTransport};
+use crate::database_refresh::handle::{
+    OperationHandle, PoolFuture, PoolHandle, PoolProvider, PoolTransport, TransactionEnd,
+};
 use crate::database_refresh::native::{NativePool, NativePoolError, NativePoolProvider};
 use crate::database_refresh::replacement::{self, ReplacementError};
 
@@ -205,6 +208,48 @@ async fn postgres_refresh_candidate_failure_preserves_old() {
     assert!(setup.script.has_event("close:1"));
     assert_eq!(setup.initial.count("refresh_rows").await, 1);
     assert_eq!(row_count(&setup.pool, "refresh_rows").await, 1);
+    let ObservedSetup { fixture, pool, .. } = setup;
+    close_fixture(fixture, pool).await;
+}
+
+async fn run_transaction(
+    setup: &ObservedSetup,
+    operations: &OperationHandle<ObservedHandle>,
+    value: &str,
+    end: TransactionEnd,
+) {
+    let mut client = setup.initial.pool.session().await.expect("a session");
+    let session = client.transaction().await.expect("a transaction begins");
+    let tracked = operations
+        .begin_transaction(ready(Ok::<_, tokio_postgres::Error>(session)))
+        .await
+        .expect("a tracked transaction");
+    tracked
+        .value
+        .execute(&format!("INSERT INTO refresh_rows VALUES ('{value}')"), &[])
+        .await
+        .expect("the insert runs inside the transaction");
+    operations
+        .finish_transaction(tracked, end)
+        .await
+        .expect("the transaction finishes");
+}
+
+#[tokio::test]
+async fn postgres_transaction_commit_and_rollback() {
+    let setup = observed_generation().await;
+    let operations = access::operation(&setup.built).expect("a connected operation");
+    let tracker = operations.tracker.clone().expect("a tracker");
+    operations
+        .query("CREATE TABLE refresh_rows (note text)")
+        .await
+        .expect("the table is created");
+    run_transaction(&setup, &operations, "committed", TransactionEnd::Commit).await;
+    assert!(tracker.status().drained);
+    assert_eq!(setup.initial.count("refresh_rows").await, 1);
+    run_transaction(&setup, &operations, "rolled back", TransactionEnd::Rollback).await;
+    assert!(tracker.status().drained);
+    assert_eq!(setup.initial.count("refresh_rows").await, 1);
     let ObservedSetup { fixture, pool, .. } = setup;
     close_fixture(fixture, pool).await;
 }

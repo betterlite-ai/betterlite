@@ -369,6 +369,7 @@ async fn wait_timeout_is_not_success() {
         wait_for_pool_replacement(&waiting, Duration::from_secs(90)).await;
     });
     yield_now().await;
+    assert!(!waiters.is_empty());
     advance(Duration::from_secs(90)).await;
     waiters
         .join_next()

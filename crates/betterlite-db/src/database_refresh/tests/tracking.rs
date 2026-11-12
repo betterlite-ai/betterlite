@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use chrono::DateTime;
 use rstest::rstest;
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
@@ -43,6 +44,18 @@ fn constructor_defaults() {
         access::operation(&built),
         Err(AccessError::NotConnected)
     ));
+}
+
+#[test]
+fn refresh_time_recorded() {
+    let script = Arc::new(FakeScript::default());
+    let provider = Arc::new(FakeProvider { script });
+    let built = FakeGeneration::new(provider, GenerationOptions::default(), None, None, None)
+        .expect("the default generation builds");
+    assert!(lock(&built.last_refresh_time).is_none());
+    let at = DateTime::from_timestamp(1_700_000_000, 0).expect("a timestamp");
+    built.record_refresh(at);
+    assert_eq!(*lock(&built.last_refresh_time), Some(at));
 }
 
 #[test]

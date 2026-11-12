@@ -88,8 +88,8 @@ pub struct OperationHandle<H> {
 }
 
 pub struct TrackedTransaction<T> {
-    value: T,
-    hold: Option<TransactionHold>,
+    pub value: T,
+    pub hold: Option<TransactionHold>,
 }
 
 impl<H> OperationHandle<H>
