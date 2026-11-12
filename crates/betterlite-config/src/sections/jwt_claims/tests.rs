@@ -104,6 +104,9 @@ fn loads_settings() {
     assert_eq!(loaded.end_user_id_jwt_field.as_deref(), Some("eid"));
     assert_eq!(loaded.agent_id_jwt_field.as_deref(), Some("azp"));
     assert_eq!(loaded.object_id_jwt_field.as_deref(), Some("oid"));
+    let component = auth_settings(&loaded);
+    let claims = project(ALL_CLAIMS, &component, &[]);
+    assert_eq!(claims.team_id(None).unwrap(), Some("team-1".to_owned()));
 }
 
 #[test]
