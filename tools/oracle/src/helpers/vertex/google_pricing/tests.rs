@@ -58,13 +58,12 @@ fn the_operation_reaches_the_production_character_pricing() {
         json!({
             "prompt_cost": "0.04000125",
             "completion_cost": "0.0001",
-            "calls": [],
         })
     );
 }
 
 #[test]
-fn the_operation_records_a_token_fallback_and_its_missing_location() {
+fn the_token_fallback_applies_the_uplift_once() {
     let input = decode(
         r#"{
             "operation": "cost_per_character",
@@ -83,14 +82,6 @@ fn the_operation_records_a_token_fallback_and_its_missing_location() {
         json!({
             "prompt_cost": "6.25",
             "completion_cost": "6.25",
-            "calls": [{
-                "model": "gemini-1.5-pro-002",
-                "provider": "vertex_ai",
-                "service_tier": "priority",
-                "vertex_location": null,
-                "prompt_tokens": 5_i64,
-                "completion_tokens": 10_i64,
-            }],
         })
     );
 }

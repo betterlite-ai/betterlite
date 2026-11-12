@@ -16,13 +16,6 @@ pub(crate) enum Operation {
     MapsGroundingCost,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SearchEntry {
-    Gemini,
-    VertexGemini,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -40,9 +33,9 @@ pub(crate) struct Input {
     pub(crate) completion_characters: Option<Decimal>,
     pub(crate) service_tier: Option<String>,
     pub(crate) vertex_location: Option<String>,
-    // both LiteLLM entry points run the same shared search calculation, so only Python needs to pick one
+    // both LiteLLM entry points run the same shared search calculation, so only Python picks one
     #[serde(rename = "entry")]
-    pub(crate) _entry: Option<SearchEntry>,
+    pub(crate) _entry: Option<Box<RawValue>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -50,21 +43,15 @@ pub(crate) struct Input {
 pub(crate) struct UsageInput {
     prompt_tokens: i64,
     completion_tokens: i64,
-    prompt_tokens_details: Option<DetailsInput>,
-    server_tool_use: Option<ServerToolUseInput>,
+    prompt_tokens_details: Option<GroundingInput>,
+    server_tool_use: Option<GroundingInput>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct DetailsInput {
+struct GroundingInput {
     web_search_requests: Option<i64>,
     google_maps_grounding_requests: Option<i64>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct ServerToolUseInput {
-    web_search_requests: Option<i64>,
 }
 
 impl UsageInput {

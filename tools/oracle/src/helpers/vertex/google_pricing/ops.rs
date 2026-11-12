@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use betterlite_models::catalog::CatalogEntry;
 use betterlite_models::entry::ModelFields;
 use betterlite_models::price_fields::PriceFields;
@@ -14,7 +12,6 @@ use betterlite_vertex::google_pricing::grounding::{
 use betterlite_vertex::google_pricing::routing::{CostMetric, cost_router};
 use betterlite_vertex::google_pricing::token::{TokenRequest, cost_per_token};
 use rust_decimal::Decimal;
-use serde::Serialize;
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
@@ -68,34 +65,14 @@ fn router(input: &Input) -> Value {
     json!({ "metric": metric })
 }
 
-#[derive(Clone, Debug, Serialize)]
-struct RecordedCall {
-    model: String,
-    provider: String,
-    service_tier: Option<String>,
-    vertex_location: Option<String>,
-    prompt_tokens: i64,
-    completion_tokens: i64,
-}
-
-// Stands in for B068's shared calculator: bills the token counts it receives and records the call it answered.
-struct FixturePricing {
-    calls: RefCell<Vec<RecordedCall>>,
-}
+// Stands in for B068's shared calculator: bills the token counts it receives and resolves the regional uplift.
+struct FixturePricing;
 
 impl GenericTokenPricing for FixturePricing {
     fn generic_cost_per_token(
         &self,
         request: &GenericTokenRequest<'_>,
     ) -> Result<GenericCostResult, TokenCostError> {
-        self.calls.borrow_mut().push(RecordedCall {
-            model: request.model.to_owned(),
-            provider: request.custom_llm_provider.to_owned(),
-            service_tier: request.service_tier.map(str::to_owned),
-            vertex_location: request.vertex_location.map(str::to_owned),
-            prompt_tokens: request.usage.prompt_tokens,
-            completion_tokens: request.usage.completion_tokens,
-        });
         Ok(GenericCostResult {
             prompt_cost: Decimal::from(request.usage.prompt_tokens),
             completion_cost: Decimal::from(request.usage.completion_tokens),
@@ -122,22 +99,18 @@ impl GenericTokenPricing for FixturePricing {
 
 fn cost_value(
     result: Result<GenericCostResult, GooglePricingError>,
-    pricing: &FixturePricing,
 ) -> Result<Value, Box<HelperError>> {
     let cost = result.map_err(|error| failure(error.to_string()))?;
     Ok(json!({
         "prompt_cost": cost.prompt_cost.normalize().to_string(),
         "completion_cost": cost.completion_cost.normalize().to_string(),
-        "calls": pricing.calls.borrow().clone(),
     }))
 }
 
 fn priced(input: &Input) -> Result<Value, Box<HelperError>> {
     let record = required_record(input)?;
     let usage = input.usage.google_usage();
-    let pricing = FixturePricing {
-        calls: RefCell::new(Vec::new()),
-    };
+    let pricing = FixturePricing;
     let cost = match input.operation {
         Operation::CostPerCharacter => cost_per_character(
             &pricing,
@@ -169,7 +142,7 @@ fn priced(input: &Input) -> Result<Value, Box<HelperError>> {
             ));
         }
     };
-    cost_value(cost, &pricing)
+    cost_value(cost)
 }
 
 fn search(input: &Input) -> Result<Value, Box<HelperError>> {

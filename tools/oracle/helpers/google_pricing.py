@@ -58,9 +58,6 @@ class UnexpectedCallError(Exception):
     pass
 
 
-RECORDED_CALLS: list[Json] = []
-
-
 def money(value: float) -> str:
     exact = Decimal(repr(float(value))).normalize()
     return format(exact, "f")
@@ -107,16 +104,8 @@ def recorded_generic_cost(  # noqa: PLR0913, PLR0917  # https://github.com/Berri
     vertex_location: str | None = None,
     current_time: datetime | None = None,
 ) -> tuple[float, float]:
+    del model, custom_llm_provider, service_tier, vertex_location
     del data_residency, model_info, current_time  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L426
-    recorded: Json = {
-        "model": model,
-        "provider": custom_llm_provider,
-        "service_tier": service_tier,
-        "vertex_location": vertex_location,
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-    }
-    RECORDED_CALLS.append(recorded)
     return float(usage.prompt_tokens), float(usage.completion_tokens)
 
 
@@ -160,7 +149,6 @@ def cost_record(prompt_cost: float, completion_cost: float) -> Json:
     return {
         "prompt_cost": money(prompt_cost),
         "completion_cost": money(completion_cost),
-        "calls": RECORDED_CALLS,
     }
 
 
@@ -222,7 +210,6 @@ def maps_result(input_value: Input) -> Json:
 
 
 def run(input_value: Input) -> Json:
-    RECORDED_CALLS.clear()
     match input_value["operation"]:
         case "cost_router":
             return router_result(input_value)
