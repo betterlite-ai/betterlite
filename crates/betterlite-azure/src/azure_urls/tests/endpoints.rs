@@ -1,12 +1,10 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::azure_url_policy::AzureCredentials;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_urls::{
-    AzureUrlError, EndpointSelection, get_azure_v1_image_url, get_base_azure_url,
-    is_azure_v1_api_version, resolve_env_var, select_base_url_or_endpoint,
+    AuthParams, AzureUrlError, EndpointSelection, get_azure_v1_image_url, get_base_azure_url,
+    resolve_auth_environment, select_base_url_or_endpoint,
 };
 
 use super::support;
@@ -167,24 +165,20 @@ fn other_values_stay() {
 }
 
 fn v1_latest_preview() {
-    only_exact_version_names_count();
     v1_composes_the_v1_path();
     v1_uses_the_default_version();
 }
 
-fn only_exact_version_names_count() {
-    assert!(is_azure_v1_api_version(Some("v1")));
-    assert!(is_azure_v1_api_version(Some("latest")));
-    assert!(is_azure_v1_api_version(Some("preview")));
-    assert!(!is_azure_v1_api_version(None));
-    assert!(!is_azure_v1_api_version(Some("")));
-    assert!(!is_azure_v1_api_version(Some("V1")));
-    assert!(!is_azure_v1_api_version(Some("Latest")));
-    assert!(!is_azure_v1_api_version(Some("preview-2024-02-01")));
-}
-
 fn v1_composes_the_v1_path() {
     let base = Some("https://example.openai.azure.com");
+    assert_eq!(
+        get_base_azure_url(base, Some("preview-2024-02-01"), None, "/openai/responses").unwrap(),
+        "https://example.openai.azure.com/openai/responses?api-version=preview-2024-02-01"
+    );
+    assert_eq!(
+        get_base_azure_url(base, Some("Latest"), None, "/openai/responses").unwrap(),
+        "https://example.openai.azure.com/openai/responses?api-version=Latest"
+    );
     assert_eq!(
         get_base_azure_url(base, Some("v1"), None, "/openai/responses").unwrap(),
         "https://example.openai.azure.com/openai/v1/responses?api-version=v1"
@@ -368,7 +362,7 @@ fn route_presence_empty_path_edges() {
             "/openai/responses",
         )
         .unwrap(),
-        "https://example.openai.azure.com?target=%2Fopenai%2Fresponses&api-version=v1"
+        "https://example.openai.azure.com/?target=%2Fopenai%2Fresponses&api-version=v1"
     );
 }
 
@@ -470,40 +464,61 @@ fn azure_env_none_vs_empty() {
 fn check_env_key(param: &str, variable: &str) {
     let environment = [(variable, "environment")];
     assert_eq!(
-        resolve(&[(param, Some("explicit"))], &environment, param, variable).as_deref(),
+        resolve(Some((param, Some("explicit"))), &environment, param).as_deref(),
         Some("explicit")
     );
     assert_eq!(
-        resolve(&[(param, Some(""))], &environment, param, variable).as_deref(),
+        resolve(Some((param, Some(""))), &environment, param).as_deref(),
         Some("")
     );
     assert_eq!(
-        resolve(&[(param, None)], &environment, param, variable).as_deref(),
+        resolve(Some((param, None)), &environment, param).as_deref(),
         Some("environment")
     );
     assert_eq!(
-        resolve(&[], &environment, param, variable).as_deref(),
+        resolve(None, &environment, param).as_deref(),
         Some("environment")
     );
-    assert_eq!(resolve(&[], &[], param, variable), None);
+    assert_eq!(resolve(None, &[], param), None);
+}
+
+fn params_with(key: &str, value: Option<&str>) -> AuthParams {
+    let mut params = AuthParams::default();
+    match key {
+        "tenant_id" => params.tenant_id = value.map(str::to_owned),
+        "client_id" => params.client_id = value.map(str::to_owned),
+        "client_secret" => params.client_secret = value.map(SecretString::from),
+        "azure_username" => params.azure_username = value.map(str::to_owned),
+        "azure_password" => params.azure_password = value.map(SecretString::from),
+        "azure_scope" => params.azure_scope = value.map(str::to_owned),
+        other => panic!("unknown auth param {other}"),
+    }
+    params
 }
 
 fn resolve(
-    params: &[(&str, Option<&str>)],
+    param: Option<(&str, Option<&str>)>,
     environment: &[(&str, &str)],
-    param: &str,
-    variable: &str,
+    key: &str,
 ) -> Option<String> {
-    let mapping: BTreeMap<String, Option<String>> = params
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), value.map(str::to_owned)))
-        .collect();
-    resolve_env_var(
-        &mapping,
-        param,
-        variable,
-        &support::environment_map(environment),
-    )
+    let params = match param {
+        Some((name, value)) => params_with(name, value),
+        None => AuthParams::default(),
+    };
+    let resolved = resolve_auth_environment(params, &support::environment_map(environment));
+    match key {
+        "tenant_id" => resolved.tenant_id,
+        "client_id" => resolved.client_id,
+        "client_secret" => resolved
+            .client_secret
+            .map(|secret| secret.expose_secret().to_owned()),
+        "azure_username" => resolved.azure_username,
+        "azure_password" => resolved
+            .azure_password
+            .map(|secret| secret.expose_secret().to_owned()),
+        "azure_scope" => resolved.azure_scope,
+        other => panic!("unknown auth param {other}"),
+    }
 }
 
 fn v1_image_resource_reset() {

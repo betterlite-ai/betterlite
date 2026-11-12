@@ -111,38 +111,48 @@ where
     })
 }
 
-const fn present(value: Option<&str>) -> Option<&str> {
-    match value {
-        Some(text) if !text.is_empty() => Some(text),
-        _ => None,
-    }
-}
-
-fn present_secret(value: Option<&SecretString>) -> Option<&SecretString> {
-    match value {
-        Some(secret) if !secret.expose_secret().is_empty() => Some(secret),
-        _ => None,
-    }
-}
-
 fn get_azure_credentials(
     deployment: &DeploymentInputs,
     globals: &ModuleInputs,
     environment: &EnvironmentInputs,
 ) -> AzureCredentials {
     AzureCredentials {
-        api_base: present(deployment.base.as_deref())
-            .or_else(|| present(globals.base.as_deref()))
+        api_base: deployment
+            .base
+            .as_deref()
+            .filter(|text| !text.is_empty())
+            .or_else(|| globals.base.as_deref().filter(|text| !text.is_empty()))
             .map(str::to_owned)
             .or_else(|| environment.base.clone()),
-        api_version: present(deployment.version.as_deref())
-            .or_else(|| present(globals.version.as_deref()))
+        api_version: deployment
+            .version
+            .as_deref()
+            .filter(|text| !text.is_empty())
+            .or_else(|| globals.version.as_deref().filter(|text| !text.is_empty()))
             .map(str::to_owned)
             .or_else(|| environment.version.clone()),
-        api_key: present_secret(deployment.key.as_ref())
-            .or_else(|| present_secret(globals.key.as_ref()))
-            .or_else(|| present_secret(globals.azure_key.as_ref()))
-            .or_else(|| present_secret(environment.openai_key.as_ref()))
+        api_key: deployment
+            .key
+            .as_ref()
+            .filter(|secret| !secret.expose_secret().is_empty())
+            .or_else(|| {
+                globals
+                    .key
+                    .as_ref()
+                    .filter(|secret| !secret.expose_secret().is_empty())
+            })
+            .or_else(|| {
+                globals
+                    .azure_key
+                    .as_ref()
+                    .filter(|secret| !secret.expose_secret().is_empty())
+            })
+            .or_else(|| {
+                environment
+                    .openai_key
+                    .as_ref()
+                    .filter(|secret| !secret.expose_secret().is_empty())
+            })
             .cloned()
             .or_else(|| environment.key.clone()),
     }

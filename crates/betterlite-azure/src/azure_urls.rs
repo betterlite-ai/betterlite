@@ -2,14 +2,18 @@ mod tests;
 mod url_parts;
 
 use std::collections::BTreeMap;
-use std::str::Utf8Error;
 use std::sync::Arc;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
+use betterlite_http::user_url::error::InvalidUrl;
+use betterlite_http::user_url::httpx_url::HttpxUrl;
+use betterlite_openai::openai_base_config::forwarding::BaseConfigError;
+use betterlite_openai::openai_base_config::overlapping_api_base_path;
+use percent_encoding::percent_decode_str;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 use thiserror::Error;
-use url::{ParseError, Url};
 
 use crate::credentials::selection::{AzureCredentialRequest, AzureTokenError, get_azure_ad_token};
 use crate::credentials::source::{CallableTokenProvider, CredentialSources};
@@ -21,9 +25,11 @@ pub enum AzureUrlError {
     )]
     MissingApiBase,
     #[error("api_base is not a valid URL")]
-    InvalidUrl(#[source] ParseError),
-    #[error("api_base contains a path that is not UTF-8")]
-    InvalidPath(#[source] Utf8Error),
+    InvalidUrl(#[source] InvalidUrl),
+    #[error("api_base cannot take the route")]
+    Compose(#[source] BaseConfigError),
+    #[error("api_base contains a path that cannot be rewritten")]
+    UnrewritablePath,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -43,13 +49,8 @@ pub fn select_base_url_or_endpoint(selection: EndpointSelection) -> EndpointSele
     }
 }
 
-#[must_use]
-pub fn is_azure_v1_api_version(api_version: Option<&str>) -> bool {
-    if let Some(version) = api_version {
-        return matches!(version, "v1" | "latest" | "preview");
-    }
-    false
-}
+// LiteLLM treats exactly these three version names as the v1 surface, matched case-sensitively
+pub const V1_API_VERSIONS: [&str; 3] = ["preview", "latest", "v1"];
 
 pub fn get_base_azure_url(
     api_base: Option<&str>,
@@ -60,33 +61,37 @@ pub fn get_base_azure_url(
     let Some(base) = api_base else {
         return Err(AzureUrlError::MissingApiBase);
     };
-    let original = Url::parse(base).map_err(AzureUrlError::InvalidUrl)?;
-    let keep_empty_path = url_parts::has_empty_path(base);
-    let appended = !base.contains(route);
-    let version = present(api_version).or(default_api_version);
-    let mut query = url_parts::first_query_values(&original);
+    let original = HttpxUrl::parse(base).map_err(AzureUrlError::InvalidUrl)?;
+    let version = api_version
+        .filter(|text| !text.is_empty())
+        .or(default_api_version);
+    let mut query = url_parts::first_query_values(original.query.as_deref());
     if !query.iter().any(|(name, _)| name == "api-version")
-        && let Some(selected) = present(version)
+        && let Some(selected) = version.filter(|text| !text.is_empty())
     {
         query.push(("api-version".to_owned(), selected.to_owned()));
     }
-    let mut composed = if appended {
-        Url::parse(&add_path_to_api_base(base, route)?).map_err(AzureUrlError::InvalidUrl)?
+    let appended = if base.contains(route) {
+        base.to_owned()
     } else {
-        original
+        overlapping_api_base_path(base, route).map_err(AzureUrlError::Compose)?
     };
-    let rewritten = is_azure_v1_api_version(version) && !composed.as_str().contains("/openai/v1");
-    if rewritten {
-        let decoded = url_parts::path_decoded(&composed)?;
-        let replacement = decoded.replace("/openai", "/openai/v1");
-        composed.set_path(&replacement);
+    let mut composed = HttpxUrl::parse(&appended).map_err(AzureUrlError::InvalidUrl)?;
+    if version.is_some_and(|text| V1_API_VERSIONS.contains(&text))
+        && !appended.contains("/openai/v1")
+    {
+        // httpx's URL.path reads "/" for an empty path, so every rewrite starts from a slash
+        let path = if composed.path.is_empty() {
+            "/"
+        } else {
+            composed.path.as_str()
+        };
+        let decoded = percent_decode_str(path).decode_utf8_lossy();
+        let rewritten = decoded.replace("/openai", "/openai/v1");
+        composed.path = requoted_path(&composed, &rewritten)?;
     }
-    url_parts::set_query_pairs(&mut composed, &query);
-    let text = composed.to_string();
-    if keep_empty_path && !appended {
-        return Ok(url_parts::without_empty_path(&text));
-    }
-    Ok(text)
+    composed.query = url_parts::encoded_query(&query);
+    Ok(composed.href())
 }
 
 pub fn get_azure_v1_image_url(
@@ -94,39 +99,77 @@ pub fn get_azure_v1_image_url(
     api_version: Option<&str>,
     route: &str,
 ) -> Result<Option<String>, AzureUrlError> {
-    if !is_azure_v1_api_version(api_version) {
+    if !api_version.is_some_and(|text| V1_API_VERSIONS.contains(&text)) {
         return Ok(None);
     }
-    let base = Url::parse(api_base).map_err(AzureUrlError::InvalidUrl)?;
-    let path = url_parts::path_decoded(&base)?;
-    let prefix = path
-        .find("/openai")
-        .map_or(path.as_str(), |index| path.get(..index).unwrap_or_default());
-    let kept: Vec<(String, String)> = url_parts::query_pairs(&base)
+    let mut resource = HttpxUrl::parse(api_base).map_err(AzureUrlError::InvalidUrl)?;
+    let path = if resource.path.is_empty() {
+        "/"
+    } else {
+        resource.path.as_str()
+    };
+    let decoded = percent_decode_str(path).decode_utf8_lossy().into_owned();
+    let prefix = decoded.find("/openai").map_or(decoded.as_str(), |index| {
+        decoded.get(..index).unwrap_or_default()
+    });
+    let kept: Vec<(String, String)> = url_parts::query_pairs(resource.query.as_deref())
         .into_iter()
         .filter(|(name, _)| name != "api-version")
         .collect();
-    let mut resource = base;
-    resource.set_path(prefix);
-    url_parts::set_query_pairs(&mut resource, &kept);
-    let serialized = resource.to_string();
-    let resource_base = if prefix.is_empty() {
-        url_parts::without_empty_path(&serialized)
-    } else {
-        serialized
-    };
-    get_base_azure_url(Some(&resource_base), api_version, None, route).map(Some)
+    resource.path = requoted_path(&resource, prefix)?;
+    resource.query = url_parts::encoded_query(&kept);
+    get_base_azure_url(Some(&resource.href()), api_version, None, route).map(Some)
 }
 
-pub fn resolve_env_var(
-    params: &BTreeMap<String, Option<String>>,
-    param_key: &str,
-    env_var_key: &str,
+// LiteLLM's auth params, resolved from the deployment or AZURE_* with the environment as fallback
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthParams {
+    pub tenant_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<SecretString>,
+    pub azure_username: Option<String>,
+    pub azure_password: Option<SecretString>,
+    pub azure_scope: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthEnvironment {
+    pub tenant_id: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<SecretString>,
+    pub azure_username: Option<String>,
+    pub azure_password: Option<SecretString>,
+    pub azure_scope: Option<String>,
+}
+
+// `litellm_params.get(key)` wins whenever it is not None, so an explicit "" stays "" and only a missing value reads the environment
+#[must_use]
+pub fn resolve_auth_environment(
+    params: AuthParams,
     environment: &dyn EnvironmentLookup,
-) -> Option<String> {
-    match params.get(param_key) {
-        Some(Some(value)) => Some(value.clone()),
-        Some(None) | None => environment.lookup(env_var_key),
+) -> AuthEnvironment {
+    AuthEnvironment {
+        tenant_id: params
+            .tenant_id
+            .or_else(|| environment.lookup("AZURE_TENANT_ID")),
+        client_id: params
+            .client_id
+            .or_else(|| environment.lookup("AZURE_CLIENT_ID")),
+        client_secret: params.client_secret.or_else(|| {
+            environment
+                .lookup("AZURE_CLIENT_SECRET")
+                .map(SecretString::from)
+        }),
+        azure_username: params
+            .azure_username
+            .or_else(|| environment.lookup("AZURE_USERNAME")),
+        azure_password: params
+            .azure_password
+            .or_else(|| environment.lookup("AZURE_PASSWORD").map(SecretString::from)),
+        azure_scope: params
+            .azure_scope
+            .or_else(|| environment.lookup("AZURE_SCOPE")),
     }
 }
 
@@ -169,60 +212,16 @@ pub fn validate_azure_environment(
     Ok(headers)
 }
 
-const fn present(value: Option<&str>) -> Option<&str> {
-    match value {
-        Some(text) if !text.is_empty() => Some(text),
-        _ => None,
+// httpx's copy_with(path=...) parses the decoded path again, so quoting and dot-segment removal come from HttpxUrl::parse
+fn requoted_path(url: &HttpxUrl, path: &str) -> Result<String, AzureUrlError> {
+    if path.contains(['?', '#']) {
+        return Err(AzureUrlError::UnrewritablePath);
     }
-}
-
-fn add_path_to_api_base(api_base: &str, ending_path: &str) -> Result<String, AzureUrlError> {
-    let original = Url::parse(api_base).map_err(AzureUrlError::InvalidUrl)?;
-    let path = merged_path(&original, ending_path)?;
-    let mut modified = original.clone();
-    modified.set_query(None);
-    modified.set_path(&path);
-    let query = url_parts::query_pairs(&original);
-    url_parts::set_query_pairs(&mut modified, &query);
-    Ok(modified.to_string())
-}
-
-fn merged_path(base: &Url, ending_path: &str) -> Result<String, AzureUrlError> {
-    let base_path = url_parts::path_decoded(base)?;
-    let base_segments: Vec<&str> = base_path
-        .trim_end_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    let end_segments: Vec<&str> = ending_path
-        .trim_start_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    let overlap = (0..base_segments.len()).find(|index| {
-        let tail = base_segments.get(*index..);
-        let head = end_segments.get(..base_segments.len().saturating_sub(*index));
-        match (tail, head) {
-            (Some(left), Some(right)) => left == right,
-            _ => false,
-        }
-    });
-    let segments: Vec<&str> = overlap.map_or_else(
-        || {
-            base_segments
-                .iter()
-                .chain(end_segments.iter())
-                .copied()
-                .collect()
-        },
-        |index| {
-            base_segments
-                .iter()
-                .take(index)
-                .chain(end_segments.iter())
-                .copied()
-                .collect()
-        },
-    );
-    Ok(format!("/{}", segments.join("/")))
+    let mut authority = url.clone();
+    authority.path = String::new();
+    authority.query = None;
+    authority.fragment = None;
+    HttpxUrl::parse(&format!("{}{path}", authority.href()))
+        .map(|composed| composed.path)
+        .map_err(AzureUrlError::InvalidUrl)
 }

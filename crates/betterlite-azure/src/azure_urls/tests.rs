@@ -92,25 +92,29 @@ fn azure_urls_secret_safe_failure() {
 
 #[test]
 fn azure_urls_url_parts_helpers() {
-    assert!(url_parts::has_empty_path("https://example.com"));
-    assert!(!url_parts::has_empty_path("https://example.com/"));
-    assert!(!url_parts::has_empty_path("https://example.com/path"));
-    assert!(url_parts::has_empty_path("https://example.com?x=1"));
-    assert!(url_parts::has_empty_path("https://example.com#frag"));
     assert_eq!(
-        url_parts::without_empty_path("https://example.com/"),
-        "https://example.com"
+        url_parts::first_query_values(Some("a=1&b=2&a=3")),
+        vec![
+            ("a".to_owned(), "1".to_owned()),
+            ("b".to_owned(), "2".to_owned())
+        ]
     );
     assert_eq!(
-        url_parts::without_empty_path("https://example.com/?x=1"),
-        "https://example.com?x=1"
+        url_parts::first_query_values(Some("a=&a=2")),
+        vec![("a".to_owned(), String::new())]
     );
     assert_eq!(
-        url_parts::without_empty_path("https://example.com/#frag"),
-        "https://example.com#frag"
+        url_parts::query_pairs(Some("a=1&a=2&b")),
+        vec![
+            ("a".to_owned(), "1".to_owned()),
+            ("a".to_owned(), "2".to_owned()),
+            ("b".to_owned(), String::new())
+        ]
     );
+    assert_eq!(url_parts::query_pairs(None), Vec::new());
     assert_eq!(
-        url_parts::without_empty_path("https://example.com/path"),
-        "https://example.com/path"
+        url_parts::encoded_query(&[("q".to_owned(), "a b*~".to_owned())]),
+        Some("q=a+b%2A~".to_owned())
     );
+    assert_eq!(url_parts::encoded_query(&[]), None);
 }

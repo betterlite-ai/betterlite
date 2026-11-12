@@ -1,23 +1,17 @@
 task: B2200
 deviations:
   - what: >-
-      An api_base that is not an absolute URL is rejected as an invalid URL. httpx.URL accepts a
-      relative reference there and composes a relative request target.
+      An api_base that is not an absolute URL fails when the route has to be appended, because the
+      append runs B668's overlapping_api_base_path port, which parses with the url crate. httpx
+      accepts a relative reference there and composes a relative request target.
     why: >-
-      betterlite parses api_base with the url crate, which has no relative-reference form. A
-      provider endpoint from configuration is an absolute URL, so no working Azure setup sends one.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L802
+      A provider endpoint from configuration is an absolute URL, so no working Azure setup sends a
+      relative one; the parse of api_base itself already keeps relative references the way httpx does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10208-L10232
   - what: >-
-      A percent-encoded path segment that decodes to bytes that are not UTF-8 is an invalid-URL
-      error. httpx decodes the path with U+FFFD replacements and builds the URL from that text.
-    why: >-
-      betterlite refuses bytes it cannot read instead of rewriting them, and an Azure endpoint
-      path is ASCII.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L845
-  - what: >-
-      A backslash in an api_base path is a segment separator for betterlite's URL parser; httpx
-      keeps it as a path character.
+      A backslash in an api_base path is a segment separator when the route is appended, because
+      B668's port uses the url crate there; httpx keeps it as a path character.
     why: >-
       The url crate follows the URL standard for special schemes, where a backslash separates path
       segments. No Azure endpoint contains one.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L802
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10210

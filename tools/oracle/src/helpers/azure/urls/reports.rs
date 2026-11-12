@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_azure::azure_urls::{
-    EndpointSelection, EnvironmentHeadersRequest, get_azure_v1_image_url, get_base_azure_url,
-    is_azure_v1_api_version, resolve_env_var, select_base_url_or_endpoint,
+    EndpointSelection, EnvironmentHeadersRequest, V1_API_VERSIONS, get_azure_v1_image_url,
+    get_base_azure_url, resolve_auth_environment, select_base_url_or_endpoint,
     validate_azure_environment,
 };
 use betterlite_azure::credentials::selection::AzureTokenError;
@@ -19,15 +19,6 @@ use super::{
     CredentialParams, CredentialStep, DeploymentStep, EnvironmentStep, Globals, HeaderStep,
     ImageStep, Input, UrlStep,
 };
-
-const ENV_KEYS: [(&str, &str); 6] = [
-    ("tenant_id", "AZURE_TENANT_ID"),
-    ("client_id", "AZURE_CLIENT_ID"),
-    ("client_secret", "AZURE_CLIENT_SECRET"),
-    ("azure_username", "AZURE_USERNAME"),
-    ("azure_password", "AZURE_PASSWORD"),
-    ("azure_scope", "AZURE_SCOPE"),
-];
 
 fn config_error(message: &str) -> Box<HelperError> {
     Box::new(HelperError {
@@ -130,7 +121,11 @@ fn v1_latest_preview(steps: &[UrlStep]) -> HelperResult {
     let mut results = Vec::with_capacity(steps.len());
     for step in steps {
         results.push(json!({
-            "is_v1": is_azure_v1_api_version(step.params.version.as_deref()),
+            "is_v1": step
+                .params
+                .version
+                .as_deref()
+                .is_some_and(|text| V1_API_VERSIONS.contains(&text)),
             "url": composed_url(step)?,
         }));
     }
@@ -168,14 +163,15 @@ fn azure_header_selection(steps: &[HeaderStep]) -> HelperResult {
 fn azure_env_none_vs_empty(steps: &[EnvironmentStep]) -> serde_json::Value {
     let mut results = Vec::with_capacity(steps.len());
     for step in steps {
-        let mut output = BTreeMap::new();
-        for (param, variable) in ENV_KEYS {
-            output.insert(
-                param.to_owned(),
-                resolve_env_var(&step.params, param, variable, &step.environment),
-            );
-        }
-        results.push(json!(output));
+        let resolved = resolve_auth_environment(step.params.clone(), &step.environment);
+        results.push(json!({
+            "tenant_id": resolved.tenant_id,
+            "client_id": resolved.client_id,
+            "client_secret": resolved.client_secret.as_ref().map(ExposeSecret::expose_secret),
+            "azure_username": resolved.azure_username,
+            "azure_password": resolved.azure_password.as_ref().map(ExposeSecret::expose_secret),
+            "azure_scope": resolved.azure_scope,
+        }));
     }
     json!({ "steps": results })
 }

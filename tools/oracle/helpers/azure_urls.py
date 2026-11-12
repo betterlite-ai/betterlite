@@ -6,6 +6,7 @@ from typing import NotRequired, TypeAlias, TypedDict, cast
 import litellm
 from litellm.llms.azure import common_utils
 from litellm.llms.azure.common_utils import BaseAzureLLM, get_azure_credentials
+from litellm.llms.azure.vector_stores.transformation import AzureOpenAIVectorStoreConfig
 from litellm.types.router import GenericLiteLLMParams
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -143,21 +144,6 @@ def url_value(step: UrlStep) -> str:
         )
 
 
-def url_report(step: UrlStep) -> Json:
-    url = url_value(step)
-    return {"url": url}
-
-
-def is_v1(step: UrlStep) -> bool:
-    version = step["params"].get("api_version")
-    return BaseAzureLLM._is_azure_v1_api_version(version)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L858-L862
-
-
-def version_report(step: UrlStep) -> Json:
-    v1 = is_v1(step)
-    return {"is_v1": v1, "url": url_value(step)}
-
-
 def header_report(step: HeaderStep) -> Json:
     params = step["params"]
     tokens = step["token_params"]
@@ -174,11 +160,11 @@ def header_report(step: HeaderStep) -> Json:
         azure_password=tokens.get("azure_password"),
     )
     with environment(step["environment"]):
-        headers = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L752-L778
+        headers = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/vector_stores/transformation.py#L18-L19
             "dict[str, str]",
-            BaseAzureLLM._base_validate_azure_environment(dict(step["headers"]), client),  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L752-L778
+            AzureOpenAIVectorStoreConfig().validate_environment(dict(step["headers"]), client),  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/vector_stores/transformation.py#L18-L19
         )
-    return {"headers": cast(Json, headers)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L752-L778
+    return {"headers": cast(Json, headers)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/vector_stores/transformation.py#L18-L19
 
 
 def env_report(step: EnvironmentStep) -> Json:
@@ -191,12 +177,13 @@ def env_report(step: EnvironmentStep) -> Json:
 
 
 def image_report(step: ImageStep) -> Json:
-    url = BaseAzureLLM.get_azure_v1_image_url(
-        step["api_base"],
-        step.get("api_version"),
-        step["route"],
-    )
-    return {"url": url}
+    return {
+        "url": BaseAzureLLM.get_azure_v1_image_url(
+            step["api_base"],
+            step.get("api_version"),
+            step["route"],
+        )
+    }
 
 
 def run(input_value: Input) -> Json:
@@ -209,11 +196,23 @@ def run(input_value: Input) -> Json:
             "steps": [deployment_report(step) for step in input_value["deployment_base_url"]]
         }
     elif "v1_latest_preview" in input_value:
-        result = {"steps": [version_report(step) for step in input_value["v1_latest_preview"]]}
+        result = {
+            "steps": [
+                {
+                    "is_v1": BaseAzureLLM._is_azure_v1_api_version(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L858-L862
+                        step["params"].get("api_version")
+                    ),
+                    "url": url_value(step),
+                }
+                for step in input_value["v1_latest_preview"]
+            ]
+        }
     elif "query_api_version_wins" in input_value:
-        result = {"steps": [url_report(step) for step in input_value["query_api_version_wins"]]}
+        result = {
+            "steps": [{"url": url_value(step)} for step in input_value["query_api_version_wins"]]
+        }
     elif "append_route_once" in input_value:
-        result = {"steps": [url_report(step) for step in input_value["append_route_once"]]}
+        result = {"steps": [{"url": url_value(step)} for step in input_value["append_route_once"]]}
     elif "azure_header_selection" in input_value:
         result = {
             "steps": [header_report(step) for step in input_value["azure_header_selection"]]

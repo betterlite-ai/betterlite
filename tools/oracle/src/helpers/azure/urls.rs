@@ -4,6 +4,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 
+use betterlite_azure::azure_urls::AuthParams;
 use serde::{Deserialize, Serialize};
 
 use crate::helpers::HelperResult;
@@ -66,7 +67,7 @@ pub(crate) struct DeploymentStep {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnvironmentStep {
     #[serde(default)]
-    params: BTreeMap<String, Option<String>>,
+    params: AuthParams,
     #[serde(default)]
     environment: BTreeMap<String, String>,
 }
