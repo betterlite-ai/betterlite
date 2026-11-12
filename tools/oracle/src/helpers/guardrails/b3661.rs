@@ -11,7 +11,6 @@ use betterlite_config::sections::guardrail_translation::{
 use betterlite_guardrails::guardrail_translation::{
     StreamTransformSink, StreamingScanKey, merge_user_key_metadata, transform_user_key_metadata,
 };
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -65,21 +64,20 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
-            Function::BedrockChecks => deserialize_config::<BedrockChecksConfigModel>(&input.body),
+            Function::BedrockChecks => verdict(BedrockChecksConfigModel::deserialize(&input.body)),
             Function::BedrockGuardrail => {
-                deserialize_config::<BedrockGuardrailConfigModel>(&input.body)
+                verdict(BedrockGuardrailConfigModel::deserialize(&input.body))
             }
-            Function::BedrockStreamingFromExtras => {
-                BedrockGuardrailStreamParams::from_extras(input.extras.as_ref())
-                    .map_or_else(|_| Ok(json!({"accepted": false})), encode)
-            }
+            Function::BedrockStreamingFromExtras => verdict(
+                BedrockGuardrailStreamParams::from_extras(input.extras.as_ref()),
+            ),
             Function::ProviderConfig => match input.model {
-                Model::Bedrock => deserialize_config::<BedrockGuardrailConfigModel>(&input.body),
-                Model::LakeraV2 => deserialize_config::<LakeraV2GuardrailConfigModel>(&input.body),
-                Model::Pillar => deserialize_config::<PillarGuardrailConfigModel>(&input.body),
-                Model::Noma => deserialize_config::<NomaGuardrailConfigModel>(&input.body),
-                Model::Zscaler => deserialize_config::<ZscalerAIGuardConfigModel>(&input.body),
-                Model::Javelin => deserialize_config::<JavelinGuardrailConfigModel>(&input.body),
+                Model::Bedrock => verdict(BedrockGuardrailConfigModel::deserialize(&input.body)),
+                Model::LakeraV2 => verdict(LakeraV2GuardrailConfigModel::deserialize(&input.body)),
+                Model::Pillar => verdict(PillarGuardrailConfigModel::deserialize(&input.body)),
+                Model::Noma => verdict(NomaGuardrailConfigModel::deserialize(&input.body)),
+                Model::Zscaler => verdict(ZscalerAIGuardConfigModel::deserialize(&input.body)),
+                Model::Javelin => verdict(JavelinGuardrailConfigModel::deserialize(&input.body)),
             },
             Function::ScanKey => Ok(scan_key(input)),
             Function::UserMetadata => encode(transform_user_key_metadata(
@@ -112,12 +110,14 @@ fn merge_metadata(input: &Input) -> HelperResult {
     encode(request_data)
 }
 
-fn deserialize_config<T>(body: &Value) -> HelperResult
+fn verdict<T, E>(outcome: Result<T, E>) -> HelperResult
 where
-    T: DeserializeOwned + Serialize,
+    T: Serialize,
 {
-    serde_json::from_value::<T>(body.clone())
-        .map_or_else(|_| Ok(json!({"accepted": false})), encode)
+    match outcome {
+        Ok(model) => Ok(json!({"accepted": true, "dump": encode(model)?})),
+        Err(_) => Ok(json!({"accepted": false})),
+    }
 }
 
 fn encode<T>(value: T) -> HelperResult
