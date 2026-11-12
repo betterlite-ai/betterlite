@@ -1,12 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::{Future, ready};
-use std::sync::Mutex;
 
 use betterlite_core::cost::context::ProviderInference;
 use betterlite_core::environment_validation::error::EnvironmentValidationError;
-use betterlite_core::environment_validation::probe::{
-    ModelProbe, ProbeCompletion, check_valid_key, valid_model,
-};
+use betterlite_core::environment_validation::probe::{check_valid_key, valid_model};
 use betterlite_core::environment_validation::{EnvironmentRequest, validate_environment};
 use betterlite_core::retry_after::{
     RetryAttempt, RetryTiming, calculate_retry_after, retry_after_from_header, should_retry,
@@ -20,92 +16,20 @@ use betterlite_models::resolution::{
     ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, resolve,
 };
 use jiff::Timestamp;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
 
+mod inputs;
+mod probe;
+
+use inputs::{
+    BackoffInput, EnvironmentInput, HeaderInput, Input, KeyInput, ModelSetsInput, ValidModelInput,
+};
+use probe::RecordingProbe;
+
 pub(crate) struct Op;
-
-// The sets are keyed by LiteLLM's attribute names; `vertex_ai` stands for `litellm.models_by_provider["vertex_ai"]`.
-#[derive(Debug, Default, Deserialize)]
-pub(crate) struct ModelSetsInput {
-    #[serde(default)]
-    vertex_ai: BTreeSet<String>,
-    #[serde(flatten)]
-    sets: BTreeMap<String, BTreeSet<String>>,
-}
-
-// Each operation answers a list of cases in order, so one file can sweep every provider row.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, tag = "operation", rename_all = "snake_case")]
-pub(crate) enum Input {
-    ValidateEnvironment { cases: Vec<EnvironmentInput> },
-    ValidModel { cases: Vec<ValidModelInput> },
-    CheckValidKey { cases: Vec<KeyInput> },
-    ShouldRetry { cases: Vec<StatusInput> },
-    RetryAfterHeader { cases: Vec<HeaderInput> },
-    CalculateRetryAfter { cases: Vec<BackoffInput> },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct EnvironmentInput {
-    #[serde(default)]
-    environment: BTreeSet<String>,
-    #[serde(default)]
-    model_sets: ModelSetsInput,
-    model: Option<String>,
-    api_key: Option<String>,
-    api_base: Option<String>,
-    api_version: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ValidModelInput {
-    #[serde(default)]
-    model_sets: ModelSetsInput,
-    model: String,
-    fails: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct KeyInput {
-    model: String,
-    api_key: String,
-    fails: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StatusInput {
-    status_code: u16,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HeaderInput {
-    headers: Option<BTreeMap<String, String>>,
-    now: i64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BackoffInput {
-    remaining_retries: i32,
-    max_retries: i32,
-    #[serde(default)]
-    min_timeout: i32,
-    headers: Option<BTreeMap<String, String>>,
-    now: i64,
-    random: f64,
-    initial_retry_delay: Option<f64>,
-    max_retry_delay: Option<f64>,
-    jitter: Option<f64>,
-}
 
 fn invalid(message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -164,64 +88,6 @@ fn model_sets(input: &ModelSetsInput) -> Result<ProviderModelSets, Box<HelperErr
         .models_by_provider
         .insert(String::from("vertex_ai"), input.vertex_ai.clone());
     Ok(built)
-}
-
-// A probe that records what it was asked and either works or refuses.
-struct RecordingProbe {
-    fails: bool,
-    calls: Mutex<Vec<Value>>,
-}
-
-impl RecordingProbe {
-    const fn new(fails: bool) -> Self {
-        Self {
-            fails,
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn answer(&self, call: Value) -> Result<(), &'static str> {
-        let Ok(mut calls) = self.calls.lock() else {
-            return Err("the call log is poisoned");
-        };
-        calls.push(call);
-        if self.fails {
-            Err("provider refused")
-        } else {
-            Ok(())
-        }
-    }
-
-    fn recorded(&self) -> Vec<Value> {
-        self.calls.lock().map_or_else(
-            |poisoned| poisoned.into_inner().clone(),
-            |calls| calls.clone(),
-        )
-    }
-}
-
-impl ModelProbe for RecordingProbe {
-    type Failure = &'static str;
-
-    fn retrieve_openai_model(
-        &self,
-        model: &str,
-    ) -> impl Future<Output = Result<(), &'static str>> + Send {
-        ready(self.answer(json!({"kind": "retrieve", "model": model})))
-    }
-
-    fn complete(
-        &self,
-        request: &ProbeCompletion<'_>,
-    ) -> impl Future<Output = Result<(), &'static str>> + Send {
-        ready(self.answer(json!({
-            "kind": "completion",
-            "model": request.model,
-            "user_message": request.user_message,
-            "api_key": request.api_key.map(|key| key.expose_secret().to_owned()),
-            "max_tokens": request.max_tokens,
-        })))
-    }
 }
 
 fn header_value(headers: Option<&BTreeMap<String, String>>) -> Option<&str> {
