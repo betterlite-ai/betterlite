@@ -1,0 +1,5 @@
+task: B1013
+deviations:
+  - what: Scores outside exact rust_decimal representation, including non-finite values, fail with native HTTP 502, type bad_gateway, param score, code decimal_out_of_range; LiteLLM's float model can represent finite 1e100 and non-finite scores.
+    why: Preserve the current exact-number boundary and no-floats rule instead of rounding provider scores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L77-L95
