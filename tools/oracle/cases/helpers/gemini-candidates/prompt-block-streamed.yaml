@@ -1,0 +1,19 @@
+kind: helper
+name: gemini-candidates-prompt-block-streamed
+call:
+  gemini_candidates:
+    streaming: true
+    legacy_function: false
+    cumulative_tool_call_idx: 4
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    body:
+      promptFeedback:
+        blockReason: PROHIBITED_CONTENT
+      candidates:
+        - content:
+            parts:
+              - text: ignored
+          finishReason: STOP
+env: {}
+compare: {ignore: []}

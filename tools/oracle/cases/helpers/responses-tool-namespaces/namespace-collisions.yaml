@@ -1,0 +1,25 @@
+kind: helper
+name: responses-tool-namespaces-namespace-collisions
+call:
+  responses_tool_namespaces:
+    operation: tools_to_chat
+    tools:
+      - {type: function, name: crm__lookup}
+      - {type: function, name: crm__bare}
+      - {type: function, name: erp__shared}
+      - {type: function, name: crm__patch}
+      - {type: function, name: other__x}
+      - type: namespace
+        name: crm
+        tools:
+          - {type: function, name: lookup}
+          - {type: function, name: bare}
+          - {type: custom, name: patch}
+          - {type: function, name: unique}
+      - type: namespace
+        name: erp
+        tools:
+          - {type: function, name: shared}
+env: {}
+compare:
+  ignore: []

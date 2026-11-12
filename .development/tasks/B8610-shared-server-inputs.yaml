@@ -31,7 +31,7 @@ description: >-
   Arc<PluginRegistry>` (B8230). `agents: Arc<SharedAgents>` (B8612: B4776's registry and the one B8231 read-through,
   built here with SharedAgents::new over the registry B8613 made, `db` and `proxy_config`). `jwt_signer:
   Arc<JwtSignerSlot>` (B8254). `general_settings: Arc<ProxySettingsStore>` (B8612, built here over `db`,
-  `proxy_config` and `plugins`). `proxy_logging: Arc<ProxyLogging>` (B8399). `router: Arc<RouterHandle>` and
+  `proxy_config`, `plugins` and `config_overlay`). `proxy_logging: Arc<ProxyLogging>` (B8399). `router: Arc<RouterHandle>` and
   `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle). `mcp_registry:
   Arc<McpRegistry>`, `credentials: Arc<CredentialRegistry>` (B1601's one registry, so B097, B7171 and B2306 share it
   and a credential added through POST /credentials is seen by all), `vector_stores: Arc<VectorStores>` and `pass_through: Arc<PassThroughState>` (B8614; the
@@ -46,7 +46,10 @@ description: >-
   the swap: B012's chat and embeddings logging, B8931's pass-through runtime (RuntimeInputs, which B8640 fills from
   this Arc) and the production builder of B4301's cache-hit OwnedSuccessHandler all take this one Arc, so none of them
   builds an assembler of its own. B012's server.rs builds the chat-only ChatStreamAssembler until this lands.
-  `proxy_config: Arc<ProxyConfigState>` (B8380). `mcp_area: std::sync::OnceLock<Arc<crate::app::mcp::state::McpState>>`,
+  `proxy_config: Arc<ProxyConfigState>` (B8380). `python_hooks: Arc<PythonHooks>` (B165): the one service B8375 built
+  and B8613's Started carries. Server code that loads or calls a config-named Python hook at request time reads
+  `shared.python_hooks` and never calls PythonHooks::new.
+  `mcp_area: std::sync::OnceLock<Arc<crate::app::mcp::state::McpState>>`,
   created empty here: app::mcp's mount, mount_public and start need the same McpState, and B8620 fills the cell on first
   use (the skeleton stubs `pub struct McpState` in app/mcp/state.rs, so this field compiles before B8620).
 
@@ -61,7 +64,10 @@ description: >-
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
   `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
-  AutoRouterCatalog>` (B379's trait, backed by the same DeploymentSync) for B8676. `gateway_requests:
+  AutoRouterCatalog>` (B379's trait, backed by the same DeploymentSync) for B8676. `config_overlay: Arc<dyn
+  ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port; B8379's OverlayPortAdapter implements it
+  in crates/betterlite and B8613 makes the one value) for B8595's pass-through re-serve and the config reads of B1656,
+  B1657 and the other settings routes. `gateway_requests:
   Arc<GatewayRequestAccumulator>` (B3102, betterlite-db): the one accumulator B8680's billable sink records into, the
   B8372's periodic flush job drains and B8613's stop drains last. `vantage_loggers: Arc<VantageLoggers>` (B3067): the one live store of concrete Vantage exporters that B8613 made. B8372 populates and schedules from it, B3077's delete route edits it and B073's export routes read it. B8749's no-op BaseLogger named vantage cannot serve as the exporter. `prometheus_registry: Arc<CollectorRegistry>` (B3875,
   betterlite-logging, which this task adds to betterlite-server's dependencies): the one registry B8613 made at startup; B8655 registers its collectors into it and B3886's
@@ -138,7 +144,8 @@ description: >-
   Tests in state/shared/tests.rs (names start with `shared_`) build Shared from StartupOutputs with in-memory values and
   assert that http is the chat client clone, cache uses the usage Redis when one is given and memory only when not,
   router_views reads the same RouterHandle (installing a router makes current() answer), agents and
-  general_settings use the given registry and database, budget is built once (two reads give the same Arc), and
+  general_settings use the given registry and database, config_overlay is Arc::ptr_eq with the ConfigOverlayPort passed
+  in StartupOutputs, python_hooks is Arc::ptr_eq with the PythonHooks passed in StartupOutputs, budget is built once (two reads give the same Arc), and
   spend_producer is the slot passed in StartupOutputs and starts empty. Tests
   in server/tests.rs (names start with `inputs_`) boot application() and assert the health routes and the Not Found
   fallback still answer, start_shutdown on the ShutdownState passed in StartupOutputs turns the three health routes to
