@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::routes::router;
+use crate::routes::tests::state_for;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
@@ -40,7 +41,7 @@ fn configured_router(calls: Arc<AtomicUsize>, public_routes: &str) -> Router {
         .route("/v1/completions", get(downstream))
         .with_state(calls);
     router(
-        crate::routes::tests::state_for(&config),
+        state_for(&config),
         Arc::new(AtomicBool::new(false)),
         chat,
         Router::new(),

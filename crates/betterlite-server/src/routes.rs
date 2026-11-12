@@ -105,7 +105,7 @@ mod team_merge_patch;
 mod team_models;
 mod team_state;
 mod team_update;
-mod tests;
+pub(crate) mod tests;
 mod tool_policy;
 mod tool_reports;
 mod ui_sessions;
@@ -164,7 +164,7 @@ pub(crate) fn router(
             auth_route_patterns::stage,
         ))
         .layer(middleware::from_fn(stage))
-        .layer(Extension(Arc::clone(&state)))
+        .layer(Extension(state))
 }
 
 fn base_application(shutting_down: Arc<AtomicBool>) -> Router {

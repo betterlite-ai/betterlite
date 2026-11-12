@@ -1,5 +1,6 @@
 #![cfg(test)]
 use crate::routes::router;
+use crate::routes::tests::state_for;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::Request;
@@ -26,9 +27,9 @@ async fn send(config: &str, uri: &str, header: &str) -> (u16, String) {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
-    let loaded = loader.load(config).unwrap();
+    let document = loader.load(config).unwrap();
     let application = router(
-        crate::routes::tests::state_for(&loaded),
+        state_for(&document),
         Arc::new(AtomicBool::new(false)),
         Router::new(),
         Router::new(),

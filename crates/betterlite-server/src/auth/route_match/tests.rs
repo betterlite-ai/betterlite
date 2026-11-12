@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::routes;
+use crate::routes::tests::{empty_config, state_for};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Extension, State};
@@ -29,9 +30,9 @@ fn production_router(calls: Arc<AtomicUsize>) -> Router {
         .route("/not-recognized", get(downstream))
         .route("/v1/a2a/{agent_id}/message/send", get(downstream))
         .with_state(calls);
-    let config = crate::routes::tests::empty_config();
+    let config = empty_config();
     routes::router(
-        crate::routes::tests::state_for(&config),
+        state_for(&config),
         Arc::new(AtomicBool::new(false)),
         chat,
         Router::new(),

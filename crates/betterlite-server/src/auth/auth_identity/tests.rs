@@ -16,6 +16,7 @@ use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_config::loader::ConfigLoader;
 
 use crate::routes;
+use crate::routes::tests::state_for;
 
 use super::{
     AdmissionLease, AuthBackend, AuthContext, BudgetAdmission, INSTALLED_STAGES, RequestScope,
@@ -66,7 +67,7 @@ fn protected_server_with_chat(master_key: &str, chat: Router) -> Router {
     .load(&format!("general_settings:\n  master_key: {master_key}\n"))
     .unwrap();
     routes::router(
-        crate::routes::tests::state_for(&config),
+        state_for(&config),
         Arc::new(AtomicBool::new(false)),
         chat,
         Router::new(),
