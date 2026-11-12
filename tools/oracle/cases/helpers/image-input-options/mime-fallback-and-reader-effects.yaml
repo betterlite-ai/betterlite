@@ -1,0 +1,70 @@
+kind: helper
+name: image-input-options-mime-fallback-and-reader-effects
+call:
+  image_input_options:
+    calls:
+      - function: content
+        fixture:
+          kind: bytes
+          data_base64: bm90IGFuIGltYWdlIGF0IGFsbA==
+          position: 0
+          name: null
+      - function: detected
+        detection: bmp
+        raises: false
+      - function: detected
+        detection: png
+        raises: false
+      - function: detected
+        detection: null
+        raises: true
+      - function: content
+        fixture:
+          kind: no_read
+          data_base64: ""
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: fail_tell
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: fail_seek
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: fail_read
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: fail_restore
+          data_base64: iVBORw0KGgoAAAANSUhEUgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: nonseekable
+          data_base64: iVBORw0KGgoAAAANSUhEUgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          position: 0
+          name: null
+      - function: content
+        fixture:
+          kind: non_bytes_read
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+          position: 7
+          name: null
+      - function: content
+        fixture:
+          kind: seekable
+          data_base64: bm90IGFuIGltYWdlIGF0IGFsbA==
+          position: 7
+          name: null
+env: {}
+compare: {ignore: []}
