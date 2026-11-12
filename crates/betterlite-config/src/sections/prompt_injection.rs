@@ -148,10 +148,12 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let timeout_text = lookup.lookup(TIMEOUT_VARIABLE).unwrap_or_default();
+        let timeout_seconds = betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &timeout_text)?;
         Ok(Settings {
             params: self.settings.prompt_injection_params,
             heuristics_max_threads: heuristics_max_threads(lookup),
-            heuristics_timeout: heuristics_timeout(lookup)?,
+            heuristics_timeout: heuristics_timeout(timeout_seconds)?,
             similarity_threshold: similarity_threshold(lookup)?,
         })
     }
@@ -186,14 +188,10 @@ where
 }
 
 // a timeout of zero or a negative, text, nan or inf value stops startup and names the variable
-fn heuristics_timeout<L>(lookup: &L) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let text = lookup.lookup(TIMEOUT_VARIABLE).unwrap_or_default();
-    match betterlite_env::number::<Decimal>(TIMEOUT_VARIABLE, &text)? {
+fn heuristics_timeout(seconds: Option<Decimal>) -> Result<Duration, ConfigError> {
+    match seconds {
         None => Ok(DEFAULT_TIMEOUT),
-        Some(seconds) if seconds > Decimal::ZERO => seconds
+        Some(positive) if positive > Decimal::ZERO => positive
             .to_f64()
             .and_then(|value| Duration::try_from_secs_f64(value).ok())
             .ok_or_else(invalid_timeout),
