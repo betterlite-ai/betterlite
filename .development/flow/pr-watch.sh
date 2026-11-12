@@ -17,7 +17,7 @@ query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){p
 # One REST call per poll: gh run list --workflow spends a second call resolving the workflow, and 28 watchers listing twice a minute used up the account's 5000 calls an hour
 branch_runs() {
   gh api "repos/${GH_REPO}/actions/workflows/gate.yml/runs?branch=$1&per_page=30" \
-    -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion) \(.status) \(.created_at)"' 2> /dev/null
+    -q '.workflow_runs[] | "\(.id) \(.run_attempt) \(.conclusion) \(.status) \(.created_at) \(.head_sha)"' 2> /dev/null
 }
 last_queue_failure() {
   gh run list --workflow gate.yml --limit 30 --json databaseId,headBranch,conclusion -q "[.[] | select(.conclusion == \"failure\") | select(.headBranch | startswith(\"gh-readonly-queue/main/pr-${pr}-\"))][0].databaseId // empty" 2> /dev/null
@@ -26,16 +26,12 @@ queue_removal() {
   gh api graphql -F n="${pr}" -f query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequest(number:\$n){timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason}}}}}}" \
     -q ".data.repository.pullRequest.timelineItems.nodes[] | select(.createdAt >= \"${since}\") | .reason" 2> /dev/null
 }
-# the first two distinct FAIL lines, each followed by a space; a log that gh can't fetch or that has none gives nothing
-first_fail() {
-  log=$(gh run view "$1" --log-failed 2> /dev/null)
-  fails=$(grep -a -o -E 'FAIL [a-z-]+ \([0-9]+s\): .*|FAIL \[ *[0-9.]+s\] (\([0-9]+/[0-9]+\) )?[A-Za-z0-9_-]+ [^ ]+' <<< "${log}") || return
-  awk -v ORS=' ' '{ sub(/\([0-9]+\/[0-9]+\) /, "") } !seen[$0]++ { print; if (++n == 2) exit }' <<< "${fails}"
-}
-until branch=$(gh pr view "${pr}" --json headRefName -q .headRefName 2> /dev/null); do sleep 60; done
+until info=$(gh pr view "${pr}" --json headRefName,headRefOid -q '"\(.headRefName) \(.headRefOid)"' 2> /dev/null); do sleep 60; done
+read -r branch head <<< "${info}"
 # a refused list (rate limit, outage) would leave the old failed runs looking new, and each would cost a fix round
 until runs=$(branch_runs "${branch}"); do sleep 60; done
-known=$(awk '$3 == "failure" {print $1 ":" $2} NR == 1 && $3 == "cancelled" {print $1}' <<< "${runs}")
+# a failed run on the head the PR has now is news: an early draft PR's run can fail before the land starts this watch
+known=$(awk -v head="${head}" '$6 != head && $3 == "failure" {print $1 ":" $2} NR == 1 && $6 != head && $3 == "cancelled" {print $1}' <<< "${runs}")
 outside=0
 stuck=0
 rearmed=0
@@ -73,7 +69,7 @@ while true; do
           echo "PR ${pr} merged as ${commit:0:8}; main run ${run_id} passed"
           exit 0
         fi
-        fail=$(first_fail "${run_id}")
+        fail=$(bash "${P}/first-fail.sh" "${run_id}")
         echo "PR ${pr} merged as ${commit:0:8}; main run ${run_id} ${run_conclusion}: ${fail}"
         exit 1
       fi
@@ -88,7 +84,7 @@ while true; do
   failed=$(awk '$3 == "failure" {print $1 ":" $2}' <<< "${runs}")
   while read -r attempt; do
     if [[ -n "${attempt}" ]] && ! grep -qx "${attempt}" <<< "${known}"; then
-      fail=$(first_fail "${attempt%:*}")
+      fail=$(bash "${P}/first-fail.sh" "${attempt%:*}")
       echo "PR ${pr} run ${attempt%:*} failed: ${fail}"
       exit 1
     fi
@@ -131,7 +127,7 @@ while true; do
       failed_checks)
         queue_run=$(last_queue_failure)
         queue_fail=
-        [[ -z "${queue_run}" ]] || queue_fail=$(first_fail "${queue_run}")
+        [[ -z "${queue_run}" ]] || queue_fail=$(bash "${P}/first-fail.sh" "${queue_run}")
         echo "PR ${pr} is neither queued nor set to auto-merge (${merge_state})${queue_run:+; last queue run ${queue_run} failed: ${queue_fail}}"
         exit 1
         ;;

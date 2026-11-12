@@ -1,0 +1,24 @@
+kind: helper
+name: chirp-stream-records-activity-end
+call:
+  chirp_stream_records:
+    configure:
+      model: chirp_2
+      language_codes: [en-US]
+      sample_rate_hertz: 24000
+    recognizer: projects/project/locations/us-central1/recognizers/_
+    billed_before: 0.0
+    responses:
+      - speech_event_type: SPEECH_ACTIVITY_BEGIN
+        results:
+          - alternatives: [{transcript: hello}]
+            is_final: false
+        total_billed_duration: {seconds: 0, nanos: 500000000}
+      - speech_event_type: SPEECH_ACTIVITY_END
+        results: []
+        total_billed_duration: {seconds: 1, nanos: 0}
+      - speech_event_type: END_OF_SINGLE_UTTERANCE
+        results: []
+        total_billed_duration: {seconds: 1, nanos: 0}
+env: {}
+compare: {ignore: []}

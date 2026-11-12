@@ -1,0 +1,20 @@
+kind: helper
+name: model-list
+call:
+  openai_chat_choices:
+    model_list:
+      steps:
+        - api_base: 'https://Example.COM:8443/v1/path?q=1'
+          api_key: k
+          env: {}
+          reply: {status: 200, body: '{"data":[{"id":"b"},{"id":"a"}]}'}
+        - api_base: null
+          api_key: null
+          env: {OPENAI_API_KEY: env-key}
+          reply: {status: 200, body: '{"data":[{"id":"m"}]}'}
+        - api_base: null
+          api_key: null
+          env: {}
+          reply: {status: 500, body: '{"error":"boom"}'}
+env: {}
+compare: {ignore: []}

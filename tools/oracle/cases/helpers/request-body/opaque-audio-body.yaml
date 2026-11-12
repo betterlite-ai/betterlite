@@ -1,0 +1,10 @@
+kind: helper
+name: opaque_audio_body
+call:
+  request_body:
+    function: is_opaque_audio_request
+    route: /azure_speech/audio/speech
+    content_type: audio/wav
+env: {}
+compare:
+  ignore: []

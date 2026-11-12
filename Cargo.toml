@@ -7,6 +7,7 @@ members = [
   "tools/*/fuzz",
   "tools/oracle/helper-api",
   "tools/oracle/src/helpers/redact",
+  "tools/oracle/src/helpers/server",
 ]
 resolver = "3"
 

@@ -1,0 +1,48 @@
+kind: helper
+name: openai-image-generation-image-request-overlay
+call:
+  openai_image_generation:
+    function: image_request_overlay
+    probes:
+      - model: dall-e-2
+        prompt: a cat
+        optional_params: {model: dall-e-3, prompt: over, n: 2, max_retries: 5, extra_headers: {x-old: 'no'}, extra_query: {api-version: '1'}, extra_body: {seed: 7}}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        organization: org-test
+        headers: {x-test: 'yes'}
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"url":"https://example.test/a.png"}]}'}
+      - model: dall-e-2
+        prompt: a dog
+        optional_params: {extra_headers: {x-opt: 'yes'}}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        prompt: a bird
+        optional_params: {max_retries: '3'}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        prompt: a fish
+        optional_params: {n: 1}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        organization: org-test
+        timeout: 30
+        is_async: true
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        prompt: a gull
+        optional_params: {max_retries: '3'}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        is_async: true
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}
