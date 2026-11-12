@@ -75,6 +75,13 @@ fn unpadded_base64_returns_the_original() {
 }
 
 #[test]
+fn an_unpadded_data_url_is_returned_unchanged() {
+    let unpadded = JPEG_BASE64.trim_end_matches('=');
+    let image = format!("data:image/jpeg;base64,{unpadded}");
+    assert_eq!(convert_image(&image).unwrap(), image);
+}
+
+#[test]
 fn extra_padding_is_tolerated() {
     let padded = format!("{JPEG_BASE64}====");
     assert_eq!(convert_image(&padded).unwrap(), padded);
