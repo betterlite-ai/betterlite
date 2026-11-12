@@ -1,0 +1,11 @@
+kind: helper
+name: model-registration-regions-unlisted-provider
+call:
+  b5365:
+    function: region
+    params: {model: openai/gpt-4o, region_name: europe}
+    default_vertex_location: null
+    provider: openai
+    allowed_model_region: eu
+env: {}
+compare: {ignore: []}

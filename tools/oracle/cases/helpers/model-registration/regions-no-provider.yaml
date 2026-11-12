@@ -1,0 +1,11 @@
+kind: helper
+name: model-registration-regions-no-provider
+call:
+  b5365:
+    function: region
+    params: {model: azure/gpt-4o, region_name: eastus2}
+    default_vertex_location: null
+    provider: null
+    allowed_model_region: us
+env: {}
+compare: {ignore: []}

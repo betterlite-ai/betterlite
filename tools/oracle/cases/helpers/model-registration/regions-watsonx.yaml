@@ -1,0 +1,11 @@
+kind: helper
+name: model-registration-regions-watsonx
+call:
+  b5365:
+    function: region
+    params: {model: watsonx/ibm/granite-13b-chat-v2, watsonx_region_name: eu-gb}
+    default_vertex_location: null
+    provider: watsonx
+    allowed_model_region: eu
+env: {}
+compare: {ignore: []}

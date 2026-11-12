@@ -1,0 +1,11 @@
+kind: helper
+name: model-registration-regions-vertex-param
+call:
+  b5365:
+    function: region
+    params: {model: vertex_ai/gemini-pro, vertex_location: us-central1}
+    default_vertex_location: europe-west4
+    provider: vertex_ai
+    allowed_model_region: us
+env: {}
+compare: {ignore: []}
