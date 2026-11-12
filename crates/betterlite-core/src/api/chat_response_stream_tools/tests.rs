@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::responses_objects::ResponseOutputItem;
 use indexmap::IndexMap;
 use rstest::rstest;
 
@@ -259,6 +260,37 @@ fn item_id_replacement_leaves_other_types_alone() {
     assert_eq!(item_id(&replaced[0]), json("\"msg_1\""));
     assert_eq!(item_id(&replaced[1]), json("\"fc_1\""));
     assert_eq!(index_of_output_item_type(&items, "reasoning"), None);
+}
+
+#[rstest]
+#[case::message(
+    "message",
+    ResponseOutputItem::Message(serde_json::from_str(r#"{"type":"message","id":"old","status":"in_progress","role":"assistant","content":[]}"#).unwrap())
+)]
+#[case::function_call(
+    "function_call",
+    ResponseOutputItem::FunctionCall(serde_json::from_str(r#"{"arguments":"","call_id":"c","name":"f","type":"function_call","id":"old","status":"in_progress"}"#).unwrap())
+)]
+#[case::image_generation_call(
+    "image_generation_call",
+    ResponseOutputItem::ImageGeneration(serde_json::from_str(r#"{"type":"image_generation_call","id":"old","status":"in_progress","result":null}"#).unwrap())
+)]
+#[case::code_interpreter_call(
+    "code_interpreter_call",
+    ResponseOutputItem::CodeInterpreter(serde_json::from_str(r#"{"type":"code_interpreter_call","id":"old","code":null,"container_id":null,"status":"in_progress","outputs":null}"#).unwrap())
+)]
+#[case::custom_tool_call(
+    "custom_tool_call",
+    ResponseOutputItem::CustomTool(serde_json::from_str(r#"{"type":"custom_tool_call","call_id":"c","id":"old","name":"f","input":"","status":"in_progress"}"#).unwrap())
+)]
+fn item_id_replacement_rewrites_every_typed_variant(
+    #[case] item_type: &str,
+    #[case] item: ResponseOutputItem,
+) {
+    let items = [item];
+    assert_eq!(index_of_output_item_type(&items, item_type), Some(0));
+    let replaced = output_items_with_id(&items, item_type, Some("new"));
+    assert_eq!(item_id(&replaced[0]), json("\"new\""));
 }
 
 #[rstest]
