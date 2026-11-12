@@ -24,7 +24,7 @@ fn resolved(
         .expect("the fixture environment resolves");
     (
         info.api_base,
-        info.api_key.map(|value| value.expose_secret().clone()),
+        info.api_key.map(|value| value.expose_secret().to_owned()),
     )
 }
 
@@ -144,7 +144,7 @@ fn complete_url_joins_the_run_path(#[case] base: &str, #[case] expected: &str) {
 #[case::slash("langflow/a/b", "a%2Fb")]
 #[case::question_and_fragment("langflow/a?b#c", "a%3Fb%23c")]
 #[case::unreserved_kept("langflow/my.flow-1_2~3", "my.flow-1_2~3")]
-#[case::non_ascii("langflow/ü", "%C3%BC")]
+#[case::non_ascii("langflow/\u{fc}", "%C3%BC")]
 fn the_url_encodes_the_flow_id(#[case] model: &str, #[case] encoded: &str) {
     assert_eq!(
         complete_url(Some("http://host:7860"), model, &empty_object())
@@ -158,8 +158,8 @@ fn the_url_refuses_a_dot_segment_flow_id() {
     let error = complete_url(Some("http://host:7860"), "langflow/..", &empty_object())
         .expect_err("a dot segment is not a path segment");
     assert!(matches!(
-        error,
-        LangFlowError::FlowId { ref flow_id, .. } if flow_id == ".."
+        &error,
+        LangFlowError::FlowId { flow_id, .. } if flow_id == ".."
     ));
     assert_eq!(error.status_code(), None);
 }
@@ -215,11 +215,11 @@ fn sign_request_refuses_tweaks_in_the_request_body() {
         &object(r#"{"input_value":"hi","tweaks":{"x":{}}}"#),
     )
     .expect_err("a final body cannot carry tweaks");
-    assert!(matches!(
-        error,
-        LangFlowError::Api { status_code: 400, message } if message == TWEAKS_MESSAGE
-    ));
     assert_eq!(error.status_code(), Some(400));
+    assert!(matches!(
+        &error,
+        LangFlowError::Api { status_code: 400, message } if message.as_str() == TWEAKS_MESSAGE
+    ));
 }
 
 #[test]

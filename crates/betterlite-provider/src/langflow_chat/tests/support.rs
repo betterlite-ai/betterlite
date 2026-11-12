@@ -127,12 +127,12 @@ impl Captured {
 }
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -152,10 +152,9 @@ pub(super) fn capture() -> (Captured, DefaultGuard) {
 }
 
 pub(super) fn reply_body(content: &str) -> String {
-    serde_json::json!({
-        "outputs": [{"outputs": [{"results": {"message": {"text": content}}}]}]
-    })
-    .to_string()
+    let prefix = r#"{"outputs":[{"outputs":[{"results":{"message":{"text":""#;
+    let suffix = r#""}}}]}]}"#;
+    [prefix, content, suffix].concat()
 }
 
 pub(super) fn empty_object() -> Object {

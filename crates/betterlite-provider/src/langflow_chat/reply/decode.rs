@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 
 use crate::langflow_chat::error::{LangFlowError, NO_MESSAGE_MESSAGE};
 

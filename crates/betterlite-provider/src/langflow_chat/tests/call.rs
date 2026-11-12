@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use rstest::rstest;
 
 use super::support::{key, messages, object};
@@ -57,7 +55,7 @@ fn streaming_is_faked_only_for_an_explicit_stream_request(
 
 #[test]
 fn the_stream_flag_never_goes_into_the_body() {
-    assert!(!STREAM_PARAM_IN_BODY);
+    const { assert!(!STREAM_PARAM_IN_BODY) };
 }
 
 #[test]

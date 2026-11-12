@@ -54,8 +54,8 @@ pub fn transform_request(input: &RequestInput<'_>) -> Result<RequestBody, LangFl
 
 fn field_or_default(optional_params: &Object, name: &str, default: &str) -> Json {
     match optional_params.get(name) {
-        Some(value) if !matches!(value, Json::Null) => value.clone(),
         Some(Json::Null) | None => Json::Text(default.to_owned()),
+        Some(value) => value.clone(),
     }
 }
 

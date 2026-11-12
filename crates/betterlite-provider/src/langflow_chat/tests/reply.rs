@@ -20,7 +20,7 @@ async fn reply_with(body: &str, status: u16) -> Result<LangFlowChatResponse, Lan
     .await
 }
 
-fn content(body: &str) -> String {
+async fn content(body: &str) -> String {
     reply_with(body, 200)
         .await
         .expect("the fixture body carries a message")
@@ -74,8 +74,9 @@ async fn the_reply_is_one_stop_choice_for_the_requested_model() {
     r#"{"outputs":[{"outputs":[{"outputs":{"a":{"message":{"text":"one"}},"b":{"message":{"text":"two"}}}}]}]}"#,
     "one"
 )]
-fn content_comes_from_the_documented_paths(#[case] body: &str, #[case] expected: &str) {
-    assert_eq!(content(body), expected);
+#[tokio::test]
+async fn content_comes_from_the_documented_paths(#[case] body: &str, #[case] expected: &str) {
+    assert_eq!(content(body).await, expected);
 }
 
 #[rstest]
@@ -93,7 +94,8 @@ fn content_comes_from_the_documented_paths(#[case] body: &str, #[case] expected:
 #[case::json_array("[]")]
 #[case::json_null("null")]
 #[case::json_string(r#""hello""#)]
-fn a_body_without_a_message_raises_the_extraction_error(#[case] body: &str) {
+#[tokio::test]
+async fn a_body_without_a_message_raises_the_extraction_error(#[case] body: &str) {
     let error = reply_with(body, 200)
         .await
         .expect_err("the fixture body carries no message");
@@ -106,7 +108,8 @@ fn a_body_without_a_message_raises_the_extraction_error(#[case] body: &str) {
 #[rstest]
 #[case::ok_status(200)]
 #[case::error_status(502)]
-fn a_non_json_body_keeps_the_http_status(#[case] status: u16) {
+#[tokio::test]
+async fn a_non_json_body_keeps_the_http_status(#[case] status: u16) {
     let error = reply_with("not json", status)
         .await
         .expect_err("a non-JSON body has no message");
@@ -121,7 +124,9 @@ fn a_non_json_body_keeps_the_http_status(#[case] status: u16) {
                 "unexpected message: {message}"
             );
         }
-        other => panic!("unexpected error: {other:?}"),
+        other @ (LangFlowError::ApiBaseRequired
+        | LangFlowError::Environment { .. }
+        | LangFlowError::FlowId { .. }) => panic!("unexpected error: {other:?}"),
     }
 }
 

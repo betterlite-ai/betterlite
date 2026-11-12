@@ -84,9 +84,8 @@ async fn count_usage(
         Ok(count) => count,
         Err(error) => return counter_failed(&error),
     };
-    let total_tokens = match prompt_tokens.checked_add(completion_tokens) {
-        Some(total) => total,
-        None => return counter_failed(&CountError::Overflow),
+    let Some(total_tokens) = prompt_tokens.checked_add(completion_tokens) else {
+        return counter_failed(&CountError::Overflow);
     };
     Some(Usage {
         prompt_tokens,

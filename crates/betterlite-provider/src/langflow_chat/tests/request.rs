@@ -1,20 +1,9 @@
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use serde_json::json;
 
 use super::support::{messages, object};
 use crate::langflow_chat::error::{LangFlowError, TWEAKS_MESSAGE};
 use crate::langflow_chat::request::{RequestInput, transform_request};
-
-fn body(wire: &str, options: &str) {
-    let messages = messages(wire);
-    let optional_params = object(options);
-    let _ = transform_request(&RequestInput {
-        messages: &messages,
-        optional_params: &optional_params,
-    })
-    .expect("the fixture request builds");
-}
 
 fn input_value(wire: &str) -> String {
     let messages = messages(wire);
@@ -183,7 +172,12 @@ fn tweaks_in_the_request_options_are_refused() {
 
 #[test]
 fn a_null_tweaks_option_is_allowed() {
-    body("[]", r#"{"tweaks":null}"#);
+    let request = transform_request(&RequestInput {
+        messages: &[],
+        optional_params: &object(r#"{"tweaks":null}"#),
+    })
+    .expect("a null tweaks value is unset");
+    assert_eq!(request.input_value, "");
 }
 
 #[test]
@@ -196,12 +190,7 @@ fn the_body_serializes_the_langflow_shape() {
     })
     .expect("the fixture request builds");
     assert_eq!(
-        serde_json::to_value(&request).expect("the body serializes"),
-        json!({
-            "input_value": "hi",
-            "input_type": "text",
-            "output_type": "chat",
-            "session_id": "s1",
-        })
+        serde_json::to_string(&request).expect("the body serializes"),
+        r#"{"input_value":"hi","input_type":"text","output_type":"chat","session_id":"s1"}"#
     );
 }

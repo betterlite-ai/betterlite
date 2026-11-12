@@ -20,12 +20,12 @@ pub(super) fn flow(input: &FlowInput) -> HelperResult {
         &secrets,
         &input.provider.environment,
     )
-    .map_err(failure)?;
+    .map_err(|error| failure(&error))?;
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "provider": {
             "api_base": info.api_base,
-            "api_key": info.api_key.as_ref().map(|key| key.expose_secret().clone()),
+            "api_key": info.api_key.as_ref().map(|stored| stored.expose_secret().to_owned()),
         },
         "urls": input.urls.iter().map(url_value).collect::<Vec<Value>>(),
         "validated": input
@@ -114,7 +114,7 @@ pub(super) fn replies(cases: &[ReplyCase]) -> HelperResult {
     Ok(json!({"replies": found}))
 }
 
-fn failure(error: LangFlowError) -> Box<HelperError> {
+fn failure(error: &LangFlowError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("LangFlowError"),
         status: error.status_code(),

@@ -57,7 +57,7 @@ fn secret_text(
         .map_err(|source| LangFlowError::Environment { name, source })?;
     Ok(value
         .filter(|text| !text.expose_secret().is_empty())
-        .map(|text| text.expose_secret().clone()))
+        .map(|text| text.expose_secret().to_owned()))
 }
 
 #[must_use]
@@ -119,7 +119,7 @@ pub fn validate_environment(
         String::from(JSON_CONTENT_TYPE),
     );
     if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
-        headers.insert(String::from(API_KEY_HEADER), key.expose_secret().clone());
+        headers.insert(String::from(API_KEY_HEADER), key.expose_secret().to_owned());
     }
 }
 
