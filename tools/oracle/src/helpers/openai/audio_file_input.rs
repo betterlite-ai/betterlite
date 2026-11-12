@@ -33,7 +33,7 @@ pub(crate) struct Input {
 enum Call {
     Process(FileCall),
     Hash(FileCall),
-    Name(NameCall),
+    Name(FileCall),
     Language(LanguageCall),
     Duration(FileCall),
     Health,
@@ -41,14 +41,9 @@ enum Call {
 
 #[derive(Deserialize)]
 struct FileCall {
-    file: FileSpec,
+    file: File,
     #[serde(default)]
     files: BTreeMap<String, String>,
-}
-
-#[derive(Deserialize)]
-struct NameCall {
-    file: FileSpec,
 }
 
 #[derive(Deserialize)]
@@ -56,62 +51,51 @@ struct LanguageCall {
     language: String,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "kind")]
-enum FileSpec {
-    #[serde(rename = "bytes")]
-    Bytes { content: String },
-    #[serde(rename = "bytearray")]
-    ByteArray { content: String },
-    #[serde(rename = "text")]
-    Text { content: String },
-    #[serde(rename = "path")]
-    Path { path: String },
-    #[serde(rename = "stream")]
-    Stream(StreamSpec),
-    #[serde(rename = "tuple")]
-    Tuple(TupleSpec),
-    #[serde(rename = "unsupported")]
-    Unsupported { class_name: String },
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+enum File {
+    Tuple(TupleFile),
+    Part(Part),
 }
 
-#[derive(Deserialize)]
-struct TupleSpec {
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TupleKind {
+    Tuple,
+}
+
+#[derive(Clone, Deserialize)]
+struct TupleFile {
+    #[serde(rename = "kind")]
+    _kind: TupleKind,
     filename: Option<String>,
     #[serde(default)]
-    content: Option<ContentSpec>,
+    content: Option<Part>,
     #[serde(rename = "mime")]
     _mime: Option<IgnoredAny>,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "kind")]
-enum ContentSpec {
-    #[serde(rename = "bytes")]
-    Bytes { content: String },
-    #[serde(rename = "bytearray")]
-    ByteArray { content: String },
-    #[serde(rename = "text")]
-    Text { content: String },
-    #[serde(rename = "path")]
-    Path { path: String },
-    #[serde(rename = "stream")]
-    Stream(StreamSpec),
-    #[serde(rename = "unsupported")]
-    Unsupported { class_name: String },
+#[derive(Clone, Default, Deserialize)]
+#[serde(try_from = "String")]
+struct Base64(Vec<u8>);
+
+impl TryFrom<String> for Base64 {
+    type Error = base64::DecodeError;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        BASE64.decode(text).map(Self)
+    }
 }
 
-#[derive(Deserialize)]
-struct StreamSpec {
-    name: String,
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default)]
-    position: Option<u64>,
-    #[serde(default)]
-    read: ReadMode,
-    #[serde(default)]
-    seek: SeekMode,
+#[derive(Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Part {
+    Bytes { content: Base64 },
+    ByteArray { content: Base64 },
+    Text { content: String },
+    Path { path: PathBuf },
+    Stream(FixtureStream),
+    Unsupported { class_name: String },
 }
 
 #[derive(Deserialize, Clone, Copy, Default)]
@@ -132,30 +116,21 @@ enum SeekMode {
     Fails,
 }
 
+#[derive(Clone, Deserialize)]
 struct FixtureStream {
     name: String,
-    content: Vec<u8>,
+    #[serde(default)]
+    content: Base64,
+    #[serde(default)]
     position: usize,
+    #[serde(default)]
     read: ReadMode,
+    #[serde(default)]
     seek: SeekMode,
 }
 
 impl FixtureStream {
-    fn from_spec(spec: &StreamSpec) -> Result<Self, Box<crate::helpers::HelperError>> {
-        let content = match &spec.content {
-            Some(content) => BASE64.decode(content).map_err(failure)?,
-            None => Vec::new(),
-        };
-        Ok(Self {
-            name: spec.name.clone(),
-            content,
-            position: usize::try_from(spec.position.unwrap_or(0)).map_err(failure)?,
-            read: spec.read,
-            seek: spec.seek,
-        })
-    }
-
-    fn fail_seek(&mut self, position: u64) -> io::Result<()> {
+    fn move_to(&mut self, position: u64) -> io::Result<()> {
         if self.seek == SeekMode::Fails {
             return Err(io::Error::other("the fixture seek fails"));
         }
@@ -174,9 +149,9 @@ impl AudioStream for FixtureStream {
             ReadMode::Fail => Err(io::Error::other("the fixture reader fails")),
             ReadMode::Missing => Ok(None),
             ReadMode::Content => {
-                let start = self.position.min(self.content.len());
-                let content = self.content.get(start..).map(<[u8]>::to_vec);
-                self.position = self.content.len();
+                let start = self.position.min(self.content.0.len());
+                let content = self.content.0.get(start..).map(<[u8]>::to_vec);
+                self.position = self.content.0.len();
                 Ok(content)
             }
         }
@@ -189,7 +164,7 @@ impl AudioStream for FixtureStream {
     fn seek(&mut self, position: u64) -> Option<io::Result<()>> {
         match self.seek {
             SeekMode::Unsupported => None,
-            SeekMode::Works | SeekMode::Fails => Some(self.fail_seek(position)),
+            SeekMode::Works | SeekMode::Fails => Some(self.move_to(position)),
         }
     }
 }
@@ -209,106 +184,44 @@ impl AuthorizedAudioFiles for FixtureFiles {
     }
 }
 
-enum PreparedContent {
-    Bytes(Vec<u8>),
-    ByteArray(Vec<u8>),
-    Text(String),
-    Path(PathBuf),
-    Stream(FixtureStream),
-    Unsupported(String),
-}
-
-impl PreparedContent {
-    fn from_spec(spec: &ContentSpec) -> Result<Self, Box<crate::helpers::HelperError>> {
-        Ok(match spec {
-            ContentSpec::Bytes { content } => Self::Bytes(BASE64.decode(content).map_err(failure)?),
-            ContentSpec::ByteArray { content } => {
-                Self::ByteArray(BASE64.decode(content).map_err(failure)?)
-            }
-            ContentSpec::Text { content } => Self::Text(content.clone()),
-            ContentSpec::Path { path } => Self::Path(PathBuf::from(path)),
-            ContentSpec::Stream(stream) => Self::Stream(FixtureStream::from_spec(stream)?),
-            ContentSpec::Unsupported { class_name } => Self::Unsupported(class_name.clone()),
-        })
-    }
-
-    fn as_content(&mut self) -> TupleContent<'_> {
-        match self {
-            Self::Bytes(content) => TupleContent::Bytes(content.as_slice()),
-            Self::ByteArray(content) => TupleContent::ByteArray(content.as_slice()),
-            Self::Text(text) => TupleContent::Text(text.as_str()),
-            Self::Path(path) => TupleContent::Path(path.as_path()),
-            Self::Stream(stream) => TupleContent::Stream(stream),
-            Self::Unsupported(class_name) => TupleContent::Unsupported {
-                python_class: class_name.as_str(),
+// AudioFile and TupleContent list the same variants, so one match serves both
+macro_rules! borrow_part {
+    ($part:expr, $target:ident) => {
+        match $part {
+            Part::Bytes { content } => $target::Bytes(&content.0),
+            Part::ByteArray { content } => $target::ByteArray(&content.0),
+            Part::Text { content } => $target::Text(content),
+            Part::Path { path } => $target::Path(path),
+            Part::Stream(stream) => $target::Stream(stream),
+            Part::Unsupported { class_name } => $target::Unsupported {
+                python_class: class_name,
             },
         }
-    }
+    };
 }
 
-enum PreparedFile {
-    Bytes(Vec<u8>),
-    ByteArray(Vec<u8>),
-    Text(String),
-    Path(PathBuf),
-    Stream(FixtureStream),
-    Tuple {
-        filename: Option<String>,
-        content: Option<PreparedContent>,
-    },
-    Unsupported(String),
-}
-
-impl PreparedFile {
-    fn from_spec(spec: &FileSpec) -> Result<Self, Box<crate::helpers::HelperError>> {
-        Ok(match spec {
-            FileSpec::Bytes { content } => Self::Bytes(BASE64.decode(content).map_err(failure)?),
-            FileSpec::ByteArray { content } => {
-                Self::ByteArray(BASE64.decode(content).map_err(failure)?)
-            }
-            FileSpec::Text { content } => Self::Text(content.clone()),
-            FileSpec::Path { path } => Self::Path(PathBuf::from(path)),
-            FileSpec::Stream(stream) => Self::Stream(FixtureStream::from_spec(stream)?),
-            FileSpec::Tuple(tuple) => Self::Tuple {
-                filename: tuple.filename.clone(),
-                content: match &tuple.content {
-                    Some(content) => Some(PreparedContent::from_spec(content)?),
-                    None => None,
-                },
-            },
-            FileSpec::Unsupported { class_name } => Self::Unsupported(class_name.clone()),
-        })
-    }
-
+impl File {
     fn as_file(&mut self) -> AudioFile<'_> {
         match self {
-            Self::Bytes(content) => AudioFile::Bytes(content.as_slice()),
-            Self::ByteArray(content) => AudioFile::ByteArray(content.as_slice()),
-            Self::Text(text) => AudioFile::Text(text.as_str()),
-            Self::Path(path) => AudioFile::Path(path.as_path()),
-            Self::Stream(stream) => AudioFile::Stream(stream),
-            Self::Tuple { filename, content } => AudioFile::Tuple(AudioTuple {
-                filename: filename.as_deref(),
-                content: content.as_mut().map(PreparedContent::as_content),
+            Self::Part(part) => borrow_part!(part, AudioFile),
+            Self::Tuple(tuple) => AudioFile::Tuple(AudioTuple {
+                filename: tuple.filename.as_deref(),
+                content: tuple
+                    .content
+                    .as_mut()
+                    .map(|part| borrow_part!(part, TupleContent)),
             }),
-            Self::Unsupported(class_name) => AudioFile::Unsupported {
-                python_class: class_name.as_str(),
-            },
         }
     }
 
     const fn stream_position(&self) -> Option<usize> {
         match self {
-            Self::Stream(stream) => Some(stream.position),
-            Self::Tuple { content, .. } => match content {
-                Some(PreparedContent::Stream(stream)) => Some(stream.position),
-                Some(_) | None => None,
-            },
-            Self::Bytes(_)
-            | Self::ByteArray(_)
-            | Self::Text(_)
-            | Self::Path(_)
-            | Self::Unsupported(_) => None,
+            Self::Part(Part::Stream(stream))
+            | Self::Tuple(TupleFile {
+                content: Some(Part::Stream(stream)),
+                ..
+            }) => Some(stream.position),
+            Self::Part(_) | Self::Tuple(_) => None,
         }
     }
 }
@@ -330,71 +243,58 @@ impl crate::helpers::Helper for Op {
 
 fn outcome_of(call: &Call) -> Result<Value, Box<crate::helpers::HelperError>> {
     match call {
-        Call::Process(file_call) => process_outcome(file_call),
-        Call::Hash(file_call) => hash_outcome(file_call),
-        Call::Name(name_call) => name_outcome(name_call),
-        Call::Language(language_call) => Ok(language_outcome(language_call)),
-        Call::Duration(file_call) => duration_outcome(file_call),
+        Call::Process(file_call) => with_file(file_call, process_outcome),
+        Call::Hash(file_call) => with_file(file_call, |file, files| {
+            let hash = get_audio_file_content_hash(&mut file.as_file(), files);
+            json!({ "ok": true, "value": { "hash": hash, "position": file.stream_position() } })
+        }),
+        Call::Name(file_call) => with_file(
+            file_call,
+            |file, _files| json!({ "ok": true, "value": get_audio_file_name(&file.as_file()) }),
+        ),
+        Call::Duration(file_call) => with_file(file_call, duration_outcome),
+        Call::Language(language_call) => Ok(json!({
+            "ok": true,
+            "value": normalize_language_to_bcp47(&language_call.language),
+        })),
         Call::Health => health_outcome(),
     }
 }
 
-fn process_outcome(call: &FileCall) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn with_file<Outcome>(
+    call: &FileCall,
+    outcome: Outcome,
+) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    Outcome: FnOnce(&mut File, &FixtureFiles) -> Value,
+{
     let files = fixture_files(&call.files)?;
-    let mut file = PreparedFile::from_spec(&call.file)?;
-    Ok(match process_audio_file(file.as_file(), &files) {
-        Ok(processed) => json!({
-            "ok": true,
-            "value": {
-                "filename": processed.filename,
-                "content_type": processed.content_type,
-                "content": BASE64.encode(processed.file_content),
-            },
-        }),
-        Err(_) => json!({ "ok": false }),
-    })
+    let mut file = call.file.clone();
+    Ok(outcome(&mut file, &files))
 }
 
-fn hash_outcome(call: &FileCall) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let files = fixture_files(&call.files)?;
-    let mut file = PreparedFile::from_spec(&call.file)?;
-    let mut borrowed = file.as_file();
-    let hash = get_audio_file_content_hash(&mut borrowed, &files);
-    Ok(json!({
-        "ok": true,
-        "value": { "hash": hash, "position": file.stream_position() },
-    }))
-}
-
-fn name_outcome(call: &NameCall) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let mut file = PreparedFile::from_spec(&call.file)?;
-    let name = get_audio_file_name(&file.as_file());
-    Ok(json!({ "ok": true, "value": name }))
-}
-
-fn language_outcome(call: &LanguageCall) -> Value {
+fn process_outcome(file: &mut File, files: &FixtureFiles) -> Value {
+    let Ok(processed) = process_audio_file(file.as_file(), files) else {
+        return json!({ "ok": false });
+    };
     json!({
         "ok": true,
-        "value": normalize_language_to_bcp47(&call.language),
+        "value": {
+            "filename": processed.filename,
+            "content_type": processed.content_type,
+            "content": BASE64.encode(processed.file_content),
+        },
     })
 }
 
-fn duration_outcome(call: &FileCall) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let files = fixture_files(&call.files)?;
-    let mut file = PreparedFile::from_spec(&call.file)?;
+fn duration_outcome(file: &mut File, files: &FixtureFiles) -> Value {
     let decoder = NativeAudioDecoder {
         limits: AudioDecodeLimits::default(),
     };
-    let mut borrowed = file.as_file();
-    let seconds =
-        calculate_request_duration(&mut borrowed, &files, AudioDecoder::Available(&decoder));
-    Ok(json!({
-        "ok": true,
-        "value": {
-            "duration": seconds.and_then(|decimal| decimal.to_f64()),
-            "position": file.stream_position(),
-        },
-    }))
+    let available = AudioDecoder::Available(&decoder);
+    let seconds = calculate_request_duration(&mut file.as_file(), files, available);
+    let duration = seconds.and_then(|decimal| decimal.to_f64());
+    json!({ "ok": true, "value": { "duration": duration, "position": file.stream_position() } })
 }
 
 fn health_outcome() -> Result<Value, Box<crate::helpers::HelperError>> {

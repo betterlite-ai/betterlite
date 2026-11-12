@@ -128,38 +128,32 @@ impl AudioStream for Stream {
     }
 
     fn read(&mut self) -> io::Result<Option<Vec<u8>>> {
-        match self.flaw {
-            Flaw::ReadFails => Err(io::Error::other("read failed")),
-            Flaw::ReadReturnsNone => Ok(None),
-            Flaw::Sound | Flaw::SeekFails | Flaw::SeekMissing | Flaw::TellMissing => {
-                let start = self.position.min(self.content.len());
-                let content = self.content.get(start..).map(<[u8]>::to_vec);
-                self.position = self.content.len();
-                Ok(content)
-            }
+        if self.flaw == Flaw::ReadFails {
+            return Err(io::Error::other("read failed"));
         }
+        if self.flaw == Flaw::ReadReturnsNone {
+            return Ok(None);
+        }
+        let start = self.position.min(self.content.len());
+        let content = self.content.get(start..).map(<[u8]>::to_vec);
+        self.position = self.content.len();
+        Ok(content)
     }
 
     fn tell(&mut self) -> Option<io::Result<u64>> {
-        match self.flaw {
-            Flaw::TellMissing => None,
-            Flaw::Sound
-            | Flaw::ReadFails
-            | Flaw::ReadReturnsNone
-            | Flaw::SeekFails
-            | Flaw::SeekMissing => Some(Ok(u64::try_from(self.position).unwrap())),
-        }
+        (self.flaw != Flaw::TellMissing).then(|| Ok(u64::try_from(self.position).unwrap()))
     }
 
     fn seek(&mut self, position: u64) -> Option<io::Result<()>> {
-        match self.flaw {
-            Flaw::SeekMissing => None,
-            Flaw::SeekFails => Some(Err(io::Error::other("seek failed"))),
-            Flaw::Sound | Flaw::ReadFails | Flaw::ReadReturnsNone | Flaw::TellMissing => {
-                self.position = usize::try_from(position).unwrap();
-                Some(Ok(()))
-            }
+        let outcome = match self.flaw {
+            Flaw::SeekMissing => return None,
+            Flaw::SeekFails => Err(io::Error::other("seek failed")),
+            _ => Ok(()),
+        };
+        if outcome.is_ok() {
+            self.position = usize::try_from(position).unwrap();
         }
+        Some(outcome)
     }
 }
 
