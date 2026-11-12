@@ -628,6 +628,16 @@ fn invalid_session_fields() {
 #[test]
 fn session_input_limits() {
     let settings = codec(Some(SALT), Some(Decimal::ONE), 24);
+    byte_limit(&settings);
+    json_depth_limit(&settings);
+}
+
+fn byte_limit(settings: &Codec) {
+    let boundary = vec![b'a'; MAX_SESSION_TOKEN_BYTES];
+    assert!(!matches!(
+        decode_session_token(&settings.cipher, &boundary),
+        Err(DecodeError::TooLarge { .. })
+    ));
     let oversized = vec![b'a'; MAX_SESSION_TOKEN_BYTES.saturating_add(1)];
     assert!(matches!(
         decode_session_token(&settings.cipher, &oversized).unwrap_err(),
@@ -641,13 +651,16 @@ fn session_input_limits() {
             source: DecodeError::TooLarge { .. }
         }
     ));
+}
+
+fn json_depth_limit(settings: &Codec) {
     let allowed = format!(
         "{{\"a\":{}{}}}",
         "[".repeat(MAX_SESSION_JSON_DEPTH.saturating_sub(1)),
         "]".repeat(MAX_SESSION_JSON_DEPTH.saturating_sub(1))
     );
     let allowed_token = sealed(
-        &settings,
+        settings,
         allowed.as_bytes(),
         LITELLM_SESSION_TOKEN_PREFIX.as_bytes(),
     );
@@ -658,7 +671,7 @@ fn session_input_limits() {
         "]".repeat(MAX_SESSION_JSON_DEPTH)
     );
     let deep_token = sealed(
-        &settings,
+        settings,
         too_deep.as_bytes(),
         LITELLM_SESSION_TOKEN_PREFIX.as_bytes(),
     );
