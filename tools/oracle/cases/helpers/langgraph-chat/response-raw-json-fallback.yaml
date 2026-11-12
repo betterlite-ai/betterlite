@@ -1,0 +1,19 @@
+kind: helper
+name: langgraph-chat-response-raw-json-fallback
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: reply
+    cases:
+      - {model: langgraph/agent, status: 200, body: '{}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "human", "content": "q"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"values": {"messages": [{"role": "assistant", "content": "y"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": "x"}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": {"type": "ai", "content": "x"}}'}
+      - {model: langgraph/agent, status: 200, body: '{"values": [1, 2]}'}
+      - {model: langgraph/agent, status: 200, body: '{"values": {"messages": {"type": "ai"}}}'}
+      - {model: langgraph/agent, status: 200, body: '{"output": "plain value", "count": 3}'}
+      - {model: langgraph/agent, status: 200, body: '{"a": [1, 2, {"b": null}], "c": true, "d": false}'}
+      - {model: langgraph/agent, status: 200, body: '{"text": "café 你好", "quote": "a\"b", "slash": "a/b"}'}
+      - {model: langgraph/agent, status: 200, body: '{"n": 1.5, "m": -2, "z": 0}'}

@@ -1,0 +1,17 @@
+kind: helper
+name: nested-and-or-filters
+call:
+  bedrock_services_vector_stores:
+    operation: nested_and_or_filters
+    filters:
+      - {and: [{operator: eq, key: a, value: 1}], or: [{operator: ne, key: b, value: 2}]}
+      - {and: [{operator: eq, key: a, value: 1}, {operator: gt, key: b, value: 2}], or: [{operator: lt, key: c, value: 3}, {operator: startsWith, key: d, value: x}]}
+      - {and: [{operator: eq, key: a, value: 1}, {operator: gt, key: b, value: 2}], or: [{operator: eq, key: c, value: 3}]}
+      - {and: []}
+      - {or: []}
+      - {}
+      - {and: [{and: []}]}
+      - {and: x}
+      - {or: [5]}
+env: {}
+compare: {ignore: []}
