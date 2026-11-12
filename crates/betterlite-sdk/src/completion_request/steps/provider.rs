@@ -119,14 +119,14 @@ pub(crate) fn hidden_params(state: &mut Preparation<'_>, provider: &str) {
         .insert(String::from("region_name"), region);
 }
 pub(crate) fn timeout(state: &mut Preparation<'_>, provider: &str) -> RequestResult<()> {
-    let request = TimeoutRequest {
+    let resolved = state.ports.timeout.resolve(&TimeoutRequest {
         model_timeout: state.args.timeout.as_ref(),
         timeout: state.kwargs.get("timeout"),
         request_timeout: state.kwargs.get("request_timeout"),
         configured_request_timeout: state.settings.request_timeout,
         custom_llm_provider: provider,
-    };
-    state.call.timeout = Some(state.ports.timeout.resolve(&request)?);
+    })?;
+    state.call.timeout = Some(resolved);
     Ok(())
 }
 fn pricing_gate(kwargs: &JsonObject) -> bool {
