@@ -1,0 +1,22 @@
+kind: helper
+name: multimodal-embedding-records-text-then-image
+call:
+  multimodal_embedding_records:
+    headers: []
+    mappings: []
+    requests:
+      - input: ["a red bike", "gs://bucket/bike.png", "a blue bike", "data:image/png;base64,YWJj"]
+        optional: {}
+      - input: ["describe", "gs://bucket/clip.mp4", "tail"]
+        optional: {task_type: RETRIEVAL_QUERY}
+    replies:
+      - model: multimodalembedding@001
+        status: 200
+        input: ["a red bike", "gs://bucket/bike.png"]
+        optional: {}
+        response:
+          predictions:
+            - {textEmbedding: [0.1, 0.2]}
+            - {imageEmbedding: [0.3]}
+compare: {ignore: []}
+env: {}

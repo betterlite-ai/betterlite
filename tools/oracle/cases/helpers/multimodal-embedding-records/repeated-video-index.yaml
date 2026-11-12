@@ -1,0 +1,38 @@
+kind: helper
+name: multimodal-embedding-records-repeated-video-index
+call:
+  multimodal_embedding_records:
+    headers: []
+    mappings: []
+    requests: []
+    replies:
+      - model: empty-model
+        status: 200
+        input: []
+        optional: {}
+        response:
+          predictions:
+            - videoEmbeddings:
+                - {startOffsetSec: 0, endOffsetSec: 1, embedding: [0.1]}
+                - {startOffsetSec: 1, endOffsetSec: 3, embedding: [0.2]}
+            - {imageEmbedding: [0.3]}
+      - model: empty-model
+        status: 200
+        input: []
+        optional: {}
+        response: {}
+      - model: empty-model
+        status: 500
+        input: []
+        optional: {}
+        response: {error: {message: boom}}
+      - model: empty-model
+        status: 200
+        input: []
+        optional: {}
+        response:
+          predictions:
+            - {imageEmbedding: [0.1]}
+            - {}
+compare: {ignore: []}
+env: {}

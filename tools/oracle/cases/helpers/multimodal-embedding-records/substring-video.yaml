@@ -1,0 +1,16 @@
+kind: helper
+name: multimodal-embedding-records-substring-video
+call:
+  multimodal_embedding_records:
+    headers: []
+    mappings: []
+    requests:
+      - input: ["gs://bucket/clip.mp4", "gs://bucket/photo.png", "https://cdn/clip.mp4", "data:video/mp4;base64,YWJj", "tail"]
+        optional: {}
+      - input: ["gs://bucket/clip.MP4", "gs://bucket/a.mp4.png", "prefix gs://bucket/x"]
+        optional: {}
+      - input: [1]
+        optional: {}
+    replies: []
+compare: {ignore: []}
+env: {}
