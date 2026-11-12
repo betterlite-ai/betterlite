@@ -10,7 +10,6 @@ use serde::de::DeserializeOwned;
 use super::AuthCache;
 use super::AuthCacheError;
 use super::WriteOptions;
-use super::WriteTtl;
 use super::backend::{AuthCacheTier, PreCall};
 use super::decode::decode_auth_payload;
 use super::keys::{Partition, partition};
@@ -186,7 +185,7 @@ impl<T: AuthCacheTier> AuthCache<T> {
         };
         let target = self.tier(name);
         if !options.local_only && !options.refresh_ttl {
-            let queued = target.set_pre_call(name, payload, options.ttl.map(WriteTtl::seconds))?;
+            let queued = target.set_pre_call(name, payload, options.ttl.map(|ttl| ttl.seconds))?;
             if matches!(queued, PreCall::Queued) {
                 return Ok(());
             }

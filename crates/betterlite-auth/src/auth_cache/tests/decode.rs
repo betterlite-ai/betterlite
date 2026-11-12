@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::{CachedValue, decode_cached_value};
 use rstest::rstest;
 
@@ -39,7 +40,7 @@ fn auth_cache_payload_over_byte_limit() {
             ReadOperation::Get,
         )
     });
-    assert_eq!(over.unwrap(), None);
+    assert!(over.unwrap().is_none());
     assert!(log.contains("exceeds the cache payload limits"), "{log}");
 }
 
@@ -51,7 +52,7 @@ fn auth_cache_payload_over_depth_limit() {
     assert_eq!(depth(&at_limit), MAX_PAYLOAD_DEPTH);
     let (allowed, allowed_log) =
         capture(|| decode_cached_auth(&nested(MAX_PAYLOAD_DEPTH), ReadOperation::Get));
-    assert_eq!(allowed.unwrap(), None);
+    assert!(allowed.unwrap().is_none());
     assert!(!allowed_log.contains("depth limit"), "{allowed_log}");
     let (over, log) = capture(|| {
         decode_cached_auth(
@@ -59,7 +60,7 @@ fn auth_cache_payload_over_depth_limit() {
             ReadOperation::Get,
         )
     });
-    assert_eq!(over.unwrap(), None);
+    assert!(over.unwrap().is_none());
     assert!(
         log.contains("exceeds the cache payload depth limit"),
         "{log}"
@@ -69,12 +70,12 @@ fn auth_cache_payload_over_depth_limit() {
 #[test]
 fn malformed_bytes_become_typed_miss() {
     let (decoded, log) = capture(|| decode_cached_auth(b"{oops", ReadOperation::Get));
-    assert_eq!(decoded.unwrap(), None);
+    assert!(decoded.unwrap().is_none());
     assert!(log.contains("is not decodable"), "{log}");
     let invalid_utf8 = decode_cached_auth(&[0xff, 0xfe, 0x00], ReadOperation::AsyncGet);
-    assert_eq!(invalid_utf8.unwrap(), None);
+    assert!(invalid_utf8.unwrap().is_none());
     let absent = decode_cached_auth(b"", ReadOperation::Get);
-    assert_eq!(absent.unwrap(), None);
+    assert!(absent.unwrap().is_none());
 }
 
 #[test]
@@ -108,7 +109,7 @@ fn caller_markers_not_promoted() {
 fn cache_diagnostics_redact_payload_and_key() {
     let payload = br#"{"max_budget":"sk-live-secret"}"#;
     let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
-    assert_eq!(decoded.unwrap(), None);
+    assert!(decoded.unwrap().is_none());
     assert!(
         log.contains("CacheCodec.deserialize: validation failed"),
         "{log}"
@@ -116,12 +117,12 @@ fn cache_diagnostics_redact_payload_and_key() {
     assert!(!log.contains("sk-live-secret"), "{log}");
     let cache = local_cache(Some(60.0_f64));
     let key = "team_membership:user-1:team-1";
-    let stored = serde_json::from_str(r#"{"max_budget":"sk-live-secret"}"#).unwrap();
+    let stored: Json = serde_json::from_str(r#"{"max_budget":"sk-live-secret"}"#).unwrap();
     cache
         .set(Some(key), &stored, WriteOptions::default())
         .unwrap();
     let (missing, keyed_log) = capture(|| cache.get_auth(key, false));
-    assert_eq!(missing.unwrap(), None);
+    assert!(missing.unwrap().is_none());
     assert!(!keyed_log.contains("sk-live-secret"), "{keyed_log}");
     assert!(!keyed_log.contains(key), "{keyed_log}");
     assert!(keyed_log.contains("UserApiKeyAuth"), "{keyed_log}");

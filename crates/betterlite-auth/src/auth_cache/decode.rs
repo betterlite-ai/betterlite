@@ -7,7 +7,7 @@ use betterlite_redis::cache_primitives::decode::{CachedValue, DecodeError, decod
 use super::payload::{ReadOperation, log_decode_miss};
 use crate::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 
-pub const MAX_PAYLOAD_BYTES: usize = 1_048_576;
+pub const MAX_PAYLOAD_BYTES: usize = 0x0010_0000;
 pub const MAX_PAYLOAD_DEPTH: usize = 64;
 
 const AUTH_MODEL: &str = "UserAPIKeyAuth";

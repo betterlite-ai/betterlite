@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::keys_copy::{auth_fixture, payload as reserved_payload};
 use super::support::{capture, local_cache, lock, recording_cache};
-use crate::auth_cache::payload::{self, PayloadError};
+use crate::auth_cache::payload::PayloadError;
 use crate::auth_cache::{AuthCacheError, WriteOptions};
 use crate::resolved_key::auth::AuthError;
 
@@ -174,15 +174,15 @@ fn typed_serialization_fails_before_write() {
     let result = fixture
         .cache
         .set(Some("tag:bad"), &explode, WriteOptions::default());
-    assert!(
-        matches!(
-            result,
-            Err(AuthCacheError::Payload(PayloadError::Codec(
-                CodecError::Serialize(_)
-            )))
-        ),
-        "{result:?}"
-    );
+    match result {
+        Err(AuthCacheError::Payload(error)) => {
+            assert!(matches!(
+                *error,
+                PayloadError::Codec(CodecError::Serialize(_))
+            ));
+        }
+        other => panic!("{other:?}"),
+    }
     assert!(fixture.operations().is_empty());
     assert!(lock(&fixture.ordinary).sets.is_empty());
 }

@@ -2,14 +2,17 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_cache::dual_cache::DualCacheError;
+use tokio::time::timeout;
+
 use betterlite_models::decisions::Json;
 use serde::Serialize;
 
+use betterlite_cache::backend::memory::MemoryCacheOps as _;
+
 use super::redis::{FakeRedis, connect_cache};
 use super::support::{
-    LocalCache, backend_failure, failure_label, local_cache, lock, memory, recording_cache,
-    settings,
+    LocalCache, assert_backend_failure, backend_failure, local_cache, lock, memory,
+    recording_cache, redis_handle, settings,
 };
 use crate::auth_cache::backend::PreCall;
 use crate::auth_cache::keys::CacheKey;
@@ -98,20 +101,8 @@ async fn two_memory_partitions_shared_redis() {
         settings(Some(60.0_f64)),
         45.0_f64,
     );
-    let ordinary_redis = cache
-        .ordinary
-        .redis_cache
-        .read()
-        .unwrap()
-        .clone()
-        .expect("the ordinary partition holds Redis");
-    let key_redis = cache
-        .key_objects
-        .redis_cache
-        .read()
-        .unwrap()
-        .clone()
-        .expect("the key partition holds Redis");
+    let ordinary_redis = redis_handle(&cache, false);
+    let key_redis = redis_handle(&cache, true);
     assert!(Arc::ptr_eq(&ordinary_redis, &key_redis));
     assert!(!Arc::ptr_eq(
         &cache.ordinary.in_memory_cache,
@@ -291,14 +282,14 @@ async fn local_only_and_options_forwarded() {
         .async_set(
             Some("tag:write"),
             &text("value"),
-            with_ttl(WriteTtl::Seconds(30.0)),
+            with_ttl(WriteTtl { seconds: 30.0_f64 }),
         )
         .await
         .unwrap();
-    let state = lock(&fixture.ordinary);
-    let recorded = state.options.first().expect("the tier saw the options");
-    assert_eq!(recorded.ttl, Some(30.0_f64));
-    assert!(!recorded.local_only);
+    let recorded = lock(&fixture.ordinary).options.first().copied();
+    let recorded_options = recorded.expect("the tier saw the options");
+    assert_eq!(recorded_options.ttl, Some(30.0_f64));
+    assert!(!recorded_options.local_only);
 }
 
 #[tokio::test]
@@ -330,7 +321,7 @@ fn sync_write_never_batches() {
         .set(
             Some(&hex_key("d")),
             &text("key"),
-            with_ttl(WriteTtl::Seconds(30.0)),
+            with_ttl(WriteTtl { seconds: 30.0_f64 }),
         )
         .unwrap();
     assert_eq!(fixture.operations(), ["key:set"]);
@@ -345,13 +336,13 @@ async fn async_batch_only_numeric_ttl_option() {
         .async_set(
             Some("tag:numeric"),
             &text("value"),
-            with_ttl(WriteTtl::Seconds(30.0)),
+            with_ttl(WriteTtl { seconds: 30.0_f64 }),
         )
         .await
         .unwrap();
     assert_eq!(lock(&fixture.ordinary).pre_calls, [Some(30.0_f64)]);
     let other_option = WriteOptions {
-        ttl: Some(WriteTtl::Seconds(30.0)),
+        ttl: Some(WriteTtl { seconds: 30.0_f64 }),
         local_only: false,
         refresh_ttl: true,
     };
@@ -380,7 +371,7 @@ async fn batch_bool_ttl_accepted() {
         .async_set(
             Some("tag:boolean"),
             &text("value"),
-            with_ttl(WriteTtl::Boolean(true)),
+            with_ttl(WriteTtl::from(true)),
         )
         .await
         .unwrap();
@@ -423,10 +414,7 @@ async fn single_delete_partition_and_result() {
     let ordinary_key = CacheKey::Tag("gone").render();
     lock(&fixture.ordinary).delete_failure = Some(backend_failure("ordinary delete"));
     let result = fixture.cache.delete(&ordinary_key);
-    assert!(
-        matches!(result, Err(AuthCacheError::Backend(ref error)) if failure_label(error) == Some("ordinary delete")),
-        "{result:?}"
-    );
+    assert_backend_failure(result, "ordinary delete");
     fixture.cache.async_delete(&hex_key("f")).await.unwrap();
     assert_eq!(
         fixture.operations(),
@@ -463,10 +451,7 @@ async fn batch_delete_first_partition_error_after_both() {
         CacheKey::ProjectId("gone").render(),
     ];
     let result = fixture.cache.async_delete_keys(&keys).await;
-    assert!(
-        matches!(result, Err(AuthCacheError::Backend(ref error)) if failure_label(error) == Some("key batch")),
-        "{result:?}"
-    );
+    assert_backend_failure(result, "key batch");
     assert_eq!(
         fixture.operations(),
         ["key:delete_keys", "ordinary:delete_keys"]
@@ -480,12 +465,12 @@ async fn batch_delete_cancel_propagates() {
     let fixture = recording_cache();
     lock(&fixture.key_objects).hang_delete_keys = true;
     let keys = [CacheKey::Tag("gone").render(), hex_key("a")];
-    let cancelled = tokio::time::timeout(
+    let cancelled = timeout(
         Duration::from_millis(20),
         fixture.cache.async_delete_keys(&keys),
     )
     .await;
-    assert!(cancelled.is_err());
+    let _elapsed = cancelled.expect_err("the whole call must be cancelled");
     assert_eq!(
         fixture.operations(),
         ["key:delete_keys", "ordinary:delete_keys"]
@@ -546,12 +531,13 @@ async fn batch_write_preserves_duplicates() {
         .await
         .unwrap();
     let ordinary = lock(&fixture.ordinary);
-    assert_eq!(ordinary.pipelines[0].len(), 3);
-    assert!(
-        ordinary.pipelines[0]
-            .iter()
-            .all(|(name, _value)| name == &entries[0].0)
-    );
+    let names: Vec<String> = ordinary.pipelines[0]
+        .iter()
+        .map(|(name, _value)| name.clone())
+        .collect();
+    drop(ordinary);
+    assert_eq!(names.len(), 3);
+    assert!(names.iter().all(|name| name == &entries[0].0));
 }
 
 #[tokio::test]
@@ -565,10 +551,10 @@ async fn batch_write_skips_empty_partition() {
         .unwrap();
     assert_eq!(ordinary_only.operations(), ["ordinary:set_pipeline"]);
     let key_only = recording_cache();
-    let entries = vec![(hex_key("a"), batch_entry(1))];
+    let key_entries = vec![(hex_key("a"), batch_entry(1))];
     key_only
         .cache
-        .async_set_pipeline(&entries, plain())
+        .async_set_pipeline(&key_entries, plain())
         .await
         .unwrap();
     assert_eq!(key_only.operations(), ["key:set_pipeline"]);
@@ -583,10 +569,7 @@ async fn key_partition_failure_skips_other() {
         (hex_key("a"), batch_entry(2)),
     ];
     let result = fixture.cache.async_set_pipeline(&entries, plain()).await;
-    assert!(
-        matches!(result, Err(AuthCacheError::Backend(ref error)) if failure_label(error) == Some("key pipeline")),
-        "{result:?}"
-    );
+    assert_backend_failure(result, "key pipeline");
     assert_eq!(fixture.operations(), ["key:set_pipeline"]);
 }
 
@@ -599,10 +582,7 @@ async fn later_partition_failure_keeps_key_write() {
         (hex_key("a"), batch_entry(2)),
     ];
     let result = fixture.cache.async_set_pipeline(&entries, plain()).await;
-    assert!(
-        matches!(result, Err(AuthCacheError::Backend(ref error)) if failure_label(error) == Some("ordinary pipeline")),
-        "{result:?}"
-    );
+    assert_backend_failure(result, "ordinary pipeline");
     assert_eq!(
         fixture.operations(),
         ["key:set_pipeline", "ordinary:set_pipeline"]

@@ -1,3 +1,5 @@
+use std::future::pending;
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
@@ -12,10 +14,12 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::redis_cache::RedisCache;
+use tracing::Subscriber;
+use tracing::subscriber::with_default;
 
-use crate::auth_cache::AuthCache;
 use crate::auth_cache::backend::{AuthCacheTier, PreCall};
 use crate::auth_cache::gateway_cache;
+use crate::auth_cache::{AuthCache, AuthCacheError};
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -25,11 +29,18 @@ pub(crate) fn backend_failure(label: &'static str) -> DualCacheError {
     DualCacheError::Memory(BackendError::Unsupported(label))
 }
 
+pub(crate) fn assert_backend_failure(result: Result<(), AuthCacheError>, label: &'static str) {
+    match result {
+        Err(AuthCacheError::Backend(error)) => assert_eq!(failure_label(&error), Some(label)),
+        other => panic!("expected a backend failure, got {other:?}"),
+    }
+}
+
 pub(crate) fn failure_label(error: &DualCacheError) -> Option<&'static str> {
     match error {
         DualCacheError::Memory(BackendError::Unsupported(label)) => Some(label),
-        DualCacheError::Memory(_) => None,
-        DualCacheError::RedisIncrement(_)
+        DualCacheError::Memory(_)
+        | DualCacheError::RedisIncrement(_)
         | DualCacheError::RedisTtl(_)
         | DualCacheError::RedisSetAdd(_)
         | DualCacheError::RedisDelete(_)
@@ -53,6 +64,9 @@ pub(crate) struct State {
     pub(crate) pre_calls: Vec<Option<f64>>,
     pub(crate) reads: Vec<(String, bool)>,
     pub(crate) options: Vec<CacheOptions>,
+    pub(crate) max_sizes: Vec<Option<usize>>,
+    pub(crate) attached_ttls: Vec<Option<f64>>,
+    pub(crate) deleted: Vec<String>,
     pub(crate) hang_delete_keys: bool,
 }
 
@@ -130,20 +144,24 @@ impl AuthCacheTier for RecordingTier {
         lock(&self.state).ttl
     }
 
-    fn update_cache_ttl(&self, memory_ttl: Option<f64>, _redis_ttl: Option<f64>) {
+    fn update_cache_ttl(&self, memory_ttl: Option<f64>, redis_ttl: Option<f64>) {
         self.record("update_ttl");
         let mut state = lock(&self.state);
         if let Some(ttl) = memory_ttl {
             state.ttl = Some(ttl);
         }
+        state.attached_ttls.push(redis_ttl);
     }
 
-    fn update_in_memory_max_size(&self, _max_size: Option<usize>) {
+    fn update_in_memory_max_size(&self, max_size: Option<usize>) {
         self.record("update_max_size");
+        lock(&self.state).max_sizes.push(max_size);
     }
 
-    fn attach_redis_cache(&self, _redis: Option<Arc<RedisCache>>, _redis_ttl: Option<f64>) {
+    fn attach_redis_cache(&self, redis: Option<Arc<RedisCache>>, redis_ttl: Option<f64>) {
         self.record("attach_redis");
+        drop(redis);
+        lock(&self.state).attached_ttls.push(redis_ttl);
     }
 
     fn get(&self, key: &str, local_only: bool) -> Option<Json> {
@@ -185,11 +203,9 @@ impl AuthCacheTier for RecordingTier {
 
     fn delete(&self, key: &str) -> Result<(), DualCacheError> {
         self.record("delete");
-        drop(key);
-        match lock(&self.state).delete_failure.take() {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        let mut state = lock(&self.state);
+        state.deleted.push(key.to_owned());
+        state.delete_failure.take().map_or(Ok(()), Err)
     }
 
     async fn async_delete(&self, key: &str) -> Result<(), DualCacheError> {
@@ -198,7 +214,7 @@ impl AuthCacheTier for RecordingTier {
 
     fn delete_pre_call(&self, key: &str) -> Result<Option<BatchResult<()>>, DualCacheError> {
         self.record("delete_pre_call");
-        drop(key);
+        lock(&self.state).deleted.push(key.to_owned());
         Ok(None)
     }
 
@@ -210,26 +226,21 @@ impl AuthCacheTier for RecordingTier {
             (state.hang_delete_keys, state.delete_keys_failure.take())
         };
         if hanging {
-            std::future::pending::<()>().await;
+            pending::<()>().await;
         }
-        match failure {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        failure.map_or(Ok(()), Err)
     }
 
     async fn async_set_pipeline(
         &self,
         entries: &[(String, Json)],
-        _options: CacheOptions,
+        options: CacheOptions,
     ) -> Result<(), DualCacheError> {
         self.record("set_pipeline");
         let mut state = lock(&self.state);
         state.pipelines.push(entries.to_vec());
-        match state.pipeline_failure.take() {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        state.options.push(options);
+        state.pipeline_failure.take().map_or(Ok(()), Err)
     }
 }
 
@@ -286,21 +297,31 @@ pub(crate) fn local_cache(memory_ttl: Option<f64>) -> LocalCache {
     gateway_cache(memory(), memory(), None, settings(memory_ttl), 45.0_f64)
 }
 
+pub(crate) fn redis_handle(cache: &LocalCache, key_objects: bool) -> Arc<RedisCache> {
+    let tier = if key_objects {
+        &cache.key_objects
+    } else {
+        &cache.ordinary
+    };
+    let held = tier.redis_cache.read().unwrap();
+    held.clone().expect("the partition holds Redis")
+}
+
 #[derive(Clone)]
 struct LogWriter(Arc<Mutex<Vec<u8>>>);
 
-impl std::io::Write for LogWriter {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        lock(&self.0).extend_from_slice(buffer);
-        Ok(buffer.len())
+impl Write for LogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        lock(&self.0).extend_from_slice(buf);
+        Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
 }
 
-fn capturing() -> (impl tracing::Subscriber + Send + Sync, Arc<Mutex<Vec<u8>>>) {
+fn capturing() -> (impl Subscriber + Send + Sync, Arc<Mutex<Vec<u8>>>) {
     let bytes = Arc::new(Mutex::new(Vec::new()));
     let writer = LogWriter(Arc::clone(&bytes));
     let subscriber = tracing_subscriber::fmt()
@@ -318,17 +339,7 @@ where
     F: FnOnce() -> T,
 {
     let (subscriber, bytes) = capturing();
-    let output = tracing::subscriber::with_default(subscriber, operation);
-    let text = String::from_utf8(lock(&bytes).clone()).unwrap();
-    (output, text)
-}
-
-pub(crate) async fn capture_async<T, F>(future: F) -> (T, String)
-where
-    F: std::future::Future<Output = T>,
-{
-    let (subscriber, bytes) = capturing();
-    let output = tracing::instrument::WithSubscriber::with_subscriber(future, subscriber).await;
+    let output = with_default(subscriber, operation);
     let text = String::from_utf8(lock(&bytes).clone()).unwrap();
     (output, text)
 }

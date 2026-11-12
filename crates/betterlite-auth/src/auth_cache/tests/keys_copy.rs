@@ -211,21 +211,36 @@ fn delimiters_and_empty_ids_not_escaped() {
 #[test]
 fn management_ttl_only_none_falls_back() {
     let fixture = recording_cache();
-    assert_eq!(fixture.cache.management_object_ttl(), 45.0_f64);
+    assert_eq!(
+        fixture.cache.management_object_ttl().to_bits(),
+        45.0_f64.to_bits()
+    );
     lock(&fixture.ordinary).ttl = Some(0.0_f64);
-    assert_eq!(fixture.cache.management_object_ttl(), 0.0_f64);
+    assert_eq!(
+        fixture.cache.management_object_ttl().to_bits(),
+        0.0_f64.to_bits()
+    );
     lock(&fixture.ordinary).ttl = Some(-5.0_f64);
-    assert_eq!(fixture.cache.management_object_ttl(), -5.0_f64);
+    assert_eq!(
+        fixture.cache.management_object_ttl().to_bits(),
+        (-5.0_f64).to_bits()
+    );
     lock(&fixture.ordinary).ttl = Some(60.0_f64);
-    assert_eq!(fixture.cache.management_object_ttl(), 60.0_f64);
+    assert_eq!(
+        fixture.cache.management_object_ttl().to_bits(),
+        60.0_f64.to_bits()
+    );
     lock(&fixture.key_objects).ttl = Some(7.0_f64);
-    assert_eq!(fixture.cache.management_object_ttl(), 60.0_f64);
+    assert_eq!(
+        fixture.cache.management_object_ttl().to_bits(),
+        60.0_f64.to_bits()
+    );
 }
 
 fn filled_auth() -> UserAPIKeyAuth {
     let mut auth = auth_fixture();
     auth.extra.budget_reservation = Some(payload("reserved"));
-    auth.extra.budget_throttle_pct = Some(Decimal::from(12));
+    auth.extra.budget_throttle_pct = Some(Decimal::from(12_i64));
     auth.extra.parent_otel_span = Some(ParentOtelSpan::Json(JsonData::String("span".to_owned())));
     auth.extra.request_route = Some("/v1/chat/completions".to_owned());
     auth.extra.matched_model_access_groups = Some(vec!["group-1".to_owned()]);
@@ -255,7 +270,7 @@ fn copy_original_unchanged() {
     let auth = filled_auth();
     let _copied = copy_for_cache(&auth);
     assert_eq!(auth.extra.budget_reservation, Some(payload("reserved")));
-    assert_eq!(auth.extra.budget_throttle_pct, Some(Decimal::from(12)));
+    assert_eq!(auth.extra.budget_throttle_pct, Some(Decimal::from(12_i64)));
     assert!(auth.extra.parent_otel_span.is_some());
     assert_eq!(
         auth.extra.request_route.as_deref(),

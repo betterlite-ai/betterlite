@@ -41,25 +41,15 @@ impl From<DualCacheError> for AuthCacheError {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum WriteTtl {
-    Seconds(f64),
-    // Python's bool is an int, so LiteLLM's numeric ttl check accepts one
-    Boolean(bool),
+pub struct WriteTtl {
+    pub seconds: f64,
 }
 
-impl WriteTtl {
-    #[must_use]
-    pub const fn seconds(self) -> f64 {
-        match self {
-            Self::Seconds(seconds) => seconds,
-            Self::Boolean(flag) => {
-                if flag {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-        }
+// Python's bool is an int, so LiteLLM's numeric ttl check accepts one
+impl From<bool> for WriteTtl {
+    fn from(flag: bool) -> Self {
+        let seconds = if flag { 1.0_f64 } else { 0.0_f64 };
+        Self { seconds }
     }
 }
 
@@ -74,7 +64,7 @@ impl WriteOptions {
     #[must_use]
     pub fn cache_options(self) -> CacheOptions {
         CacheOptions {
-            ttl: self.ttl.map(WriteTtl::seconds),
+            ttl: self.ttl.map(|ttl| ttl.seconds),
             local_only: self.local_only,
             refresh_ttl: self.refresh_ttl,
         }
@@ -88,13 +78,16 @@ pub struct AuthCache<T: AuthCacheTier> {
 }
 
 // two independent memory partitions over the same optional Redis and the same supplied TTLs
-pub fn gateway_cache<Memory: MemoryCacheOps + MemoryMaxSize>(
+pub fn gateway_cache<Memory>(
     in_memory: Arc<Memory>,
     key_object_memory: Arc<Memory>,
     redis: Option<Arc<RedisCache>>,
     settings: DualCacheSettings,
     management_ttl_fallback: f64,
-) -> AuthCache<DualCache<Memory>> {
+) -> AuthCache<DualCache<Memory>>
+where
+    Memory: MemoryCacheOps + MemoryMaxSize,
+{
     AuthCache {
         ordinary: DualCache::new(in_memory, redis.clone(), settings),
         key_objects: DualCache::new(key_object_memory, redis, settings),

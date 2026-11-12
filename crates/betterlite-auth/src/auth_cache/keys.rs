@@ -28,21 +28,27 @@ pub fn partition(key: &str) -> Partition {
 
 // one literal per cache protocol key, so no two modules can drift on the format
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CacheKey<'a> {
-    UserObjectPermissionId(&'a str),
-    ObjectPermissionId(&'a str),
-    Tag(&'a str),
+pub enum CacheKey<'key> {
+    UserObjectPermissionId(&'key str),
+    ObjectPermissionId(&'key str),
+    Tag(&'key str),
     TagRegistry,
-    ModelAccessGroup(&'a str),
+    ModelAccessGroup(&'key str),
     ModelAccessGroupRegistry,
-    ModelAccessGroupSpend(&'a str),
-    ProjectId(&'a str),
-    ProjectSpend(&'a str),
-    EndUserId(&'a str),
+    ModelAccessGroupSpend(&'key str),
+    ProjectId(&'key str),
+    ProjectSpend(&'key str),
+    EndUserId(&'key str),
     EndUserRestrictedRegistry,
     // the admission reader orders team before user, the reservation writer user before team
-    TeamMembershipAuth { team_id: &'a str, user_id: &'a str },
-    TeamMembershipReservation { user_id: &'a str, team_id: &'a str },
+    TeamMembershipAuth {
+        team_id: &'key str,
+        user_id: &'key str,
+    },
+    TeamMembershipReservation {
+        user_id: &'key str,
+        team_id: &'key str,
+    },
 }
 
 impl CacheKey<'_> {

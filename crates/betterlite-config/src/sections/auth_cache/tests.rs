@@ -116,16 +116,16 @@ fn user_ttl_none_leaves_defaults() {
 #[test]
 fn user_ttl_zero_negative_fractional() {
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: 0\n"),
-        Ok(0.0_f64)
+        ttl("general_settings:\n  user_api_key_cache_ttl: 0\n").unwrap(),
+        0.0_f64
     );
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: -2.5\n"),
-        Ok(-2.5_f64)
+        ttl("general_settings:\n  user_api_key_cache_ttl: -2.5\n").unwrap(),
+        -2.5_f64
     );
     assert_eq!(
-        ttl("general_settings:\n  user_api_key_cache_ttl: 0.25\n"),
-        Ok(0.25_f64)
+        ttl("general_settings:\n  user_api_key_cache_ttl: 0.25\n").unwrap(),
+        0.25_f64
     );
 }
 
