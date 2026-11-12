@@ -1,9 +1,20 @@
+from betterlite.types.utils.adapter_stream import (
+    AdapterCompletionStreamWrapper,
+    CustomStreamingDecoder,
+)
 from betterlite.types.utils.base import ResponseObject, RootModel
 from betterlite.types.utils.choices import (
     Choices,
     FinishReason,
     StreamingChoices,
     map_finish_reason,
+)
+from betterlite.types.utils.embedding import Embedding, EmbeddingResponse
+from betterlite.types.utils.media import (
+    ImageObject,
+    ImageResponse,
+    ImageUsage,
+    ImageUsageInputTokensDetails,
 )
 from betterlite.types.utils.message import Delta, Message, add_provider_specific_fields
 from betterlite.types.utils.response import (
@@ -14,6 +25,22 @@ from betterlite.types.utils.response import (
     StreamingChatCompletionChunk,
     _generate_id,
     process_response_headers,
+)
+from betterlite.types.utils.small_types import (
+    BudgetConfig,
+    DynamicPromptManagementParamLiteral,
+    LiteLLMFineTuningJob,
+    LiteLLMLoggingBaseClass,
+    LiteLLMRealtimeStreamLoggingObject,
+    TranscriptionResponse,
+    TranscriptionUsageDurationObject,
+    TranscriptionUsageInputTokenDetailsObject,
+    TranscriptionUsageTokensObject,
+)
+from betterlite.types.utils.text_completion import (
+    Logprobs,
+    TextChoices,
+    TextCompletionResponse,
 )
 from betterlite.types.utils.tool_calls import (
     ChatCompletionAudioResponse,
@@ -50,17 +77,26 @@ from betterlite.types.utils.values import (
 )
 
 __all__ = [
-    "OPENAI_RESPONSE_HEADERS", "AwareDatetime", "Base64Str", "CacheCreationTokenDetails",
+    "OPENAI_RESPONSE_HEADERS", "AdapterCompletionStreamWrapper", "AwareDatetime",
+    "Base64Str", "BudgetConfig", "CacheCreationTokenDetails",
     "ChatCompletionAudioResponse", "ChatCompletionCustomToolCallPayload",
     "ChatCompletionDeltaCustomToolCall", "ChatCompletionDeltaCustomToolCallPayload",
     "ChatCompletionDeltaToolCall", "ChatCompletionMessageCustomToolCall",
     "ChatCompletionMessageToolCall", "ChatCompletionTokenLogprob", "ChoiceLogprobs",
-    "Choices", "CompletionTokensDetailsWrapper", "Delta", "FinishReason", "Function",
-    "FunctionCall", "JsonValue", "Message", "ModelResponse", "ModelResponseBase",
-    "ModelResponseStream", "PromptTokensDetailsWrapper", "ResponseObject", "RootModel",
-    "ServerToolUse", "StreamingChatCompletionChunk", "StreamingChoices", "TopLogprob",
+    "Choices", "CompletionTokensDetailsWrapper", "CustomStreamingDecoder", "Delta",
+    "DynamicPromptManagementParamLiteral", "Embedding", "EmbeddingResponse",
+    "FinishReason", "Function", "FunctionCall", "ImageObject", "ImageResponse",
+    "ImageUsage", "ImageUsageInputTokensDetails", "JsonValue",
+    "LiteLLMFineTuningJob", "LiteLLMLoggingBaseClass",
+    "LiteLLMRealtimeStreamLoggingObject", "Logprobs", "Message", "ModelResponse",
+    "ModelResponseBase", "ModelResponseStream", "PromptTokensDetailsWrapper",
+    "ResponseObject", "RootModel", "ServerToolUse", "StreamingChatCompletionChunk",
+    "StreamingChoices", "TextChoices", "TextCompletionResponse", "TopLogprob",
+    "TranscriptionResponse", "TranscriptionUsageDurationObject",
+    "TranscriptionUsageInputTokenDetailsObject", "TranscriptionUsageTokensObject",
     "Usage", "ValidationError", "_CustomToolCallAccess", "_generate_id",
-    "add_provider_specific_fields", "chat_completion_tool_call_from_dict", "field_validator",
-    "is_custom_tool_call_dict", "map_finish_reason", "model_validator",
-    "process_response_headers", "text_tokens_without_nested_reasoning",
+    "add_provider_specific_fields", "chat_completion_tool_call_from_dict",
+    "field_validator", "is_custom_tool_call_dict", "map_finish_reason",
+    "model_validator", "process_response_headers",
+    "text_tokens_without_nested_reasoning",
 ]
