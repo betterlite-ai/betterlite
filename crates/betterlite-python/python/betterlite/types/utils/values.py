@@ -121,7 +121,8 @@ class FieldValidatorDecorator:
         self.mode = mode
 
     def __call__(self, function: Callable[Parameters, StoredValue]) -> Validator:
-        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L353
+        # a stored ParamSpec call has no bound arguments, so it needs the call protocol
+        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L328
         return Validator(self.names, self.mode, stored, model_level=False)
 
 
@@ -132,7 +133,8 @@ class ModelValidatorDecorator:
         self.mode = mode
 
     def __call__(self, function: Callable[Parameters, StoredValue]) -> Validator:
-        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L353
+        # a stored ParamSpec call has no bound arguments, so it needs the call protocol
+        stored = cast("StoredFunction", function)  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L328
         return Validator((), self.mode, stored, model_level=True)
 
 
@@ -141,12 +143,12 @@ model_validator = ModelValidatorDecorator
 
 
 def union_annotation(annotation: AnnotationValue) -> bool:
-    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1021
     return origin in (Union, types.UnionType)
 
 
 def container_annotation(annotation: AnnotationValue) -> bool:
-    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1021
     return origin in (list, tuple, Sequence, dict, Mapping)
 
 
@@ -155,7 +157,7 @@ def allows_none(annotation: AnnotationValue) -> bool:
         return True
     if not union_annotation(annotation):
         return False
-    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1012
     return any(allows_none(member) for member in arguments)
 
 
@@ -176,7 +178,7 @@ def checked_value(
 def union_value(
     annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1012
     members = [member for member in arguments if member is not NoneType]
     if len(members) != 1:
         return value
@@ -229,8 +231,8 @@ def model_value(
 def container_value(
     annotation: AnnotationValue, value: StoredValue, model: str, name: str,
 ) -> StoredValue:
-    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1096
-    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1087
+    origin = cast("type | None", get_origin(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1021
+    arguments = cast("tuple[AnnotationValue, ...]", get_args(annotation))  # https://github.com/python/typeshed/blob/289e5d3568961c8bcd33d01eef5b7ec5e1ad33ad/stdlib/typing.pyi#L1012
     match value:
         case Mapping() if origin in (dict, Mapping):
             if len(arguments) != MAPPING_ARGUMENTS:
