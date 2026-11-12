@@ -1,0 +1,18 @@
+kind: helper
+name: google-pricing-character-seed
+call:
+  google_pricing:
+    operation: cost_per_character
+    model: gemini-1.5-pro-002
+    custom_llm_provider: vertex_ai
+    record:
+      input_cost_per_character: 0.000000625
+      output_cost_per_character: 0.0000025
+    usage:
+      prompt_tokens: 16
+      completion_tokens: 4
+    prompt_characters: 64
+    completion_characters: 32
+    service_tier: flex
+env: {}
+compare: {ignore: []}

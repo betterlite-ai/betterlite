@@ -1,0 +1,24 @@
+kind: helper
+name: arn-region
+call:
+  bedrock_services_agentcore_request:
+    scenario: arn_region
+    runs:
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime-1.2_~x'
+        api_base: https://ignored.example/v1
+        optional_params: {}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime-1.2_~x'
+        api_base: null
+        optional_params: {aws_bedrock_runtime_endpoint: 'https://vpce.example/prefix/'}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime-1.2_~x'
+        optional_params: {aws_bedrock_runtime_endpoint: ''}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/agent_runtime-1.2_~x'
+        optional_params: {aws_region_name: us-east-1}
+      - model: 'agentcore/arn:aws-cn:bedrock-agentcore:cn-north-1:1:runtime/agent'
+        optional_params: {}
+      - model: 'agentcore/arn:aws-us-gov:bedrock-agentcore:us-gov-west-1:1:runtime/agent'
+        optional_params: {}
+      - model: 'agentcore/arn:aws:bedrock-agentcore:us-east-1:1:runtime/id with +&=?#% é'
+        optional_params: {}
+env: {}
+compare: {ignore: []}

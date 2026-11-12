@@ -1,0 +1,28 @@
+kind: helper
+name: model-capability-predicates-declared-string-value
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        reasoning-model: {litellm_provider: deepseek, mode: chat, supports_reasoning: stringy}
+        empty-string-model: {litellm_provider: deepseek, mode: chat, supports_custom: ""}
+        deepseek/bool-model: {litellm_provider: deepseek, mode: chat, supports_custom: true}
+        bool-model: {litellm_provider: deepseek, mode: chat, supports_custom: bare-text}
+        deepseek/number-model: {litellm_provider: deepseek, mode: chat, supports_custom: 7}
+        number-model: {litellm_provider: deepseek, mode: chat, supports_custom: bare-number}
+        deepseek/own-text-model: {litellm_provider: deepseek, mode: chat, supports_custom: own-text}
+        own-text-model: {litellm_provider: deepseek, mode: chat, supports_custom: 5}
+        deepseek/reason-text-model: {litellm_provider: deepseek, mode: chat, supports_reasoning: metadata-text}
+        reason-text-model: {litellm_provider: deepseek, mode: chat, supports_reasoning: 5}
+        deepseek/missing-model: {litellm_provider: deepseek, mode: chat}
+    steps:
+      - {function: declared_value_factory, model: reasoning-model, custom_llm_provider: deepseek, key: supports_reasoning}
+      - {function: declared_value_factory, model: empty-string-model, custom_llm_provider: deepseek, key: supports_custom}
+      - {function: declared_value_factory, model: deepseek/bool-model, custom_llm_provider: deepseek, key: supports_custom}
+      - {function: declared_value_factory, model: deepseek/number-model, custom_llm_provider: deepseek, key: supports_custom}
+      - {function: declared_value_factory, model: deepseek/own-text-model, custom_llm_provider: deepseek, key: supports_custom}
+      - {function: declared_value_factory, model: deepseek/reason-text-model, custom_llm_provider: deepseek, key: supports_reasoning}
+      - {function: declared_value_factory, model: deepseek/missing-model, custom_llm_provider: deepseek, key: supports_custom}
+      - {function: declared_value_factory, model: nothing-here, key: supports_custom}
+env: {}
+compare: {ignore: []}

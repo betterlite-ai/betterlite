@@ -1,0 +1,20 @@
+kind: helper
+name: bucket-regions
+call:
+  b3456:
+    step: bucket
+    cases:
+      - vector: {aws_region_name: us-east-1}
+        environment: {}
+        unique_id: abcd1234
+      - vector: {aws_region_name: us-west-2}
+        environment: {}
+        unique_id: abcd1234
+      - vector: {aws_region_name: cn-north-1}
+        environment: {}
+        unique_id: abcd1234
+      - vector: {aws_region_name: us-gov-west-1}
+        environment: {}
+        unique_id: abcd1234
+env: {}
+compare: {ignore: []}

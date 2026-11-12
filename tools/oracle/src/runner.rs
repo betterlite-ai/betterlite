@@ -48,11 +48,8 @@ pub(crate) fn run_cases(
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_key = format!(
-                    "{}\n{:?}\n{}",
-                    http_case.config, http_case.env, http_case.native_feature_eligibility
-                );
-                groups.entry(group_key).or_default().push(http_case);
+                let key = group_key(&http_case);
+                groups.entry(key).or_default().push(http_case);
             }
             LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
             LoadedCase::Helper(helper_case) => {
@@ -86,6 +83,14 @@ pub(crate) fn exit_status(different: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+// Two cases may share one boot only when their include bodies match too, since the first case writes the tree.
+pub(crate) fn group_key(case: &Case) -> String {
+    format!(
+        "{}\n{:?}\n{}\n{:?}",
+        case.config, case.env, case.native_feature_eligibility, case.config_files
+    )
 }
 
 pub(crate) fn run_group(

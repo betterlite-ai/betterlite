@@ -1,0 +1,81 @@
+id: B9311
+title: Bedrock AWS settings helper on LiteLLM's public API
+description: >-
+  tools/oracle/helpers/bedrock_aws_settings.py calls 13 private LiteLLM functions and methods (_canonical_aws_session_tags, _assume_role_params, the five _is_auth_with_* selectors, the four _auth_with_* sources, _get_ssl_verify and _get_or_set_cached_credentials) behind 17 pyright and SLF001 suppressions, and it sits in python-legacy.txt. Max decided on 2026-11-11 that oracle helpers reach LiteLLM through its public names only, removed gradually by cleanup tasks; this task is the first one and measures what such a cleanup costs.
+  Rewrite the helper so every operation observes the same LiteLLM behavior through a public entry: mostly BaseAWSLLM.get_credentials with boto3.Session and the STS client patched through patch.object, reading which source ran, which arguments reached boto3 or STS, the credentials and TTL that came back, and how many fetches the IAM cache let through. An operation may change its input and output shape when the public entry can't show the old one (get_credentials runs only the first matching selector, so auth_selector reports the chosen source instead of five independent flags); then the cases and the native adapter in tools/oracle/src/helpers/bedrock/aws_settings change with it, and each case keeps checking the behavior its name says.
+  Take the helper off python-legacy.txt, so the base hooks check holds it to the strict Python rules.
+scope:
+  paths:
+    - python-legacy.txt
+    - tools/oracle/helpers/bedrock_aws_settings.py
+    - tools/oracle/helpers/bedrock_aws_settings/**
+    - tools/oracle/src/helpers/bedrock/aws_settings.rs
+    - tools/oracle/src/helpers/bedrock/aws_settings/**
+    - tools/oracle/cases/helpers/providers/bedrock-aws-settings/**
+    - tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings*
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py"
+    why: get_credentials is the public entry in front of the selectors, the credential sources, the role assumption and the IAM cache.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py"
+    why: verbose_logger is logging.getLogger("LiteLLM"), so a helper that needs it asks the standard logging module instead of importing litellm._logging.
+dod:
+  - text: bedrock_aws_settings.py is off python-legacy.txt and passes the strict Python rules the hooks check runs.
+    proof: [helper-off-legacy, hooks]
+  - text: The helper uses LiteLLM's public names only, with no underscore name or module from LiteLLM, no pyright comment and no SLF001 noqa, and basedpyright strict passes on it.
+    proof: [helper-public-api]
+  - text: Every operation the helper had keeps at least one bedrock-aws-settings case.
+    proof: [case-coverage]
+  - text: The native adapter answers every bedrock-aws-settings case the same as LiteLLM.
+    proof: [oracle, adapter-tests]
+checks:
+  optional: []
+  commands:
+    - id: helper-off-legacy
+      why: the helper is still on python-legacy.txt or unchanged
+      run: |-
+        ! grep -q -x -F tools/oracle/helpers/bedrock_aws_settings.py python-legacy.txt &&
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_aws_settings.py)"
+    - id: helper-public-api
+      why: the helper still reaches a private LiteLLM name, suppresses a pyright rule or fails basedpyright strict
+      run: |-
+        ! grep -n -E '#[[:space:]]*pyright:|SLF001|litellm(\.[A-Za-z0-9_]+)*\._|import[^#]*[[:space:],(]_[A-Za-z]|\._[A-Za-z]|"_[A-Za-z]' tools/oracle/helpers/bedrock_aws_settings.py &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/bedrock_aws_settings.py
+    - id: case-coverage
+      why: an operation of the helper lost its last case
+      run: |-
+        for op in static_key_pair canonical_tags assume_role web_policy bearer pop_auth cache_key auth_selector local cache auth_error; do grep -q -r -E "operation\"?: \"?${op}\b" tools/oracle/cases/helpers/providers/bedrock-aws-settings || exit 1; done
+    - id: adapter-tests
+      why: the native adapter's tests fail or are gone
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/helpers::bedrock::aws_settings::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/assume-role-parameter-presence.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-parameters-popped-before-validation.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-params-removed-from-body.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-selector-presence.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/aws-auth-error-projection.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-presence-not-truthiness.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-token-empty-versus-absent.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/canonical-session-tags.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-expiry.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-key-and-bound.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/default-native-chain.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/local-credential-sources.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/pop-auth-does-not-validate-tag-shape.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/profile-precedence.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/session-tags-canonical.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/session-token-triple.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/static-key-pair.yaml
+  - tools/oracle/cases/helpers/providers/bedrock-aws-settings/web-identity-policy.yaml
+deviations: []
+out_of_scope:
+  - "The production code in crates/betterlite-bedrock and its own tests: this task changes how the oracle asks LiteLLM, not what betterlite does."
+  - "Other helpers that call LiteLLM privates, including bedrock_credentials.py: later cleanup tasks take them one group at a time."
+pitfalls:
+  - "The strict Python rules ban string mocks, so patch boto3 and time with patch.object(boto3, \"Session\", ...) and patch.object(time, \"time\", ...), never patch(\"boto3.Session\")."
+  - "get_credentials checks the IAM cache before it picks a source, so a case about the cache and a case about one source need separate BaseAWSLLM instances or a cleared iam_cache, set through the public attribute."
+  - "When no public entry reaches a behavior a case checks, stop and report it as a blocker with the private name and the case; don't keep the private call and don't drop the case."
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2

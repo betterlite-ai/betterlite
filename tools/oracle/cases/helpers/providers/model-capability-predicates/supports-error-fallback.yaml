@@ -1,0 +1,14 @@
+kind: helper
+name: model-capability-predicates-supports-error-fallback
+call:
+  model_capability_predicates:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, supports_function_calling: true}
+    steps:
+      - {function: supports_factory, model: nothing-here, key: supports_function_calling}
+      - {function: supports_factory, model: fireworks_ai/nothing-known, custom_llm_provider: fireworks_ai, key: supports_function_calling}
+      - {function: supports_factory, model: fireworks_ai/nothing-known, custom_llm_provider: fireworks_ai, key: supports_prompt_caching}
+      - {function: supports_factory, model: openai/missing-model, custom_llm_provider: openai, key: supports_function_calling}
+env: {}
+compare: {ignore: []}

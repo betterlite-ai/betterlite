@@ -1,0 +1,47 @@
+kind: helper
+name: non-default-params-reasoning-aliases
+call:
+  b5362:
+    calls:
+      - function: peek_aliases
+        optional_params: {}
+      - function: peek_aliases
+        optional_params: {reasoningSummary: detailed}
+      - function: peek_aliases
+        optional_params: {reasoning_summary: concise}
+      - function: peek_aliases
+        optional_params: {reasoningSummary: "", reasoning_summary: concise}
+      - function: peek_aliases
+        optional_params: {reasoningSummary: null, reasoning_summary: concise}
+      - function: peek_aliases
+        optional_params: {extra_body: {reasoningSummary: auto}}
+      - function: peek_aliases
+        optional_params: {extra_body: {reasoning_summary: auto}}
+      - function: peek_aliases
+        optional_params: {extra_body: {reasoningSummary: "", reasoning_summary: auto}}
+      - function: peek_aliases
+        optional_params: {extra_body: [reasoningSummary]}
+      - function: peek_aliases
+        optional_params: {reasoning_summary: top, extra_body: {reasoningSummary: nested}}
+      - function: strip_aliases
+        optional_params: {}
+      - function: strip_aliases
+        optional_params: {temperature: 0.5, reasoningSummary: detailed}
+      - function: strip_aliases
+        optional_params: {reasoningSummary: detailed, reasoning_summary: concise}
+      - function: strip_aliases
+        optional_params: {reasoningSummary: null, reasoning_summary: concise}
+      - function: strip_aliases
+        optional_params: {reasoning_summary: ""}
+      - function: strip_aliases
+        optional_params: {extra_body: {reasoningSummary: auto, reasoning_summary: other, keep: 1}}
+      - function: strip_aliases
+        optional_params: {extra_body: {reasoning_summary: auto}}
+      - function: strip_aliases
+        optional_params: {extra_body: {reasoningSummary: null, reasoning_summary: auto}}
+      - function: strip_aliases
+        optional_params: {reasoning_summary: top, extra_body: {reasoningSummary: nested, keep: 1}}
+      - function: strip_aliases
+        optional_params: {extra_body: [reasoningSummary]}
+env: {}
+compare: {ignore: []}

@@ -59,7 +59,11 @@ case ${mode} in
     [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/pyproject.toml "${strict[@]}"
     ;;
   pyright)
-    [[ ${#legacy[@]} -eq 0 ]] || exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "${legacy[@]}"
+    # 1031 task checks run basedpyright over the whole helpers folder, so a helper change has to pass that same run, importers included
+    exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    ;;
+  pyright-files)
+    exec "${oracle[@]}" basedpyright --project tools/oracle/helpers/pyrightconfig.json "$@"
     ;;
   similarity)
     tracked=$(git ls-files -- '*.py' ':!:**/fixtures/**') || exit 1

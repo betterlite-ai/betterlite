@@ -1,0 +1,9 @@
+kind: helper
+name: s3-url-https-own-partition
+call:
+  b3645:
+    function: s3_url
+    media_uri: https://audio.s3.us-east-1.amazonaws.com/meeting.wav
+    region: us-east-1
+env: {}
+compare: {ignore: []}

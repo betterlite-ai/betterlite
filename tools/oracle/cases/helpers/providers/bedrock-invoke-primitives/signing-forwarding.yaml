@@ -1,0 +1,24 @@
+kind: helper
+name: bedrock-invoke-primitives-signing-forwarding
+call:
+  bedrock_invoke_primitives:
+    signing_forwarding:
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      headers:
+        content-type: application/json
+        x-custom: keep
+      optional_params:
+        temperature: 0.2
+        aws_region_name: us-west-2
+      request_data:
+        inputText: hello
+        textGenerationConfig: {temperature: 0.2}
+      api_base: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+      model: anthropic.claude-v2
+      stream: true
+      fake_stream: true
+      now: 1767225600
+env: {}
+compare: {ignore: []}

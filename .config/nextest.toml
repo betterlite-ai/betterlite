@@ -4,6 +4,14 @@ default-filter = "not package(betterlite-dashboard-browser)"
 # a hung test fails after 10 minutes instead of holding a CI job until its 120-minute limit
 slow-timeout = { period = "60s", terminate-after = 10 }
 
+# these modules take Prisma's and betterlite's migration advisory locks, which Postgres holds per database, not per test schema
+[[profile.default.overrides]]
+filter = "package(betterlite-db) & test(/^(migration_(deploy|drift|ledger|recovery)|request_log_indexes)::/)"
+test-group = "db-migration-locks"
+
+[test-groups]
+db-migration-locks = { max-threads = 1 }
+
 # CI's task part reports up to 20 failing tests in one fix round instead of stopping at the first
 [profile.task]
 fail-fast = { max-fail = 20 }

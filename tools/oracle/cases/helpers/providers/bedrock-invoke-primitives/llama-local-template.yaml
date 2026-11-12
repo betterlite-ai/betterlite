@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-invoke-primitives-llama-local-template
+call:
+  bedrock_invoke_primitives:
+    llama_local_template:
+      local_assets: false
+      cases:
+        - model: meta.llama3-8b-instruct-v1:0
+          messages: [{role: user, content: hi}]
+          custom_prompt_dict:
+            meta.llama3-8b-instruct-v1:0:
+              roles:
+                user: {pre_message: '[', post_message: ']'}
+        - model: meta.llama3-8b-instruct-v1:0
+          messages: [{role: user, content: hi}]
+        - model: meta.llama3-8b-v1:0
+          messages:
+            - {role: system, content: s}
+            - {role: user, content: u}
+env: {}
+compare: {ignore: []}
