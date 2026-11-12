@@ -6,3 +6,4 @@ pub mod ptu;
 mod python_text;
 pub mod spec;
 pub mod stable_id;
+mod tests;

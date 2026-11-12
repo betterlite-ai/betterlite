@@ -10,6 +10,7 @@ use betterlite_models::tiered_pricing::Scalar;
 use super::error::{DeploymentError, InvalidDeployment};
 use super::params::litellm_params;
 use super::ptu;
+use super::python_text::{Rendering, write_value};
 use super::spec::DeploymentSpec;
 use crate::deployment_pricing::PricingInputs;
 use crate::deployment_pricing::deployment::Deployment;
@@ -183,10 +184,17 @@ where
     )?;
     register_pricing(run, input, &spec).await?;
     if !run.policy.is_active_for_environment(&spec.model_info)? {
+        let mut environments = String::new();
+        write_value(
+            spec.model_info
+                .get("supported_environments")
+                .unwrap_or(&Json::Null),
+            Rendering::Repr,
+            &mut environments,
+        );
         tracing::warn!(
-            "Ignoring deployment {} as it is not active for environment {:?}",
+            "Ignoring deployment {} as it is not active for environment {environments}",
             spec.model_name,
-            spec.model_info.get("supported_environments"),
         );
         return Ok(None);
     }

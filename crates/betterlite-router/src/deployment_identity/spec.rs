@@ -47,7 +47,10 @@ impl DeploymentSpec {
                 .or_insert(Json::Bool(false));
         }
         for field in MIRRORED_PRICING_FIELDS {
-            if let Some(rate) = litellm_params.get(field) {
+            if let Some(rate) = litellm_params
+                .get(field)
+                .filter(|rate| !matches!(rate, Json::Null))
+            {
                 model_info.insert(field.to_owned(), rate.clone());
             }
         }
