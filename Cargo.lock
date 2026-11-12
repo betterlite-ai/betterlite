@@ -1129,6 +1129,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
  "chrono",
  "hex",
