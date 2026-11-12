@@ -6,7 +6,7 @@ use crate::datadog_logging::transport::TransportFailure;
 
 #[derive(Debug, Error)]
 pub enum DatadogLlmObsError {
-    #[error("the Datadog environment could not be read")]
+    #[error("the Datadog environment could not be read: {0}")]
     Environment(#[from] EnvError),
     #[error("DD_API_KEY is not set, set 'DD_API_KEY=<>'")]
     MissingApiKey,
