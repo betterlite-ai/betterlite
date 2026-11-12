@@ -183,12 +183,11 @@ impl RecognizeStream {
             billed_before.mul_add(1.0, current.as_secs_f64())
         };
         let event = response_event(&response, cumulative);
-        let _sent = outbox
-            .send(OutboxItem::TurnResult {
-                turn: self.turn,
-                event,
-            })
-            .await;
+        let result = OutboxItem::TurnResult {
+            turn: self.turn,
+            event,
+        };
+        let _sent = self.halt.run_until_cancelled(outbox.send(result)).await;
     }
 }
 
