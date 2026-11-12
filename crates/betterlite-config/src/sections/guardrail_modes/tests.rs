@@ -40,3 +40,15 @@ fn modes_section_strict_reads_only_true_and_false(
 fn modes_section_default_is_strict() {
     assert_eq!(Settings::default(), Settings { strict: true });
 }
+
+#[test]
+fn modes_section_loads_next_to_other_keys() {
+    let lookup = BTreeMap::from([(
+        "LITELLM_STRICT_GUARDRAIL_MODES".to_owned(),
+        "false".to_owned(),
+    )]);
+    let config = ConfigLoader { lookup }
+        .load("litellm_settings:\n  mcp_client_timeout: 5\n")
+        .unwrap();
+    assert!(!config.sections.guardrail_modes.strict);
+}

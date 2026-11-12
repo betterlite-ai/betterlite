@@ -6,7 +6,11 @@ use crate::sections::Section;
 use serde::Deserialize;
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw;
+pub struct Raw {
+    // LiteLLM reads the strict flag only from the environment, so this section owns no YAML key
+    #[serde(skip)]
+    _no_yaml_keys: (),
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {

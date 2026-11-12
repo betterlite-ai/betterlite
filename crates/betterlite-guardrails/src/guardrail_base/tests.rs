@@ -773,13 +773,13 @@ fn advisory_default_message_keeps_the_reason_placeholder() {
 }
 
 #[rstest]
-#[case::middle("hello world", "***", 2, 5, "he***world")]
+#[case::middle("hello world", "***", 2, 5, "he*** world")]
 #[case::whole("abc", "X", 0, 3, "X")]
 #[case::from_start("abc", "X", 0, 1, "Xbc")]
 #[case::up_to_end("abc", "X", 2, 3, "abX")]
 #[case::empty_mask("abc", "", 1, 2, "ac")]
 #[case::multi_byte_inside("a\u{f1}b\u{20ac}c", "X", 1, 2, "aXb\u{20ac}c")]
-#[case::multi_byte_tail("a\u{f1}b\u{20ac}c", "X", 2, 4, "a\u{f1}X\u{20ac}c")]
+#[case::multi_byte_tail("a\u{f1}b\u{20ac}c", "X", 2, 3, "a\u{f1}X\u{20ac}c")]
 #[case::negative_start("abc", "X", -1, 2, "abc")]
 #[case::negative_end("abc", "X", 0, -1, "abc")]
 #[case::empty_range("abc", "X", 1, 1, "abc")]
