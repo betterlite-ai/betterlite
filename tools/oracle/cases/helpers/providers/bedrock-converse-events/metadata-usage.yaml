@@ -1,0 +1,38 @@
+kind: helper
+name: bedrock-converse-events-metadata-usage
+call:
+  bedrock_converse_events:
+    scenarios:
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000051
+        steps:
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}}
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}, trace: {guardrail: {}}}
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}, trace: {}}
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 2}, trace: false}
+          - function: converse
+            chunk: {delta: {reasoningContent: {signature: sig}}, contentBlockIndex: 0}
+          - function: state
+          - function: converse
+            chunk: {usage: {inputTokens: 4, outputTokens: 9, totalTokens: 13}}
+          - function: converse
+            chunk: {stopReason: end_turn, additionalModelResponseFields: {usage: {output_tokens_details: {thinking_tokens: 7}}}}
+          - function: converse
+            chunk: {usage: {inputTokens: 1, outputTokens: 5}}
+          - function: state
+      - model: bedrock/model
+        json_mode: false
+        ids:
+          - 00000000-0000-4000-8000-000000000052
+        steps:
+          - function: chunk
+            chunk: {metadata: {usage: {inputTokens: 5, outputTokens: 3, cacheReadInputTokenCount: 12262, cacheWriteInputTokenCount: 0}}}
+          - function: state
+env: {}
+compare: {ignore: []}

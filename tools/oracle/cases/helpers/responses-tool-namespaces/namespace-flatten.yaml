@@ -1,0 +1,39 @@
+kind: helper
+name: responses-tool-namespaces-namespace-flatten
+call:
+  responses_tool_namespaces:
+    operation: tools_to_chat
+    tools:
+      - type: namespace
+        name: crm
+        description: CRM tools
+        tools:
+          - type: function
+            name: lookup
+            description: Find a contact
+            parameters: {properties: {id: {type: string}}}
+            strict: true
+            allowed_callers: [direct]
+          - {type: function, name: bare}
+          - type: function
+            name: typed
+            description: Typed schema
+            parameters: {type: object, properties: {}}
+          - type: custom
+            name: patch
+            description: Apply a patch
+            format: {type: grammar, syntax: lark, definition: "start: line+\nline: /.+/"}
+          - {type: custom, name: no_description}
+          - {type: web_search, name: skipped}
+          - {type: mcp, name: also_skipped}
+      - {type: namespace, name: plain, tools: []}
+      - {type: namespace, name: bare_namespace, description: Namespace only}
+      - type: namespace
+        name: flat
+        description: Flat fallback
+        parameters: {properties: {q: {type: string}}}
+        strict: false
+      - {type: function, name: top, description: Top level}
+env: {}
+compare:
+  ignore: []
