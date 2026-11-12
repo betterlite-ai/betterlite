@@ -63,6 +63,8 @@ pub(crate) fn invoke(
         }
         Seat::Worker => ("report.schema.json", &roles.worker, attempt.resume),
     };
+    // reviewers never resume, so only a resumed worker run takes the fix model
+    let model = session.and(attempt.fix_model).unwrap_or(&rung.model);
     let seat_name = <&str>::from(seat);
     let stem = attempt
         .places
@@ -85,6 +87,7 @@ pub(crate) fn invoke(
         log: &log,
         prompt,
         session,
+        model,
     };
     run_on_seat(attempt.agents, runner, rung, seat, &invocation)
 }

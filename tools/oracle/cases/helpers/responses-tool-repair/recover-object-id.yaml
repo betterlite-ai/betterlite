@@ -1,0 +1,12 @@
+kind: helper
+name: recover-object-id
+call:
+  responses_tool_repair:
+    operation: recover
+    assistant:
+      __object__:
+        attrs: {tool_calls: [{__object__: {attrs: {id: 7}, get: absent}}]}
+        get: absent
+env: {}
+compare:
+  ignore: []
