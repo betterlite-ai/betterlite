@@ -7,7 +7,7 @@ use betterlite_core::api::realtime_contracts::events::{
     AudioTranscriptionUsage, DurationUsage, InputTokenDetails, TokenUsage,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Number, Value, json};
 const LIMITS: RealtimeDecodeLimits = RealtimeDecodeLimits { max_bytes: 1 << 20 };
 #[derive(Debug, Deserialize)]
 pub(crate) struct RecordsInput {
@@ -60,7 +60,7 @@ struct UsageDocument {
     total_tokens: i64,
     text_tokens: i64,
     audio_tokens: i64,
-    seconds: f64,
+    seconds: Number,
 }
 
 pub(super) fn records(input: &RecordsInput) -> HelperResult {
@@ -98,7 +98,7 @@ fn usage_value(document: &UsageDocument) -> Result<Value, Box<crate::helpers::He
             },
         })),
         UsageKind::Duration => AudioTranscriptionUsage::Duration(DurationUsage {
-            seconds: document.seconds,
+            seconds: document.seconds.clone(),
         }),
     };
     serde_json::to_value(usage).map_err(|error| failure(error.to_string()))

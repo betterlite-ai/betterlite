@@ -26,8 +26,8 @@ call:
           - {value: ephemeral, future: 1}
       - kind: transcription_request
         documents:
-          - {model: m, input_audio_transcription: {model: n}}
-          - {model: "", input_audio_transcription: {model: n}}
+          - {model: m, input_audio_transcription: {model: "n"}}
+          - {model: "", input_audio_transcription: {model: "n"}}
           - {input_audio_transcription: {model: ""}}
           - {input_audio_transcription: {language: en}}
           - {model: solo, future: 1}

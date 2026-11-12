@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AllDeltaType {
@@ -58,7 +59,7 @@ pub struct TokenUsage {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DurationUsage {
-    pub seconds: f64,
+    pub seconds: Number,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
