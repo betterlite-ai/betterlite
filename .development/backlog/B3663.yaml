@@ -1,7 +1,7 @@
 id: B3663
 milestone: M6 guardrails
 title: Guardrail message scope, rewrite slots and blocked usage
-status: done
+status: todo
 depends_on: [B3661]
 file: tasks/B3663-guardrail-message-scope.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_helpers.py"
 parent: B104
 split_from: B104
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 1434
+pr: null
