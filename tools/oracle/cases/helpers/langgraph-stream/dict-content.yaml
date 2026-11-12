@@ -1,0 +1,11 @@
+kind: helper
+name: langgraph-stream-dict-content
+env: {}
+compare: {ignore: []}
+call:
+  b8103:
+    cases:
+      - model: langgraph/agent
+        lines:
+          - 'data: {"content": "direct"}'
+          - 'data: {"content": null}'

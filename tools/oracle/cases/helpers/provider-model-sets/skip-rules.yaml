@@ -1,0 +1,26 @@
+kind: helper
+name: provider-model-sets-skip-rules
+call:
+  b5361:
+    fixture:
+      model_cost:
+        "ft:gpt-3.5-turbo": {litellm_provider: openai}
+        "ft:gpt-3.5-turbo:acme": {litellm_provider: openai}
+        gpt-4o: {litellm_provider: openai}
+        guard-model: {litellm_provider: bedrock, mode: guardrail}
+        bedrock/us-east-1/anthropic.claude-3: {litellm_provider: bedrock}
+        bedrock-key: {litellm_provider: bedrock}
+        commitment-deal-month-commitment: {litellm_provider: bedrock}
+        converse-key: {litellm_provider: bedrock_converse}
+        vertex_ai/claude-3: {litellm_provider: vertex_ai-anthropic_models}
+        vertex_ai/vertex_ai/nested: {litellm_provider: vertex_ai-anthropic_models}
+        ai21-plain: {litellm_provider: ai21}
+        ai21-chat: {litellm_provider: ai21, mode: chat}
+        fw-plain: {litellm_provider: fireworks_ai}
+        fw-up-to-128k: {litellm_provider: fireworks_ai}
+        fireworks-ai-default: {litellm_provider: fireworks_ai}
+        fw-embed: {litellm_provider: fireworks_ai-embedding-models}
+        fw-embed-to-4k: {litellm_provider: fireworks_ai-embedding-models}
+    steps: []
+env: {}
+compare: {ignore: []}
