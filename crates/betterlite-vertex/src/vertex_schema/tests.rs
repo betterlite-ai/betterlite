@@ -187,8 +187,33 @@ fn an_empty_branch_object_becomes_an_object_type() {
     r#"{"type": ["array", "null"], "items": {"type": "string"}, "minItems": 1}"#,
     r#"{"anyOf": [{"type": "array", "items": {"type": "string"}, "minItems": 1}, {"type": "null"}]}"#
 )]
+#[case::primitive_branch_keeps_no_object_fields(
+    r#"{"type": ["string", "object"], "properties": {"a": {"type": "string"}}, "required": ["a"]}"#,
+    r#"{"anyOf": [{"type": "string"},
+                  {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}]}"#
+)]
+#[case::nested_in_properties(
+    r#"{"type": "object", "properties": {"p": {"type": ["string", "null"]}}}"#,
+    r#"{"type": "object", "properties": {"p": {"anyOf": [{"type": "string"}, {"type": "null"}]}}}"#
+)]
+#[case::nested_in_items(
+    r#"{"type": "array", "items": {"type": ["string", "null"]}}"#,
+    r#"{"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "null"}]}}"#
+)]
+#[case::nested_in_anyof(
+    r#"{"anyOf": [{"type": ["string", "null"]}]}"#,
+    r#"{"anyOf": [{"anyOf": [{"type": "string"}, {"type": "null"}]}]}"#
+)]
 fn a_type_array_becomes_an_anyof(#[case] text: &str, #[case] expected: &str) {
     assert_shaped(text, expected);
+}
+
+#[test]
+fn an_anyof_branch_with_properties_recovers_its_type() {
+    assert_shaped(
+        r#"{"anyOf": [{"properties": {"a": {"type": "string"}}}]}"#,
+        r#"{"anyOf": [{"properties": {"a": {"type": "string"}}, "type": "object"}]}"#,
+    );
 }
 
 #[rstest]
@@ -282,6 +307,10 @@ fn the_enum_type_pass_reads_the_branches(#[case] text: &str, #[case] expected: &
 #[case::nested_arrays(
     r#"{"type": "array", "items": {"type": "array", "items": {"properties": {}}}}"#,
     r#"{"type": "array", "items": {"type": "array", "items": {"type": "object"}}}"#
+)]
+#[case::branch_list_members(
+    r#"{"anyOf": [{"type": "array"}]}"#,
+    r#"{"anyOf": [{"type": "array", "items": {"type": "object"}}]}"#
 )]
 fn array_types_without_items_receive_object_items(#[case] text: &str, #[case] expected: &str) {
     assert_shaped(text, expected);

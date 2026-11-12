@@ -25,16 +25,15 @@ pub(crate) fn convert_anyof_null_to_nullable(
 fn strip_null_branches(branches: &mut Vec<Json>) -> Result<bool, VertexSchemaError> {
     let mut contains_null = false;
     let mut index = 0;
-    while index < branches.len() {
-        if branches.get(index).is_some_and(is_null_branch) {
+    while let Some(branch) = branches.get(index) {
+        if is_null_branch(branch) {
             branches.remove(index);
             contains_null = true;
             continue;
         }
-        if let Some(Json::Object(branch)) = branches.get_mut(index)
-            && branch.is_empty()
-        {
-            branch.insert("type".to_owned(), Json::Text("object".to_owned()));
+        let empty_object = branch.as_object().is_some_and(Object::is_empty);
+        if empty_object && let Some(Json::Object(object)) = branches.get_mut(index) {
+            object.insert("type".to_owned(), Json::Text("object".to_owned()));
         }
         index = index.saturating_add(1);
     }

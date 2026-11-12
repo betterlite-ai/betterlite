@@ -1,11 +1,10 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
 pub(crate) fn add_object_type(schema: &mut Object) {
-    if !schema.contains_key("type")
-        && !schema.contains_key("anyOf")
-        && !schema.contains_key("oneOf")
-        && !schema.contains_key("allOf")
-    {
+    let has_alternatives = ["anyOf", "oneOf", "allOf"]
+        .iter()
+        .any(|key| schema.contains_key(*key));
+    if !schema.contains_key("type") && !has_alternatives {
         schema.insert("type".to_owned(), Json::Text("object".to_owned()));
     }
     let properties_empty = match schema.get("properties") {

@@ -44,14 +44,9 @@ fn convert_type_array(schema: &mut Object, types: &[Json]) {
         };
         branches.push(Json::Object(branch_for_type(schema, name)));
     }
-    if types
-        .iter()
-        .filter_map(Json::as_str)
-        .any(|name| name == "object" || name == "array")
-    {
-        for field in TYPE_SPECIFIC_FIELDS {
-            schema.shift_remove(field);
-        }
+    // filter keeps nothing beside a branch list, so the parent's copies of these fields never reach the output
+    for field in TYPE_SPECIFIC_FIELDS {
+        schema.shift_remove(field);
     }
     schema.insert("anyOf".to_owned(), Json::List(branches));
     schema.shift_remove("type");
