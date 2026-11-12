@@ -1510,6 +1510,7 @@ dependencies = [
  "jsonschema",
  "lopdf",
  "num-traits",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
