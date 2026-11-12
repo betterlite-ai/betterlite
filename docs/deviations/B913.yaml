@@ -1,0 +1,5 @@
+task: B913
+deviations:
+  - what: A cached tool call is returned to the caller as a list of cache writes in order, and tool output conversion writes none itself.
+    why: The in-memory tool-call cache belongs to the B2226 task, so this module reports every call it saw, before the type filter, and the caller stores them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2162-L2171

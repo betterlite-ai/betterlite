@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-capabilities-thinking
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: map_reasoning_effort, model: claude-opus-4-7, custom_llm_provider: anthropic, llm_provider: anthropic, reasoning_effort: low}
+      - {function: cap_thinking_budget_to_max_tokens, thinking: {type: enabled, budget_tokens: 5000, display: summarized}, max_tokens: 2048}
+env: {}
+compare: {ignore: []}

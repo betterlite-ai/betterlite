@@ -1,0 +1,8 @@
+kind: helper
+name: model-registration-stringified-numbers
+call:
+  b5365:
+    function: convert_stringified_numbers
+    value: " 1.5 "
+env: {}
+compare: {ignore: []}

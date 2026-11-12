@@ -1,0 +1,14 @@
+kind: helper
+name: guardrail-params-mode-tags-keep-case
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode:
+        tags:
+          Team-A: [pre_call]
+          Team-B: Post_Call
+        default: Pre_Call
+env: {}
+compare: {ignore: []}

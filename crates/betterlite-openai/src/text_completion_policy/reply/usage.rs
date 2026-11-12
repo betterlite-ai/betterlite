@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use super::is_blank;
 
 // Usage.__init__ keeps every extra keyword argument via `setattr`, so unknown usage keys pass through unchanged.
-pub(super) fn resolve_usage(raw: Option<Value>) -> Value {
+pub(crate) fn resolve_usage(raw: Option<Value>) -> Value {
     let fields = match raw.filter(|value| !is_blank(value)) {
         Some(Value::Object(fields)) => fields,
         _ => Map::new(),

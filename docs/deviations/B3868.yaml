@@ -1,0 +1,14 @@
+task: B3868
+deviations:
+  - what: The legacy logger and the v2 tracer provider take their resource from the settings and the injected environment map, built once per provider, and never re-detect the process environment at each initialization call.
+    why: B2 configures the resource once at startup, and repeated detection in a multi-tenant fan-out would pay the scan for every dynamic provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L464
+  - what: The "global" tracer, meter and logger providers are an injected GlobalProviders registry. A poisoned registry lock stands in for a failed lookup, and only SDK providers can be stored, so the SDK class check has no separate branch.
+    why: Rust cannot downcast the process-wide OpenTelemetry provider, and opentelemetry 0.33 has no global logger provider at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L505-L581
+  - what: The proxy's service callback list and open_telemetry_logger slot are an injected ProxyRegistry, and a missing registry stands in for the proxy not being installed.
+    why: Rust has no module globals to append to, and the proxy crate is not a build-time optional import.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L478-L503
+  - what: DEBUG_OTEL=true does not switch on root debug logging or the opentelemetry.sdk.trace.export logger.
+    why: The tracing subscriber belongs to the application and is set through its log filter, so a library must not reconfigure it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L425-L435

@@ -1,0 +1,10 @@
+kind: helper
+name: responses-tool-results-output-call-identity-seed
+call:
+  responses_tool_results:
+    operation: output_call_identity
+    identities: [{id: fc_i, call_id: call_0}]
+    functions: []
+    patches: []
+env: {}
+compare: {ignore: []}

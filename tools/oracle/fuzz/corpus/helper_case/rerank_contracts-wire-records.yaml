@@ -1,0 +1,15 @@
+kind: helper
+name: rerank_contracts-wire-records-seed
+call:
+  rerank_contracts:
+    operation: wire_records
+    params:
+      requests:
+        - {model: m, query: q, documents: [text, {title: t, body: b}], extra: ignored}
+        - {model: m, query: q, documents: [], truncation_side: middle}
+      responses:
+        - {}
+        - {id: r, results: [{index: 2, relevance_score: 0.125}], meta: {billed_units: {}, tokens: {input_tokens: null}}}
+      accessor_keys: [id, _hidden_params, missing]
+env: {}
+compare: {ignore: []}

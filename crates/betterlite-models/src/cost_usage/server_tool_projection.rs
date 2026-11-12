@@ -1,10 +1,10 @@
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::decisions::Json;
 
 // types/utils.py's ServerToolUse: each counter is optional, so an unreported count stays distinct from a reported zero.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 pub struct ServerToolUse {
     #[serde(default)]
     pub web_search_requests: Option<i64>,

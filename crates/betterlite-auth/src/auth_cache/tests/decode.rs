@@ -1,0 +1,234 @@
+use std::fs;
+use std::path::PathBuf;
+use std::time::Instant;
+
+use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::{CachedValue, decode_cached_value};
+use rstest::rstest;
+
+use super::support::{capture, local_cache};
+use crate::auth_cache::WriteOptions;
+use crate::auth_cache::decode::{MAX_PAYLOAD_BYTES, MAX_PAYLOAD_DEPTH, decode_cached_auth, depth};
+use crate::auth_cache::payload::ReadOperation;
+
+fn auth_payload(bytes: usize) -> Vec<u8> {
+    let prefix = "{\"team_id\":\"";
+    let suffix = "\"}";
+    let fill = bytes
+        .saturating_sub(prefix.len())
+        .saturating_sub(suffix.len());
+    let mut text = String::from(prefix);
+    text.push_str(&"a".repeat(fill));
+    text.push_str(suffix);
+    text.into_bytes()
+}
+
+fn wrapped(core: &str, depth: usize) -> Vec<u8> {
+    let mut text = core.to_owned();
+    for _level in 0..depth {
+        text = format!("[{text}]");
+    }
+    text.into_bytes()
+}
+
+#[test]
+fn auth_cache_payload_over_byte_limit() {
+    let allowed = decode_cached_auth(&auth_payload(MAX_PAYLOAD_BYTES), ReadOperation::Get);
+    assert!(matches!(allowed, Ok(Some(_))), "{allowed:?}");
+    let (over, log) = capture(|| {
+        decode_cached_auth(
+            &auth_payload(MAX_PAYLOAD_BYTES.saturating_add(1)),
+            ReadOperation::Get,
+        )
+    });
+    assert!(over.unwrap().is_none());
+    assert!(log.contains("exceeds the cache payload limits"), "{log}");
+}
+
+#[test]
+fn auth_cache_payload_over_depth_limit() {
+    let at_limit = decode_cached_value(Some(&wrapped("1", MAX_PAYLOAD_DEPTH)))
+        .unwrap()
+        .unwrap();
+    assert_eq!(depth(&at_limit), MAX_PAYLOAD_DEPTH);
+    let (allowed, allowed_log) =
+        capture(|| decode_cached_auth(&wrapped("1", MAX_PAYLOAD_DEPTH), ReadOperation::Get));
+    assert!(allowed.unwrap().is_none());
+    assert!(!allowed_log.contains("depth limit"), "{allowed_log}");
+    let (over, log) = capture(|| {
+        decode_cached_auth(
+            &wrapped("1", MAX_PAYLOAD_DEPTH.saturating_add(1)),
+            ReadOperation::Get,
+        )
+    });
+    assert!(over.unwrap().is_none());
+    assert!(
+        log.contains("exceeds the cache payload depth limit"),
+        "{log}"
+    );
+}
+
+fn padded_literal(depth: usize, total: usize) -> Vec<u8> {
+    let mut text = "[".repeat(depth);
+    text.push_str("None");
+    let inner = total
+        .saturating_sub(depth.saturating_mul(2))
+        .saturating_sub(4);
+    text.push_str(&" ".repeat(inner));
+    text.push_str(&"]".repeat(depth));
+    text.into_bytes()
+}
+
+fn hits_work_limit(payload: &[u8]) -> bool {
+    let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
+    assert!(decoded.unwrap().is_none());
+    log.contains("literal work limit")
+}
+
+#[test]
+fn literal_fallback_work_is_bounded() {
+    let at_four = 15_000;
+    assert!(!hits_work_limit(&padded_literal(4, at_four)));
+    assert!(hits_work_limit(&padded_literal(
+        4,
+        at_four.saturating_add(1)
+    )));
+    assert!(!hits_work_limit(&padded_literal(1, at_four)));
+    assert!(hits_work_limit(&padded_literal(
+        1,
+        at_four.saturating_add(1)
+    )));
+    let at_eight = 185;
+    assert!(!hits_work_limit(&padded_literal(8, at_eight)));
+    assert!(hits_work_limit(&padded_literal(
+        8,
+        at_eight.saturating_add(1)
+    )));
+    assert!(hits_work_limit(b"['abc"));
+    let siblings = b"[None],[None],[None],[None],[None],[None],[None],[None],[None],[None]";
+    assert!(!hits_work_limit(siblings));
+}
+
+// the nested list is padded so the real count is over the limit and the count of a wrong scan is under it, and both parse fast
+#[test]
+fn literal_name_escapes_follow_the_quote_kind() {
+    let nested = String::from_utf8(padded_literal(8, 300)).unwrap();
+    let hidden = format!("['\\N{{'}}', {nested}]");
+    assert!(hits_work_limit(hidden.as_bytes()));
+    assert!(!hits_work_limit(b"['\\N{}', {'a': 1}]"));
+    assert!(!hits_work_limit(b"['\\N{', 1]"));
+    assert!(!hits_work_limit(b"['\\N{'}', 1]"));
+    let bytes = format!("[b'\\N{{', {nested}, '}}']");
+    assert!(hits_work_limit(bytes.as_bytes()));
+    let upper = format!("[B\"\\N{{\", {nested}, '}}']");
+    assert!(hits_work_limit(upper.as_bytes()));
+    assert!(!hits_work_limit(b"[b'\\N{}', 1]"));
+}
+
+#[rstest]
+#[case(4)]
+#[case(8)]
+fn literal_fallback_inputs_that_took_a_minute_are_rejected_at_once(#[case] depth: usize) {
+    let started = Instant::now();
+    assert!(hits_work_limit(&padded_literal(depth, MAX_PAYLOAD_BYTES)));
+    assert!(started.elapsed().as_secs() < 5);
+}
+
+#[test]
+fn json_nesting_is_not_held_to_the_literal_bound() {
+    assert!(!hits_work_limit(&wrapped("1", 12)));
+}
+
+#[test]
+fn literal_brackets_inside_strings_do_not_count() {
+    let payload = br#"{"team_id": 'it\'s ((((((((((', "api_key": None}"#;
+    let decoded = decode_cached_auth(payload, ReadOperation::Get)
+        .unwrap()
+        .expect("the literal payload decodes");
+    assert_eq!(
+        decoded.view.token.team_id.as_deref(),
+        Some("it's ((((((((((")
+    );
+}
+
+#[test]
+fn literal_nesting_is_counted_after_a_closed_string() {
+    assert!(hits_work_limit(
+        b"{'a': 'x', 'b': [[[[[[[[[[None]]]]]]]]]]}"
+    ));
+}
+
+#[test]
+fn malformed_bytes_become_typed_miss() {
+    let (decoded, log) = capture(|| decode_cached_auth(b"{oops", ReadOperation::Get));
+    assert!(decoded.unwrap().is_none());
+    assert!(log.contains("is not decodable"), "{log}");
+    assert!(log.contains("literal_eval"), "{log}");
+    let (invalid_utf8, utf8_log) =
+        capture(|| decode_cached_auth(&[0xff, 0xfe, 0x00], ReadOperation::AsyncGet));
+    assert!(invalid_utf8.unwrap().is_none());
+    assert!(utf8_log.contains("utf8"), "{utf8_log}");
+    let absent = decode_cached_auth(b"", ReadOperation::Get);
+    assert!(absent.unwrap().is_none());
+}
+
+#[test]
+fn duplicate_fields_use_shared_decoder() {
+    let payload = br#"{"team_id":"first","team_id":"second","api_key":null}"#;
+    let shared = decode_cached_value(Some(payload)).unwrap().unwrap();
+    let CachedValue::Object(fields) = &shared else {
+        panic!("the payload is an object");
+    };
+    assert_eq!(fields.len(), 2);
+    let decoded = decode_cached_auth(payload, ReadOperation::Get)
+        .unwrap()
+        .expect("the duplicated payload decodes");
+    assert_eq!(decoded.view.token.team_id.as_deref(), Some("second"));
+}
+
+#[test]
+fn caller_markers_not_promoted() {
+    let payload = br#"{"team_id":"team-1","requires_fresh_policy":true,"via_virtual_key":true,"authenticated_by_custom_auth":true,"mcp_admitted_user_subject":true,"api_key":null}"#;
+    let decoded = decode_cached_auth(payload, ReadOperation::Get)
+        .unwrap()
+        .expect("the marked payload decodes");
+    assert!(!decoded.extra.requires_fresh_policy);
+    assert!(!decoded.extra.provenance.via_virtual_key);
+    assert!(!decoded.extra.provenance.authenticated_by_custom_auth);
+    assert!(!decoded.extra.mcp_access.mcp_admitted_user_subject);
+    assert_eq!(decoded.view.token.team_id.as_deref(), Some("team-1"));
+}
+
+#[test]
+fn cache_diagnostics_redact_payload_and_key() {
+    let payload = br#"{"max_budget":"sk-live-secret"}"#;
+    let (decoded, log) = capture(|| decode_cached_auth(payload, ReadOperation::Get));
+    assert!(decoded.unwrap().is_none());
+    assert!(
+        log.contains("CacheCodec.deserialize: validation failed"),
+        "{log}"
+    );
+    assert!(!log.contains("sk-live-secret"), "{log}");
+    assert!(log.contains("view") || log.contains("json"), "{log}");
+    let cache = local_cache(Some(60.0_f64));
+    let key = "team_membership:user-1:team-1";
+    let stored: Json = serde_json::from_str(r#"{"max_budget":"sk-live-secret"}"#).unwrap();
+    cache
+        .set(Some(key), &stored, WriteOptions::default())
+        .unwrap();
+    let (missing, keyed_log) = capture(|| cache.get_auth(key, false));
+    assert!(missing.unwrap().is_none());
+    assert!(!keyed_log.contains("sk-live-secret"), "{keyed_log}");
+    assert!(!keyed_log.contains(key), "{keyed_log}");
+    assert!(
+        keyed_log.contains("UserApiKeyCache.get_cache"),
+        "{keyed_log}"
+    );
+}
+
+#[rstest]
+fn replays_the_auth_cache_corpus(#[files("fuzz/corpus/auth_cache/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
+    drop(decode_cached_auth(&bytes, ReadOperation::Get));
+    drop(decode_cached_auth(&bytes, ReadOperation::AsyncGet));
+}

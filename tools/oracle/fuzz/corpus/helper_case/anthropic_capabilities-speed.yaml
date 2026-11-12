@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-capabilities-speed
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        claude-opus-4-8: {litellm_provider: anthropic, supports_speed: true}
+        claude-opus-4-7: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: model_supports_speed_param, model: claude-opus-4-8, custom_llm_provider: anthropic}
+      - {function: maybe_drop_speed_param, model: claude-opus-4-7, custom_llm_provider: anthropic, params: {speed: fast}, drop_params: true, global_drop_params: false}
+env: {}
+compare: {ignore: []}

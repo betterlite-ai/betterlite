@@ -20,7 +20,7 @@ description: >-
   the window from the records they aggregate. Recovery order, window boundary enforcement and fault tolerance justify
   keeping this adapter in a separate security-focused module.
 
-  The plan registers helper operation b3092 as a not_built stub in tools/oracle/src/helpers/server.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/server/b3092.rs, write tools/oracle/helpers/b3092.py, and leave both registries as they are.
+  The plan registers helper operation b3092 as a not_built stub in tools/oracle/src/helpers/server/lib.rs (the betterlite-oracle-server crate) and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/server/b3092.rs, write tools/oracle/helpers/b3092.py, and leave both registries as they are.
 scope:
   paths:
     - crates/betterlite-server/src/daily_activity/recovery.rs

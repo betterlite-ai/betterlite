@@ -1,0 +1,10 @@
+kind: helper
+name: claude-gateway-policy-guard-disabled-seed
+call:
+  claude_gateway_policy:
+    mode: guard
+    general_settings:
+      enable_claude_code_gateway: false
+      managed_settings: {permissions: {deny: [Bash]}}
+env: {}
+compare: {ignore: []}

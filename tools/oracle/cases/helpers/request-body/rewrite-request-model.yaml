@@ -1,0 +1,15 @@
+kind: helper
+name: rewrite_request_model
+call:
+  request_body:
+    function: rewrite_request_model
+    request_data: {model: old}
+    model: new
+    request:
+      method: POST
+      route_path: /v1/chat/completions
+      body: {encoding: utf8, value: ""}
+      cached_body: {model: old, messages: []}
+env: {}
+compare:
+  ignore: []
