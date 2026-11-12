@@ -11,7 +11,7 @@ def mapped_case(config: OllamaConfig, case: ParamCase) -> Json:
     try:
         options = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L195
             "dict[str, Json]",
-            config.map_openai_params(
+            config.map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L195
                 non_default_params=case["non_default"],
                 optional_params=optional,
                 model=case["model"],
@@ -28,7 +28,7 @@ def param_cases(input_value: ParamsInput) -> Json:
     mapped: list[Json] = [mapped_case(config, case) for case in input_value["cases"]]
     empty: dict[str, Json] = {}
     urls: list[Json] = [
-        config.get_complete_url(
+        config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L455
             api_base=url,
             api_key=None,
             model="model",

@@ -77,7 +77,7 @@ def reply_case(config: OllamaConfig, case: ReplyCase) -> Json:
     try:
         result = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L276
             "ReplyResult",
-            config.transform_response(
+            config.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L276
                 model=case["model"],
                 raw_response=httpx.Response(
                     200,

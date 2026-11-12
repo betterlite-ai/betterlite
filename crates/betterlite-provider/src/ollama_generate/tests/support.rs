@@ -107,6 +107,11 @@ impl RemoteMediaFetcher for MapFetcher {
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        if let Some(url) = urls.iter().find(|url| !url.contains("png")) {
+            return ready(Err(ImageFetchError::Rejected {
+                url: url.to_owned(),
+            }));
+        }
         let values: Vec<String> = urls.iter().map(|_url| png_data_url()).collect();
         ready(Ok(values))
     }

@@ -11,7 +11,7 @@ def request_case(config: OllamaConfig, case: RequestCase) -> Json:
     try:
         body = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L391
             "dict[str, Json]",
-            config.transform_request(
+            config.transform_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L391
                 model=case["model"],
                 messages=case["messages"],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L391
                 optional_params=dict_or_empty(case.get("options")),

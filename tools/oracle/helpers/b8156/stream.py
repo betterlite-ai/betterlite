@@ -93,7 +93,7 @@ def stream_step(parser: ChunkParser, line: str) -> Json:
         return {"ok": False, "status": None}
     match result:
         case {"text": _}:
-            return done_value(cast("DoneChunk", result))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L502
+            return done_value(cast("DoneChunk", result))  # pyright: ignore[reportUnnecessaryCast]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L502
         case _:
             return {"ok": True, "chunk": chunk_value(cast("StreamChunk", result))}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L502
 

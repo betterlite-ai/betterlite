@@ -2,7 +2,7 @@ import asyncio
 from typing import Protocol, TypedDict, cast
 
 import litellm
-from litellm.llms.ollama.completion.handler import TokenEncoder, ollama_aembeddings
+from litellm.llms.ollama.completion.handler import TokenEncoder, ollama_aembeddings  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/handler.py#L84
 from litellm.types.utils import EmbeddingResponse
 from typing_extensions import override
 
