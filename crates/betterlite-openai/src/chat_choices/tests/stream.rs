@@ -4,8 +4,7 @@ use serde_json::Value;
 
 use super::support::{fixed_clock, nil_id, text, value};
 use crate::chat_choices::stream::{
-    CHUNK_OBJECT, StreamError, chunk_parser, extract_error_from_chunk,
-    map_reasoning_to_reasoning_content,
+    CHUNK_OBJECT, StreamError, chunk_parser, extract_error_from_chunk, move_reasoning_delta,
 };
 use crate::chat_choices::wire::{StreamDelta, StreamReply};
 
@@ -84,15 +83,15 @@ fn absent_delta_or_choices() {
     );
 
     let mut choices = vec![value(&[("delta", value(&[("reasoning", text("r"))]))])];
-    map_reasoning_to_reasoning_content(&mut choices).unwrap();
+    move_reasoning_delta(&mut choices).unwrap();
     assert_eq!(choices[0]["delta"]["reasoning_content"], text("r"));
     assert!(choices[0]["delta"].get("reasoning").is_none());
     assert!(matches!(
-        map_reasoning_to_reasoning_content(&mut [Value::from(5_i64)]),
+        move_reasoning_delta(&mut [Value::from(5_i64)]),
         Err(StreamError::ChoiceNotObject)
     ));
     assert!(matches!(
-        map_reasoning_to_reasoning_content(&mut [value(&[("delta", Value::from(5_i64))])]),
+        move_reasoning_delta(&mut [value(&[("delta", Value::from(5_i64))])]),
         Err(StreamError::DeltaNotObject)
     ));
 }
@@ -268,7 +267,7 @@ fn optional_envelope_fields() {
         ("id", text("c")),
         ("created", Value::from(1_i64)),
         ("model", text("m")),
-        ("usage", value(&[("prompt_tokens", Value::Null)])),
+        ("usage", value(&[])),
     ]))
     .unwrap();
     let usage = zeroed.usage.as_ref().unwrap();

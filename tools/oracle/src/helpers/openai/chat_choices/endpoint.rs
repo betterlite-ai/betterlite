@@ -121,8 +121,18 @@ fn outcome(
     match models {
         Ok(names) => value(&[
             ("ok", Value::Bool(true)),
-            ("models", Value::Array(names.into_iter().map(Value::String).collect())),
-            ("url", Value::String(calls.first().map_or_else(String::new, |call| call.0.clone()))),
+            (
+                "models",
+                Value::Array(names.into_iter().map(Value::String).collect()),
+            ),
+            (
+                "url",
+                Value::String(
+                    calls
+                        .first()
+                        .map_or_else(String::new, |call| call.0.clone()),
+                ),
+            ),
             (
                 "authorization",
                 calls
@@ -183,10 +193,9 @@ pub(super) fn credentials(call: &CredentialCall) -> HelperResult {
     Ok(value(&[
         (
             "api_key",
-            resolved
-                .api_key
-                .as_ref()
-                .map_or(Value::Null, |key| Value::String(key.expose_secret().to_owned())),
+            resolved.api_key.as_ref().map_or(Value::Null, |key| {
+                Value::String(key.expose_secret().to_owned())
+            }),
         ),
         ("api_base", Value::String(resolved.api_base)),
         ("base_model", base_model.map_or(Value::Null, Value::String)),
@@ -195,11 +204,9 @@ pub(super) fn credentials(call: &CredentialCall) -> HelperResult {
 }
 
 fn handler() -> Result<CountTokensHandler, Box<HelperError>> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(failure)?,
-    );
-    let client =
-        betterlite_http::proxy::ProxiedClient::outbound(&policy).map_err(failure)?;
+    let policy =
+        Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(failure)?);
+    let client = betterlite_http::proxy::ProxiedClient::outbound(&policy).map_err(failure)?;
     Ok(CountTokensHandler {
         client,
         request_timeout: DEADLINE,
@@ -215,7 +222,10 @@ pub(super) fn value(fields: &[(&str, Value)]) -> Value {
     )
 }
 
-fn failure(error: impl std::fmt::Display) -> Box<HelperError> {
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(HelperError {
         class: String::from("ValueError"),
         status: None,

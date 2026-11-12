@@ -39,7 +39,7 @@ pub enum StreamError {
     Provider { message: String, status: u16 },
 }
 
-pub fn map_reasoning_to_reasoning_content(choices: &mut [Value]) -> Result<(), StreamError> {
+pub fn move_reasoning_delta(choices: &mut [Value]) -> Result<(), StreamError> {
     for choice in choices {
         let fields = choice.as_object_mut().ok_or(StreamError::ChoiceNotObject)?;
         let Some(delta) = fields.get_mut("delta") else {
@@ -100,7 +100,7 @@ pub fn chunk_parser(
         Some(Value::Array(choices)) => choices.clone(),
         Some(_) => return Err(StreamError::ChoicesNotList),
     };
-    map_reasoning_to_reasoning_content(&mut choices)?;
+    move_reasoning_delta(&mut choices)?;
     Ok(StreamReply {
         id: chunk_id(fields.get("id"), identifier)?,
         object: CHUNK_OBJECT,

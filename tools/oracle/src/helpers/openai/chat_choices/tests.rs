@@ -20,6 +20,15 @@ const VARIANTS: [&str; 12] = [
     "credential_accessor_defaults",
 ];
 
+fn seed_is_valid(source: &str) -> bool {
+    let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+    let fields = case.call.input.as_object().unwrap();
+    case.call.operation == "openai_chat_choices"
+        && validate_helper(Path::new("<helper>"), &case).is_ok()
+        && fields.len() == 1
+        && fields.keys().any(|key| VARIANTS.contains(&key.as_str()))
+}
+
 #[test]
 fn helper_seeds_select_openai_chat_choices() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
@@ -34,15 +43,5 @@ fn helper_seeds_select_openai_chat_choices() {
         .map(|path| fs::read_to_string(path).unwrap())
         .collect();
     assert!(!seeds.is_empty());
-    for source in seeds {
-        let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-        assert_eq!(case.call.operation, "openai_chat_choices");
-        validate_helper(Path::new("<helper>"), &case).unwrap();
-        let fields = case.call.input.as_object().unwrap();
-        assert_eq!(fields.len(), 1, "{source}");
-        assert!(
-            fields.keys().any(|key| VARIANTS.contains(&key.as_str())),
-            "{source}"
-        );
-    }
+    assert!(seeds.iter().all(|source| seed_is_valid(source)));
 }

@@ -131,22 +131,14 @@ pub struct StreamDelta {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StreamUsage {
-    #[serde(default, deserialize_with = "count")]
+    #[serde(default)]
     pub prompt_tokens: u64,
-    #[serde(default, deserialize_with = "count")]
+    #[serde(default)]
     pub completion_tokens: u64,
-    #[serde(default, deserialize_with = "count")]
+    #[serde(default)]
     pub total_tokens: u64,
     #[serde(default)]
     pub prompt_tokens_details: Option<Value>,
     #[serde(default)]
     pub completion_tokens_details: Option<Value>,
-}
-
-// Usage counts a null or absent token count as zero
-fn count<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<u64>::deserialize(deserializer)?.unwrap_or(0))
 }

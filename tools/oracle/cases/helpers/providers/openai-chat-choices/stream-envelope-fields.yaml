@@ -8,7 +8,7 @@ call:
         - chunk: {choices: [], model: null}
         - chunk: {id: c, created: 1, model: m, usage: null, service_tier: ''}
         - chunk: {id: c, created: 1, model: m, service_tier: 3}
-        - chunk: {id: c, created: 1, model: m, usage: {prompt_tokens: null}}
+        - chunk: {id: c, created: 1, model: m, usage: {}}
         - chunk: {id: c, created: 1, model: m, choices: [{index: 2, finish_reason: stop_sequence, delta: {content: x}, logprobs: null}]}
 env: {}
 compare: {ignore: []}

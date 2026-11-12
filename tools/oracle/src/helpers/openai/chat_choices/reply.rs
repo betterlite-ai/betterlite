@@ -134,7 +134,10 @@ fn post_call_event(state: &LoggingState) -> Value {
     value(&[
         ("name", Value::String(String::from("post_call"))),
         ("input", to_value(input).unwrap_or(Value::Null)),
-        ("original_response", to_value(response).unwrap_or(Value::Null)),
+        (
+            "original_response",
+            to_value(response).unwrap_or(Value::Null),
+        ),
         ("complete_input_dict", to_value(data).unwrap_or(Value::Null)),
     ])
 }
@@ -146,12 +149,9 @@ fn error_outcome(error: &betterlite_openai::chat_choices::reply::TransformRespon
             ("status_code", Value::from(record.status_code)),
             (
                 "headers",
-                record
-                    .headers
-                    .as_ref()
-                    .map_or(Value::Null, |headers| {
-                        to_value(headers).unwrap_or(Value::Null)
-                    }),
+                record.headers.as_ref().map_or(Value::Null, |headers| {
+                    to_value(headers).unwrap_or(Value::Null)
+                }),
             ),
         ]),
         _ => value(&[("kind", Value::String(String::from("error")))]),
@@ -175,7 +175,10 @@ fn environment(redactor: &Redactor) -> Result<PrePostEnv<'_>, Box<HelperError>> 
     })
 }
 
-fn failure(error: impl std::fmt::Display) -> Box<HelperError> {
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(HelperError {
         class: String::from("ValueError"),
         status: None,

@@ -1,4 +1,4 @@
-use betterlite_openai::chat_choices::stream::chunk_parser;
+use betterlite_openai::chat_choices::stream::{StreamError, chunk_parser};
 use serde_json::{Value, to_value};
 use uuid::Uuid;
 
@@ -8,7 +8,7 @@ use crate::helpers::{HelperError, HelperResult};
 pub(super) fn run(steps: &ChunkSteps) -> HelperResult {
     let mut outputs = Vec::with_capacity(steps.steps.len());
     for step in &steps.steps {
-        let outcome = match chunk_parser(&step.chunk, nil_id, fixed_clock) {
+        let outcome = match chunk_parser(&step.chunk, Uuid::nil, || 7) {
             Ok(reply) => value(&[
                 ("ok", Value::Bool(true)),
                 ("chunk", to_value(reply).map_err(failure)?),
@@ -20,9 +20,9 @@ pub(super) fn run(steps: &ChunkSteps) -> HelperResult {
     Ok(Value::Array(outputs))
 }
 
-fn provider_outcome(error: &betterlite_openai::chat_choices::stream::StreamError) -> Value {
+fn provider_outcome(error: &StreamError) -> Value {
     match error {
-        betterlite_openai::chat_choices::stream::StreamError::Provider { status, .. } => {
+        StreamError::Provider { status, .. } => {
             value(&[("ok", Value::Bool(false)), ("status", Value::from(*status))])
         }
         other => value(&[
@@ -30,14 +30,6 @@ fn provider_outcome(error: &betterlite_openai::chat_choices::stream::StreamError
             ("error", Value::String(other.to_string())),
         ]),
     }
-}
-
-fn nil_id() -> Uuid {
-    Uuid::nil()
-}
-
-fn fixed_clock() -> i64 {
-    7
 }
 
 pub(super) fn value(fields: &[(&str, Value)]) -> Value {
@@ -49,7 +41,10 @@ pub(super) fn value(fields: &[(&str, Value)]) -> Value {
     )
 }
 
-fn failure(error: impl std::fmt::Display) -> Box<HelperError> {
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: std::fmt::Display,
+{
     Box::new(HelperError {
         class: String::from("ValueError"),
         status: None,

@@ -1,7 +1,6 @@
 import json
 import os
 from typing import cast
-from unittest import mock
 
 import litellm
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
@@ -28,34 +27,42 @@ class Client:
         return self.reply
 
 
+def apply_env(values: dict[str, str]) -> None:
+    os.environ.clear()
+    os.environ.update(values)
+
+
 def model_list(steps: list[ModelStep]) -> Json:
     config = OpenAIGPTConfig()
     outputs: list[Json] = []
     for step in steps:
-        scripted = step["reply"]
+        scripted = step.get("reply")
+        environment = step.get("env")
+        if scripted is None or environment is None:
+            raise ValueError("a model list step needs a reply and an env")
         client = Client(Reply(scripted["status"], scripted["body"]))
-        with (
-            mock.patch("litellm.module_level_client", client),
-            mock.patch.dict(os.environ, step["env"], clear=True),
-        ):
-            try:
-                models = config.get_models(api_key=step.get("api_key"), api_base=step.get("api_base"))
-            except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L782-L783
-                outputs.append({"ok": False})
-            else:
-                outputs.append({
-                    "ok": True,
-                    "models": cast(Json, models),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L788-L789
-                    "url": client.calls[0][0],
-                    "authorization": client.calls[0][1].get("Authorization"),
-                })
+        litellm.module_level_client = client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L777-L779
+        apply_env(environment)
+        try:
+            models = config.get_models(
+                api_key=step.get("api_key"), api_base=step.get("api_base")
+            )
+        except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L782-L783
+            outputs.append({"ok": False})
+        else:
+            outputs.append({
+                "ok": True,
+                "models": cast(Json, models),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L788-L789
+                "url": client.calls[0][0],
+                "authorization": client.calls[0][1].get("Authorization"),
+            })
     return outputs
 
 
 def url_join(steps: list[UrlStep]) -> Json:
     config = OpenAIGPTConfig()
     return [
-        {"url": config.get_complete_url(step.get("api_base"), None, "m", {}, {})}
+        {"url": config.get_complete_url(step.get("api_base"), None, "m", {}, {})}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L717-L743
         for step in steps
     ]
 
@@ -64,23 +71,27 @@ def auth(steps: list[AuthStep]) -> Json:
     config = OpenAIGPTConfig()
     outputs: list[Json] = []
     for step in steps:
-        headers = config.validate_environment(
-            dict(step["headers"]), "m", [], {}, {}, api_key=step.get("api_key")
+        headers = config.validate_environment(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
+            dict(step["headers"]), "m", [], {}, {}, api_key=step.get("api_key")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
         )
-        outputs.append(cast(Json, headers))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L745-L762
+        outputs.append(cast(Json, headers))
     return outputs
 
 
 def credentials(fields: Fields) -> Json:
     config = OpenAIGPTConfig()
-    with mock.patch.dict(os.environ, fields["env"], clear=True):
-        litellm.api_key = fields.get("litellm_api_key")
-        litellm.openai_key = fields.get("litellm_openai_key")
-        litellm.api_base = fields.get("litellm_api_base")
-        api_key = config.get_api_key(fields.get("api_key"))
-        api_base = config.get_api_base(fields.get("api_base"))
-        base_model = config.get_base_model(fields["model"])
-        counter = config.get_token_counter()
+    environment = fields.get("env")
+    model = fields.get("model")
+    if environment is None or model is None:
+        raise ValueError("credential accessor defaults need an env and a model")
+    apply_env(environment)
+    litellm.api_key = fields.get("litellm_api_key")
+    litellm.openai_key = fields.get("litellm_openai_key")
+    litellm.api_base = fields.get("litellm_api_base")
+    api_key = config.get_api_key(fields.get("api_key"))
+    api_base = config.get_api_base(fields.get("api_base"))
+    base_model = config.get_base_model(model)
+    counter = config.get_token_counter()
     if counter is None:
         raise RuntimeError("get_token_counter returned no counter")
     kind = "openai_api" if counter.__class__.__name__ == "OpenAITokenCounter" else "other"

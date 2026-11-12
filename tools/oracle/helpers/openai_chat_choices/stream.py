@@ -1,34 +1,33 @@
 from typing import cast
-from unittest import mock
 
-import litellm.types.utils
 from litellm.llms.openai.chat.gpt_transformation import OpenAIGPTConfig
 from litellm.llms.openai.common_utils import OpenAIError
 from litellm.types.utils import ModelResponseStream
 
 from . import ChunkStep, Json, Object
-from .support import FixedClock, FixedUuid, as_object
+from .support import as_object
 
 
 def run(steps: list[ChunkStep]) -> Json:
-    handler = OpenAIGPTConfig().get_model_response_iterator(iter([]), False, False)
+    handler = OpenAIGPTConfig().get_model_response_iterator(  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L816-L826
+        iter([]), sync_stream=False, json_mode=False
+    )  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L816-L826
     outputs: list[Json] = []
-    with (
-        mock.patch("litellm.types.utils.uuid.uuid4", new=FixedUuid()),
-        mock.patch("litellm.types.utils.time.time", new=FixedClock()),
-    ):
-        for step in steps:
-            try:
-                parsed = handler.chunk_parser(step["chunk"])
-            except OpenAIError as error:
-                outputs.append({"ok": False, "status": error.status_code})
-            else:
-                outputs.append({"ok": True, "chunk": chunk_view(cast(ModelResponseStream, parsed))})  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L84-L92
+    for step in steps:
+        try:
+            parsed = handler.chunk_parser(step["chunk"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L84-L92
+        except OpenAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L57-L84
+            outputs.append({"ok": False, "status": error.status_code})
+        else:
+            outputs.append({
+                "ok": True,
+                "chunk": chunk_view(cast(ModelResponseStream, parsed)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2159
+            })
     return outputs
 
 
 def chunk_view(result: ModelResponseStream) -> Json:
-    dumped = as_object(result.model_dump())  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2159
+    dumped = as_object(result.model_dump())  # type: ignore[misc, no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2159
     view: Object = {
         "id": dumped.get("id"),
         "object": dumped.get("object"),

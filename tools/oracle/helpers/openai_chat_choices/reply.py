@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 from typing import cast
-from unittest import mock
 
 import httpx
 import litellm.llms.openai.openai as openai_module
@@ -52,30 +51,28 @@ def run(steps: list[ResponseStep]) -> Json:
             step["status"], text=step["raw_text"], headers=step["raw_headers"]
         )
         outcome: Object = {"kind": "reply"}
-        recorder = Recorder(events)
-        with mock.patch.object(
-            openai_module, "convert_to_model_response_object", new=recorder
-        ):
-            try:
-                config.transform_response(
-                    model="gpt-4o",
-                    raw_response=response,
-                    model_response=ModelResponse(),
-                    logging_obj=cast(Logging, Logger(events)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L676-L682
-                    request_data=step["request_data"],
-                    messages=cast(list[AllMessageValues], step["messages"]),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L665-L682
-                    optional_params={},
-                    litellm_params={},
-                    encoding=None,
-                    api_key=None,
-                    json_mode=False,
-                )
-            except OpenAIError as error:
-                headers = cast(Json, dict(cast(Mapping[str, str], error.headers)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L687-L693
-                outcome = {
-                    "kind": "error",
-                    "status_code": error.status_code,
-                    "headers": headers,
-                }
+        records = Recorder(events)
+        openai_module.convert_to_model_response_object = records  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L694-L699
+        try:
+            config.transform_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L661-L708
+                model="gpt-4o",
+                raw_response=response,
+                model_response=ModelResponse(),
+                logging_obj=cast(Logging, Logger(events)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L676-L682
+                request_data=step["request_data"],
+                messages=cast(list[AllMessageValues], step["messages"]),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L665-L682
+                optional_params={},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L661-L708
+                litellm_params={},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L661-L708
+                encoding=None,
+                api_key=None,
+                json_mode=False,
+            )
+        except OpenAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L57-L84
+            headers = cast(Json, dict(cast(Mapping[str, str], error.headers)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L687-L693
+            outcome = {
+                "kind": "error",
+                "status_code": error.status_code,
+                "headers": headers,
+            }
         outputs.append({"events": events, "outcome": outcome})
     return outputs
