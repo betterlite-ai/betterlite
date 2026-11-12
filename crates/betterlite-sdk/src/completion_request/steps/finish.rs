@@ -1,5 +1,6 @@
 use super::messages::{optional, text_of};
 use crate::completion_request::Preparation;
+use crate::completion_request::args::JsonObject;
 use crate::completion_request::call::{MockCall, PreparedCompletion};
 use crate::completion_request::error::RequestResult;
 use crate::completion_request::ports::EnvironmentUpdate;
@@ -31,6 +32,24 @@ pub(crate) fn should_use_mcp_gateway(tools: Option<&[Json]>) -> bool {
         mcp_server_url(tool).is_some_and(|url| url.starts_with("litellm_proxy"))
             || proxy_path_mcp_name(tool).is_some()
     })
+}
+// admission_input_tokens: the first metadata bucket whose budget reservation names input tokens.
+fn admission_prompt_tokens(kwargs: &JsonObject) -> Option<i64> {
+    ["litellm_metadata", "metadata"]
+        .into_iter()
+        .find_map(|name| {
+            let Some(Json::Object(metadata)) = kwargs.get(name) else {
+                return None;
+            };
+            let Some(Json::Object(reservation)) = metadata.get("user_api_key_budget_reservation")
+            else {
+                return None;
+            };
+            match reservation.get("input_tokens") {
+                Some(Json::Number(raw)) => raw.as_i64(),
+                _ => None,
+            }
+        })
 }
 fn should_run_mock(state: &Preparation<'_>) -> bool {
     let response = state
@@ -88,6 +107,7 @@ pub(crate) fn mock_or_bridge(state: &mut Preparation<'_>) -> RequestResult<Prepa
             call: state.call.clone(),
             acompletion: state.acompletion,
             mock_delay: state.kwargs.get("mock_delay").cloned(),
+            prompt_tokens: admission_prompt_tokens(&state.kwargs),
         }));
     }
     if super::bridge::late(state)? {

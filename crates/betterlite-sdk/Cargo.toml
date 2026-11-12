@@ -31,7 +31,9 @@ url = "2.5.8"
 
 [dev-dependencies]
 betterlite-config = { path = "../betterlite-config" }
+betterlite-openai = { path = "../betterlite-openai" }
 rstest = "=0.27.0"
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

@@ -2870,6 +2870,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-router",

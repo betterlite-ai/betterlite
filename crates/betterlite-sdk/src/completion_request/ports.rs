@@ -47,6 +47,7 @@ pub struct PromptRequest {
     pub prompt_label: Option<String>,
     pub prompt_version: Option<i64>,
 }
+#[derive(Clone, Debug)]
 pub struct PromptOutcome {
     pub model: String,
     pub messages: Vec<Message>,
