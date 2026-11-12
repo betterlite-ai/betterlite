@@ -3,6 +3,7 @@ from typing import Protocol
 
 import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1
 import litellm.types.responses.main as litellm_responses  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1
+import pytest
 from litellm.responses.main import mock_responses_api_response as litellm_mock_response  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105
 
 from betterlite.types.responses import (
@@ -26,7 +27,7 @@ from betterlite.types.responses import (
     mock_responses_api_response,
 )
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue
+from betterlite.types.utils.values import JsonValue, ValidationError
 
 ANNOTATION_VALUES: dict[str, JsonValue] = {
     "type": "url_citation",
@@ -81,6 +82,21 @@ DELETE_VALUES: dict[str, JsonValue] = {
     "id": "resp_1",
     "object": "response",
     "deleted": True,
+}
+USAGE_DETAIL_VALUES: dict[str, JsonValue] = {
+    "input_tokens": 1,
+    "input_tokens_details": {
+        "cached_tokens": 2,
+        "cached_tokens_details": {"text_tokens": 3, "unknown": 4},
+        "unknown": 5,
+    },
+    "output_tokens": 6,
+    "output_tokens_details": {"audio_tokens": 7, "unknown": 8},
+    "total_tokens": 9,
+}
+TOOL_USAGE_VALUES: dict[str, JsonValue] = {
+    "web_search": {"num_requests": 2, "extra": 9},
+    "extra": 3,
 }
 USAGE_VALUES: dict[str, JsonValue] = {
     "input_tokens": 36,
@@ -474,19 +490,8 @@ def test_usage_dump() -> None:
 
 
 def test_usage_details() -> None:
-    values: dict[str, JsonValue] = {
-        "input_tokens": 1,
-        "input_tokens_details": {
-            "cached_tokens": 2,
-            "cached_tokens_details": {"text_tokens": 3, "unknown": 4},
-            "unknown": 5,
-        },
-        "output_tokens": 6,
-        "output_tokens_details": {"audio_tokens": 7, "unknown": 8},
-        "total_tokens": 9,
-    }
-    ours = ResponseAPIUsage(**values)
-    reference = litellm_openai.ResponseAPIUsage(**values)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1339
+    ours = ResponseAPIUsage(**USAGE_DETAIL_VALUES)
+    reference = litellm_openai.ResponseAPIUsage(**USAGE_DETAIL_VALUES)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1339
     assert_same("details", reference, ours)
     assert ours.input_tokens_details is not None
     assert ours.input_tokens_details.cached_tokens_details is not None
@@ -518,14 +523,22 @@ def test_usage_cost() -> None:
 
 
 def test_usage_classes() -> None:
-    values: dict[str, JsonValue] = {"web_search": {"num_requests": 2}}
-    ours = ResponsesToolUsage(**values)
-    reference = litellm_openai.ResponsesToolUsage(**values)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1375
+    ours = ResponsesToolUsage(**TOOL_USAGE_VALUES)
+    reference = litellm_openai.ResponsesToolUsage(**TOOL_USAGE_VALUES)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1375
     assert_same("tool_usage", reference, ours)
     assert ours.web_search == WebSearchToolUsage(num_requests=2)
     empty = ResponsesToolUsage()
     reference_empty = litellm_openai.ResponsesToolUsage()
     assert_same("tool_usage_empty", reference_empty, empty)
+
+
+def test_usage_frozen() -> None:
+    tool = WebSearchToolUsage(num_requests=1)
+    with pytest.raises(ValidationError, match="frozen"):
+        tool.num_requests = 2
+    usage = ResponsesToolUsage(web_search=tool)
+    with pytest.raises(ValidationError, match="frozen"):
+        usage.web_search = None
 
 
 def test_mock_default() -> None:

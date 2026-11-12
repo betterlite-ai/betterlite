@@ -8,6 +8,7 @@ from betterlite.types.utils.values import (
     JsonValue,
     ModelObject,
     StoredValue,
+    ValidationError,
     field_validator,
 )
 
@@ -62,11 +63,25 @@ class ResponseAPIUsage(ResponseObject):
                 return value
 
 
-class WebSearchToolUsage(ResponseObject):
+class _FrozenObject(ResponseObject):
+    @override
+    def __init__(self, **data: StoredValue) -> None:
+        super().__init__(
+            **{name: value for name, value in data.items() if name in type(self).__fields__},
+        )
+
+    @override
+    def __setattr__(self, name: str, value: StoredValue) -> None:
+        if name in type(self).__fields__:
+            raise ValidationError(type(self).__name__, (name,), "frozen")
+        super().__setattr__(name, value)
+
+
+class WebSearchToolUsage(_FrozenObject):
     num_requests: int
 
 
-class ResponsesToolUsage(ResponseObject):
+class ResponsesToolUsage(_FrozenObject):
     web_search: WebSearchToolUsage | None
 
 
