@@ -106,7 +106,7 @@ def usage_record(value: ToolUsageInput | None) -> Usage | None:
         if details is None
         else PromptTokensDetailsWrapper(web_search_requests=details["web_search_requests"])
     )
-    tools = (
+    tool_use_counts = (
         None
         if server_tool_use is None
         else ServerToolUse(
@@ -120,7 +120,7 @@ def usage_record(value: ToolUsageInput | None) -> Usage | None:
         completion_tokens=cost["completion_tokens"],
         total_tokens=cost["total_tokens"],
         prompt_tokens_details=prompt_details,
-        server_tool_use=tools,
+        server_tool_use=tool_use_counts,
         server_side_tool_usage_details=value["server_side_tool_usage_details"],
     )
 
