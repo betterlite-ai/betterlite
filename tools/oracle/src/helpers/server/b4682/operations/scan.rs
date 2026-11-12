@@ -45,7 +45,7 @@ impl GuardrailHook for ControlledHook {
     }
 }
 
-pub(in crate::helpers::server::b4682) fn run_scan(
+pub(in crate::b4682) fn run_scan(
     inputs: &[ToolInput],
     outcomes: &BTreeMap<String, HookOutcome>,
     credentials: &[String],
