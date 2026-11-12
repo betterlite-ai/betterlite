@@ -1,0 +1,10 @@
+kind: helper
+name: openai-reasoning-models-o1-developer-roles
+call:
+  openai_reasoning_models:
+    o1_developer_roles:
+      probes:
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_system_messages: false}}, messages: [{role: system, content: be brief, name: instruction}, {role: developer, content: use the tools}, {role: user, content: hello}]}
+      - {model: o3, chat_models: [o3], model_cost: {o3: {litellm_provider: openai, supports_system_messages: true}}, messages: [{role: system, content: be brief, name: instruction}, {role: developer, content: use the tools}, {role: user, content: hello}]}
+env: {}
+compare: {ignore: []}

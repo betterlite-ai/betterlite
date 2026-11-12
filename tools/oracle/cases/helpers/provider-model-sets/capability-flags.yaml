@@ -1,0 +1,64 @@
+kind: helper
+name: provider-model-sets-capability-flags
+call:
+  b5361:
+    fixture:
+      model_cost:
+        supports_web_search-on: {litellm_provider: deepseek, supports_web_search: true}
+        supports_web_search-off: {litellm_provider: deepseek, supports_web_search: false}
+        supports_url_context-on: {litellm_provider: deepseek, supports_url_context: true}
+        supports_url_context-off: {litellm_provider: deepseek, supports_url_context: false}
+        supports_audio_input-on: {litellm_provider: deepseek, supports_audio_input: true}
+        supports_audio_input-off: {litellm_provider: deepseek, supports_audio_input: false}
+        supports_pdf_input-on: {litellm_provider: deepseek, supports_pdf_input: true}
+        supports_pdf_input-off: {litellm_provider: deepseek, supports_pdf_input: false}
+        supports_audio_output-on: {litellm_provider: deepseek, supports_audio_input: true, supports_audio_output: true}
+        supports_audio_output-off: {litellm_provider: deepseek, supports_audio_input: false, supports_audio_output: false}
+        supports_prompt_cache_breakpoint-on: {litellm_provider: deepseek, supports_prompt_cache_breakpoint: true}
+        supports_prompt_cache_breakpoint-off: {litellm_provider: deepseek, supports_prompt_cache_breakpoint: false}
+        supports_thinking_cache_preservation-on: {litellm_provider: deepseek, supports_thinking_cache_preservation: true}
+        supports_thinking_cache_preservation-off: {litellm_provider: deepseek, supports_thinking_cache_preservation: false}
+        supports_computer_use-on: {litellm_provider: deepseek, supports_computer_use: true}
+        supports_computer_use-off: {litellm_provider: deepseek, supports_computer_use: false}
+        supports_vision-on: {litellm_provider: deepseek, supports_vision: true}
+        supports_vision-off: {litellm_provider: deepseek, supports_vision: false}
+        supports_anthropic_thinking_payload-on: {litellm_provider: deepseek, supports_anthropic_thinking_payload: true}
+        supports_anthropic_thinking_payload-off: {litellm_provider: deepseek, supports_anthropic_thinking_payload: false}
+        supports_embedding_image_input-on: {litellm_provider: deepseek, supports_embedding_image_input: true}
+        supports_embedding_image_input-off: {litellm_provider: deepseek, supports_embedding_image_input: false}
+    steps:
+      - {function: supports_web_search, model: supports_web_search-on, custom_llm_provider: deepseek}
+      - {function: supports_web_search, model: supports_web_search-off, custom_llm_provider: deepseek}
+      - {function: supports_web_search, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_url_context, model: supports_url_context-on, custom_llm_provider: deepseek}
+      - {function: supports_url_context, model: supports_url_context-off, custom_llm_provider: deepseek}
+      - {function: supports_url_context, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_audio_input, model: supports_audio_input-on, custom_llm_provider: deepseek}
+      - {function: supports_audio_input, model: supports_audio_input-off, custom_llm_provider: deepseek}
+      - {function: supports_audio_input, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_pdf_input, model: supports_pdf_input-on, custom_llm_provider: deepseek}
+      - {function: supports_pdf_input, model: supports_pdf_input-off, custom_llm_provider: deepseek}
+      - {function: supports_pdf_input, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_audio_output, model: supports_audio_output-on, custom_llm_provider: deepseek}
+      - {function: supports_audio_output, model: supports_audio_output-off, custom_llm_provider: deepseek}
+      - {function: supports_audio_output, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_prompt_cache_breakpoint, model: supports_prompt_cache_breakpoint-on, custom_llm_provider: deepseek}
+      - {function: supports_prompt_cache_breakpoint, model: supports_prompt_cache_breakpoint-off, custom_llm_provider: deepseek}
+      - {function: supports_prompt_cache_breakpoint, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_thinking_cache_preservation, model: supports_thinking_cache_preservation-on, custom_llm_provider: deepseek}
+      - {function: supports_thinking_cache_preservation, model: supports_thinking_cache_preservation-off, custom_llm_provider: deepseek}
+      - {function: supports_thinking_cache_preservation, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_computer_use, model: supports_computer_use-on, custom_llm_provider: deepseek}
+      - {function: supports_computer_use, model: supports_computer_use-off, custom_llm_provider: deepseek}
+      - {function: supports_computer_use, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_vision, model: supports_vision-on, custom_llm_provider: deepseek}
+      - {function: supports_vision, model: supports_vision-off, custom_llm_provider: deepseek}
+      - {function: supports_vision, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_anthropic_thinking_payload, model: supports_anthropic_thinking_payload-on, custom_llm_provider: deepseek}
+      - {function: supports_anthropic_thinking_payload, model: supports_anthropic_thinking_payload-off, custom_llm_provider: deepseek}
+      - {function: supports_anthropic_thinking_payload, model: nothing-here, custom_llm_provider: deepseek}
+      - {function: supports_embedding_image_input, model: supports_embedding_image_input-on, custom_llm_provider: deepseek}
+      - {function: supports_embedding_image_input, model: supports_embedding_image_input-off, custom_llm_provider: deepseek}
+      - {function: supports_embedding_image_input, model: nothing-here, custom_llm_provider: deepseek}
+env: {}
+compare: {ignore: []}

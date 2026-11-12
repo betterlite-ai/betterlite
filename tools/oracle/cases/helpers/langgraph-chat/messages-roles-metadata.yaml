@@ -1,0 +1,55 @@
+kind: helper
+name: langgraph-chat-messages-roles-metadata
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: request
+    cases:
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - {role: user, content: question}
+          - {role: assistant, content: answer}
+          - {role: system, content: rules}
+          - {role: tool, content: result}
+          - {role: function, content: output}
+          - {role: developer, content: guide}
+          - {role: moderator, content: other}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - {role: user, content: ''}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - role: user
+            content:
+              - {type: text, text: one}
+              - {type: text, text: two}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - role: user
+            content:
+              - {type: text, text: only}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - {role: user, content: [], metadata: {skillId: summarize}}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages:
+          - {role: user, content: hi, metadata: {skillId: summarize}}
+          - {role: assistant, content: ok, metadata: {}}
+          - {role: user, content: again, metadata: {a: 1, b: [1, 2], c: {d: null}}}
+      - model: langgraph/agent
+        options: {}
+        stream: false
+        messages: []

@@ -1,0 +1,29 @@
+kind: helper
+name: ollama-generate-reasoning-split
+env: {}
+compare: {ignore: []}
+call:
+  b8156:
+    op: reply
+    replies:
+      - {model: llama3, body: '{"response": "<think>why</think>answer"}'}
+      - {model: llama3, body: '{"response": "<thinking>why</thinking>answer"}'}
+      - {model: llama3, body: '{"response": "<budget:thinking>why</budget:thinking>answer"}'}
+      - {model: llama3, body: '{"response": "a<think>b</think>c"}'}
+      - {model: llama3, body: '{"response": "<think>why</think>"}'}
+      - {model: llama3, body: '{"response": "answer", "thinking": "field"}'}
+      - {model: llama3, body: '{"response": "<think>tags</think>answer", "thinking": "field"}'}
+      - {model: llama3, body: '{"response": "answer", "thinking": ""}'}
+      - {model: llama3, body: '{"response": "<think>why</think>answer", "thinking": ""}'}
+      - {model: llama3, body: '{"response": null}'}
+      - {model: llama3, body: '{"response": null, "thinking": "field"}'}
+      - {model: llama3, body: '{}'}
+      - {model: llama3, body: '{"response": ""}'}
+      - {model: llama3, body: '{"response": "<think>why</think>answer"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"a\":1}", "thinking": "field"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": null, "thinking": "field"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "", "thinking": "field"}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "{\"a\":1}", "thinking": ""}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": "  ", "thinking": "field"}', request_data: {format: json}}
+      - {model: llama3, body: '{}', request_data: {format: json}}
+      - {model: llama3, body: '{"response": null}', request_data: {format: json}}

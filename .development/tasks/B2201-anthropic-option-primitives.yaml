@@ -328,6 +328,8 @@ review_level: standard
 scope:
   lint_tables: false
   paths:
+  - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__aliases_config_yaml.snap"
+  - "crates/betterlite-config/tests/config_tests/mod.rs"
   - crates/betterlite-anthropic/Cargo.toml
   - crates/betterlite-anthropic/src/option_primitives.rs
   - crates/betterlite-anthropic/src/option_primitives/**

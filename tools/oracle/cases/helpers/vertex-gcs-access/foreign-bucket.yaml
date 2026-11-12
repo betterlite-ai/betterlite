@@ -1,0 +1,17 @@
+kind: helper
+name: foreign-bucket
+call:
+  vertex_gcs_access:
+    operation: foreign_bucket
+    params: {gcs_bucket_name: bucket}
+    environment: {}
+    trusted: []
+    plain: []
+    file_ids:
+      - "gs://other/litellm-vertex-files/input.jsonl"
+      - "gs://BUCKET/litellm-vertex-files/input.jsonl"
+      - "gs://bucket/litellm-vertex-files/input.jsonl"
+    filenames: []
+    model_paths: []
+env: {}
+compare: {ignore: []}

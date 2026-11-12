@@ -1,0 +1,12 @@
+kind: helper
+name: azure-default-chain-chain-seed
+call:
+  azure_default_chain:
+    chain:
+      steps:
+        - environment: {}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: token, token: seed-token}]
+env: {}
+compare: {ignore: []}
