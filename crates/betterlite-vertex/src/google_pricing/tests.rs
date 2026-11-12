@@ -424,24 +424,47 @@ fn token_pricing_tests_each_side_against_128k_independently(
     assert!(pricing.calls().is_empty());
 }
 
-#[test]
-fn token_pricing_enters_the_above_128k_path_when_only_one_side_has_a_rate() {
+#[rstest]
+#[case::output_rate_only_below_the_limit(
+    r#""output_cost_per_token_above_128k_tokens": 0.000004"#,
+    100,
+    40,
+    "0.00005",
+    "0.0001"
+)]
+#[case::prompt_above_without_its_own_above_rate(
+    r#""output_cost_per_token_above_128k_tokens": 0.000004"#,
+    128_001,
+    40,
+    "0.0640005",
+    "0.0001"
+)]
+#[case::completion_above_without_its_own_above_rate(
+    r#""input_cost_per_token_above_128k_tokens": 0.00000125"#,
+    100,
+    128_001,
+    "0.00005",
+    "0.3200025"
+)]
+fn token_pricing_enters_the_above_128k_path_when_only_one_side_has_a_rate(
+    #[case] above_rate: &str,
+    #[case] prompt_tokens: i64,
+    #[case] completion_tokens: i64,
+    #[case] expected_prompt: &str,
+    #[case] expected_completion: &str,
+) {
     let pricing = FixturePricing::new(Decimal::ONE);
-    let entry = model_record(
-        r#"{
-            "input_cost_per_token": 0.0000005,
-            "output_cost_per_token": 0.0000025,
-            "output_cost_per_token_above_128k_tokens": 0.000004
-        }"#,
-    );
+    let entry = model_record(&format!(
+        r#"{{"input_cost_per_token": 0.0000005, "output_cost_per_token": 0.0000025, {above_rate}}}"#
+    ));
     let (prompt, completion) = charges(cost_per_token(
         &pricing,
         &entry,
-        &plain_usage(100, 40),
+        &plain_usage(prompt_tokens, completion_tokens),
         &token_request(None, None),
     ));
-    assert_eq!(prompt, "0.00005");
-    assert_eq!(completion, "0.0001");
+    assert_eq!(prompt, expected_prompt);
+    assert_eq!(completion, expected_completion);
     assert!(pricing.calls().is_empty());
 }
 
