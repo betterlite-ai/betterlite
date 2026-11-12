@@ -1,14 +1,15 @@
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use rust_decimal::Decimal;
-use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
-use self::decoder::AudioDecoder;
 use crate::api::file_type_records::{find_type, mime_from_type};
 
+mod content;
 pub mod decoder;
+pub mod duration;
+pub mod hashing;
+pub mod language;
 
 mod tests;
 
@@ -142,35 +143,6 @@ pub fn get_audio_file_name(file: &AudioFile<'_>) -> String {
     }
 }
 
-#[must_use]
-pub fn get_audio_file_content_hash(
-    file: &mut AudioFile<'_>,
-    files: &dyn AuthorizedAudioFiles,
-) -> String {
-    let (fallback, content) = hash_parts(file, files);
-    if let Some(bytes) = content {
-        return hex::encode(Sha256::digest(bytes));
-    }
-    let name = match fallback {
-        Some(name) if !name.is_empty() => name,
-        _ => get_audio_file_name(file),
-    };
-    hex::encode(Sha256::digest(name.as_bytes()))
-}
-
-#[must_use]
-pub fn calculate_request_duration(
-    file: &mut AudioFile<'_>,
-    files: &dyn AuthorizedAudioFiles,
-    decoder: AudioDecoder<'_>,
-) -> Option<Decimal> {
-    let AudioDecoder::Available(available) = decoder else {
-        return None;
-    };
-    let content = duration_content(file, files)?;
-    available.duration(&content)
-}
-
 pub fn open_health_check_audio(
     files: &dyn AuthorizedAudioFiles,
     directory: &Path,
@@ -180,33 +152,6 @@ pub fn open_health_check_audio(
         Ok(handle) => Ok(handle),
         Err(source) => Err(AudioFileError::Open { path, source }),
     }
-}
-
-const BARE_ISO_639_1_TO_BCP47: &[(&str, &str)] = &[
-    ("en", "en-US"),
-    ("es", "es-ES"),
-    ("de", "de-DE"),
-    ("fr", "fr-FR"),
-    ("it", "it-IT"),
-    ("pt", "pt-BR"),
-    ("ja", "ja-JP"),
-    ("ko", "ko-KR"),
-    ("zh", "zh-CN"),
-    ("ru", "ru-RU"),
-    ("hi", "hi-IN"),
-    ("ar", "ar-SA"),
-];
-
-#[must_use]
-pub fn normalize_language_to_bcp47(language: &str) -> String {
-    if language.contains('-') {
-        return language.to_owned();
-    }
-    let bare = language.to_lowercase();
-    BARE_ISO_639_1_TO_BCP47
-        .iter()
-        .find_map(|(code, tag)| (*code == bare.as_str()).then_some(*tag))
-        .map_or_else(|| language.to_owned(), str::to_owned)
 }
 
 fn extract_tuple(
@@ -249,91 +194,6 @@ fn read_stream(stream: &mut dyn AudioStream) -> Result<Vec<u8>, AudioFileError> 
         rewound.map_err(|source| AudioFileError::Seek { source })?;
     }
     content.ok_or(AudioFileError::MissingContent)
-}
-
-fn read_whole(stream: &mut dyn AudioStream) -> Option<Vec<u8>> {
-    let position = match stream.tell() {
-        Some(position) => Some(position.ok()?),
-        None => None,
-    };
-    if let Some(rewound) = stream.seek(0) {
-        rewound.ok()?;
-    }
-    let content = stream.read().ok()?;
-    if let Some(restore_position) = position
-        && let Some(restored) = stream.seek(restore_position)
-    {
-        restored.ok()?;
-    }
-    content
-}
-
-fn hash_parts(
-    file: &mut AudioFile<'_>,
-    files: &dyn AuthorizedAudioFiles,
-) -> (Option<String>, Option<Vec<u8>>) {
-    if let AudioFile::Tuple(tuple) = file {
-        let fallback = tuple.filename.map(str::to_owned);
-        return match &mut tuple.content {
-            Some(content) => {
-                let (overridden, bytes) = hash_content(content, files);
-                (overridden.or(fallback), bytes)
-            }
-            None => (fallback, None),
-        };
-    }
-    (
-        Some(get_audio_file_name(file)),
-        hash_file_content(file, files),
-    )
-}
-
-fn hash_content(
-    content: &mut TupleContent<'_>,
-    files: &dyn AuthorizedAudioFiles,
-) -> (Option<String>, Option<Vec<u8>>) {
-    match content {
-        TupleContent::Bytes(bytes) | TupleContent::ByteArray(bytes) => (None, Some(bytes.to_vec())),
-        TupleContent::Text(text) => (Some((*text).to_owned()), None),
-        TupleContent::Path(path) => files.read(path).map_or_else(
-            |_| (Some(path.to_str().unwrap_or_default().to_owned()), None),
-            |bytes| (None, Some(bytes)),
-        ),
-        TupleContent::Stream(stream) => (None, read_whole(&mut **stream)),
-        TupleContent::Unsupported { .. } => (None, None),
-    }
-}
-
-fn hash_file_content(
-    file: &mut AudioFile<'_>,
-    files: &dyn AuthorizedAudioFiles,
-) -> Option<Vec<u8>> {
-    match file {
-        AudioFile::Bytes(content) | AudioFile::ByteArray(content) => Some(content.to_vec()),
-        AudioFile::Path(path) => files.read(path).ok(),
-        AudioFile::Stream(stream) => read_whole(&mut **stream),
-        AudioFile::Text(_) | AudioFile::Tuple(_) | AudioFile::Unsupported { .. } => None,
-    }
-}
-
-fn duration_content(file: &mut AudioFile<'_>, files: &dyn AuthorizedAudioFiles) -> Option<Vec<u8>> {
-    match file {
-        AudioFile::Bytes(content) | AudioFile::ByteArray(content) => Some(content.to_vec()),
-        AudioFile::Path(path) => files.read(path).ok(),
-        AudioFile::Stream(stream) => read_whole(&mut **stream),
-        AudioFile::Tuple(tuple) => match &mut tuple.content {
-            Some(TupleContent::Bytes(content)) => Some(content.to_vec()),
-            Some(TupleContent::Stream(stream)) => read_whole(&mut **stream),
-            Some(
-                TupleContent::ByteArray(_)
-                | TupleContent::Text(_)
-                | TupleContent::Path(_)
-                | TupleContent::Unsupported { .. },
-            )
-            | None => None,
-        },
-        AudioFile::Text(_) | AudioFile::Unsupported { .. } => None,
-    }
 }
 
 fn path_name(path: &Path) -> String {
