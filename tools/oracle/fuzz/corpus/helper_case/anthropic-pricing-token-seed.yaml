@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-pricing-token-seed
+call:
+  anthropic_pricing:
+    kind: token
+    model: claude-test
+    usage: {prompt_tokens: 4, completion_tokens: 2, total_tokens: 6}
+    model_info: {input_cost_per_token: 0.25, output_cost_per_token: 0.5}
+    provider_specific_entry: {us: 1.1, fast: 2.0}
+    service_tier: null
+    inference_geo: us
+    speed: fast
+compare: {ignore: []}
+env: {}
