@@ -341,6 +341,30 @@ async fn an_error_body_over_the_byte_limit_is_refused() {
     assert!(matches!(error, LangGraphStreamError::TooLarge { limit } if limit == MAX_BODY_BYTES));
 }
 
+#[tokio::test]
+async fn an_error_body_of_exactly_the_limit_is_read() {
+    let data = body();
+    let messages = prompt();
+    let transport = Arc::new(FakeTransport::new(
+        ClientKind::Async,
+        500,
+        vec![Ok(vec![b'x'; MAX_BODY_BYTES])],
+    ));
+    let logger = RecordingLogger::default();
+    let error = expect_error(
+        open(
+            &request(&data, &messages, ClientKind::Async),
+            &deps(None, &transport, &logger),
+        )
+        .await,
+        "the at-limit error body was refused",
+    );
+    let LangGraphStreamError::Provider(failure) = error else {
+        panic!("expected a provider error");
+    };
+    assert_eq!(failure.message.len(), MAX_BODY_BYTES);
+}
+
 #[rstest]
 #[case::sync_keeps_sync(ClientKind::Sync, ClientKind::Sync, true)]
 #[case::async_keeps_async(ClientKind::Async, ClientKind::Async, true)]

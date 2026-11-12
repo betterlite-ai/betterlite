@@ -376,6 +376,14 @@ fn the_custom_stream_wrapper_flag_is_set() {
     assert!(black_box(HAS_CUSTOM_STREAM_WRAPPER));
 }
 
+#[test]
+fn the_default_id_source_generates_a_fresh_uuid() {
+    let first = super::UuidV4.next_id();
+    let second = super::UuidV4.next_id();
+    assert_ne!(first, second);
+    assert!(!first.is_nil());
+}
+
 #[tokio::test]
 async fn before_iteration_starts_next_ends_at_once() {
     let mut stream = LangGraphSseStream {
