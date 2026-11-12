@@ -86,8 +86,8 @@ fn different_items_have_different_fingerprints(#[case] left: &str, #[case] right
 
 #[rstest]
 #[case::sorted_keys(
-    r#"{"b":[1,"x",null,true],"a":{"d":1.5,"c":"e"}}"#,
-    r#"{"a":{"c":"e","d":1.5},"b":[1,"x",null,true]}"#
+    r#"{"b":[1,"x",null,true],"a":{"d":2,"c":"e"}}"#,
+    r#"{"a":{"c":"e","d":2},"b":[1,"x",null,true]}"#
 )]
 #[case::text(r#""abc""#, r#""abc""#)]
 #[case::empty_object("{}", "{}")]

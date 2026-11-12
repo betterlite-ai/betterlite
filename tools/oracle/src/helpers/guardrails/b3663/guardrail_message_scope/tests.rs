@@ -9,6 +9,7 @@ use crate::helpers::{HelperRun, run_case};
 #[rstest::rstest]
 #[case::anthropic_sse_multiline_blocks("anthropic-sse-multiline-blocks")]
 #[case::anthropic_sse_parse_data_prefix("anthropic-sse-parse-data-prefix")]
+#[case::anthropic_sse_separator_controls("anthropic-sse-separator-controls")]
 #[case::anthropic_sse_skip_invalid_json("anthropic-sse-skip-invalid-json")]
 #[case::assistant_text_from_anthropic_response("assistant-text-from-anthropic-response")]
 #[case::assistant_text_from_chat_response("assistant-text-from-chat-response")]
@@ -19,6 +20,7 @@ use crate::helpers::{HelperRun, run_case};
 #[case::blocked_usage_response_prompt_completion_fallback(
     "blocked-usage-response-prompt-completion-fallback"
 )]
+#[case::blocked_usage_responses_api_token_details("blocked-usage-responses-api-token-details")]
 #[case::blocked_usage_responses_api_total_fallback("blocked-usage-responses-api-total-fallback")]
 #[case::blocked_usage_responses_stream_completed_event(
     "blocked-usage-responses-stream-completed-event"
