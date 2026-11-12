@@ -99,6 +99,23 @@ async fn recovery_failure_keeps_counter() {
 }
 
 #[tokio::test]
+async fn missing_url_before_build() {
+    let script = Arc::new(FakeScript::default());
+    let built = create(
+        &script,
+        options(DatabaseUrlSlot::default()),
+        None,
+        None,
+        true,
+    )
+    .await;
+    let outcome = replacement::recreate(&built, &secret(NEXT_URL), None, None).await;
+    assert!(matches!(outcome, Err(ReplacementError::MissingUrl)));
+    assert_eq!(script.build_urls(), vec!["postgres://initial".to_owned()]);
+    assert!(script.has_event("close:0"));
+}
+
+#[tokio::test]
 async fn refresh_cancel_cleans_candidate() {
     let script = Arc::new(FakeScript::default());
     let gate = Arc::new(Notify::new());
