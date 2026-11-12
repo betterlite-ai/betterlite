@@ -323,7 +323,6 @@ fn an_uninstalled_provider_policy_is_a_typed_unavailable_adapter() {
 fn unavailable(error: PolicyError) -> String {
     match error {
         PolicyError::UnavailableAdapter(provider) => provider,
-        PolicyError::Failed { .. } => "failed".to_owned(),
     }
 }
 

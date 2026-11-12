@@ -15,7 +15,6 @@ use super::ProviderPricing;
 fn unavailable(error: PolicyError) -> String {
     match error {
         PolicyError::UnavailableAdapter(provider) => provider,
-        PolicyError::Failed { .. } => "failed".to_owned(),
     }
 }
 
