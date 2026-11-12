@@ -79,3 +79,10 @@ path = "fuzz_targets/policy_settings.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tool_prices"
+path = "fuzz_targets/tool_prices.rs"
+test = false
+doc = false
+bench = false
