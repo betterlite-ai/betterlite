@@ -116,6 +116,14 @@ fn batch_parts_classify_media(
     r#"{"dimensions":2,"task_type":"FACT_VERIFICATION"}"#,
     r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"outputDimensionality":2,"taskType":"FACT_VERIFICATION"}"#
 )]
+#[case::task_type_unspecified(
+    r#"{"taskType":"TASK_TYPE_UNSPECIFIED"}"#,
+    r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"TASK_TYPE_UNSPECIFIED"}"#
+)]
+#[case::retrieval_query(
+    r#"{"taskType":"RETRIEVAL_QUERY"}"#,
+    r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"RETRIEVAL_QUERY"}"#
+)]
 #[case::nulls_take_the_default(
     r#"{"dimensions":null,"taskType":"CLASSIFICATION","title":null}"#,
     r#"{"model":"models/gemini-embedding-001","content":{"parts":[{"text":"hello"}]},"taskType":"CLASSIFICATION"}"#
