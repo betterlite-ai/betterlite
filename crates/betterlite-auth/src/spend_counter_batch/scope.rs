@@ -107,7 +107,7 @@ impl SpendCounterScope {
             return Ok(None);
         };
         batch.bind(&BTreeSet::from([counter_key.to_owned()]));
-        batch.read(counter_key).await
+        self.read_spend_counter(counter_key).await
     }
 
     pub fn bind_admission_counter_keys(&self, auth: &UserAPIKeyAuth, end_user_id: Option<&str>) {

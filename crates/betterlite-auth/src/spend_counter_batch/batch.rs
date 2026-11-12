@@ -1,19 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use betterlite_redis::batch::error::BatchError;
-use betterlite_redis::batch::result::{BatchResult, Settled};
+use betterlite_redis::batch::result::BatchResult;
 use betterlite_redis::batch::{MgetValues, RedisBatch};
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::request_batch::lock;
 use betterlite_redis::request_batch::scope::active_request_redis_batch;
 use rust_decimal::Decimal;
 use thiserror::Error;
-use tokio::sync::Notify;
 
-use super::value::decimal_map;
+use self::load::{LoadShared, Loader};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CounterValue {
@@ -47,6 +43,8 @@ pub(super) struct BatchState {
     pub(super) loaded: BTreeMap<String, Option<Decimal>>,
     pub(super) inflight: Vec<BatchResult<MgetValues>>,
 }
+
+mod load;
 
 pub struct SpendCounterBatch {
     redis_cache: Arc<RedisCache>,
@@ -109,7 +107,7 @@ impl SpendCounterBatch {
         if !bound {
             return Ok(None);
         }
-        let loaded = self.load().await?;
+        let loaded = Loader { batch: self }.load().await?;
         let value = match loaded.get(counter_key) {
             Some(Some(amount)) => CounterValue::Amount(*amount),
             Some(None) => CounterValue::Missing,
@@ -150,168 +148,5 @@ impl SpendCounterBatch {
         }
         state.fetched.extend(pending.iter().cloned());
         state.inflight.push(request_batch.mget(&pending));
-    }
-
-    async fn load(&self) -> Result<BTreeMap<String, Option<Decimal>>, SpendCounterBatchError> {
-        loop {
-            let shared = match self.claim_load() {
-                LoadClaim::Run(shared) => shared,
-                LoadClaim::Wait(shared) => {
-                    shared.wait().await;
-                    continue;
-                }
-            };
-            let finished = LoadFinished {
-                batch: self,
-                shared,
-            };
-            if self.request_batch.is_some() {
-                self.declare_pending();
-                self.collect_inflight().await?;
-            } else {
-                self.fetch_pending().await;
-            }
-            drop(finished);
-            return Ok(lock(&self.state).loaded.clone());
-        }
-    }
-
-    fn claim_load(&self) -> LoadClaim {
-        let mut loading = lock(&self.loading);
-        if let Some(shared) = loading.as_ref() {
-            return LoadClaim::Wait(Arc::clone(shared));
-        }
-        let shared = Arc::new(LoadShared {
-            complete: AtomicBool::new(false),
-            done: Notify::new(),
-        });
-        *loading = Some(Arc::clone(&shared));
-        drop(loading);
-        LoadClaim::Run(shared)
-    }
-
-    async fn collect_inflight(&self) -> Result<(), SpendCounterBatchError> {
-        let results = {
-            let mut state = lock(&self.state);
-            mem::take(&mut state.inflight)
-        };
-        for result in results {
-            self.accept_settled(result.await)?;
-        }
-        Ok(())
-    }
-
-    fn accept_settled(&self, settled: Settled<MgetValues>) -> Result<(), SpendCounterBatchError> {
-        let values = match settled {
-            Ok(values) => values,
-            Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => {
-                return Err(SpendCounterBatchError::Cancelled);
-            }
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    "spend counter batch read failed, falling back to per-key reads"
-                );
-                return Ok(());
-            }
-        };
-        match decimal_map(values.iter()) {
-            Ok(fetched) => self.merge(fetched),
-            Err(error) => tracing::debug!(
-                error = %error,
-                "spend counter batch read failed, falling back to per-key reads"
-            ),
-        }
-        Ok(())
-    }
-
-    async fn fetch_pending(&self) {
-        let pending = {
-            let mut state = lock(&self.state);
-            let pending: BTreeSet<String> =
-                state.keys.difference(&state.fetched).cloned().collect();
-            state.fetched.extend(pending.iter().cloned());
-            pending
-        };
-        if pending.is_empty() {
-            return;
-        }
-        let requested: Vec<Option<&str>> = pending.iter().map(String::as_str).map(Some).collect();
-        let fetched = match self.redis_cache.async_batch_get_cache(&requested).await {
-            Ok(values) => match decimal_map(values.iter()) {
-                Ok(fetched) => fetched,
-                Err(error) => {
-                    tracing::debug!(
-                        error = %error,
-                        "spend counter batch read failed, falling back to per-key reads"
-                    );
-                    BTreeMap::new()
-                }
-            },
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    "spend counter batch read failed, falling back to per-key reads"
-                );
-                BTreeMap::new()
-            }
-        };
-        self.merge(fetched);
-    }
-
-    // a recorded write outranks whatever an older read reply brings back
-    fn merge(&self, fetched: BTreeMap<String, Option<Decimal>>) {
-        let mut state = lock(&self.state);
-        for (key, value) in fetched {
-            state.loaded.entry(key).or_insert(value);
-        }
-    }
-}
-
-enum LoadClaim {
-    Run(Arc<LoadShared>),
-    Wait(Arc<LoadShared>),
-}
-
-struct LoadShared {
-    complete: AtomicBool,
-    done: Notify,
-}
-
-impl LoadShared {
-    fn complete(&self) {
-        self.complete.store(true, Ordering::SeqCst);
-        self.done.notify_waiters();
-    }
-
-    async fn wait(&self) {
-        loop {
-            let notified = self.done.notified();
-            if self.complete.load(Ordering::SeqCst) {
-                return;
-            }
-            notified.await;
-        }
-    }
-}
-
-// completing on drop lets a cancelled reader release waiters instead of stranding them
-struct LoadFinished<'batch> {
-    batch: &'batch SpendCounterBatch,
-    shared: Arc<LoadShared>,
-}
-
-impl Drop for LoadFinished<'_> {
-    fn drop(&mut self) {
-        {
-            let mut loading = lock(&self.batch.loading);
-            if loading
-                .as_ref()
-                .is_some_and(|current| Arc::ptr_eq(current, &self.shared))
-            {
-                *loading = None;
-            }
-        }
-        self.shared.complete();
     }
 }
