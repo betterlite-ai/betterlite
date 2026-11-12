@@ -57,6 +57,15 @@ description: >-
   content-type; ignore /error/message with the repository's wording reason. Dynamic ids and
   timestamps may be ignored individually, never entire choices, errors or headers.
 
+  Build the production StreamOutputAssembler, B3857's port in betterlite-logging otel::content_projections, in telemetry
+  as the unit struct `LangfuseStreamAssembler`. assemble_sse calls B3669's assemble_anthropic_sse_stream on the frames
+  with restore_identity off and returns the ModelResponse serialized to an OtelModelValue object, or None when that gives
+  None. assemble_chat calls B2227's stream_chunk_builder with the chunks and messages and returns its chat ModelResponse
+  the same way, or None on its error. The shared call site that builds the B8910 runtime passes
+  `Arc::new(LangfuseStreamAssembler)`. Boot test tracing::messages_stream_root_output streams POST /v1/messages through
+  langfuse_otel with content capture on and asserts that the root observation output is the assembled assistant message
+  as LiteLLM's stream_output renders it; a raw stream without message_start stamps no output.
+
   Native boot tests in telemetry/tests/ assert the exported spans, since the existing HTTP
   oracle compares client/upstream traffic and does not collect OTLP exports. Drive the real
   application against a mock provider and an injected recording exporter, not a hand-built
@@ -130,6 +139,10 @@ references:
 dod:
   - text: Startup publishes the existing canonical callback's provider after catalog initialization, and real chat/stream/auth paths export one correctly parented trace with the expected Langfuse and identity timing.
     proof: [tracing-boot-tests, oracle]
+  - text: >-
+      LangfuseStreamAssembler assembles raw Anthropic SSE frames and chat chunks, so a streamed /v1/messages response
+      stamps its assembled message as the Langfuse root output.
+    proof: [tracing-boot-tests]
   - text: Auth and management adapters call their owned services without duplicate root creation, duplicate management emission or changes to the client error/success response.
     proof: [adapter-tests, tracing-boot-tests, oracle]
   - text: The seven trace routes are merged once with normal auth, receive the lifespan's optional receiver and storage, preserve unavailable responses, and do not gain aliases.

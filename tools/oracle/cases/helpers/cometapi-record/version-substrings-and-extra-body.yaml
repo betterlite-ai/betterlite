@@ -1,0 +1,46 @@
+kind: helper
+name: cometapi-record-version-substrings-and-extra-body
+call:
+  cometapi_record:
+    function: request
+    requests:
+      - {api_base: null, model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://api.cometapi.com", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://api.cometapi.com/", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1/", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v10", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v1/chat/completions", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/chat/completions/x", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/x?q=chat/completions", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/x?q=/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "a//b/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "a//b", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "//host/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "//host", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "http://v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "x//v1", model: m, messages: [], optional_params: {}, env: {}}
+      - api_base: null
+        model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {temperature: 0.5, extra_body: {a: 1, model: over, messages: []}}
+        env: {}
+      - api_base: null
+        model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {temperature: 0.5, extra_body: {}}
+        env: {}
+      - api_base: null
+        model: m
+        messages:
+          - role: user
+            content: [{type: text, text: hi, cache_control: {type: ephemeral}}]
+          - {role: user, content: plain, cache_control: {type: ephemeral}}
+        optional_params:
+          max_retries: 2
+          tool_choice: auto
+          tools: [{type: function, function: {name: f, cache_control: {x: 1}}}]
+        env: {}
+env: {}
+compare: {ignore: []}

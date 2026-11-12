@@ -16,6 +16,13 @@ betterlite-db = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "database_token_expiry"
+path = "fuzz_targets/database_token_expiry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "database_urls"
 path = "fuzz_targets/database_urls.rs"
 test = false

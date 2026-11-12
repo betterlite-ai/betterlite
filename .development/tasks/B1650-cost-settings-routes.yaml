@@ -23,6 +23,15 @@ description: >-
   false through B754. Discount/margin GET require DB, return values from persisted config,
   and log then return values={} on config-load failures. Switch GET reads runtime state
   without a DB check, so do not consolidate the three reads into one generic fetch.
+  Every config load here (both GETs and the three PATCHes) is reload_config on B8379's
+  ConfigOverlayPort (betterlite-server's config_overlay_port), since get_config lives in the
+  binary crate this crate cannot depend on; the router this module exports takes the port as
+  an `Arc<dyn ConfigOverlayPort>` argument. Each load sits inside LiteLLM's try block, so a
+  ConfigOverlayPortError of any variant, DatabaseUnavailable included, takes that handler's
+  except path: GET logs it and returns values={}, PATCH answers its 500 detail.error ("Failed to
+  update ...") and nothing is saved or published. Native tests named `port_error_*` drive both
+  GETs and the three PATCHes with a ConfigOverlayPort fake that returns DatabaseUnavailable and
+  Reload.
   loads_cost_management_switches in betterlite-config must load both storage guard spellings
   and the unpriced-model flag; existing adjustment-loader tests remain B1649's. Native
   database tests cover failed saves and runtime ordering. HTTP oracle cases compare
@@ -61,6 +70,8 @@ dod:
     proof: [cost-settings-tests, cost-management-config, oracle, cost-management-corpus]
   - text: Request coercions, authorization and errors match the HTTP handlers apart from the declared finite-money boundary.
     proof: [cost-settings-tests, oracle, cost-management-corpus]
+  - text: All five config loads go through ConfigOverlayPort::reload_config, and any port error gives GET values={} and PATCH its 500 detail.error with nothing saved or published.
+    proof: [cost-settings-tests]
 checks:
   optional: [mutants]
   commands:

@@ -1,0 +1,9 @@
+general_settings:
+  enable_claude_code_gateway: os.environ/CLAUDE_GATEWAY_ENABLED
+  claude_code_gateway_managed_settings:
+    env:
+      ANTHROPIC_BASE_URL: os.environ/GATEWAY_URL
+      CLAUDE_CODE_AUTO_CONNECT_IDE: os.environ/GATEWAY_FLAG
+    permissions:
+      deny:
+        - os.environ/GATEWAY_DENY

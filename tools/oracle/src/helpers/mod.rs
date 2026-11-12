@@ -63,7 +63,6 @@ mod router;
 mod sdk;
 mod secret_managers;
 mod secrets;
-mod server;
 mod streaming;
 mod tokenizer;
 mod vertex;
@@ -174,7 +173,7 @@ const GROUPS: [Group; 46] = [
     sdk::GROUP,
     secret_managers::GROUP,
     secrets::GROUP,
-    server::GROUP,
+    betterlite_oracle_server::GROUP,
     streaming::GROUP,
     tokenizer::GROUP,
     vertex::GROUP,

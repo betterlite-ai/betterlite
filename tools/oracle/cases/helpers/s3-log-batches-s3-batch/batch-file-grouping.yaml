@@ -1,0 +1,27 @@
+kind: helper
+name: batch_file_ndjson_grouping
+call:
+  b3994:
+    source:
+      s3_bucket_name: logs
+      s3_region_name: us-east-1
+      s3_endpoint_url: http://127.0.0.1:9000
+      s3_aws_access_key_id: AKIAEXAMPLE
+      s3_aws_secret_access_key: secretKeyEXAMPLE
+      s3_path: team
+      s3_batch_file_upload: true
+    now: 1767323045
+    steps:
+      - replies: []
+        enqueue:
+          - s3_object_key: team/2026-01-02/a.json
+            s3_object_download_filename: a.json
+            payload: {a: 1}
+          - s3_object_key: team/2026-01-02/b.json
+            s3_object_download_filename: b.json
+            payload: {b: 2}
+          - s3_object_key: team/2026-01-03/c.json
+            s3_object_download_filename: c.json
+            payload: {c: 3}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: model-registration-dictionary-merge
+call:
+  b5365:
+    function: update_dictionary
+    existing:
+      kept: keep
+      replaced: old
+      count: 1
+      nested: {first: 1, shared: old}
+      flat: 7
+    new:
+      replaced: new
+      nested: {shared: new, second: 2}
+      flat: {now: nested}
+      dropped: null
+      price: "3e-07"
+      window: "8192"
+      label: plain text
+      switch: true
+      names: [a, b]
+env: {}
+compare: {ignore: []}

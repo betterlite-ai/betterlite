@@ -40,6 +40,9 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
   done
   room=2
   [[ "${waiting}" -ge 2 ]] && room=0
+  # a task within 10 steps of the longest open chain may run up to 4 flows over the cap (Max, 11-12), since that chain sets the end date
+  chain_room=${room}
+  [[ $((cap + 4 - count)) -lt "${chain_room}" ]] && chain_room=$((cap + 4 - count))
   [[ $((cap - count)) -lt "${room}" ]] && room=$((cap - count))
   # a flow that died without finishing left its arguments behind, oldest first
   stale=$(find "${L}/flows" -maxdepth 1 -name '*.args' -printf '%T@ %p\n')
@@ -66,20 +69,25 @@ while [[ ! -f "${L}/feeder.STOP" ]]; do
     printf '%(%H:%M)T %s\n' -1 "${id} resumed by the feeder (${run})" >> "${events}"
     GRANT=${grant} CI_ROUNDS=${ci_rounds} CONFLICTS=${conflicts} LAND_ONLY=${land_only} setsid -f bash "${P}/dispatch-flow.sh" "${id}" "${run}" "${note}" > /dev/null 2>&1 < /dev/null
     room=$((room - 1))
+    chain_room=$((chain_room - 1))
     sleep 5
   done
-  if [[ "${room}" -gt 0 ]]; then
+  if [[ "${chain_room}" -gt 0 ]]; then
     # free.pl marks each held id in progress, so the ids go in as separate arguments
     read -r -d '' -a held_ids <<< "${held}"
     # free.pl failing leaves no pick this round
-    picks=$(cd "${main}/.development" && perl "${P}/free.pl" 1 "${held_ids[@]}")
-    picks=$(awk '$1 == "free" {print $2}' <<< "${picks}")
-    picks=$(grep -v -x -F -m "${room}" "${held:-none}" <<< "${picks}")
-    for id in ${picks}; do
-      printf '%(%H:%M)T %s\n' -1 "${id} picked by the feeder" >> "${events}"
+    listing=$(cd "${main}/.development" && perl "${P}/free.pl" 1 "${held_ids[@]}")
+    # free.pl lists free tasks tallest first, so the chain's picks come before the rest
+    picks=$(HELD=${held} awk -v room="${room}" -v chain="${chain_room}" '
+      BEGIN { n = split(ENVIRON["HELD"], ids, "\n"); for (i = 1; i <= n; i++) held[ids[i]] = 1 }
+      $1 == "top" { top = $2 }
+      $1 == "free" && !($2 in held) && picked < ($3 + 10 >= top ? chain : room) { print $2, ($3 + 10 >= top ? "(longest chain)" : ""); picked++ }' <<< "${listing}")
+    while read -r id tag; do
+      [[ -n "${id}" ]] || continue
+      printf '%(%H:%M)T %s\n' -1 "${id} picked by the feeder${tag:+ ${tag}}" >> "${events}"
       setsid -f bash "${P}/dispatch-flow.sh" "${id}" run1 > /dev/null 2>&1 < /dev/null
       sleep 5
-    done
+    done <<< "${picks}"
   fi
   sleep 120
 done

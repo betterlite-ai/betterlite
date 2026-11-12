@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod core;
+pub mod gateway_sessions;
 pub mod identity;
 pub mod llm_tools;
 pub mod oauth_browser;

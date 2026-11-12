@@ -1,0 +1,14 @@
+kind: helper
+name: binary_body_protobuf
+call:
+  request_body:
+    function: read_request_body
+    request:
+      method: POST
+      route_path: /v1/embeddings
+      headers: {content-type: application/x-protobuf}
+      body: {encoding: base64, value: Cv8=}
+    max_repair_bytes: 1048576
+env: {}
+compare:
+  ignore: []

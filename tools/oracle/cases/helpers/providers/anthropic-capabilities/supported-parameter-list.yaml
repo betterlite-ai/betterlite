@@ -1,0 +1,20 @@
+kind: helper
+name: supported-parameter-list
+call:
+  anthropic_capabilities:
+    fixture:
+      model_cost:
+        anthropic/claude-opus-4-7: {litellm_provider: anthropic, supports_adaptive_thinking: true}
+        claude-sonnet-4-5: {litellm_provider: anthropic, supports_reasoning: true}
+        claude-haiku-4-5: {litellm_provider: anthropic}
+        claude-3-7-sonnet-20250219: {litellm_provider: anthropic}
+      packaged: {}
+      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
+    steps:
+      - {function: get_supported_openai_params, model: claude-3-7-sonnet-20250219}
+      - {function: get_supported_openai_params, model: Claude-3-7-Sonnet-20250219}
+      - {function: get_supported_openai_params, model: claude-opus-4-7}
+      - {function: get_supported_openai_params, model: claude-sonnet-4-5}
+      - {function: get_supported_openai_params, model: claude-haiku-4-5}
+env: {}
+compare: {ignore: []}
