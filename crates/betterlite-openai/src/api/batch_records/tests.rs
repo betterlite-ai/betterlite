@@ -87,6 +87,16 @@ fn keeps_the_unparsed_tail(
     assert!(!tail.error.to_string().is_empty());
 }
 
+#[rstest]
+#[case::truncated_object("{\"id\":2,\n", "EOF while parsing")]
+#[case::bare_word("not json", "expected ident")]
+#[case::extra_data("{\"id\":1} x\n", "extra data after a complete batch row")]
+#[case::two_values("{\"id\":1} {\"id\":2}\n", "extra data after a complete batch row")]
+fn names_the_parse_error(#[case] content: &str, #[case] expected: &str) {
+    let tail = decode(content).unparsed.unwrap();
+    assert!(tail.error.to_string().contains(expected));
+}
+
 #[test]
 fn cuts_the_preview_at_one_hundred_characters() {
     let content = format!("[{}", "\u{e9}".repeat(150));
