@@ -58,6 +58,8 @@ pub enum McpHttpError {
         #[source]
         source: ToStrError,
     },
+    #[error("the {name} header is repeated, and a credential carries one value per name")]
+    RepeatedHeader { name: String },
     #[error("the request URL cannot be sent as an HTTP request target")]
     Uri(#[source] InvalidUri),
     #[error("the MCP server answered HTTP {}", .0.status)]

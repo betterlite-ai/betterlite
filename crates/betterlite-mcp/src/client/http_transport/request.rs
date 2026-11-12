@@ -9,8 +9,8 @@ use url::Url;
 
 use betterlite_http::mcp_sigv4::McpSigV4Auth;
 
-use crate::client::sessions::factory::{HttpClientConfig, RequestCredential};
-use crate::credentials;
+use crate::client::sessions::factory::{HttpClientConfig, RedirectGuard, RequestCredential};
+use crate::credentials::{self, ResolvedAuth};
 
 use super::error::McpHttpError;
 
@@ -38,26 +38,20 @@ pub(super) async fn prepare(
     request: &McpHttpRequest,
 ) -> Result<PreparedRequest, McpHttpError> {
     let mut headers = configured_headers(&config.headers)?;
-    for (name, value) in &request.headers {
-        headers.insert(name.clone(), value.clone());
+    for name in request.headers.keys() {
+        headers.remove(name);
+        for value in request.headers.get_all(name) {
+            headers.append(name.clone(), value.clone());
+        }
     }
     let mut method = request.method.clone();
     let mut url = request.url.clone();
     match config.credential.as_ref() {
         Some(RequestCredential::Resolved(auth)) => {
-            let pairs = header_pairs(&headers)?.into_iter().collect();
-            let outcome = auth.authenticate(credentials::Request {
-                method: method.as_str().to_owned(),
-                url: url.as_str().to_owned(),
-                headers: pairs,
-            });
-            // httpx closes the auth flow after the request it yielded, as prepare_request_auth already does
-            auth.close();
-            let authenticated = outcome?;
-            method = Method::from_bytes(authenticated.method.as_bytes())
-                .map_err(McpHttpError::CredentialMethod)?;
-            url = Url::parse(&authenticated.url).map_err(McpHttpError::CredentialUrl)?;
-            headers = configured_headers(&authenticated.headers)?;
+            let authenticated = resolve_auth(auth.as_ref(), &method, &url, &headers)?;
+            method = authenticated.method;
+            url = authenticated.url;
+            headers = authenticated.headers;
         }
         Some(RequestCredential::AwsSigV4(signer)) => {
             headers = signed_headers(signer, &method, &url, headers, &request.body).await?;
@@ -65,9 +59,7 @@ pub(super) async fn prepare(
         None => {}
     }
     if let Some(guard) = config.redirect_guard.as_ref() {
-        let mut pairs: BTreeMap<String, String> = header_pairs(&headers)?.into_iter().collect();
-        guard.apply(url.as_str(), &mut pairs);
-        headers = configured_headers(&pairs)?;
+        apply_guard(guard, &url, &mut headers);
     }
     Ok(PreparedRequest {
         method,
@@ -75,6 +67,51 @@ pub(super) async fn prepare(
         headers,
         body: request.body.clone(),
     })
+}
+
+struct Authenticated {
+    method: Method,
+    url: Url,
+    headers: HeaderMap,
+}
+
+// httpx closes the auth flow after the request it yielded, as prepare_request_auth already does
+fn resolve_auth(
+    auth: &dyn ResolvedAuth,
+    method: &Method,
+    url: &Url,
+    headers: &HeaderMap,
+) -> Result<Authenticated, McpHttpError> {
+    let outcome = auth.authenticate(credentials::Request {
+        method: method.as_str().to_owned(),
+        url: url.as_str().to_owned(),
+        headers: header_pairs(headers)?,
+    });
+    auth.close();
+    let authenticated = outcome?;
+    let resolved_method = Method::from_bytes(authenticated.method.as_bytes())
+        .map_err(McpHttpError::CredentialMethod)?;
+    let resolved_url = Url::parse(&authenticated.url).map_err(McpHttpError::CredentialUrl)?;
+    let resolved_headers = configured_headers(&authenticated.headers)?;
+    Ok(Authenticated {
+        method: resolved_method,
+        url: resolved_url,
+        headers: resolved_headers,
+    })
+}
+
+fn apply_guard(guard: &RedirectGuard, url: &Url, headers: &mut HeaderMap) {
+    let mut names: BTreeMap<String, String> = headers
+        .keys()
+        .map(|name| (name.as_str().to_owned(), String::new()))
+        .collect();
+    let present: Vec<String> = names.keys().cloned().collect();
+    guard.apply(url.as_str(), &mut names);
+    for name in present {
+        if !names.contains_key(&name) {
+            headers.remove(name.as_str());
+        }
+    }
 }
 
 async fn signed_headers(
@@ -100,36 +137,44 @@ async fn signed_headers(
         .entry(HeaderName::from_static(CONTENT_SHA256))
         .or_insert(content_hash);
     let signed_request = signer.auth_flow(request).await?;
-    Ok(signed_request.headers().clone())
+    Ok(signed_request.into_parts().0.headers)
 }
 
 fn configured_headers(headers: &BTreeMap<String, String>) -> Result<HeaderMap, McpHttpError> {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let header_name =
-            HeaderName::from_bytes(name.as_bytes()).map_err(|source| McpHttpError::HeaderName {
-                name: name.clone(),
-                source,
-            })?;
-        let header_value =
-            HeaderValue::from_str(value).map_err(|source| McpHttpError::HeaderValue {
-                name: name.clone(),
-                source,
-            })?;
-        map.insert(header_name, header_value);
-    }
-    Ok(map)
-}
-
-fn header_pairs(headers: &HeaderMap) -> Result<Vec<(String, String)>, McpHttpError> {
     headers
         .iter()
-        .map(|(name, value)| {
+        .map(|(name, value)| parsed_header(name, value))
+        .collect()
+}
+
+fn parsed_header(name: &str, value: &str) -> Result<(HeaderName, HeaderValue), McpHttpError> {
+    let header_name =
+        HeaderName::from_bytes(name.as_bytes()).map_err(|source| McpHttpError::HeaderName {
+            name: name.to_owned(),
+            source,
+        })?;
+    let header_value =
+        HeaderValue::from_str(value).map_err(|source| McpHttpError::HeaderValue {
+            name: name.to_owned(),
+            source,
+        })?;
+    Ok((header_name, header_value))
+}
+
+fn header_pairs(headers: &HeaderMap) -> Result<BTreeMap<String, String>, McpHttpError> {
+    headers
+        .iter()
+        .try_fold(BTreeMap::new(), |mut pairs, (name, value)| {
+            if pairs.contains_key(name.as_str()) {
+                return Err(McpHttpError::RepeatedHeader {
+                    name: name.as_str().to_owned(),
+                });
+            }
             let visible = value.to_str().map_err(|source| McpHttpError::HeaderText {
                 name: name.as_str().to_owned(),
                 source,
             })?;
-            Ok((name.as_str().to_owned(), visible.to_owned()))
+            pairs.insert(name.as_str().to_owned(), visible.to_owned());
+            Ok(pairs)
         })
-        .collect()
 }

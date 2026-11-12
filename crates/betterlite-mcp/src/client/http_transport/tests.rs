@@ -20,6 +20,7 @@ use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::mcp_sigv4::McpSigV4Auth;
 use betterlite_http::mcp_sigv4::cache::CredentialCache;
+use betterlite_http::proxy::limits::TransportLimits;
 use bytes::Bytes;
 use http::header::{HeaderMap, HeaderName, HeaderValue, LOCATION, WWW_AUTHENTICATE};
 use http::{Method, StatusCode};
@@ -367,6 +368,56 @@ async fn config_headers_are_merged_with_the_request_winning() {
         headers.get("x-request").unwrap().to_str().unwrap(),
         "request"
     );
+}
+
+#[tokio::test]
+async fn repeated_request_headers_keep_every_value() {
+    let server = TestServer::start(|_| answer(200, &[], SERVER_BODY)).await;
+    let mut config = defaults();
+    config.headers = BTreeMap::from([("x-multi".to_owned(), "config".to_owned())]);
+    config.redirect_guard = RedirectGuard::new(server.url("/mcp").as_str(), Some("X-API-Key"));
+    let transport = build(&config, Arc::new(RecordingCapture::default()));
+    let mut request = request(Method::GET, server.url("/mcp"));
+    request.headers.append(
+        HeaderName::from_static("x-multi"),
+        HeaderValue::from_static("one"),
+    );
+    request.headers.append(
+        HeaderName::from_static("x-multi"),
+        HeaderValue::from_static("two"),
+    );
+    let _response = transport.send(request, false).await.unwrap();
+    let recorded = server.requests();
+    let values: Vec<&str> = recorded[0]
+        .headers
+        .get_all("x-multi")
+        .iter()
+        .map(|value| value.to_str().unwrap())
+        .collect();
+    assert_eq!(values, vec!["one", "two"]);
+}
+
+#[tokio::test]
+async fn a_repeated_header_fails_the_credential_flow() {
+    let server = TestServer::start(|_| answer(200, &[], SERVER_BODY)).await;
+    let mut config = defaults();
+    config.credential = Some(RequestCredential::Resolved(Arc::new(MergingAuth)));
+    let transport = build(&config, Arc::new(RecordingCapture::default()));
+    let mut request = request(Method::GET, server.url("/mcp"));
+    request.headers.append(
+        HeaderName::from_static("x-multi"),
+        HeaderValue::from_static("one"),
+    );
+    request.headers.append(
+        HeaderName::from_static("x-multi"),
+        HeaderValue::from_static("two"),
+    );
+    let error = transport.send(request, false).await.err().unwrap();
+    assert!(matches!(
+        error,
+        McpHttpError::RepeatedHeader { name } if name == "x-multi"
+    ));
+    assert!(server.requests().is_empty());
 }
 
 #[tokio::test]
@@ -758,6 +809,7 @@ async fn the_capture_stream_enforces_its_byte_limit(#[case] limit: usize) {
     let mut body = HttpBody {
         state: BodyState::Buffered(b"body".to_vec()),
         read_timeout: Duration::from_secs(1),
+        body_limit: TransportLimits::DEFAULT.body_bytes,
     };
     let mut chunks = BodyChunks {
         body: &mut body,
@@ -770,6 +822,28 @@ async fn the_capture_stream_enforces_its_byte_limit(#[case] limit: usize) {
     } else {
         assert!(matches!(
             chunk.unwrap_err(),
+            McpHttpError::BodyTooLarge { limit: error_limit } if error_limit == limit
+        ));
+    }
+}
+
+#[rstest]
+#[case::within_the_limit(16)]
+#[case::exactly_the_limit(4)]
+#[case::past_the_limit(2)]
+#[tokio::test]
+async fn read_all_enforces_the_body_limit(#[case] limit: usize) {
+    let mut body = HttpBody {
+        state: BodyState::Buffered(b"body".to_vec()),
+        read_timeout: Duration::from_secs(1),
+        body_limit: limit,
+    };
+    let content = body.read_all().await;
+    if limit >= b"body".len() {
+        assert_eq!(content.unwrap(), b"body".to_vec());
+    } else {
+        assert!(matches!(
+            content.unwrap_err(),
             McpHttpError::BodyTooLarge { limit: error_limit } if error_limit == limit
         ));
     }

@@ -87,9 +87,9 @@ impl McpHttpTransport {
             .build()
             .map_err(|source| McpHttpError::Request(HttpError::Request(source)))?;
         match self.client.execute(request).await {
-            Ok(response) => {
+            Ok(mut response) => {
                 let status = response.status().as_u16();
-                let headers = response.headers().clone();
+                let headers = take(response.headers_mut());
                 let stream = response
                     .bytes_stream()
                     .map(|chunk| {
@@ -128,6 +128,7 @@ impl McpHttpTransport {
             body: HttpBody {
                 state: BodyState::Live(response.stream),
                 read_timeout,
+                body_limit: TransportLimits::DEFAULT.body_bytes,
             },
         })
     }
@@ -146,6 +147,7 @@ impl McpHttpTransport {
         let mut body = HttpBody {
             state: BodyState::Live(stream),
             read_timeout,
+            body_limit: TransportLimits::DEFAULT.body_bytes,
         };
         let exchange = Exchange {
             method: prepared.method.clone(),
@@ -166,6 +168,7 @@ impl McpHttpTransport {
             body: HttpBody {
                 state: BodyState::Buffered(captured.retained),
                 read_timeout,
+                body_limit: TransportLimits::DEFAULT.body_bytes,
             },
         })
     }
@@ -220,6 +223,7 @@ impl Transport for McpHttpTransport {
 pub struct HttpBody {
     pub(super) state: BodyState,
     pub(super) read_timeout: Duration,
+    pub(super) body_limit: usize,
 }
 
 pub(super) enum BodyState {
@@ -253,7 +257,20 @@ impl ResponseBody for HttpBody {
     async fn read_all(&mut self) -> Result<Vec<u8>, McpHttpError> {
         let mut content = Vec::new();
         while let Some(chunk) = self.next_chunk().await {
-            content.extend(chunk?);
+            let bytes = chunk?;
+            let total =
+                content
+                    .len()
+                    .checked_add(bytes.len())
+                    .ok_or(McpHttpError::BodyTooLarge {
+                        limit: self.body_limit,
+                    })?;
+            if total > self.body_limit {
+                return Err(McpHttpError::BodyTooLarge {
+                    limit: self.body_limit,
+                });
+            }
+            content.extend(bytes);
         }
         Ok(content)
     }
