@@ -1,0 +1,5 @@
+task: B854
+deviations:
+  - what: Rotated writer/reader credentials update an owned runtime snapshot rather than process environment variables.
+    why: Native pool ownership follows B713 and the decided typed configuration design; replacement failure restores that snapshot with the same timing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L432-L450
