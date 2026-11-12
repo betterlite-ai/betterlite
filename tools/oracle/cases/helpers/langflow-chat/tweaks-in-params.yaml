@@ -1,0 +1,17 @@
+kind: helper
+name: langflow-tweaks-in-params
+env: {}
+compare: {ignore: []}
+call:
+  b8101:
+    op: request
+    requests:
+      - {messages: [{role: user, content: hi}], options: {tweaks: {Chat: {x: 1}}}}
+      - {messages: [{role: user, content: hi}], options: {tweaks: ""}}
+      - {messages: [{role: user, content: hi}], options: {tweaks: 0}}
+      - {messages: [{role: user, content: hi}], options: {tweaks: null}}
+      - {messages: [], options: {}}
+    signatures:
+      - {headers: {x-api-key: secret}, request_data: {input_value: hi, tweaks: {Chat: 1}}}
+      - {headers: {}, request_data: {input_value: hi, tweaks: null}}
+      - {headers: {}, request_data: {input_value: hi}}
