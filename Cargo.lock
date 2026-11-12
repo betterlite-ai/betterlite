@@ -1175,6 +1175,7 @@ dependencies = [
  "lru",
  "p12-keystore",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rstest",
  "secrecy",
