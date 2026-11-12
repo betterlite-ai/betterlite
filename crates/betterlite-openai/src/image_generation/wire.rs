@@ -1,6 +1,5 @@
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
-use http::header::CONTENT_TYPE;
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
@@ -11,7 +10,6 @@ use super::error::ImageGenerationSource;
 
 mod tests;
 
-// the request the OpenAI SDK sends: extra_headers, extra_query and extra_body leave the body for their own places
 pub fn outbound_request(
     prepared: &PreparedImageCall,
 ) -> Result<OutboundRequest, ImageGenerationSource> {
@@ -47,7 +45,7 @@ fn default_headers(prepared: &PreparedImageCall) -> Result<HeaderMap, ImageGener
         .as_ref()
         .ok_or(ImageGenerationSource::MissingApiKey)?;
     let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    insert_header(&mut headers, "content-type", "application/json", false)?;
     let bearer = format!("Bearer {}", key.expose_secret());
     insert_header(&mut headers, "authorization", &bearer, true)?;
     if let Some(organization) = &prepared.organization {

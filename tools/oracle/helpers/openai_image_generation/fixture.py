@@ -120,7 +120,6 @@ class Client:
             AsyncImages(fixture, self) if probe.is_async else SyncImages(fixture, self)
         )
 
-    # the SDK moves extra_headers, extra_query and extra_body out of the body
     def wire_call(self, params: dict[str, Json], timeout: float) -> Call:
         extras = EXTRAS.validate_python(params)
         headers: dict[str, Json] = {
