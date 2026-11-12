@@ -30,23 +30,23 @@ pub(crate) struct Op;
 
 // The sets are keyed by LiteLLM's attribute names; `vertex_ai` stands for `litellm.models_by_provider["vertex_ai"]`.
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ModelSetsInput {
     #[serde(default)]
-    sets: BTreeMap<String, BTreeSet<String>>,
-    #[serde(default)]
     vertex_ai: BTreeSet<String>,
+    #[serde(flatten)]
+    sets: BTreeMap<String, BTreeSet<String>>,
 }
 
+// Each operation answers a list of cases in order, so one file can sweep every provider row.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "operation", rename_all = "snake_case")]
 pub(crate) enum Input {
-    ValidateEnvironment(EnvironmentInput),
-    ValidModel(ValidModelInput),
-    CheckValidKey(KeyInput),
-    ShouldRetry(StatusInput),
-    RetryAfterHeader(HeaderInput),
-    CalculateRetryAfter(BackoffInput),
+    ValidateEnvironment { cases: Vec<EnvironmentInput> },
+    ValidModel { cases: Vec<ValidModelInput> },
+    CheckValidKey { cases: Vec<KeyInput> },
+    ShouldRetry { cases: Vec<StatusInput> },
+    RetryAfterHeader { cases: Vec<HeaderInput> },
+    CalculateRetryAfter { cases: Vec<BackoffInput> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -310,17 +310,27 @@ fn backoff_answer(input: &BackoffInput) -> HelperResult {
     Ok(json!({"wait": wait}))
 }
 
+fn answers<Case>(cases: &[Case], answer: fn(&Case) -> HelperResult) -> HelperResult {
+    cases
+        .iter()
+        .map(answer)
+        .collect::<Result<Vec<_>, _>>()
+        .map(Value::Array)
+}
+
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ValidateEnvironment(environment) => environment_answer(environment),
-            Input::ValidModel(probe) => valid_model_answer(probe),
-            Input::CheckValidKey(key) => key_answer(key),
-            Input::ShouldRetry(status) => Ok(json!({"retry": should_retry(status.status_code)})),
-            Input::RetryAfterHeader(header) => header_answer(header),
-            Input::CalculateRetryAfter(backoff) => backoff_answer(backoff),
+            Input::ValidateEnvironment { cases } => answers(cases, environment_answer),
+            Input::ValidModel { cases } => answers(cases, valid_model_answer),
+            Input::CheckValidKey { cases } => answers(cases, key_answer),
+            Input::ShouldRetry { cases } => answers(cases, |status| {
+                Ok(json!({"retry": should_retry(status.status_code)}))
+            }),
+            Input::RetryAfterHeader { cases } => answers(cases, header_answer),
+            Input::CalculateRetryAfter { cases } => answers(cases, backoff_answer),
         }
     }
 }
