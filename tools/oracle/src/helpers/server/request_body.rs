@@ -50,7 +50,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireRequest {
+pub(crate) struct WireRequest {
     method: String,
     route_path: String,
     #[serde(default)]
@@ -64,7 +64,7 @@ struct WireRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WireBody {
+pub(crate) struct WireBody {
     encoding: WireEncoding,
     value: String,
 }
@@ -189,11 +189,11 @@ fn rewrite_facts(
     model: &str,
     request: Option<&WireRequest>,
 ) -> HelperResult {
-    let request = match request {
+    let input = match request {
         Some(wire) => Some(wire.clone().into_input()?),
         None => None,
     };
-    let rewritten = rewrite_request_model(request_data, request.as_ref(), model);
+    let rewritten = rewrite_request_model(request_data, input.as_ref(), model);
     Ok(serde_json::to_value(RewriteFacts {
         request_data: rewritten.request_data,
         cached: rewritten.cached_body.as_ref().map(ParsedBody::visible),
