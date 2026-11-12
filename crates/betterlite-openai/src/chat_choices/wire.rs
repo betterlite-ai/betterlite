@@ -228,28 +228,40 @@ struct RawDeltaFunction {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    arguments: DeltaArguments,
+    arguments: FunctionArguments,
     #[serde(default)]
     parameters: Option<Value>,
 }
 
 #[derive(Default, Deserialize)]
 #[serde(untagged)]
-enum DeltaArguments {
+pub(crate) enum FunctionArguments {
     Text(String),
     Object(Map<String, Value>),
     #[default]
     Null,
 }
 
+impl FunctionArguments {
+    pub(crate) fn into_text(self) -> Option<String> {
+        match self {
+            Self::Text(text) => Some(text),
+            Self::Object(fields) => Some(Value::Object(fields).to_string()),
+            Self::Null => None,
+        }
+    }
+}
+
 impl From<RawDeltaFunction> for DeltaFunction {
     fn from(raw: RawDeltaFunction) -> Self {
-        let arguments = match (raw.arguments, raw.parameters) {
-            (DeltaArguments::Text(text), _) => text,
-            (DeltaArguments::Object(fields), _) => Value::Object(fields).to_string(),
-            (DeltaArguments::Null, Some(parameters @ Value::Object(_))) => parameters.to_string(),
-            (DeltaArguments::Null, _) => String::new(),
-        };
+        let arguments = raw
+            .arguments
+            .into_text()
+            .or_else(|| match raw.parameters {
+                Some(parameters @ Value::Object(_)) => Some(parameters.to_string()),
+                _ => None,
+            })
+            .unwrap_or_default();
         Self {
             name: raw.name,
             arguments,

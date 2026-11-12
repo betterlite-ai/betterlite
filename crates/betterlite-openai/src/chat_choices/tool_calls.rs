@@ -3,7 +3,9 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::choices::ChoicesError;
-use crate::chat_choices::wire::{CallFunction, ChoiceToolCall, CustomPayload, ReplyToolCall};
+use crate::chat_choices::wire::{
+    CallFunction, ChoiceToolCall, CustomPayload, FunctionArguments, ReplyToolCall,
+};
 
 const PARALLEL_TOOL: &str = "multi_tool_use.parallel";
 
@@ -140,16 +142,7 @@ struct ContentCall {
     kind: String,
     name: String,
     #[serde(default)]
-    arguments: ContentArguments,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(untagged)]
-enum ContentArguments {
-    Text(String),
-    Object(Map<String, Value>),
-    #[default]
-    Null,
+    arguments: FunctionArguments,
 }
 
 pub(crate) fn content_tool_call(
@@ -164,11 +157,7 @@ pub(crate) fn content_tool_call(
     if parsed.kind != "function" || !names.contains(&parsed.name) {
         return Ok(None);
     }
-    let arguments = match parsed.arguments {
-        ContentArguments::Text(text) => text,
-        ContentArguments::Object(fields) => Value::Object(fields).to_string(),
-        ContentArguments::Null => String::new(),
-    };
+    let arguments = parsed.arguments.into_text().unwrap_or_default();
     Ok(Some(ChoiceToolCall {
         id: identifier().to_string(),
         kind: String::from("function"),
