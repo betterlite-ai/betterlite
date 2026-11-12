@@ -61,6 +61,7 @@ roles:
         effort: high
         attempts: 1
         timeout_minutes: 120
+        fix_model: deepseek-flash[1m]
       - runner: codex-worker
         model: gpt-6-luna
         effort: medium

@@ -1,7 +1,7 @@
 id: B1120
 milestone: M5 API families
 title: Image edit parameters and MIME
-status: todo
+status: done
 depends_on: [B175, B258, B171, B1087, B002]
 file: tasks/B1120-image-input-options.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/images/main.py"
 parent: B082
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1377

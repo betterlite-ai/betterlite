@@ -1,0 +1,13 @@
+kind: helper
+name: empty-result-kept
+call:
+  responses_tool_repair:
+    operation: repair
+    messages:
+      - {role: tool, tool_call_id: "", content: kept}
+      - {role: tool, content: kept too}
+    tools: []
+    cache: {}
+env: {}
+compare:
+  ignore: []

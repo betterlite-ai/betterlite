@@ -1,0 +1,9 @@
+kind: helper
+name: openai-reasoning-models-seed-effort
+call:
+  openai_reasoning_models:
+    catalog_before_default_key:
+      probes:
+      - {model: gpt-5.1, effective_effort: none}
+env: {}
+compare: {ignore: []}
