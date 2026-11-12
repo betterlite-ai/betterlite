@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-beta-config-alias
+call:
+  anthropic_beta_config:
+    function: provider_name
+    matrix: {anthropic: {}, provider_aliases: {first: second, second: anthropic}}
+    provider: first
+env: {}
+compare:
+  ignore: []

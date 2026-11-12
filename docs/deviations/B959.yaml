@@ -1,0 +1,8 @@
+task: B959
+deviations:
+  - what: A provider_aliases entry that is not a text value, or a provider_aliases value that is not an object, leaves the provider name unchanged.
+    why: LiteLLM raises on a non-object table and hands back a non-string value for a non-text alias. No working setup relies on either. The test is provider_alias_resolution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L210-L212
+  - what: A fetched or bundled matrix larger than the API size limits is rejected and the loader falls back like any other fetch failure.
+    why: LiteLLM reads a response body of any size. betterlite bounds every decoded document with ApiLimits. The test is decoder_checks_size_before_parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L112-L121
