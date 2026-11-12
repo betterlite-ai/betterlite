@@ -1,0 +1,18 @@
+kind: helper
+name: manus-files-retrieve-delete-urls
+env: {}
+compare: {ignore: []}
+call:
+  b8105:
+    op: requests
+    environment: {}
+    now: 1700000000
+    sdk: {api_base: null, api_key: null}
+    api_base: "http://explicit:1"
+    file_ids: ["file-1", "a b", "a/b", "ü", "", "."]
+    delete_bodies:
+      - '{"id":"file-1","object":"file","deleted":true,"extra":1}'
+      - '{"id":"file-2","object":"file"}'
+      - 'not json'
+    purposes: []
+    body: '{"data":[]}'

@@ -106,3 +106,10 @@ path = "fuzz_targets/langgraph_stream.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "manus_files_reply"
+path = "fuzz_targets/manus_files_reply.rs"
+test = false
+doc = false
+bench = false
