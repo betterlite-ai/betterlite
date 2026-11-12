@@ -148,6 +148,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "managed_resource_ids"
+path = "fuzz_targets/managed_resource_ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "searchapi_reply"
 path = "fuzz_targets/searchapi_reply.rs"
 test = false

@@ -1,0 +1,24 @@
+kind: helper
+name: chain-exhaustion
+call:
+  azure_default_chain:
+    chain:
+      steps:
+        - environment: {}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: unavailable, message: mi-missing}]
+        - environment: {}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: authentication, message: auth-denied}]
+        - environment: {AZURE_CLIENT_ID: wl-c}
+          credential: DefaultAzureCredential
+          scope: https://cognitiveservices.azure.com/.default
+          scripts: [{credential: 'ManagedIdentityCredential:system', outcome: authentication, message: auth-denied}]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/steps/0/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/1/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}
+    - {pointer: /value/steps/2/constructed/0/within_credential_chain, why: "the Rust fixture marks the static chain placement; the Python fixture reads the SDK's construction-time contextvars"}

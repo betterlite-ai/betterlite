@@ -1,0 +1,38 @@
+kind: helper
+name: counter-factory
+call:
+  bedrock_other_count_call:
+    counter_factory:
+      calls:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          provider: bedrock
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 11}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          provider: bedrock_converse
+          environment:
+            runtime_endpoint: https://factory.example
+          deployment:
+            litellm_params:
+              aws_access_key_id: AKIDFACTORY
+              aws_secret_access_key: factory-secret
+          reply: {status: 200, body: '{"inputTokens": 12}'}
+          now: 1767225600
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: []
+          deployment:
+            litellm_params:
+              api_key: fixture-bearer
+          reply: {status: 200, body: '{"inputTokens": 13}'}
+          now: 1767225600
+env: {}
+compare: {ignore: []}

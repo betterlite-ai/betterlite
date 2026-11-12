@@ -1,0 +1,18 @@
+kind: helper
+name: langgraph-chat-response-messages-last-ai
+env: {}
+compare: {ignore: []}
+call:
+  b8102:
+    op: reply
+    cases:
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "human", "content": "hi"}, {"type": "ai", "content": "hello there friend"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "old"}, {"type": "human", "content": "q"}, {"type": "ai", "content": "new"}, {"type": "human", "content": "later"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "old"}, {"role": "assistant", "content": "new reply"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"role": "assistant", "content": "assistant role only"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "top"}], "values": {"messages": [{"type": "ai", "content": "inner"}]}}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "older"}, {"type": "ai"}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "older"}, {"type": "ai", "content": ""}]}'}
+      - {model: langgraph/agent, status: 200, body: '{"messages": [{"type": "ai", "content": "x"}, "text", 5, null, ["ai"]]}'}
+      - {model: langgraph/agent, status: 201, body: '{"messages": [{"type": "ai", "content": "status is not checked"}]}'}
+      - {model: custom/model-name, status: 200, body: '{"messages": [{"type": "ai", "content": "model comes from the request"}]}'}
