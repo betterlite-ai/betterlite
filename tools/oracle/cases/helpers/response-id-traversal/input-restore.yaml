@@ -1,0 +1,29 @@
+kind: helper
+name: input-restore
+call:
+  response_id_traversal:
+    operation: input_restore
+    inputs:
+      - - id: "encitem_bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX2E="
+          encrypted_content: "litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher"
+        - encrypted_content: "litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher_b"
+      - - encrypted_content: "litellm_enc:bW9kZWxfaWQ6ZGVwX2I=;litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher"
+      - - plain-string
+        - __object__:
+            fields:
+              id: "encitem_bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX2E="
+              encrypted_content: "litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher"
+            readonly: []
+        - - inner
+        - id: 7
+          encrypted_content: 8
+      - id: "encitem_bGl0ZWxsbTptb2RlbF9pZDpkZXBfYTtpdGVtX2lkOnJzX2E="
+      - "litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher"
+      - null
+      - - id: "litellm_enc:bW9kZWxfaWQ6ZGVwX2E=;cipher"
+          encrypted_content: "litellm_enc:missing-separator"
+        - id: resp_plain
+          encrypted_content: ""
+env: {}
+compare:
+  ignore: []

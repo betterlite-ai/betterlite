@@ -1,0 +1,71 @@
+kind: helper
+name: reasoning-strip
+call:
+  response_id_traversal:
+    operation: reasoning_strip
+    scenarios:
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: []
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: " text "
+          - type: message
+            encrypted_content: cipher
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: " "
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary:
+              - text: " "
+          - type: reasoning
+            id: s
+            encrypted_content: cipher
+            summary:
+              - text: ""
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            content: visible
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: ""
+          - type: reasoning
+            id: s
+      - input:
+          - type: reasoning
+            id: r
+            encrypted_content: cipher
+            summary: "source"
+          - type: reasoning
+            id: s
+            encrypted_content: cipher
+            summary: "source"
+        strip_ids:
+          - r
+      - input:
+          - null
+          - type: message
+          - null
+      - input: not-a-list
+      - input:
+          - __object__:
+              fields:
+                type: reasoning
+                id: r
+                encrypted_content: cipher
+              readonly: []
+env: {}
+compare:
+  ignore: []
