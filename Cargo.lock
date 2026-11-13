@@ -1509,6 +1509,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
