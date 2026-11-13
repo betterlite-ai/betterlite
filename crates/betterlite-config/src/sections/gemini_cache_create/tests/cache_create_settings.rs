@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::gemini_cache_create::Settings;
 
 fn settings(variables: &[(&str, &str)]) -> Settings {
@@ -61,4 +61,13 @@ fn the_override_comes_from_the_injected_environment() {
         settings(&[("MINIMUM_PROMPT_CACHE_TOKEN_COUNT", "7")]).minimum_token_override,
         Some(7)
     );
+}
+
+#[test]
+fn an_unrelated_litellm_key_stays_unsupported() {
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let error = ConfigLoader { lookup }
+        .load("litellm_settings:\n  unrelated_key: 1\n")
+        .expect_err("the unknown key is refused");
+    assert!(matches!(error, ConfigError::Unsupported { .. }));
 }

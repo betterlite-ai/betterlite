@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 
 use crate::env_integer::get_env_int_or_none;
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -9,11 +8,11 @@ mod tests;
 
 const MINIMUM_ENVIRONMENT_VARIABLE: &str = "MINIMUM_PROMPT_CACHE_TOKEN_COUNT";
 
-// LiteLLM reads the minimum from the environment alone, so this view accepts litellm_settings without reading a key from it
+// LiteLLM reads the minimum from the environment alone, so this view reads no key; the skipped field keeps serde's per-key ignore path while the struct stays non-empty
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
-    #[serde(default)]
-    pub litellm_settings: Option<IgnoredAny>,
+    #[serde(skip)]
+    pub view: (),
 }
 
 // LiteLLM reads the variable once at import, and an unusable value leaves the per-model minimum in place

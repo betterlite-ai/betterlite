@@ -553,6 +553,18 @@ async fn image_content_skips_caching() {
 }
 
 #[test]
+fn created_cache_requires_an_object_root() {
+    assert!(matches!(
+        decode_created_cache(b"[]"),
+        Err(CacheCreateError::Decode { .. })
+    ));
+    assert!(matches!(
+        decode_created_cache(b"null"),
+        Err(CacheCreateError::Decode { .. })
+    ));
+}
+
+#[test]
 fn created_cache_limit_boundary() {
     assert_eq!(CREATED_CACHE_LIMIT, 16 * 1024 * 1024);
     let at_limit = vec![b' '; CREATED_CACHE_LIMIT];

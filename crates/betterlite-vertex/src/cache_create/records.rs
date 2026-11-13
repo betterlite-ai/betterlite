@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde::de::Error as _;
 
 use super::error::CacheCreateError;
 
@@ -16,6 +17,13 @@ pub fn decode_created_cache(bytes: &[u8]) -> Result<CreatedCache, CacheCreateErr
     if bytes.len() > CREATED_CACHE_LIMIT {
         return Err(CacheCreateError::TooLarge {
             limit: CREATED_CACHE_LIMIT,
+        });
+    }
+    // serde accepts a sequence for a struct, so the root type is checked before the typed parse
+    if bytes.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
+        return Err(CacheCreateError::Decode {
+            path: "the document root".to_owned(),
+            source: serde_json::Error::custom("the value is not a JSON object"),
         });
     }
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
