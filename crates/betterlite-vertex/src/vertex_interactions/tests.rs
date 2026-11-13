@@ -1,7 +1,9 @@
 #![cfg(test)]
 
-use std::future::ready;
+use std::future::{Future, ready};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
@@ -18,9 +20,14 @@ use super::mint::{MintAccessToken, MintFuture, ProjectOnlyMint};
 use super::target::VertexInteractionsTarget;
 use super::{API_VERSION, DEFAULT_LOCATION, PROVIDER};
 use crate::credential_sources::getters::VertexParams;
+use crate::credential_sources::sdk::CredentialClock;
 use crate::studio_interactions::urls::Lifecycle;
+use crate::token_cache::CredentialCache;
 use crate::token_cache::error::CredentialCacheError;
+use crate::token_cache::executor::{CredentialExecutor, LoadedCredential};
 use crate::token_cache::probe::AccessToken;
+use crate::token_cache::record::CredentialSnapshot;
+use crate::token_cache::state::TokenState;
 
 const GLOBAL_COLLECTION: &str =
     "https://aiplatform.googleapis.com/v1beta1/projects/project-1/locations/global/interactions";
@@ -92,6 +99,45 @@ impl MintAccessToken for FailingMint {
         _project: Option<&'mint str>,
     ) -> MintFuture<'mint> {
         Box::pin(ready(Err(CredentialCacheError::MissingCredentials)))
+    }
+}
+
+struct FixedClock;
+
+impl CredentialClock for FixedClock {
+    fn now(&self) -> SystemTime {
+        SystemTime::UNIX_EPOCH
+    }
+}
+
+struct SnapshotExecutor {
+    snapshot: Arc<CredentialSnapshot>,
+}
+
+impl CredentialExecutor for SnapshotExecutor {
+    fn load<'borrow>(
+        &'borrow self,
+        _credentials: Option<&'borrow ConfiguredCredentials>,
+        _project: Option<&'borrow str>,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
+    > {
+        let snapshot = Arc::clone(&self.snapshot);
+        Box::pin(async move {
+            Ok(LoadedCredential {
+                credential: Some(snapshot),
+                project: None,
+            })
+        })
+    }
+
+    fn refresh<'borrow>(
+        &'borrow self,
+        _credential: &'borrow CredentialSnapshot,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
+    > {
+        Box::pin(ready(Err(CredentialCacheError::MissingToken)))
     }
 }
 
@@ -202,6 +248,26 @@ async fn lyria_project_only_callback() {
         headers.get("Authorization").unwrap().expose_secret(),
         "Bearer "
     );
+}
+
+#[tokio::test]
+async fn credential_cache_backs_the_default_mint() {
+    let snapshot = Arc::new(CredentialSnapshot {
+        token: Some(SecretString::from("cached-token")),
+        state: Some(TokenState::Fresh),
+        expires_at: None,
+        expired: None,
+        valid: Some(true),
+        quota_project_id: None,
+        project_id: None,
+    });
+    let cache = CredentialCache::new(
+        Arc::new(FixedClock),
+        Arc::new(SnapshotExecutor { snapshot }),
+    );
+    let minted = cache.mint(None, Some("project-1")).await.unwrap();
+    assert_eq!(minted.project, "project-1");
+    assert_eq!(minted.token.expose_secret(), "cached-token");
 }
 
 #[tokio::test]
