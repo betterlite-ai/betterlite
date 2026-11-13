@@ -165,7 +165,7 @@ fn an_explicit_zero_survives_and_gemini_three_defaults_to_one(
     "gemini-2.5-pro",
     r#"{"frequency_penalty": 0.1, "presence_penalty": 0.2}"#
 )]
-#[case::gemini_three("gemini-3-pro-preview", "{}")]
+#[case::gemini_three("gemini-3-pro-preview", r#"{"temperature": 1.0}"#)]
 #[case::the_preview_model("gemini-2.5-pro-preview-06-05", "{}")]
 #[case::a_qualified_preview_model(
     "vertex_ai/gemini-2.5-pro-preview-06-05",
@@ -181,12 +181,18 @@ fn penalties_follow_the_model(#[case] model: &str, #[case] expected: &str) {
 }
 
 #[rstest]
-#[case::tokens_then_completion(r#"{"max_tokens": 100, "max_completion_tokens": 200}"#)]
-#[case::completion_then_tokens(r#"{"max_completion_tokens": 200, "max_tokens": 100}"#)]
-fn the_last_token_limit_wins(#[case] request: &str) {
+#[case::tokens_then_completion(
+    r#"{"max_tokens": 100, "max_completion_tokens": 200}"#,
+    r#"{"max_output_tokens": 200}"#
+)]
+#[case::completion_then_tokens(
+    r#"{"max_completion_tokens": 200, "max_tokens": 100}"#,
+    r#"{"max_output_tokens": 100}"#
+)]
+fn the_last_token_limit_wins(#[case] request: &str, #[case] expected: &str) {
     let (result, _) = mapped("gemini-2.5-pro", request);
 
-    assert_eq!(result, json(r#"{"max_output_tokens": 200}"#));
+    assert_eq!(result, json(expected));
 }
 
 #[test]
@@ -277,7 +283,7 @@ fn the_server_flag_applies_before_the_tools_are_mapped() {
 fn a_search_tool_mixed_with_functions_is_dropped_without_the_flag() {
     let (result, warnings) = mapped(
         "gemini-2.5-pro",
-        r#"{"tools": [{"function": {"name": "lookup"}}, {"googleSearch": {}}]}"#,
+        r#"{"tools": [{"function": {"name": "lookup"}}], "web_search_options": {}}"#,
     );
 
     assert_eq!(
