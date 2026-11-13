@@ -117,19 +117,73 @@ fn every_entry_has_a_distinct_name() {
 }
 
 #[rstest]
-#[case::chat(CallType::Acompletion, Some(Entry::Chat))]
-#[case::embedding(CallType::Aembedding, Some(Entry::Embedding))]
-#[case::text_completion(CallType::TextCompletion, Some(Entry::TextCompletion))]
-#[case::moderation(CallType::Amoderation, Some(Entry::Moderation))]
-#[case::responses(CallType::Responses, Some(Entry::Responses))]
-#[case::image_generation(CallType::ImageGeneration, Some(Entry::ImageGeneration))]
-#[case::video_status(CallType::VideoRetrieve, Some(Entry::VideoStatus))]
-#[case::passthrough(CallType::AllmPassthroughRoute, Some(Entry::LlmPassthrough))]
-#[case::container(CallType::AuploadContainerFile, Some(Entry::ContainerCall))]
-#[case::no_entry(CallType::Asearch, None)]
+#[case::chat(&[CallType::Completion, CallType::Acompletion], Some(Entry::Chat))]
+#[case::embedding(&[CallType::Embedding, CallType::Aembedding], Some(Entry::Embedding))]
+#[case::text_completion(
+    &[CallType::TextCompletion, CallType::AtextCompletion],
+    Some(Entry::TextCompletion)
+)]
+#[case::moderation(&[CallType::Moderation, CallType::Amoderation], Some(Entry::Moderation))]
+#[case::responses(&[CallType::Responses, CallType::Aresponses], Some(Entry::Responses))]
+#[case::image_generation(
+    &[CallType::ImageGeneration, CallType::AimageGeneration],
+    Some(Entry::ImageGeneration)
+)]
+#[case::image_edit(&[CallType::ImageEdit, CallType::AimageEdit], Some(Entry::ImageEdit))]
+#[case::video_generation(
+    &[CallType::VideoGeneration, CallType::AvideoGeneration],
+    Some(Entry::VideoGeneration)
+)]
+#[case::video_list(&[CallType::VideoList, CallType::AvideoList], Some(Entry::VideoList))]
+#[case::video_status(
+    &[CallType::VideoRetrieve, CallType::AvideoRetrieve],
+    Some(Entry::VideoStatus)
+)]
+#[case::video_content(
+    &[CallType::VideoContent, CallType::AvideoContent],
+    Some(Entry::VideoContent)
+)]
+#[case::video_remix(&[CallType::VideoRemix, CallType::AvideoRemix], Some(Entry::VideoRemix))]
+#[case::video_create_character(
+    &[CallType::VideoCreateCharacter, CallType::AvideoCreateCharacter],
+    Some(Entry::VideoCreateCharacter)
+)]
+#[case::video_get_character(
+    &[CallType::VideoGetCharacter, CallType::AvideoGetCharacter],
+    Some(Entry::VideoGetCharacter)
+)]
+#[case::video_edit(&[CallType::VideoEdit, CallType::AvideoEdit], Some(Entry::VideoEdit))]
+#[case::video_extension(
+    &[CallType::VideoExtension, CallType::AvideoExtension],
+    Some(Entry::VideoExtension)
+)]
+#[case::passthrough(
+    &[CallType::LlmPassthroughRoute, CallType::AllmPassthroughRoute],
+    Some(Entry::LlmPassthrough)
+)]
+#[case::container(
+    &[
+        CallType::CreateContainer,
+        CallType::AcreateContainer,
+        CallType::ListContainers,
+        CallType::AlistContainers,
+        CallType::RetrieveContainer,
+        CallType::AretrieveContainer,
+        CallType::DeleteContainer,
+        CallType::AdeleteContainer,
+        CallType::ListContainerFiles,
+        CallType::AlistContainerFiles,
+        CallType::UploadContainerFile,
+        CallType::AuploadContainerFile,
+    ],
+    Some(Entry::ContainerCall)
+)]
+#[case::no_entry(&[CallType::Asearch], None)]
 fn call_type_recognition_tests_behavior(
-    #[case] call_type: CallType,
+    #[case] types: &[CallType],
     #[case] expected: Option<Entry>,
 ) {
-    assert_eq!(call_types::entry_for(call_type), expected);
+    for call_type in types {
+        assert_eq!(call_types::entry_for(*call_type), expected, "{call_type:?}");
+    }
 }
