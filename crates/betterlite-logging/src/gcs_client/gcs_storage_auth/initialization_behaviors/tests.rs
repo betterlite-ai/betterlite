@@ -98,7 +98,12 @@ async fn initialize_keeps_the_mock_and_the_real_authentication_off_when_disabled
 fn initialize_rejects_a_mock_variable_that_is_not_a_bool() {
     let environment: Arc<dyn EnvironmentSource> =
         Arc::new(FakeEnvironment::new(&[("GCS_MOCK", "maybe")]));
-    let result = initialize(environment, None, FakeAuth::new(), RecordingClient::new());
+    let result = initialize(
+        environment,
+        None,
+        FakeAuth::minting("token"),
+        RecordingClient::responding(200, "{}"),
+    );
     assert!(matches!(result, Err(GcsClientError::Mock(_))));
 }
 

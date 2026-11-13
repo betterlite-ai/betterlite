@@ -1,7 +1,9 @@
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::gcs_mock::auth::{EnsureAccessToken, GetTokenAndUrl, VertexAuth, VertexAuthProvider};
+use crate::gcs_mock::auth::{
+    AccessToken, EnsureAccessToken, GetTokenAndUrl, VertexAuth, VertexAuthProvider,
+};
 use crate::gcs_mock::client::GcsHttpClient;
 
 use super::error::GcsClientError;
@@ -32,24 +34,7 @@ where
             bucket_name: bucket_name.to_owned(),
             source,
         })?;
-    let token = instance
-        .get_token_and_url(GetTokenAndUrl {
-            model: TOKEN_MODEL.to_owned(),
-            auth_header: Some(access.token),
-            vertex_credentials: service_account_json.cloned(),
-            vertex_project: Some(access.project_id),
-            vertex_location: None,
-            gemini_api_key: None,
-            stream: None,
-            custom_llm_provider: VertexAuthProvider::VertexAi,
-            api_base: None,
-        })
-        .map_err(|source| GcsClientError::Headers {
-            bucket_name: bucket_name.to_owned(),
-            source,
-        })?;
-    tracing::debug!(bucket = %bucket_name, "constructed the GCS request authorization header");
-    Ok(bearer_headers(&token.token))
+    token_headers(instance, access, bucket_name, service_account_json)
 }
 
 pub fn sync_construct_request_headers<Auth, Http>(
@@ -61,24 +46,35 @@ where
     Auth: VertexAuth + Clone,
     Http: GcsHttpClient,
 {
-    let project_id = base.environment.get(PROJECT_ID_ENV);
     let access = base
         .auth
         .ensure_access_token(EnsureAccessToken {
             credentials: service_account_path.cloned(),
-            project_id,
+            project_id: base.environment.get(PROJECT_ID_ENV),
             custom_llm_provider: VertexAuthProvider::VertexAi,
         })
         .map_err(|source| GcsClientError::Headers {
             bucket_name: bucket_name.to_owned(),
             source,
         })?;
-    let token = base
-        .auth
+    token_headers(&base.auth, access, bucket_name, service_account_path)
+}
+
+fn token_headers<Auth, Http>(
+    instance: &VertexInstance<Auth>,
+    access: AccessToken,
+    bucket_name: &str,
+    service_account_json: Option<&SecretString>,
+) -> Result<RequestHeaders, GcsClientError<Auth, Http>>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    let token = instance
         .get_token_and_url(GetTokenAndUrl {
             model: TOKEN_MODEL.to_owned(),
             auth_header: Some(access.token),
-            vertex_credentials: service_account_path.cloned(),
+            vertex_credentials: service_account_json.cloned(),
             vertex_project: Some(access.project_id),
             vertex_location: None,
             gemini_api_key: None,

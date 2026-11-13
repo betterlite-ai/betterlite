@@ -21,7 +21,7 @@ fn failing_harness() -> Harness {
     Harness {
         environment: FakeEnvironment::new(&[]),
         auth: FakeAuth::failing(),
-        client: RecordingClient::new(),
+        client: RecordingClient::responding(200, "{}"),
     }
 }
 

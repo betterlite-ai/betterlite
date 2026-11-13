@@ -40,28 +40,40 @@ pub(crate) struct FakeAuth {
 }
 
 impl FakeAuth {
-    pub(crate) fn new() -> Self {
+    fn new(token: String, project: String, fail: bool) -> Self {
         Self {
-            token: TOKEN.to_owned(),
-            project: PROJECT.to_owned(),
-            fail: false,
-            async_calls: Arc::new(AtomicUsize::new(0)),
-            sync_calls: Arc::new(AtomicUsize::new(0)),
-            ensure_requests: Arc::new(Mutex::new(Vec::new())),
-            token_requests: Arc::new(Mutex::new(Vec::new())),
+            token,
+            project,
+            fail,
+            async_calls: Arc::default(),
+            sync_calls: Arc::default(),
+            ensure_requests: Arc::default(),
+            token_requests: Arc::default(),
         }
     }
 
     pub(crate) fn minting(token: &str) -> Self {
-        let mut auth = Self::new();
-        auth.token = token.to_owned();
-        auth
+        Self::new(token.to_owned(), PROJECT.to_owned(), false)
     }
 
     pub(crate) fn failing() -> Self {
-        let mut auth = Self::new();
-        auth.fail = true;
-        auth
+        Self::new(String::new(), String::new(), true)
+    }
+
+    fn record(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
+        let mut requests = self
+            .ensure_requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        requests.push(request);
+        drop(requests);
+        if self.fail {
+            return Err(AuthFailure);
+        }
+        Ok(AccessToken {
+            token: SecretString::from(self.token.clone()),
+            project_id: self.project.clone(),
+        })
     }
 
     pub(crate) fn last_ensure(&self) -> EnsureAccessToken {
@@ -99,32 +111,12 @@ impl VertexAuth for FakeAuth {
         request: EnsureAccessToken,
     ) -> Result<AccessToken, AuthFailure> {
         self.async_calls.fetch_add(1, Ordering::SeqCst);
-        self.ensure_requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        if self.fail {
-            return Err(AuthFailure);
-        }
-        Ok(AccessToken {
-            token: SecretString::from(self.token.clone()),
-            project_id: self.project.clone(),
-        })
+        self.record(request)
     }
 
     fn ensure_access_token(&self, request: EnsureAccessToken) -> Result<AccessToken, AuthFailure> {
         self.sync_calls.fetch_add(1, Ordering::SeqCst);
-        self.ensure_requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        if self.fail {
-            return Err(AuthFailure);
-        }
-        Ok(AccessToken {
-            token: SecretString::from(self.token.clone()),
-            project_id: self.project.clone(),
-        })
+        self.record(request)
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, AuthFailure> {
@@ -151,26 +143,21 @@ pub(crate) struct RecordingClient {
 }
 
 impl RecordingClient {
-    pub(crate) fn new() -> Self {
+    fn new(status: u16, body: Vec<u8>, fail: bool) -> Self {
         Self {
-            sent: Arc::new(Mutex::new(Vec::new())),
-            status: 200,
-            body: b"{}".to_vec(),
-            fail: false,
+            sent: Arc::default(),
+            status,
+            body,
+            fail,
         }
     }
 
     pub(crate) fn responding(status: u16, body: &str) -> Self {
-        let mut client = Self::new();
-        client.status = status;
-        client.body = body.as_bytes().to_vec();
-        client
+        Self::new(status, body.as_bytes().to_vec(), false)
     }
 
     pub(crate) fn failing() -> Self {
-        let mut client = Self::new();
-        client.fail = true;
-        client
+        Self::new(200, b"{}".to_vec(), true)
     }
 }
 
@@ -257,8 +244,8 @@ impl Harness {
     pub(crate) fn new(pairs: &[(&str, &str)]) -> Self {
         Self {
             environment: FakeEnvironment::new(pairs),
-            auth: FakeAuth::new(),
-            client: RecordingClient::new(),
+            auth: FakeAuth::minting(TOKEN),
+            client: RecordingClient::responding(200, "{}"),
         }
     }
 

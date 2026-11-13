@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use super::log_json_data_on_gcs;
 use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
 use crate::gcs_client::gcs_storage_auth::tests::support::{
-    FakeAuth, Harness, RecordingClient, headers, logging_payload,
+    Harness, RecordingClient, headers, logging_payload,
 };
 use crate::gcs_mock::request::GcsRequest;
 use crate::types::gcs_storage_auth::type_definitions::GcsLoggingPayload;
@@ -204,8 +204,7 @@ async fn a_header_that_is_not_valid_is_an_error() {
 
 #[tokio::test]
 async fn the_mock_upload_answers_with_the_canned_object() {
-    let mut harness = Harness::new(&[("GCS_MOCK", "true"), ("GCS_MOCK_LATENCY_MS", "0")]);
-    harness.auth = FakeAuth::new();
+    let harness = Harness::new(&[("GCS_MOCK", "true"), ("GCS_MOCK_LATENCY_MS", "0")]);
     let base = harness.build(None);
     let payload = GcsLoggingPayload::Text("body".to_owned());
     let response = log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload)
