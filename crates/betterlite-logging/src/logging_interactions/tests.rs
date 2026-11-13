@@ -234,8 +234,8 @@ fn registry(logger: &Arc<RecordingLogger>) -> CallbackRegistry {
         class_name: logger.name.clone(),
         attributes: IndexMap::new(),
     };
-    let sink = Arc::clone(logger);
-    let sink: Arc<dyn CallbackLogger> = sink;
+    let logger_arc = Arc::clone(logger);
+    let sink: Arc<dyn CallbackLogger> = logger_arc;
     assert_ne!(
         registry.register(
             identity,
@@ -253,8 +253,8 @@ fn fixture(state: LoggingState) -> Fixture {
         name: "recorder".to_owned(),
         events: Arc::default(),
     });
-    let payload_builder = Arc::clone(&builder);
-    let payload_builder: Arc<dyn StandardPayloadBuilder> = payload_builder;
+    let builder_arc = Arc::clone(&builder);
+    let payload_builder: Arc<dyn StandardPayloadBuilder> = builder_arc;
     let callbacks = InteractionLoggingCallbacks {
         registry: Arc::new(registry(&logger)),
         payload_builder,
@@ -295,8 +295,8 @@ fn completed_response() -> InteractionsApiResponse {
 }
 
 fn state_with_spans(spans: &str) -> LoggingState {
-    let spans: Json = serde_json::from_str(spans).expect("the span fixture parses");
-    let otel_internal = IndexMap::from([("spans_logged".to_owned(), spans)]);
+    let parsed: Json = serde_json::from_str(spans).expect("the span fixture parses");
+    let otel_internal = IndexMap::from([("spans_logged".to_owned(), parsed)]);
     let metadata = IndexMap::from([("_otel_internal".to_owned(), Json::Object(otel_internal))]);
     let litellm_params = IndexMap::from([("metadata".to_owned(), Json::Object(metadata))]);
     let mut state = logging_state(litellm_params);
@@ -338,6 +338,14 @@ fn hidden_params(response: &Json) -> IndexMap<String, Json> {
     hidden.clone()
 }
 
+fn retained_spans(host: &InteractionLoggingObject<RecordingRelease>) -> IndexMap<String, Json> {
+    let held = host.state.lock().unwrap_or_else(PoisonError::into_inner);
+    let state = held.as_ref().expect("the logging state is put back");
+    let spans = spans_logged(&state.logging.model_call_details);
+    drop(held);
+    spans
+}
+
 #[tokio::test]
 async fn completion_strips_poll_scoped_hidden_params_resets_dedupe_and_logs_once() {
     let fixture = fixture(state_with_dedupe_markers());
@@ -348,22 +356,14 @@ async fn completion_strips_poll_scoped_hidden_params_resets_dedupe_and_logs_once
         .expect("the settled interaction logs");
     assert_eq!(fixture.logger.events(), 1);
     let seen = fixture.builder.seen();
+    assert_eq!(seen.len(), 1, "the handler builds one payload");
     let response = seen.first().expect("the handler receives the response");
     assert_eq!(
         hidden_params(response),
         params(r#"{"cache_key": "keep"}"#),
         "only the poll-scoped hidden parameters are dropped"
     );
-    let held = fixture
-        .host
-        .state
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let state = held.as_ref().expect("the logging state is put back");
-    assert!(
-        !spans_logged(&state.logging.model_call_details)
-            .contains_key("[\"OpenTelemetry\",1,\"success\"]")
-    );
+    assert!(!retained_spans(&fixture.host).contains_key("[\"OpenTelemetry\",1,\"success\"]"));
 }
 
 #[tokio::test]
@@ -405,6 +405,7 @@ fn dedupe_reset_keeps_every_scope_that_does_not_end_in_success() {
             "[\"Langfuse\",2,\"success\"]": true,
             "[\"OpenTelemetry\",1,\"failure\"]": true,
             "[\"OpenTelemetry\",1,\"guardrail\",\"pii\"]": true,
+            "[\"OpenTelemetry\",1,\"success\",2]": true,
             "plain-key": true,
             "[]": true}"#,
     );
@@ -416,6 +417,7 @@ fn dedupe_reset_keeps_every_scope_that_does_not_end_in_success() {
         vec![
             "[\"OpenTelemetry\",1,\"failure\"]",
             "[\"OpenTelemetry\",1,\"guardrail\",\"pii\"]",
+            "[\"OpenTelemetry\",1,\"success\",2]",
             "plain-key",
             "[]",
         ]
@@ -424,7 +426,11 @@ fn dedupe_reset_keeps_every_scope_that_does_not_end_in_success() {
 
 #[test]
 fn dedupe_reset_removes_the_async_success_marker() {
-    let mut state = state_with_dedupe_markers();
+    let mut state = state_with_spans(
+        r#"{"[\"OpenTelemetry\",1,\"success\"]": true,
+            "[\"OpenTelemetry\",1,\"guardrail\",\"success\"]": true,
+            "[\"OpenTelemetry\",1,\"guardrail\",\"pii\"]": true}"#,
+    );
     reset_success_emission_dedupe(&mut state);
     assert!(
         !state
@@ -433,6 +439,7 @@ fn dedupe_reset_removes_the_async_success_marker() {
     );
     let spans = spans_logged(&state.model_call_details);
     assert!(!spans.contains_key("[\"OpenTelemetry\",1,\"success\"]"));
+    assert!(!spans.contains_key("[\"OpenTelemetry\",1,\"guardrail\",\"success\"]"));
     assert!(spans.contains_key("[\"OpenTelemetry\",1,\"guardrail\",\"pii\"]"));
 }
 

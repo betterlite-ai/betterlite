@@ -76,7 +76,9 @@ where
         let Some(Json::Object(params)) = details.get("litellm_params") else {
             return None;
         };
-        reservation_from_params(params)
+        let reservation = reservation_from_params(params);
+        drop(state);
+        reservation
     }
 
     fn log_background_completion<'host>(
@@ -138,7 +140,8 @@ fn settled_response(response: &InteractionsApiResponse) -> Result<Json, BillingE
         hidden_params.shift_remove(key);
     }
     let mut fields = object_from(response)?;
-    fields.insert(HIDDEN_PARAMS_KEY.to_owned(), Json::Object(hidden_params));
+    let converted = object_from(&hidden_params)?;
+    fields.insert(HIDDEN_PARAMS_KEY.to_owned(), Json::Object(converted));
     Ok(Json::Object(fields))
 }
 
@@ -146,7 +149,7 @@ fn object_from<Value>(value: &Value) -> Result<IndexMap<String, Json>, BillingEr
 where
     Value: Serialize,
 {
-    let text =
-        serde_json::to_string(value).map_err(|source| BillingError::ResponseJson { source })?;
-    serde_json::from_str(&text).map_err(|source| BillingError::ResponseJson { source })
+    serde_json::to_value(value)
+        .and_then(serde_json::from_value)
+        .map_err(|source| BillingError::ResponseJson { source })
 }
