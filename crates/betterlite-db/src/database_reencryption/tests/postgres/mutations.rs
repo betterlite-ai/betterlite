@@ -38,7 +38,7 @@ async fn legacy_value(database: &Database, column: &SecretColumn, key: &str) {
     } else {
         format!("{{\"secret\":\"{sealed}\"}}")
     };
-    database.insert_json(column, key, &value).await;
+    database.insert(column, key, &value).await;
 }
 
 async fn stored_text(database: &Database, column: &SecretColumn, key: &str) -> String {

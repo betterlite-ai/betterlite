@@ -3,6 +3,7 @@ use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 
 use super::super::fixtures::{MASTER_KEY, PREVIOUS_KEY, decrypted_leaves, json};
 use crate::database_reencryption::outcome::{MigrationFailure, MigrationOutcome};
@@ -78,16 +79,9 @@ impl Database {
     }
 
     pub(crate) async fn insert(&self, column: &SecretColumn, key: &str, value: &str) {
-        if column.is_json {
-            self.insert_json(column, key, value).await;
-        } else {
-            self.insert_text(column, key, value).await;
-        }
-    }
-
-    pub(crate) async fn insert_json(&self, column: &SecretColumn, key: &str, value: &str) {
+        let cast = if column.is_json { "::jsonb" } else { "" };
         let sql = format!(
-            "INSERT INTO \"{}\" (\"{}\", \"{}\") VALUES ($1, $2::jsonb)",
+            "INSERT INTO \"{}\" (\"{}\", \"{}\") VALUES ($1, $2{cast})",
             column.table, column.primary_key, column.column
         );
         self.client
@@ -96,15 +90,14 @@ impl Database {
             .expect("the fixture row inserts");
     }
 
-    pub(crate) async fn insert_text(&self, column: &SecretColumn, key: &str, value: &str) {
-        let sql = format!(
-            "INSERT INTO \"{}\" (\"{}\", \"{}\") VALUES ($1, $2)",
-            column.table, column.primary_key, column.column
-        );
+    async fn text_rows(&self, sql: &str, parameters: &[&(dyn ToSql + Sync)]) -> Vec<String> {
         self.client
-            .execute(sql.as_str(), &[&key, &value])
+            .query(sql, parameters)
             .await
-            .expect("the fixture row inserts");
+            .expect("the fixture query runs")
+            .iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect()
     }
 
     pub(crate) async fn stored(&self, column: &SecretColumn, key: &str) -> Option<Option<String>> {
@@ -112,11 +105,12 @@ impl Database {
             "SELECT \"{}\"::text FROM \"{}\" WHERE \"{}\" = $1",
             column.column, column.table, column.primary_key
         );
-        self.client
+        let row = self
+            .client
             .query_opt(sql.as_str(), &[&key])
             .await
-            .expect("the stored row reads")
-            .map(|row| row.get::<_, Option<String>>(0))
+            .expect("the stored row reads");
+        row.map(|record| record.get(0))
     }
 
     pub(crate) async fn snapshot(&self, column: &SecretColumn) -> Vec<String> {
@@ -124,13 +118,7 @@ impl Database {
             "SELECT row_to_json(rows)::text FROM \"{}\" rows ORDER BY row_to_json(rows)::text",
             column.table
         );
-        self.client
-            .query(sql.as_str(), &[])
-            .await
-            .expect("the table reads")
-            .iter()
-            .map(|row| row.get::<_, String>(0))
-            .collect()
+        self.text_rows(&sql, &[]).await
     }
 
     pub(crate) async fn snapshot_except(&self, column: &SecretColumn, key: &str) -> Vec<String> {
@@ -138,13 +126,7 @@ impl Database {
             "SELECT row_to_json(rows)::text FROM \"{}\" rows WHERE \"{}\" <> $1 ORDER BY row_to_json(rows)::text",
             column.table, column.primary_key
         );
-        self.client
-            .query(sql.as_str(), &[&key])
-            .await
-            .expect("the table reads")
-            .iter()
-            .map(|row| row.get::<_, String>(0))
-            .collect()
+        self.text_rows(&sql, &[&key]).await
     }
 
     pub(crate) async fn version(&self, column: &SecretColumn, key: &str) -> String {
@@ -152,11 +134,12 @@ impl Database {
             "SELECT xmin::text FROM \"{}\" WHERE \"{}\" = $1",
             column.table, column.primary_key
         );
-        self.client
+        let row = self
+            .client
             .query_one(sql.as_str(), &[&key])
             .await
-            .expect("the row version reads")
-            .get(0)
+            .expect("the row version reads");
+        row.get(0)
     }
 }
 

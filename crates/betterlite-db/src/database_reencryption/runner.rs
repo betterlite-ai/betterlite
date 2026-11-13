@@ -65,10 +65,13 @@ where
     L: Fn(&str) -> Result<(), MigrationError> + Send + Sync,
 {
     let outcome = migrate_or_failure(plan, database, &log).await;
-    let secrets = [plan.previous_master_key, plan.master_key];
-    log(&describe_outcome(&outcome))
-        .map_err(|cause| MigrationFailure::from_cause(cause, &secrets))?;
-    Ok(outcome)
+    match log(&describe_outcome(&outcome)) {
+        Ok(()) => Ok(outcome),
+        Err(cause) => Err(MigrationFailure::from_cause(
+            cause,
+            &[plan.previous_master_key, plan.master_key],
+        )),
+    }
 }
 
 async fn migrate_or_failure<D, L>(

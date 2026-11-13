@@ -112,7 +112,7 @@ async fn postgres_sql_null_vs_json_null() {
             "INSERT INTO \"LiteLLM_CredentialsTable\" (credential_id, credential_values) VALUES ('sql-null', NULL)",
         )
         .await;
-    database.insert_json(&column, "json-null", "null").await;
+    database.insert(&column, "json-null", "null").await;
     assert_eq!(count(&database, &previous()).await, 0);
     let before = database.snapshot(&column).await;
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;
@@ -142,11 +142,9 @@ async fn postgres_marked_metadata_prefilter() {
     let marked = sealed("marked-secret", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let unmarked = sealed("unmarked-secret", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let marked_value = format!("{{\"secret\":\"litellm_enc::{marked}\"}}");
-    database.insert_json(&column, "marked", &marked_value).await;
+    database.insert(&column, "marked", &marked_value).await;
     let unmarked_value = format!("{{\"secret\":\"{unmarked}\"}}");
-    database
-        .insert_json(&column, "unmarked", &unmarked_value)
-        .await;
+    database.insert(&column, "unmarked", &unmarked_value).await;
     assert_eq!(
         count(&database, &previous()).await,
         1,
@@ -180,13 +178,13 @@ async fn postgres_like_underscore_and_marker_in_key() {
     database.create_table(&column).await;
     let real = sealed("real-secret", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     database
-        .insert_json(&column, "key-marker", "{\"litellm_enc::key\":\"plain\"}")
+        .insert(&column, "key-marker", "{\"litellm_enc::key\":\"plain\"}")
         .await;
     database
-        .insert_json(&column, "wildcard", "{\"secret\":\"litellm-enc::plain\"}")
+        .insert(&column, "wildcard", "{\"secret\":\"litellm-enc::plain\"}")
         .await;
     database
-        .insert_json(
+        .insert(
             &column,
             "real",
             &format!("{{\"secret\":\"litellm_enc::{real}\"}}"),
@@ -222,7 +220,7 @@ async fn postgres_selected_metadata_unmarked_leaf() {
     let marked = sealed("first", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let unmarked = sealed("second", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     database
-        .insert_json(
+        .insert(
             &column,
             "user-1",
             &format!("{{\"a\":\"litellm_enc::{marked}\",\"b\":\"{unmarked}\"}}"),
@@ -253,7 +251,7 @@ async fn postgres_leaf_count_without_writes() {
     let second = sealed("two", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let third = sealed("three", PREVIOUS_KEY, Algorithm::Aes256Gcm);
     database
-        .insert_json(
+        .insert(
             &column,
             "credential-1",
             &format!("[\"{first}\",{{\"nested\":\"{second}\"}},\"{third}\",\"plain\"]"),
@@ -273,10 +271,10 @@ async fn postgres_legacy_and_aes_reencrypted() {
     let legacy = sealed("legacy", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let aes = sealed("aes", PREVIOUS_KEY, Algorithm::Aes256Gcm);
     database
-        .insert_json(&column, "legacy", &format!("{{\"secret\":\"{legacy}\"}}"))
+        .insert(&column, "legacy", &format!("{{\"secret\":\"{legacy}\"}}"))
         .await;
     database
-        .insert_json(&column, "aes", &format!("{{\"secret\":\"{aes}\"}}"))
+        .insert(&column, "aes", &format!("{{\"secret\":\"{aes}\"}}"))
         .await;
     let outcome = migrate_once(&database, Algorithm::Aes256Gcm).await;
     assert!(matches!(
@@ -304,7 +302,7 @@ async fn postgres_empty_plaintext_counts() {
     database.create_table(&column).await;
     let empty = sealed("", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     database
-        .insert_json(&column, "empty", &format!("{{\"secret\":\"{empty}\"}}"))
+        .insert(&column, "empty", &format!("{{\"secret\":\"{empty}\"}}"))
         .await;
     assert_eq!(count(&database, &previous()).await, 1);
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;
@@ -327,13 +325,13 @@ async fn unknown_ciphertext_and_empty_base64_unchanged() {
     database.create_table(&column).await;
     let valid = sealed("valid", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     let empty = String::from("{\"secret\":\"\"}");
-    database.insert_json(&column, "empty", &empty).await;
+    database.insert(&column, "empty", &empty).await;
     let star = String::from("{\"secret\":\"*\"}");
-    database.insert_json(&column, "star", &star).await;
+    database.insert(&column, "star", &star).await;
     let plain = String::from("{\"secret\":\"not a ciphertext\"}");
-    database.insert_json(&column, "plain", &plain).await;
+    database.insert(&column, "plain", &plain).await;
     let valid_value = format!("{{\"secret\":\"{valid}\"}}");
-    database.insert_json(&column, "valid", &valid_value).await;
+    database.insert(&column, "valid", &valid_value).await;
     let before = database.snapshot_except(&column, "valid").await;
     assert_eq!(count(&database, &previous()).await, 1);
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;
@@ -355,7 +353,7 @@ async fn empty_target_uses_configured_key() {
     database.create_table(&column).await;
     let legacy = sealed("targetless", PREVIOUS_KEY, Algorithm::XSalsa20Poly1305);
     database
-        .insert_json(
+        .insert(
             &column,
             "credential-1",
             &format!("{{\"secret\":\"{legacy}\"}}"),
@@ -393,7 +391,7 @@ async fn postgres_zero_count_no_update() {
     let column = credentials();
     database.create_table(&column).await;
     database
-        .insert_json(&column, "credential-1", "{\"secret\":\"plain\"}")
+        .insert(&column, "credential-1", "{\"secret\":\"plain\"}")
         .await;
     let version = database.version(&column, "credential-1").await;
     let outcome = migrate_once(&database, Algorithm::XSalsa20Poly1305).await;

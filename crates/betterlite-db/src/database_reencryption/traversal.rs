@@ -137,7 +137,22 @@ where
         count: 0,
         max_depth,
     };
-    builder.run(replacement_for)?;
+    while let Some(stage) = builder.stages.pop() {
+        match stage {
+            Stage::Visit(stored, at) => builder.visit(stored, at, replacement_for)?,
+            Stage::CollectArray(start) => {
+                let children = builder.results.split_off(start);
+                builder.results.push(MigrationJson::Array(children));
+            }
+            Stage::CollectObject(keys) => {
+                let start = builder.results.len().saturating_sub(keys.len());
+                let children = builder.results.split_off(start);
+                builder.results.push(MigrationJson::Object(
+                    keys.into_iter().zip(children).collect(),
+                ));
+            }
+        }
+    }
     builder.finish()
 }
 
