@@ -75,6 +75,25 @@ fn long_marked_message() -> String {
     )
 }
 
+fn large_tools() -> Vec<Json> {
+    // the formatted declaration is about 1100 cl100k tokens, so only counting it reaches the 1024 minimum
+    let description = "lookup ".repeat(1100);
+    let source = format!(
+        r#"[{{"functionDeclarations":[{{"name":"lookup","description":"{}","parameters":{{"type":"object","properties":{{"id":{{"type":"string"}}}}}}}}]}}]"#,
+        description.trim_end()
+    );
+    serde_json::from_str(&source).expect("fixture tools")
+}
+
+fn marked_with_long_tail() -> String {
+    // the unmarked tail alone is about 1200 cl100k tokens, so counting it would clear the 1024 minimum
+    let words = "tail ".repeat(1200);
+    format!(
+        r#"[{{"role":"user","content":"hi","cache_control":{{"type":"ephemeral"}}}},{{"role":"user","content":"{}"}}]"#,
+        words.trim_end()
+    )
+}
+
 fn eligible(model: &str, messages: &str) -> Harness {
     let mut harness = Harness::new(model, messages);
     // the fixture prompts are far below every model minimum, so the override is what makes them eligible
@@ -112,6 +131,48 @@ async fn explicit_name_bypass() {
 #[tokio::test]
 async fn too_short_unchanged() {
     let harness = Harness::new("gemini-2.5-flash", SHORT_MARKED);
+    let mut options = with_tools();
+    let transport = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the skip");
+    assert_eq!(outcome.messages, harness.messages);
+    assert_eq!(outcome.cached_content, None);
+    assert_eq!(options, with_tools());
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn tool_tokens_make_a_short_prefix_eligible() {
+    let harness = Harness::new("gemini-2.5-flash", SHORT_MARKED);
+    let mut options = CacheCreateOptions {
+        tools: Some(large_tools()),
+        tool_choice: None,
+    };
+    let transport = ScriptedTransport::new(vec![
+        empty_list_page(),
+        created_cache("cachedContents/tools"),
+    ]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the create");
+    assert_eq!(
+        outcome.cached_content.as_deref(),
+        Some("cachedContents/tools")
+    );
+    assert_eq!(transport.methods(), vec![Method::GET, Method::POST]);
+    let mut bare = CacheCreateOptions::default();
+    let quiet = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
+    let skipped = harness.run(&quiet, &mut bare).await.expect("the skip");
+    assert_eq!(skipped.cached_content, None);
+    assert!(quiet.requests().is_empty());
+}
+
+#[tokio::test]
+async fn unmarked_tail_does_not_count() {
+    let harness = Harness::new("gemini-2.5-flash", &marked_with_long_tail());
     let mut options = with_tools();
     let transport = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
     let outcome = harness
@@ -337,6 +398,38 @@ async fn studio_target_is_used() {
     assert_eq!(
         transport.requests()[0].url,
         "https://generativelanguage.googleapis.com/v1beta/cachedContents"
+    );
+}
+
+#[tokio::test]
+async fn miss_posts_only_the_cached_block() {
+    let harness = eligible("gemini-2.5-pro", MARKED_WITH_TAIL);
+    let mut options = CacheCreateOptions::default();
+    let transport = ScriptedTransport::new(vec![
+        empty_list_page(),
+        created_cache("cachedContents/block"),
+    ]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the create");
+    assert_eq!(
+        outcome.cached_content.as_deref(),
+        Some("cachedContents/block")
+    );
+    assert_eq!(
+        outcome.messages,
+        serde_json::from_str::<Vec<Message>>(TAIL_ONLY).expect("fixture messages")
+    );
+    let requests = transport.requests();
+    let Json::Object(fields) =
+        serde_json::from_slice::<Json>(&requests[1].body).expect("the create body")
+    else {
+        panic!("the create body is an object");
+    };
+    assert_eq!(
+        fields.get("contents"),
+        Some(&json(r#"[{"role":"user","parts":[{"text":"hi"}]}]"#))
     );
 }
 
