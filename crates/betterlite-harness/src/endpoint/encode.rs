@@ -31,38 +31,16 @@ pub fn stream_trailer(route: Route) -> Option<&'static [u8]> {
 }
 
 pub fn encode_chunk(route: Route, chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    match route {
-        Route::Messages => encode_anthropic(chunk),
-        Route::Chat => encode_chat(chunk),
-        Route::Responses => encode_responses(chunk),
-    }
-}
-
-fn encode_anthropic(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    match chunk {
-        Chunk::Bytes(bytes) => Ok(bytes.to_vec()),
-        Chunk::Text(text) => Ok(text.as_bytes().to_vec()),
-        Chunk::Json(event) => event_frame(event),
-    }
-}
-
-fn encode_chat(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    match chunk {
-        Chunk::Bytes(_) => Err(EncodeError::BytesNotJson {
-            route: Route::Chat.path(),
+    match (route, chunk) {
+        (Route::Messages, Chunk::Bytes(bytes)) => Ok(bytes.to_vec()),
+        (Route::Messages, Chunk::Text(text)) => Ok(text.as_bytes().to_vec()),
+        (Route::Chat | Route::Responses, Chunk::Bytes(_)) => Err(EncodeError::BytesNotJson {
+            route: route.path(),
         }),
-        Chunk::Text(text) => Ok(frame_event(None, &json(text)?)),
-        Chunk::Json(object) => Ok(frame_event(None, &json(object)?)),
-    }
-}
-
-fn encode_responses(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    match chunk {
-        Chunk::Bytes(_) => Err(EncodeError::BytesNotJson {
-            route: Route::Responses.path(),
-        }),
-        Chunk::Text(text) => Ok(frame_event(Some("message"), &json(text)?)),
-        Chunk::Json(event) => event_frame(event),
+        (Route::Chat, Chunk::Text(text)) => Ok(frame_event(None, &json(text)?)),
+        (Route::Chat, Chunk::Json(object)) => Ok(frame_event(None, &json(object)?)),
+        (Route::Responses, Chunk::Text(text)) => Ok(frame_event(Some("message"), &json(text)?)),
+        (Route::Messages | Route::Responses, Chunk::Json(event)) => event_frame(event),
     }
 }
 

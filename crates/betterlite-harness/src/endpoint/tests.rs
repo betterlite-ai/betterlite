@@ -589,7 +589,7 @@ fn gateway_headers_carry_the_session_metadata() {
 
 #[test]
 fn gateway_headers_escape_non_ascii_metadata_so_the_header_stays_valid() {
-    let metadata = object(r#"{"team":"café ✓"}"#);
+    let metadata = object(r#"{"team":"ü ✓"}"#);
     let outgoing =
         gateway_headers(&HeaderMap::new(), &gateway(), Harness::Codex, &metadata).unwrap();
     assert_eq!(
