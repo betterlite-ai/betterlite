@@ -87,47 +87,71 @@ async fn production_deps(
     })
 }
 
+struct AzureGrantParts {
+    http: Arc<AzureHttp>,
+    clock: Arc<ProductionClock>,
+    exchange: AzureOidcExchange,
+    redactor: Redactor,
+}
+
+fn azure_grant_parts(
+    config: &Config,
+    environment: &BTreeMap<String, String>,
+    http: &ProxiedClient,
+    runtime: &Handle,
+) -> Result<AzureGrantParts, CloudRedisAuthSetupError> {
+    let owned_http = Arc::new(AzureHttp {
+        runtime: runtime.clone(),
+        client: http.clone(),
+    });
+    let clock = Arc::new(ProductionClock);
+    let exchange = oidc_exchange(config, environment, &owned_http, &clock)?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+        .map_err(|source| CloudRedisAuthSetupError::Redactor { source })?;
+    Ok(AzureGrantParts {
+        http: owned_http,
+        clock,
+        exchange,
+        redactor,
+    })
+}
+
 fn azure_grants(
     config: &Config,
     environment: &BTreeMap<String, String>,
     http: &ProxiedClient,
     runtime: &Handle,
 ) -> Result<Arc<dyn AzureGrants>, CloudRedisAuthSetupError> {
-    let azure_http = Arc::new(AzureHttp {
-        runtime: runtime.clone(),
-        client: http.clone(),
-    });
-    let clock = Arc::new(ProductionClock);
-    let exchange = oidc_exchange(config, environment, &azure_http, &clock)?;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|source| CloudRedisAuthSetupError::Redactor { source })?;
-    let transport: Arc<dyn ClientSecretTransport> = Arc::clone(&azure_http);
-    let client_clock: Arc<dyn TokenClock> = Arc::clone(&clock);
+    let parts = azure_grant_parts(config, environment, http, runtime)?;
+    let transport: Arc<dyn ClientSecretTransport> = Arc::clone(&parts.http);
+    let client_clock: Arc<dyn TokenClock> = Arc::clone(&parts.clock);
+    let client_secrets = Mutex::new(ProviderCache::new(
+        transport,
+        client_clock,
+        config.sections.azure_client_secret.clone(),
+    ));
+    let managed_environment = ManagedIdentityEnvironment::from_lookup(environment);
+    let chain_environment =
+        ChainEnvironment::from_settings(&config.sections.azure_default_chain, environment);
+    let host = ProductionHost {
+        environment: environment.clone(),
+    };
     Ok(Arc::new(SdkAzureGrants::<AzureHttp> {
-        http: azure_http,
-        clock,
+        http: parts.http,
+        clock: parts.clock,
         files: StdFiles,
         ids: Arc::new(RandomIds),
         token_files: FsTokenFiles,
         scheduler: ThreadScheduler {
             runtime: runtime.clone(),
         },
-        host: ProductionHost {
-            environment: environment.clone(),
-        },
-        redactor,
-        environment: ManagedIdentityEnvironment::from_lookup(environment),
-        chain_environment: ChainEnvironment::from_settings(
-            &config.sections.azure_default_chain,
-            environment,
-        ),
-        exchange,
+        host,
+        redactor: parts.redactor,
+        environment: managed_environment,
+        chain_environment,
+        exchange: parts.exchange,
         authority_host: environment.get("AZURE_AUTHORITY_HOST").cloned(),
-        client_secrets: Mutex::new(ProviderCache::new(
-            transport,
-            client_clock,
-            config.sections.azure_client_secret.clone(),
-        )),
+        client_secrets,
     }))
 }
 

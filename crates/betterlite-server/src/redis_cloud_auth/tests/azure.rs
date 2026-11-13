@@ -225,6 +225,9 @@ fn azure_a_blank_tenant_uses_the_organizations_tenant() {
     let grant = Grants::username_password(&grants, &record).unwrap();
     match grant {
         NativeGrant::UsernamePassword(password) => assert_eq!(password.tenant, "organizations"),
-        _ => panic!("expected a username and password grant"),
+        NativeGrant::ClientSecret(_)
+        | NativeGrant::Certificate(_)
+        | NativeGrant::Workload(_)
+        | NativeGrant::ManagedIdentity(_) => panic!("expected a username and password grant"),
     }
 }

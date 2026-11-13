@@ -262,10 +262,10 @@ impl HostedTransport for AzureHttp {
             body: form_body(&request.form),
             deadline: METADATA_TIMEOUT,
         })?;
-        if response.status != 200 {
+        let status = response.status;
+        if status != 200 {
             return Err(io::Error::other(format!(
-                "the managed identity endpoint returned HTTP status {}",
-                response.status
+                "the managed identity endpoint returned HTTP status {status}"
             )));
         }
         let content_type = response
@@ -273,7 +273,7 @@ impl HostedTransport for AzureHttp {
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned);
-        let (_status, body) = text_reply(response.status, response.body)?;
+        let (_status, body) = text_reply(status, response.body)?;
         Ok(HostedResponse { content_type, body })
     }
 }

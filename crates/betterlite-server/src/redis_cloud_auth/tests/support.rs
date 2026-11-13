@@ -137,14 +137,14 @@ pub struct RecordingGrants {
 }
 
 impl RecordingGrants {
-    pub fn new(token: &'static str) -> Self {
+    pub const fn new(token: &'static str) -> Self {
         Self {
             token: Some(token),
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub fn refusing() -> Self {
+    pub const fn refusing() -> Self {
         Self {
             token: None,
             calls: Mutex::new(Vec::new()),
