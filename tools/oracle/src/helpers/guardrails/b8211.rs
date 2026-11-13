@@ -57,8 +57,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let output = execute(input)?;
-        serde_json::to_value(output)
-            .map_err(|error| fail("SerializationError", error.to_string()))
+        serde_json::to_value(output).map_err(|error| fail("SerializationError", error.to_string()))
     }
 }
 
@@ -69,9 +68,8 @@ fn execute(input: &Input) -> Result<Output, Box<HelperError>> {
         .enable_all()
         .build()
         .map_err(|error| fail("OSError", error.to_string()))?;
-    let outcome = runtime.block_on(
-        guardrail.apply_guardrail(input.inputs.clone(), input.input_type),
-    );
+    let outcome =
+        runtime.block_on(guardrail.apply_guardrail(input.inputs.clone(), input.input_type));
     let calls = mock
         .finish()
         .map_err(|error| fail("MockError", error.to_string()))?;
@@ -131,8 +129,7 @@ fn build_guardrail(
 fn start_mock(answer: &UpstreamAnswer) -> Result<(MockProvider, String), Box<HelperError>> {
     let script = MockScript::try_from(std::slice::from_ref(answer))
         .map_err(|error| fail("MockError", error.to_string()))?;
-    let mock =
-        MockProvider::start(script).map_err(|error| fail("MockError", error.to_string()))?;
+    let mock = MockProvider::start(script).map_err(|error| fail("MockError", error.to_string()))?;
     let base = mock.base_url.clone();
     Ok((mock, base))
 }
