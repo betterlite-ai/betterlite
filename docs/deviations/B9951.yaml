@@ -9,3 +9,6 @@ deviations:
   - what: "A constructor accepts a model object through the structural Dumpable protocol, which checks for a usable model_dump, where LiteLLM's isinstance(value, BaseModel) checks exclude an object that has model_dump without deriving from pydantic.BaseModel."
     why: "Python duck typing is outside the compatibility policy; a value of the declared type, pydantic's BaseModel included, behaves the same, and the wire output is the model's model_dump."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1679-L1683
+  - what: "EmbeddingResponse.data holds a betterlite Embedding object as the caller passed it, and stores any other model that is not a betterlite response object as its model_dump, where LiteLLM keeps every object and dict exactly as given."
+    why: "The field's declared type is the response type union, and a model from another SDK is not one; dumping it keeps the serialized list LiteLLM produces, so only the Python object a caller reads back differs."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2330-L2344
