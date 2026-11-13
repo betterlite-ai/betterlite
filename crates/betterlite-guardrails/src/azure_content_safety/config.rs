@@ -1,7 +1,7 @@
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use super::api_version::DEFAULT_API_VERSION;
+use super::api_version::resolve_api_version;
 
 #[derive(Deserialize)]
 struct RawConfig {
@@ -23,13 +23,13 @@ impl From<RawConfig> for AzureContentSafetyConfigModel {
         Self {
             api_key: raw.api_key,
             api_base: raw.api_base,
-            api_version: raw.api_version.unwrap_or_else(default_api_version),
+            api_version: resolve_api_version(raw.api_version.as_deref()).to_owned(),
         }
     }
 }
 
 fn default_api_version() -> String {
-    DEFAULT_API_VERSION.to_owned()
+    resolve_api_version(None).to_owned()
 }
 
 impl Default for AzureContentSafetyConfigModel {

@@ -26,6 +26,12 @@ fn the_config_model_maps_an_explicit_null_to_the_default_version() {
 }
 
 #[test]
+fn the_config_model_upgrades_the_legacy_javelin_version() {
+    let model = config(r#"{"api_version":"v1"}"#);
+    assert_eq!(model.api_version, DEFAULT_API_VERSION);
+}
+
+#[test]
 fn the_config_model_keeps_an_explicitly_empty_api_version() {
     let model = config(r#"{"api_version":""}"#);
     assert_eq!(model.api_version, "");

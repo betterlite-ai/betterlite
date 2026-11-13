@@ -4,7 +4,8 @@ use reqwest::StatusCode;
 use serde::Serialize;
 
 use super::support::{base, mock, mock_body, mock_slow};
-use crate::azure_content_safety::api_version::{DEFAULT_API_VERSION, resolve_api_version};
+use crate::azure_content_safety::api_version::DEFAULT_API_VERSION;
+use crate::azure_content_safety::config::AzureContentSafetyConfigModel;
 use crate::azure_content_safety::error::AzureContentSafetyError;
 use crate::azure_content_safety::legacy_wire::AnalyzeTextResponse;
 
@@ -52,7 +53,9 @@ async fn sends_a_configured_api_version_in_the_url() {
 #[tokio::test]
 async fn resolves_the_javelin_version_to_the_modern_default_before_the_post() {
     let server = mock(200, r#"{"categoriesAnalysis":[]}"#).await;
-    let guardrail_base = base(&server.base, resolve_api_version(Some("v1")), None);
+    let model: AzureContentSafetyConfigModel =
+        serde_json::from_str(r#"{"api_version":"v1"}"#).unwrap();
+    let guardrail_base = base(&server.base, &model.api_version, None);
     let body = TextBody { text: "hello" };
     let _response: AnalyzeTextResponse = guardrail_base
         .post_to_content_safety("text:analyze", &body)

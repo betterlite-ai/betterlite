@@ -60,7 +60,11 @@ fn splits_at_the_ten_thousand_character_limit() {
 
 #[test]
 fn counts_characters_not_bytes() {
-    assert_eq!(split_text_by_words("ééé", 2), ["éé", "é"]);
+    // Each character is two UTF-8 bytes, so a byte limit would cut one in half.
+    let text = String::from_utf8(vec![0xC3, 0xA9, 0xC3, 0xA9, 0xC3, 0xA9]).unwrap();
+    let two = String::from_utf8(vec![0xC3, 0xA9, 0xC3, 0xA9]).unwrap();
+    let one = String::from_utf8(vec![0xC3, 0xA9]).unwrap();
+    assert_eq!(split_text_by_words(&text, 2), vec![two, one]);
 }
 
 #[test]
