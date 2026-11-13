@@ -1,0 +1,31 @@
+kind: helper
+name: sambanova-chat-params
+call:
+  b6413:
+    chat_supported:
+      - {model: sambanova/DeepSeek-R1, function_calling: false}
+      - {model: sambanova/Meta-Llama-3.3-70B-Instruct, function_calling: true}
+    chat_params:
+      - model: sambanova/DeepSeek-R1
+        function_calling: false
+        requested: {max_completion_tokens: 20, temperature: 0.2, logprobs: true, seed: 7}
+        existing: {max_tokens: 10}
+      - model: sambanova/Meta-Llama-3.3-70B-Instruct
+        function_calling: true
+        requested: {stop: ["a", "b"], stream: true, stream_options: {include_usage: true}, top_k: 40}
+        existing: {}
+      - model: sambanova/Meta-Llama-3.3-70B-Instruct
+        function_calling: true
+        requested: {tools: [{type: function, function: {name: f}}], tool_choice: auto, parallel_tool_calls: false, seed: 4}
+        existing: {response_format: {type: json_object}}
+      - model: sambanova/DeepSeek-R1
+        function_calling: false
+        requested: {tools: [{type: function, function: {name: f}}], tool_choice: auto}
+        existing: {response_format: {type: json_object}}
+    embedding_urls: []
+    embedding_headers: []
+    embedding_requests: []
+    embedding_replies: []
+    embedding_errors: []
+env: {}
+compare: {ignore: []}

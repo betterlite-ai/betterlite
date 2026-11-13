@@ -1,0 +1,17 @@
+kind: helper
+name: sambanova-wire-chat-seed
+call:
+  b6413:
+    chat_supported: [{model: sambanova/DeepSeek-R1, function_calling: false}]
+    chat_params:
+      - model: sambanova/DeepSeek-R1
+        function_calling: false
+        requested: {max_completion_tokens: 8, top_p: 0.9, logprobs: true}
+        existing: {max_tokens: 4}
+    embedding_urls: []
+    embedding_headers: []
+    embedding_requests: []
+    embedding_replies: []
+    embedding_errors: []
+env: {}
+compare: {ignore: []}
