@@ -1,0 +1,24 @@
+kind: helper
+name: anonymize-action-messages
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - {role: user, content: my name is ada}
+        - {role: user, content: and my email is ada@example.test}
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body:
+        required_action: {action_type: anonymize_action}
+        redacted_chat:
+          all_redacted_messages:
+            - {role: user, content: 'my name is PERSON'}
+            - {role: user, content: 'and my email is EMAIL'}
+env: {}
+compare: {ignore: []}

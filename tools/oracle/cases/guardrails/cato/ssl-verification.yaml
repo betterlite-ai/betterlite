@@ -1,0 +1,9 @@
+kind: helper
+name: ssl-verification
+call:
+  b3754:
+    function: construct
+    settings: {api_key: test-key, ssl_verify: false}
+    environment: {}
+env: {}
+compare: {ignore: []}

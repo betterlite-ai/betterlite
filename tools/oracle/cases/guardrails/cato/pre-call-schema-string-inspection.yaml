@@ -1,0 +1,41 @@
+kind: helper
+name: pre-call-schema-string-inspection
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - {role: user, content: choose a tool}
+      tools:
+        - function:
+            name: lookup
+            description: looks things up
+            parameters:
+              type: object
+              title: parameters title
+              properties:
+                q:
+                  type: string
+                  description: the query text
+                  enum: [tokyo, osaka]
+      functions:
+        - {name: legacy, description: legacy function}
+      response_format:
+        type: json_schema
+        json_schema:
+          schema:
+            title: answer shape
+            properties:
+              answer:
+                const: fixed
+                default: fallback
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body: {required_action: null}
+env: {}
+compare: {ignore: []}

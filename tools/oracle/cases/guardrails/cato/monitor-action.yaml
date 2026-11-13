@@ -1,0 +1,19 @@
+kind: helper
+name: monitor-action
+call:
+  b3754:
+    function: analyze
+    settings: {api_key: test-key}
+    environment: {}
+    data:
+      messages:
+        - {role: user, content: mention the policy}
+    hook: pre_call
+    key_alias: null
+    user_email: null
+    answer:
+      status: 200
+      body:
+        required_action: {action_type: monitor_action}
+env: {}
+compare: {ignore: []}
