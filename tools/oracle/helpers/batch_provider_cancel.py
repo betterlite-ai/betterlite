@@ -31,7 +31,7 @@ class StatusFn(Protocol):
     def __call__(self, batch_id: str, aws_region_name: str) -> LiteLLMBatch: ...
 
 
-CANCEL, ASYNC_STATUS = cast(CancelFn, litellm.acancel_batch), cast(StatusFn, batch_main._handle_async_invoke_status)  # type: ignore[misc, redundant-cast]  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L888 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087
+CANCEL, ASYNC_STATUS = cast(CancelFn, litellm.acancel_batch), cast(StatusFn, batch_main._handle_async_invoke_status)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L888 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087
 
 
 class Settings(TypedDict):
@@ -126,7 +126,6 @@ def cancel(call: CancelCall, settings: Settings | None, env: dict[str, str]) -> 
         litellm.api_key = settings["api_key"]
         litellm.openai_key = settings["openai_key"]
         litellm.azure_key = settings["azure_key"]
-        litellm.organization = settings["organization"]
         litellm.vertex_project = settings["vertex_project"]
         litellm.vertex_location = settings["vertex_location"]
     try:
