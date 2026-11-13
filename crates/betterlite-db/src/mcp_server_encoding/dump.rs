@@ -173,7 +173,8 @@ where
     T: Serialize,
 {
     let text = serde_json::to_string(value).map_err(McpEncodingError::Json)?;
-    serde_json::from_str(&text).map_err(McpEncodingError::Json)
+    let parsed = serde_json::from_str(&text).map_err(McpEncodingError::Json)?;
+    Ok(parsed)
 }
 
 fn env_var_entry(

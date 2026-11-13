@@ -466,21 +466,41 @@ fn encrypt_credentials_encrypts_the_secret_fields_only() {
     );
     let mut credentials = plaintext.clone();
     encrypt_credentials(&mut credentials, &cipher).unwrap();
-    for field in [
-        "auth_value",
-        "client_id",
-        "client_secret",
-        "client_private_key",
-        "aws_access_key_id",
-        "aws_secret_access_key",
-        "aws_session_token",
-    ] {
-        assert_ne!(
-            credentials.get(field),
-            plaintext.get(field),
-            "{field} was left in plaintext"
-        );
-    }
+    assert_ne!(
+        credentials.get("auth_value"),
+        plaintext.get("auth_value"),
+        "auth_value was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("client_id"),
+        plaintext.get("client_id"),
+        "client_id was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("client_secret"),
+        plaintext.get("client_secret"),
+        "client_secret was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("client_private_key"),
+        plaintext.get("client_private_key"),
+        "client_private_key was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("aws_access_key_id"),
+        plaintext.get("aws_access_key_id"),
+        "aws_access_key_id was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("aws_secret_access_key"),
+        plaintext.get("aws_secret_access_key"),
+        "aws_secret_access_key was left in plaintext"
+    );
+    assert_ne!(
+        credentials.get("aws_session_token"),
+        plaintext.get("aws_session_token"),
+        "aws_session_token was left in plaintext"
+    );
     assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
     assert_eq!(credentials.get("access_token"), Some(&s("minted")));
     assert_eq!(credentials.get("scopes"), Some(&json(r#"["read"]"#)));
@@ -578,9 +598,10 @@ fn prepare_create_drops_nulls_and_keeps_explicit_values() {
         prepared.get("max_concurrent_requests"),
         Some(&JsonValue::Number(3.into()))
     );
-    for absent in ["credentials", "mcp_info", "static_headers", "env_vars"] {
-        assert!(!prepared.contains_key(absent), "{absent} was written");
-    }
+    assert!(!prepared.contains_key("credentials"));
+    assert!(!prepared.contains_key("mcp_info"));
+    assert!(!prepared.contains_key("static_headers"));
+    assert!(!prepared.contains_key("env_vars"));
 }
 
 #[test]
@@ -704,14 +725,10 @@ fn prepare_create_drops_null_json_map_fields_and_allowed_tools() {
     let prepared = create(&request(
         r#"{"server_name":"srv","tool_name_to_display_name":null,"tool_name_to_description":null,"mcp_info":null,"allowed_tools":null}"#,
     ));
-    for absent in [
-        "tool_name_to_display_name",
-        "tool_name_to_description",
-        "mcp_info",
-        "allowed_tools",
-    ] {
-        assert!(!prepared.contains_key(absent), "{absent} was written");
-    }
+    assert!(!prepared.contains_key("tool_name_to_display_name"));
+    assert!(!prepared.contains_key("tool_name_to_description"));
+    assert!(!prepared.contains_key("mcp_info"));
+    assert!(!prepared.contains_key("allowed_tools"));
 }
 
 #[test]

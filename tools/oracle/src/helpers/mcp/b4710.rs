@@ -110,10 +110,6 @@ fn helper_error(class: &str, message: &str) -> Box<HelperError> {
     })
 }
 
-fn encoding_error(error: McpEncodingError) -> Box<HelperError> {
-    helper_error("McpEncodingError", &error.to_string())
-}
-
 fn output(value: JsonValue) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(value)
         .map_err(|source| helper_error("SerializationError", &source.to_string()))
@@ -188,8 +184,9 @@ fn prepare_create(salt: &str, request: &McpServerRequest) -> Result<Value, Box<H
         PrepareMode::Create,
         &encrypt_cipher(salt, DEFAULT_NONCE),
     )
-    .map_err(encoding_error)?;
-    let view = plaintext_view(prepared, &decrypt_cipher(salt)).map_err(encoding_error)?;
+    .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
+    let view = plaintext_view(prepared, &decrypt_cipher(salt))
+        .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
     output(view)
 }
 
@@ -209,8 +206,9 @@ fn prepare_update(
         },
         &encrypt_cipher(salt, DEFAULT_NONCE),
     )
-    .map_err(encoding_error)?;
-    let view = plaintext_view(prepared, &decrypt_cipher(salt)).map_err(encoding_error)?;
+    .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
+    let view = plaintext_view(prepared, &decrypt_cipher(salt))
+        .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
     output(view)
 }
 
@@ -221,7 +219,8 @@ fn encrypt_step(
 ) -> Result<Value, Box<HelperError>> {
     let mut encrypted = credentials.clone();
     let nonce = fixed_nonce(nonce_hex)?;
-    encrypt_credentials(&mut encrypted, &encrypt_cipher(salt, nonce)).map_err(encoding_error)?;
+    encrypt_credentials(&mut encrypted, &encrypt_cipher(salt, nonce))
+        .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
     output(JsonValue::Object(encrypted))
 }
 
