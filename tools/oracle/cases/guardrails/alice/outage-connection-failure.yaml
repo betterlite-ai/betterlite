@@ -1,0 +1,14 @@
+kind: helper
+name: outage-connection-failure
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: ["hello"]
+    request_data: {}
+    input_type: request
+    answer: null
+    failure: connect
+env: {}
+compare: {ignore: []}

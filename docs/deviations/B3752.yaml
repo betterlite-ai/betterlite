@@ -1,0 +1,17 @@
+task: B3752
+deviations:
+  - what: When Alice is unreachable with fail_closed policy, betterlite raises GuardrailRaisedException with status_code 400 (invalid_request_error), not 503 (service_unavailable).
+    why: GuardrailRaisedException defaults to status_code=400 when not passed explicitly. The _on_unreachable method in alice.py:304-316 does not pass status_code, so the default applies. This matches BLOCK and MASK verdicts which also take the default 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1090-L1110
+  - what: Alice error messages use betterlite's own wording in outage scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L304-L317
+  - what: MASK verdict that cannot be applied in full is refused outright rather than partially applied.
+    why: LiteLLM's behavior; a single out-of-range or malformed replacement blocks the whole verdict so content Alice meant to replace never reaches the model unmasked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L267-L292
+  - what: The model_dump branch of the bounded serializer is not ported; betterlite's request_data is typed JSON, so the serializer only ever receives JSON values.
+    why: LiteLLM's _json_safe walks live Python objects and calls model_dump(mode="json") on pydantic models, returning null when that raises. betterlite's request body is BTreeMap<String, GuardrailValue>, which cannot hold a Python object or a non-JSON value, so the credential stripping, depth and size rules are the whole observable surface; bytes, datetime and OpenTelemetry spans cannot reach this serializer. A Python object that a future caller injects would need its own serialization before it enters request_data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L327-L373
+  - what: binds_unreachable_fallback answers from the constructor's parameter-name list passed in as data, instead of calling inspect.signature on a live class.
+    why: betterlite has no conduct-litellm-guard package to introspect; B9451's Conduct builder always answers with the missing-package error, so the helper's input is the parameter names inspect.signature would have returned, and the membership rule stays LiteLLM's, **kwargs included in neither branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L90-L92

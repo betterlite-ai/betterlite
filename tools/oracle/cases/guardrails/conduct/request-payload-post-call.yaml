@@ -1,0 +1,11 @@
+kind: helper
+name: request-payload-post-call
+call:
+  b3752:
+    function: conduct_request_payload
+    texts: ["hello"]
+    structured_message_text: null
+    request_data: {"model": "gpt-4o"}
+    input_type: response
+env: {}
+compare: {ignore: []}

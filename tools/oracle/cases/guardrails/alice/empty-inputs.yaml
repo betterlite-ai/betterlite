@@ -1,0 +1,14 @@
+kind: helper
+name: empty-inputs
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: null
+    request_data: {}
+    input_type: request
+    answer: {status: 200, body: {verdict: ALLOW}, raw: null}
+    failure: null
+env: {}
+compare: {ignore: []}

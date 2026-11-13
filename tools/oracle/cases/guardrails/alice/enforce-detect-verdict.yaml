@@ -1,0 +1,14 @@
+kind: helper
+name: enforce-detect-verdict
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: ["watch me"]
+    request_data: {}
+    input_type: request
+    answer: {status: 200, body: {verdict: DETECT, correlation_id: "c-1", categories: [cat-a]}, raw: null}
+    failure: null
+env: {}
+compare: {ignore: []}
