@@ -342,6 +342,19 @@ fn leading_zero_markers_name_the_same_citation() {
 }
 
 #[test]
+fn markers_in_non_ascii_digits_are_not_citations() {
+    let raw = json!({"citations": ["https://a.example"]});
+    let enhanced = enhanced_reply(
+        r#"{"choices":[{"message":{"role":"assistant","content":"[١]"}}]}"#,
+        &raw.to_string(),
+    );
+    assert_eq!(
+        enhanced["choices"][0]["message"]["annotations"],
+        Value::Null
+    );
+}
+
+#[test]
 fn markers_past_the_citation_list_are_ignored() {
     let raw = json!({"citations": ["https://a.example"]});
     let enhanced = enhanced_reply(
