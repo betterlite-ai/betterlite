@@ -1,0 +1,25 @@
+kind: helper
+name: redis-fallback-memory
+call:
+  batch_enqueued_reserve:
+    tokens: 500
+    principal:
+      api_key: sk-oracle-key
+      team_id: team-oracle
+      metadata:
+        batch_enqueued_token_limit: 1000
+      team_metadata:
+        batch_enqueued_token_limit: 2000
+    redis:
+      reserve:
+        - redis unavailable
+      refund: []
+    memory:
+      seed:
+        'batch_enqueued_tokens:api_key:sk-oracle-key': 300
+        'batch_enqueued_tokens:team:team-oracle': 100
+      read:
+        - 'batch_enqueued_tokens:api_key:sk-oracle-key'
+        - 'batch_enqueued_tokens:team:team-oracle'
+env: {}
+compare: {ignore: []}

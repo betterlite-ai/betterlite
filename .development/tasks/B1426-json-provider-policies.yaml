@@ -97,7 +97,7 @@ checks:
       run: test -f tools/oracle/helpers/json_chat_policy.py && test -f tools/oracle/helpers/json_native_api_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Generated source classes must run with isolated cache state and actual parent methods.
     - id: json-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_chat_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_native_api_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::json_chat_policy::/) | test(/^helpers::core_ops::json_native_api_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_chat_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_native_api_policy*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^json_chat_policy::/) | test(/^json_native_api_policy::/)'
       why: Each seed group must contain its own externally tagged helper operation.
 oracle_cases:
   - tools/oracle/cases/helpers/json-chat-policy/remap-before-capabilities.yaml

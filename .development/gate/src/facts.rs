@@ -12,6 +12,7 @@ pub(crate) struct Facts {
     pub(crate) untracked: Vec<String>,
     pub(crate) numstat: Vec<NumStat>,
     pub(crate) added_rust_lines: Vec<String>,
+    pub(crate) added_python_lines: Vec<String>,
 }
 
 pub(crate) struct Tree {
@@ -65,23 +66,25 @@ impl Facts {
                 Some(NumStat { lines, path })
             })
             .collect();
-        let added_rust_lines = added_rust_lines(root, &base, &untracked)?;
         Ok(Self {
+            added_rust_lines: added_lines(root, &base, &untracked, "rs")?,
+            added_python_lines: added_lines(root, &base, &untracked, "py")?,
             base,
             tree,
             changed,
             untracked,
             numstat,
-            added_rust_lines,
         })
     }
 }
 
-fn added_rust_lines(
+fn added_lines(
     root: &Path,
     base: &str,
     untracked: &[String],
+    extension: &str,
 ) -> Result<Vec<String>, GateError> {
+    let pathspec = format!("*.{extension}");
     let patch = git(
         root,
         &[
@@ -91,7 +94,7 @@ fn added_rust_lines(
             "--no-renames",
             base,
             "--",
-            "*.rs",
+            &pathspec,
         ],
     )?;
     let mut lines: Vec<String> = patch
@@ -103,7 +106,7 @@ fn added_rust_lines(
     for path in untracked.iter().filter(|path| {
         Path::new(path)
             .extension()
-            .is_some_and(|extension| extension == "rs")
+            .is_some_and(|found| found == extension)
     }) {
         let file = root.join(path);
         let text =

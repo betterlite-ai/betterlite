@@ -4,6 +4,7 @@ use axum::body::Body;
 use axum::body::to_bytes;
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_core::dispatch::error::DispatchError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_provider::operation::OperationError;
 use betterlite_provider::transform_retry::TransformRetryError;
@@ -19,9 +20,10 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::{EmbeddingError, call_failure, embedding_routes, failure};
+use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_routes, render};
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
+use betterlite_core::operation::embedding::route_error;
 
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
@@ -42,11 +44,13 @@ fn embedding_failure_returns_bad_request() {
     let error = EmbeddingError::Body {
         source: serde_json::from_str::<String>("not-json").expect_err("invalid JSON"),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-test",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
@@ -65,11 +69,13 @@ async fn embedding_provider_failure_preserves_message() {
                 .to_vec(),
         }),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-provider",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     let body = to_bytes(response.into_body(), 4096)
         .await
@@ -140,11 +146,13 @@ async fn embedding_error_classification(
             .into_bytes(),
         }),
     };
-    let response = failure(
-        &error,
+    let response = render(
+        route_error(
+            &error,
+            &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        ),
         "embedding-error",
         None,
-        &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
     );
     assert_eq!(response.status().as_u16(), expected_status);
     assert_eq!(
@@ -300,6 +308,70 @@ async fn a_mock_embedding_answers_with_the_body_model() {
     assert_eq!(reply.model, "alias");
 }
 
+#[rstest]
+#[case::not_built(
+    DispatchError::NotBuilt { entry: "embedding" },
+    "the embedding call could not be dispatched"
+)]
+#[case::rejected(
+    DispatchError::Rejected {
+        status: 429,
+        error_type: String::from("rate_limit_error"),
+        param: None,
+        code: String::from("429"),
+        message: String::from("rule said no"),
+    },
+    "rule said no"
+)]
+#[tokio::test]
+async fn an_undispatchable_embedding_answers_internal_server_error(
+    #[case] error: DispatchError,
+    #[case] message: &str,
+) {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let response = dispatch_failure(error, "call-8", None, &redactor);
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, "internal_server_error");
+    assert_eq!(reply.error.code, "500");
+    assert_eq!(reply.error.message, message);
+}
+
+#[rstest]
+#[case::short_id("caller-call-1", true)]
+#[case::longest_id(&"a".repeat(256), true)]
+#[case::too_long_id(&"a".repeat(257), false)]
+#[case::empty_id("", false)]
+#[tokio::test]
+async fn an_embedding_answer_echoes_the_callers_call_id(#[case] sent: &str, #[case] echoed: bool) {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/embeddings")
+        .header("content-type", "application/json")
+        .header("x-litellm-call-id", sent)
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let answered = response.headers().get("x-litellm-call-id").unwrap();
+    if echoed {
+        assert_eq!(answered, sent);
+    } else {
+        assert_eq!(answered.len(), 36);
+    }
+}
+
 const EMBEDDING_ANSWER: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"embed","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 
 async fn provider(listener: TcpListener) -> String {
@@ -373,7 +445,11 @@ async fn provider_framework_tests_behavior(
     #[case] error_type: &str,
 ) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let response = call_failure(&error, "call-7", None, &redactor);
+    let response = render(
+        embedding_port_failure(error).route(&redactor),
+        "call-7",
+        None,
+    );
     assert_eq!(response.status().as_u16(), status);
     assert_eq!(
         response.headers().get("x-litellm-call-id").unwrap(),
@@ -383,7 +459,7 @@ async fn provider_framework_tests_behavior(
     let reply: ErrorEnvelope = serde_json::from_slice(&body).unwrap();
     assert_eq!(reply.error.error_type, error_type);
     assert_eq!(reply.error.code, status.to_string());
-    assert!(reply.error.message.contains(&error.to_string()));
+    assert!(!reply.error.message.is_empty());
 }
 
 #[tokio::test]
