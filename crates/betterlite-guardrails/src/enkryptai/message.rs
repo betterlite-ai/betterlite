@@ -65,37 +65,33 @@ fn describe_detector(
     processed: &Processed,
     response: &DetectionResponse,
 ) -> Result<String, serde_json::Error> {
-    match attack {
-        "keyword_detected" => {
-            let keywords = response
-                .details
-                .keyword_detected
-                .as_ref()
-                .and_then(|value| value.detected_keywords.clone())
-                .unwrap_or_default();
-            Ok(format!(
-                "detected keywords: {}",
-                serde_json::to_string(&keywords)?
-            ))
-        }
-        "bias" => {
-            let detected = response
-                .details
-                .bias
-                .as_ref()
-                .and_then(|value| value.bias_detected)
-                .unwrap_or(false);
-            Ok(format!("bias detected: {detected}"))
-        }
-        other => {
-            let detail = processed
-                .details
-                .get(other)
-                .cloned()
-                .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new()));
-            Ok(format!("details: {}", serde_json::to_string(&detail)?))
-        }
+    if attack == "keyword_detected" {
+        let keywords = response
+            .details
+            .keyword_detected
+            .as_ref()
+            .and_then(|value| value.detected_keywords.clone())
+            .unwrap_or_default();
+        return Ok(format!(
+            "detected keywords: {}",
+            serde_json::to_string(&keywords)?
+        ));
     }
+    if attack == "bias" {
+        let detected = response
+            .details
+            .bias
+            .as_ref()
+            .and_then(|value| value.bias_detected)
+            .unwrap_or(false);
+        return Ok(format!("bias detected: {detected}"));
+    }
+    let detail = processed
+        .details
+        .get(attack)
+        .cloned()
+        .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new()));
+    Ok(format!("details: {}", serde_json::to_string(&detail)?))
 }
 
 fn toxicity_names(detail: Option<&ToxicityDetail>) -> Vec<&'static str> {

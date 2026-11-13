@@ -22,17 +22,18 @@ impl Entry {
             &format!("{prefix}.api_key"),
             lookup,
         )?);
-        let api_base = optional_value(
+        let api_base = resolve_value(
             parameters.api_base,
             API_BASE_VARIABLE,
             &format!("{prefix}.api_base"),
             lookup,
-        )?;
-        let policy_name = optional_name(
-            parameters.policy_name,
-            &format!("{prefix}.policy_name"),
-            lookup,
-        )?;
+        )?
+        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        let policy_name = parameters
+            .policy_name
+            .map(|value| resolve_string(value, &format!("{prefix}.policy_name"), lookup))
+            .transpose()?
+            .filter(|value| !value.is_empty());
         let timeout =
             super::timeout::resolve(parameters.timeout, &format!("{prefix}.timeout"), lookup)?;
         Ok(Configured {
@@ -58,48 +59,30 @@ fn required_value<L>(
 where
     L: EnvironmentLookup,
 {
-    let missing = || ConfigError::MissingEnvironment {
-        variable: variable.to_owned(),
-        path: path.to_owned(),
-    };
-    let candidate = configured
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable))
-        .ok_or_else(missing)?;
-    let resolved = resolve_string(candidate, path, lookup)?;
-    if resolved.is_empty() {
-        return Err(missing());
+    match resolve_value(configured, variable, path, lookup)? {
+        Some(value) => Ok(value),
+        None => Err(ConfigError::MissingEnvironment {
+            variable: variable.to_owned(),
+            path: path.to_owned(),
+        }),
     }
-    Ok(resolved)
 }
 
-fn optional_value<L>(
+fn resolve_value<L>(
     configured: Option<String>,
     variable: &str,
-    path: &str,
-    lookup: &L,
-) -> Result<String, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = configured
-        .map(|value| resolve_string(value, path, lookup))
-        .transpose()?
-        .filter(|value| !value.is_empty())
-        .or_else(|| lookup.lookup(variable).filter(|value| !value.is_empty()));
-    Ok(resolved.unwrap_or_else(|| DEFAULT_API_BASE.to_owned()))
-}
-
-fn optional_name<L>(
-    configured: Option<String>,
     path: &str,
     lookup: &L,
 ) -> Result<Option<String>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let resolved = configured
-        .map(|value| resolve_string(value, path, lookup))
-        .transpose()?;
-    Ok(resolved.filter(|value| !value.is_empty()))
+    let candidate = configured
+        .filter(|value| !value.is_empty())
+        .or_else(|| lookup.lookup(variable));
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
+    let resolved = resolve_string(candidate, path, lookup)?;
+    Ok((!resolved.is_empty()).then_some(resolved))
 }

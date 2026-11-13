@@ -101,17 +101,18 @@ impl EnkryptAiGuardrail {
         inputs: GuardrailApiInputs,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         mut logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> Result<GuardrailApiInputs, EnkryptAiError> {
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         for text in inputs.texts.clone().unwrap_or_default() {
             let detection = self
                 .detect(&text, request_data, logging_obj.as_deref_mut())
-                .await?;
+                .await
+                .map_err(|error| self.failure(error))?;
             if detection.processed.attacks.is_empty() {
                 continue;
             }
             let message = message::detected(&detection.processed, &detection.response)
-                .map_err(|source| EnkryptAiError::Serialize { source })?;
-            return Err(EnkryptAiError::Detected { message });
+                .map_err(|source| self.failure(EnkryptAiError::Serialize { source }))?;
+            return Err(self.failure(EnkryptAiError::Detected { message }));
         }
         Ok(inputs)
     }
@@ -124,14 +125,21 @@ impl EnkryptAiGuardrail {
     ) -> Result<Detection, EnkryptAiError> {
         let started = (self.clock)();
         let outcome = transport::send(self, text).await;
+        let response = match outcome {
+            Ok(response) => response,
+            Err(error) => Response {
+                raw: GuardrailValue::Object(BTreeMap::from([(
+                    "error".to_owned(),
+                    GuardrailValue::Text(error.to_string()),
+                )])),
+                parsed: Parsed::Malformed(error),
+            },
+        };
         let timing = Timing {
             started,
             finished: (self.clock)(),
         };
-        match outcome {
-            Ok(response) => self.finish_response(response, request_data, log_target, timing),
-            Err(error) => self.record_failure(request_data, log_target, error, timing),
-        }
+        self.finish_response(response, request_data, log_target, timing)
     }
 
     fn finish_response(
@@ -165,28 +173,6 @@ impl EnkryptAiGuardrail {
             timing,
         })?;
         outcome
-    }
-
-    fn record_failure(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        log_target: Option<&mut GuardrailLogTarget>,
-        error: EnkryptAiError,
-        timing: Timing,
-    ) -> Result<Detection, EnkryptAiError> {
-        let raw = GuardrailValue::Object(BTreeMap::from([(
-            "error".to_owned(),
-            GuardrailValue::Text(error.to_string()),
-        )]));
-        logging::record(RecordRequest {
-            guardrail: self,
-            request_data,
-            log_target,
-            response: raw,
-            status: GuardrailStatus::GuardrailFailedToRespond,
-            timing,
-        })?;
-        Err(error)
     }
 
     fn failure(&self, error: EnkryptAiError) -> GuardrailFailure {
@@ -224,11 +210,7 @@ impl GuardrailContract for EnkryptAiGuardrail {
         _input_type: GuardrailInputType,
         logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        async move {
-            self.apply(inputs, request_data, logging_obj)
-                .await
-                .map_err(|error| self.failure(error))
-        }
+        self.apply(inputs, request_data, logging_obj)
     }
 }
 

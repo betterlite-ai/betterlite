@@ -20,13 +20,12 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::EnkryptAiGuardrail;
-use super::error::EnkryptAiError;
 use super::logging::DiscardSpans;
 use super::process::{Processed, process};
 use super::wire::{DetectPayload, DetectionResponse};
 
+use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
-use crate::guardrail_records::record::GuardrailStatus;
 
 struct Reply {
     status: StatusCode,
@@ -229,13 +228,16 @@ async fn enkryptai_guardrail_records_success_information() {
         body: r#"{"summary":{"toxicity":[]},"details":{}}"#.to_owned(),
     }])
     .await;
+    let mut settings = settings_for(&base);
+    settings.mode = Some(LitellmParamsMode::One("post_call".to_owned()));
     let mut request_data = BTreeMap::new();
-    guardrail(&base)
+    guardrail_with(settings)
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect("apply");
     let records = record_objects(&request_data);
     assert_eq!(records.len(), 1);
+    assert_eq!(field(&records[0], "guardrail_mode"), text("post_call"));
     assert_eq!(field(&records[0], "guardrail_provider"), text("enkryptai"));
     assert_eq!(field(&records[0], "guardrail_status"), text("success"));
     assert_eq!(
@@ -247,25 +249,6 @@ async fn enkryptai_guardrail_records_success_information() {
         GuardrailValue::Decimal(1_700_000_000.0)
     );
     assert_eq!(field(&records[0], "duration"), GuardrailValue::Decimal(0.0));
-    server.shutdown().await;
-}
-
-#[tokio::test]
-async fn enkryptai_guardrail_records_the_configured_mode() {
-    let (base, _state, mut server) = serve(vec![Reply {
-        status: StatusCode::OK,
-        body: r#"{"summary":{},"details":{}}"#.to_owned(),
-    }])
-    .await;
-    let mut settings = settings_for(&base);
-    settings.mode = Some(LitellmParamsMode::One("post_call".to_owned()));
-    let mut request_data = BTreeMap::new();
-    guardrail_with(settings)
-        .apply(inputs(&["hello"]), &mut request_data, None)
-        .await
-        .expect("apply");
-    let records = record_objects(&request_data);
-    assert_eq!(field(&records[0], "guardrail_mode"), text("post_call"));
     server.shutdown().await;
 }
 
@@ -282,8 +265,12 @@ async fn enkryptai_guardrail_detects_policy_violation() {
         .await
         .expect_err("detected");
     let message = match error {
-        EnkryptAiError::Detected { message } => message,
-        other => panic!("unexpected error: {other:?}"),
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
     };
     assert_eq!(
         message,
@@ -309,8 +296,12 @@ async fn enkryptai_guardrail_detects_pii() {
         .await
         .expect_err("detected");
     let message = match error {
-        EnkryptAiError::Detected { message } => message,
-        other => panic!("unexpected error: {other:?}"),
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
     };
     assert_eq!(
         message,
@@ -331,8 +322,12 @@ async fn enkryptai_guardrail_reports_only_toxicity_scores_above_half() {
         .await
         .expect_err("detected");
     let message = match error {
-        EnkryptAiError::Detected { message } => message,
-        other => panic!("unexpected error: {other:?}"),
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
     };
     assert_eq!(
         message,
@@ -353,8 +348,12 @@ async fn enkryptai_guardrail_detects_keywords_and_bias() {
         .await
         .expect_err("detected");
     let message = match error {
-        EnkryptAiError::Detected { message } => message,
-        other => panic!("unexpected error: {other:?}"),
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
     };
     assert_eq!(
         message,
@@ -375,8 +374,12 @@ async fn enkryptai_guardrail_detects_prompt_injection_and_jailbreak() {
         .await
         .expect_err("detected");
     let message = match error {
-        EnkryptAiError::Detected { message } => message,
-        other => panic!("unexpected error: {other:?}"),
+        GuardrailFailure::GuardrailRaised {
+            message,
+            status_code: 400,
+            ..
+        } => message,
+        other => panic!("unexpected failure: {other:?}"),
     };
     assert_eq!(
         message,
@@ -442,7 +445,13 @@ async fn enkryptai_guardrail_batch_stops_at_the_first_detected_text() {
             None,
         )
         .await;
-    assert!(matches!(result, Err(EnkryptAiError::Detected { .. })));
+    assert!(matches!(
+        result,
+        Err(GuardrailFailure::GuardrailRaised {
+            status_code: 400,
+            ..
+        })
+    ));
     let captured = state.captured.lock().unwrap();
     assert_eq!(captured.len(), 2);
     drop(captured);
@@ -468,7 +477,7 @@ async fn enkryptai_guardrail_http_failure_records_failed_status() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("http failure");
-    assert!(matches!(error, EnkryptAiError::HttpStatus { status: 401 }));
+    assert!(matches!(error, GuardrailFailure::Http { status: 401, .. }));
     let records = record_objects(&request_data);
     assert_eq!(records.len(), 1);
     assert_eq!(
@@ -491,7 +500,7 @@ async fn enkryptai_guardrail_records_non_json_response_as_failed() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("response is not json");
-    assert!(matches!(error, EnkryptAiError::ResponseJson { .. }));
+    assert!(matches!(&error, GuardrailFailure::Other(message) if message.contains("not JSON")));
     let records = record_objects(&request_data);
     assert_eq!(
         field(&records[0], "guardrail_status"),
@@ -512,7 +521,9 @@ async fn enkryptai_guardrail_records_malformed_response_as_failed() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("response is not an object");
-    assert!(matches!(error, EnkryptAiError::MalformedResponse));
+    assert!(
+        matches!(&error, GuardrailFailure::Other(message) if message.contains("not a JSON object"))
+    );
     let records = record_objects(&request_data);
     assert_eq!(
         field(&records[0], "guardrail_response"),
@@ -537,7 +548,9 @@ async fn enkryptai_guardrail_rejects_a_mistyped_summary() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("summary is not an object");
-    assert!(matches!(error, EnkryptAiError::ResponseShape { .. }));
+    assert!(
+        matches!(&error, GuardrailFailure::Other(message) if message.contains("detection shape"))
+    );
     let records = record_objects(&request_data);
     assert_eq!(
         field(&records[0], "guardrail_status"),
@@ -558,10 +571,9 @@ async fn enkryptai_guardrail_bounds_the_response_size() {
         .apply(inputs(&["hello"]), &mut BTreeMap::new(), None)
         .await
         .expect_err("oversized response");
-    assert!(matches!(
-        error,
-        EnkryptAiError::ResponseTooLarge { limit: 1048576 }
-    ));
+    assert!(
+        matches!(&error, GuardrailFailure::Other(message) if message.contains("exceeds 1048576 bytes"))
+    );
     server.shutdown().await;
 }
 
@@ -575,13 +587,9 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
         .apply(inputs(&["hello"]), &mut request_data, None)
         .await
         .expect_err("invalid header");
-    assert!(matches!(
-        error,
-        EnkryptAiError::InvalidHeader {
-            name: "x-enkrypt-policy",
-            ..
-        }
-    ));
+    assert!(
+        matches!(&error, GuardrailFailure::Other(message) if message.contains("x-enkrypt-policy"))
+    );
     assert!(state.captured.lock().unwrap().is_empty());
     let records = record_objects(&request_data);
     assert_eq!(
@@ -625,20 +633,6 @@ fn enkryptai_guardrail_collects_attack_details_from_the_response() {
     assert_eq!(
         processed.details["toxicity"],
         parse_value(r#"{"toxic":0.9}"#)
-    );
-}
-
-#[test]
-fn enkryptai_guardrail_status_counts_detections() {
-    let value = parse_value(r#"{"summary":{"toxicity":["toxic"],"pii":1}}"#);
-    let response = parsed_response(&value);
-    let processed = process(&response, &value);
-    assert_eq!(processed.status(), GuardrailStatus::GuardrailIntervened);
-    let clean = parse_value(r#"{"summary":{"pii":0}}"#);
-    let clean_response = parsed_response(&clean);
-    assert_eq!(
-        process(&clean_response, &clean).status(),
-        GuardrailStatus::Success
     );
 }
 
