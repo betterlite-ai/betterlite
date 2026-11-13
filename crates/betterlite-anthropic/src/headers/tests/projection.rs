@@ -78,6 +78,29 @@ pub(super) fn response_header_prefixes_case() {
     assert!(!projected.contains_key("x-ratelimit-remaining-tokens"));
 
     assert!(process_anthropic_headers(&HeaderMap::new()).is_empty());
+
+    let mut repeated = HeaderMap::new();
+    repeated.append("x-repeated", HeaderValue::from_static("one"));
+    repeated.append("x-repeated", HeaderValue::from_static("two"));
+    repeated.append(
+        "anthropic-ratelimit-requests-limit",
+        HeaderValue::from_static("5"),
+    );
+    repeated.append(
+        "anthropic-ratelimit-requests-limit",
+        HeaderValue::from_static("6"),
+    );
+    let projected = process_anthropic_headers(&repeated);
+    assert_eq!(
+        projected.get("llm_provider-x-repeated").map(String::as_str),
+        Some("one, two")
+    );
+    assert_eq!(
+        projected
+            .get("x-ratelimit-limit-requests")
+            .map(String::as_str),
+        Some("5, 6")
+    );
 }
 
 pub(super) fn catalog_created_at_default_case() {

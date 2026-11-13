@@ -24,18 +24,25 @@ const RATE_LIMIT_ALIASES: [(&str, &str); 4] = [
 #[must_use]
 pub fn process_anthropic_headers(headers: &HeaderMap) -> IndexMap<String, String> {
     let mut projected = IndexMap::new();
-    for (name, value) in headers {
-        projected.insert(format!("{PROVIDER_PREFIX}{name}"), latin1(value.as_bytes()));
+    for name in headers.keys() {
+        if let Some(value) = joined(headers, name.as_str()) {
+            projected.insert(format!("{PROVIDER_PREFIX}{name}"), value);
+        }
     }
     for (source, target) in RATE_LIMIT_ALIASES {
-        if let Some(value) = headers.get(source) {
-            projected.insert(target.to_owned(), latin1(value.as_bytes()));
+        if let Some(value) = joined(headers, source) {
+            projected.insert(target.to_owned(), value);
         }
     }
     projected
 }
 
-// httpx hands header bytes to Python as latin-1 text, which never fails
-fn latin1(bytes: &[u8]) -> String {
-    bytes.iter().copied().map(char::from).collect()
+// httpx reads a repeated header as one value joined with a comma and a space, and decodes bytes as latin-1
+fn joined(headers: &HeaderMap, name: &str) -> Option<String> {
+    let values: Vec<String> = headers
+        .get_all(name)
+        .iter()
+        .map(|value| value.as_bytes().iter().copied().map(char::from).collect())
+        .collect();
+    (!values.is_empty()).then(|| values.join(", "))
 }

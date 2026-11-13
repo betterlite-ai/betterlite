@@ -462,6 +462,16 @@ fn vertex_web_search_beta_case() {
     let native = get_anthropic_headers(&fixture::request(None, None, &features));
     assert!(!native.values.contains_key(OAUTH_BETA_HEADER_NAME));
 
+    // an empty computer tool name adds no computer-use beta
+    let features = HeaderFeatures {
+        features: BTreeSet::new(),
+        computer_tool_used: Some(String::new()),
+        is_vertex_request: false,
+        web_search_tool_used: false,
+    };
+    let empty_tool = get_anthropic_headers(&fixture::request(None, None, &features));
+    assert!(!empty_tool.values.contains_key(OAUTH_BETA_HEADER_NAME));
+
     let features = HeaderFeatures {
         features: BTreeSet::from([HeaderFeature::FileId]),
         computer_tool_used: None,
@@ -764,6 +774,17 @@ fn conversation_betas_case() {
     );
 
     let params = fixture::params_tools(&["custom_20250101"]);
+    let detected = validated(&[], &params, &settings);
+    assert!(!detected.values.contains_key(OAUTH_BETA_HEADER_NAME));
+
+    let params = fixture::params_mcp(&[r#"{"type":"url","name":"docs"}"#]);
+    let detected = validated(&[], &params, &settings);
+    assert_eq!(
+        fixture::beta_tokens(&detected),
+        BTreeSet::from([MCP_CLIENT_BETA])
+    );
+
+    let params = fixture::params_mcp(&[]);
     let detected = validated(&[], &params, &settings);
     assert!(!detected.values.contains_key(OAUTH_BETA_HEADER_NAME));
 

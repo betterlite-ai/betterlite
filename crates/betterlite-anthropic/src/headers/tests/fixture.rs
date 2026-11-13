@@ -125,10 +125,10 @@ pub(super) fn header<'headers>(
     headers.values.get(name).map(String::as_str)
 }
 
-pub(super) fn beta_set(headers: &AnthropicHeaders) -> BTreeSet<String> {
+pub(super) fn beta_tokens(headers: &AnthropicHeaders) -> BTreeSet<&str> {
     headers
         .values
         .get("anthropic-beta")
-        .map(|value| value.split(',').map(str::to_owned).collect())
+        .map(|value| value.split(',').collect())
         .unwrap_or_default()
 }
