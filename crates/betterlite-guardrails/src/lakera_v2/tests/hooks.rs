@@ -12,9 +12,8 @@ use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
 
 use super::{
-    ATTACK_ONLY, CollectingSink, EMAIL_SPAN, MIXED, PII_ONLY, build, chat_data, content_of,
-    context, during_call_of, flagged, invocation, message, post_call_of, pre_call_of, serve,
-    update_params,
+    ATTACK_ONLY, CollectingSink, EMAIL_SPAN, Hook, MIXED, PII_ONLY, build, chat_data, content_of,
+    context, flagged, invocation, message, run_hook, serve, update_params,
 };
 
 #[tokio::test]
@@ -22,7 +21,9 @@ async fn pre_call_masks_a_pii_only_verdict() {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
-    let outcome = pre_call_of(&guardrail, &mut data).await.expect("allowed");
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
     assert_eq!(
         content_of(&data, 0).as_deref(),
@@ -35,7 +36,7 @@ async fn pre_call_blocks_a_mixed_verdict_in_block_mode() {
     let server = serve(200, flagged(MIXED, EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
-    let error = pre_call_of(&guardrail, &mut data)
+    let error = run_hook(&guardrail, &mut data, None, Hook::Pre)
         .await
         .expect_err("blocked");
     let GuardrailFailure::HttpObject { status, detail } = error else {
@@ -60,7 +61,9 @@ async fn pre_call_injects_the_advisory_after_masking_pii() {
         Some("Flagged for {reason}."),
     );
     let mut data = chat_data();
-    let outcome = pre_call_of(&guardrail, &mut data).await.expect("advised");
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect("advised");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
     assert_eq!(
         content_of(&data, 0).as_deref(),
@@ -88,7 +91,7 @@ async fn pre_call_blocks_pii_on_multimodal_input_in_advisory_mode() {
         "input".to_owned(),
         GuardrailValue::Text("also this".to_owned()),
     );
-    let error = pre_call_of(&guardrail, &mut data)
+    let error = run_hook(&guardrail, &mut data, None, Hook::Pre)
         .await
         .expect_err("blocked");
     assert!(matches!(
@@ -107,7 +110,9 @@ async fn pre_call_monitor_masks_the_instructions_pii() {
         "instructions".to_owned(),
         GuardrailValue::Text("email a@example.com".to_owned()),
     );
-    let outcome = pre_call_of(&guardrail, &mut data).await.expect("allowed");
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
     assert_eq!(
         data.get("instructions"),
@@ -121,7 +126,9 @@ async fn pre_call_monitor_allows_a_non_pii_verdict() {
     let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Monitor, None);
     let mut data = chat_data();
-    let outcome = pre_call_of(&guardrail, &mut data).await.expect("allowed");
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
     assert_eq!(content_of(&data, 0).as_deref(), Some("email a@example.com"));
 }
@@ -157,7 +164,7 @@ async fn during_call_never_masks_pii() {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Monitor, None);
     let mut data = chat_data();
-    let outcome = during_call_of(&guardrail, &mut data)
+    let outcome = run_hook(&guardrail, &mut data, None, Hook::During)
         .await
         .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
@@ -169,7 +176,7 @@ async fn during_call_blocks_in_block_mode() {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
-    let error = during_call_of(&guardrail, &mut data)
+    let error = run_hook(&guardrail, &mut data, None, Hook::During)
         .await
         .expect_err("blocked");
     assert!(matches!(
@@ -183,7 +190,7 @@ async fn during_call_blocks_pii_in_advisory_mode() {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::InjectSystemMessage, None);
     let mut data = chat_data();
-    let error = during_call_of(&guardrail, &mut data)
+    let error = run_hook(&guardrail, &mut data, None, Hook::During)
         .await
         .expect_err("pii blocks advisory mode");
     assert!(matches!(
@@ -251,7 +258,7 @@ async fn post_call_masks_the_assistant_content_by_choice() {
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response();
-    let outcome = post_call_of(&guardrail, &mut data, &mut response)
+    let outcome = run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
         .await
         .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
@@ -269,7 +276,7 @@ async fn post_call_blocks_a_non_pii_verdict_in_block_mode() {
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response();
-    let error = post_call_of(&guardrail, &mut data, &mut response)
+    let error = run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
         .await
         .expect_err("blocked");
     assert!(matches!(
@@ -284,7 +291,7 @@ async fn post_call_allows_a_non_pii_verdict_in_monitor_mode() {
     let guardrail = build(&server.base_url, LakeraOnFlagged::Monitor, None);
     let mut data = chat_data();
     let mut response = assistant_response();
-    let outcome = post_call_of(&guardrail, &mut data, &mut response)
+    let outcome = run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
         .await
         .expect("allowed");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));

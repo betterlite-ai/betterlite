@@ -258,38 +258,32 @@ const MIXED: &str = r#"[{"detected":true,"detector_type":"pii/email"},{"detected
 const ATTACK_ONLY: &str = r#"[{"detected":true,"detector_type":"prompt_attack/jailbreak"}]"#;
 const EMAIL_SPAN: &str = r#"[{"message_id":0,"start":6,"end":19,"detector_type":"pii/email"}]"#;
 
-async fn pre_call_of(
-    guardrail: &LakeraV2Guardrail,
-    data: &mut Data,
-) -> Result<HookOutcome, GuardrailFailure> {
-    let sink = CollectingSink::default();
-    let suppressed = BTreeSet::new();
-    let mut call = invocation(data);
-    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
-    guardrail.pre_call(data, &mut call_context).await
+enum Hook {
+    Pre,
+    During,
+    Post,
 }
 
-async fn during_call_of(
+async fn run_hook(
     guardrail: &LakeraV2Guardrail,
     data: &mut Data,
+    response: Option<&mut Data>,
+    hook: Hook,
 ) -> Result<HookOutcome, GuardrailFailure> {
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(data);
     let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
-    guardrail.during_call(data, &mut call_context).await
-}
-
-async fn post_call_of(
-    guardrail: &LakeraV2Guardrail,
-    data: &mut Data,
-    response: &mut Data,
-) -> Result<HookOutcome, GuardrailFailure> {
-    let sink = CollectingSink::default();
-    let suppressed = BTreeSet::new();
-    let mut call = invocation(data);
-    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
-    guardrail.post_call(data, response, &mut call_context).await
+    match hook {
+        Hook::Pre => guardrail.pre_call(data, &mut call_context).await,
+        Hook::During => guardrail.during_call(data, &mut call_context).await,
+        Hook::Post => {
+            let Some(response) = response else {
+                panic!("the post_call hook needs a response");
+            };
+            guardrail.post_call(data, response, &mut call_context).await
+        }
+    }
 }
 
 #[test]
