@@ -1,0 +1,7 @@
+kind: helper
+name: restore-when-backup-missing
+call:
+  b4577:
+    operation: down
+env: {}
+compare: {ignore: []}

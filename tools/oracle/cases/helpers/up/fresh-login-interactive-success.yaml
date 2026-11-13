@@ -1,0 +1,13 @@
+kind: helper
+name: fresh-login-interactive-success
+call:
+  b4577:
+    operation: fresh_login
+    tty: true
+    login_token:
+      base_url: http://gateway.test:4000
+      key: sk-login
+      timestamp: 1000.0
+      expires_at: 4000000000.0
+env: {}
+compare: {ignore: []}

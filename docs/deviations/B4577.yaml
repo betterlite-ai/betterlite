@@ -1,0 +1,25 @@
+task: B4577
+deviations:
+  - what: >-
+      betterlite uses signal-hook plus an atomic one-time latch instead of Python's signal.signal and
+      atexit.register. SIGINT and SIGTERM end the wait, the first restore wins, and a later restore call
+      (the dropped cleanup guard) stays silent, so both signals and the exit path restore the settings once.
+    why: >-
+      Rust has no atexit module; a signal-hook iterator with an owned cleanup guard gives the same
+      observable behavior, and the latch keeps concurrent signals from restoring twice.
+    link: https://docs.rs/signal-hook/latest/signal_hook/iterator/index.html
+  - what: >-
+      A failure to create ~/.claude before the settings write returns a typed UpError naming the path
+      instead of Python's unhandled OSError traceback.
+    why: >-
+      LiteLLM's mkdir sits outside the AgentRunError and ClaudeSettingsError handler, so the user gets a
+      traceback; returning the typed error keeps the CLI's one-line error output. No working setup relies
+      on the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L193
+  - what: >-
+      The restored settings and backup are compared as parsed JSON, so a backup file's key order and
+      indentation never affect a restore.
+    why: >-
+      Betterlite writes the backup through serde_json (sorted keys) while LiteLLM uses json.dump (insertion
+      order); the JSON document, which is what restore reads, is identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L75
