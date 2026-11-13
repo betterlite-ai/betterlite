@@ -10,6 +10,7 @@ aho-corasick = "1.1.5"
 async-trait = "0.1.92"
 axum.workspace = true
 base64 = "0.23.1"
+betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-billing = { path = "../betterlite-billing" }
 betterlite-cache = { path = "../betterlite-cache" }
