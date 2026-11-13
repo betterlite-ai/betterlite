@@ -98,4 +98,18 @@ pub trait BaseGenerateContentConfig: Send + Sync {
             status_code_is_synthesized: false,
         })
     }
+
+    // LiteLLM's get_auth_token_and_url and its sync twin: a provider answers the headers and the URL it calls
+    fn auth_token_and_url(
+        &self,
+        request: &AuthTokenRequest<'_>,
+    ) -> Result<(RequestHeaders, String), Self::Error>;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AuthTokenRequest<'request> {
+    pub api_base: Option<&'request str>,
+    pub model: &'request str,
+    pub litellm_params: &'request Object,
+    pub stream: bool,
 }

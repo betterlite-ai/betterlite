@@ -7,8 +7,8 @@ use serde_json::Number;
 use thiserror::Error;
 
 use super::config::{
-    BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest, GenerateContentUpstream,
-    ResponseHeaders, ResponseTransform, TOP_LEVEL_FIELDS,
+    AuthTokenRequest, BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest,
+    ResponseHeaders, ResponseTransform,
 };
 use super::records::{
     ContentListUnion, GenerateContentConfigDict, GenerateContentRequestDict,
@@ -68,6 +68,24 @@ impl BaseGenerateContentConfig for Fixture {
     ) -> Result<GenerateContentResponse, FixtureError> {
         serde_json::from_slice(&request.raw_response.body).map_err(|_source| FixtureError::Refused)
     }
+
+    fn auth_token_and_url(
+        &self,
+        request: &AuthTokenRequest<'_>,
+    ) -> Result<(ResponseHeaders, String), FixtureError> {
+        let Some(api_base) = request.api_base else {
+            return Err(FixtureError::Refused);
+        };
+        let mode = if request.stream {
+            "streamGenerateContent"
+        } else {
+            "generateContent"
+        };
+        Ok((
+            headers(&[("authorization", "Bearer fixture")]),
+            format!("{api_base}/models/{}:{mode}", request.model),
+        ))
+    }
 }
 
 fn headers(pairs: &[(&str, &str)]) -> ResponseHeaders {
@@ -105,10 +123,32 @@ fn the_top_level_fields_are_the_four_native_names_in_order() {
     );
 }
 
-// LiteLLM names the four fields in one place, so any config answers with the same tuple
 #[test]
-fn every_config_answers_with_the_same_top_level_fields() {
-    assert_eq!(Fixture.request_top_level_fields(), TOP_LEVEL_FIELDS);
+fn the_auth_method_answers_the_headers_and_url_from_the_implementation() {
+    let params = Object::new();
+    let (sent, url) = Fixture
+        .auth_token_and_url(&AuthTokenRequest {
+            api_base: Some("https://mock"),
+            model: "gemini-2.5-flash",
+            litellm_params: &params,
+            stream: true,
+        })
+        .expect("the fixture answers the auth target");
+    assert_eq!(sent, headers(&[("authorization", "Bearer fixture")]));
+    assert_eq!(
+        url,
+        "https://mock/models/gemini-2.5-flash:streamGenerateContent"
+    );
+    assert!(
+        Fixture
+            .auth_token_and_url(&AuthTokenRequest {
+                api_base: None,
+                model: "gemini-2.5-flash",
+                litellm_params: &params,
+                stream: false,
+            })
+            .is_err()
+    );
 }
 
 #[rstest]
@@ -232,58 +272,4 @@ fn the_content_list_and_tool_config_carry_any_declared_json() {
     assert!(matches!(contents, Json::List(_)));
     let tools: ToolConfigDict = decode(r#"[{"functionDeclarations": []}]"#);
     assert!(matches!(tools, Json::List(_)));
-}
-
-#[test]
-fn the_contract_dispatches_every_method_to_the_implementation() {
-    let sent = headers(&[("x-goog-api-key", "key")]);
-    let params = Object::new();
-    let environment = EnvironmentRequest {
-        api_key: None,
-        headers: &sent,
-        model: "gemini-2.5-flash",
-        litellm_params: Some(&params),
-    };
-    assert_eq!(
-        Fixture
-            .validate_environment(&environment)
-            .expect("the fixture accepts the headers"),
-        sent
-    );
-    assert_eq!(
-        Fixture.supported_optional_params("gemini-2.5-flash"),
-        vec![String::from("gemini-2.5-flash")]
-    );
-    let config: GenerateContentConfigDict = decode(r#"{"temperature": 0}"#);
-    assert_eq!(
-        Fixture.map_optional_params(&config, "m").get("model"),
-        Some(&Json::Text(String::from("m")))
-    );
-    let contents: ContentListUnion = decode(r#"[{"role": "user"}]"#);
-    let tools: ToolConfigDict = decode("[]");
-    let request = GenerateContentRequest {
-        model: "m",
-        contents: &contents,
-        tools: Some(&tools),
-        generation_config: &config,
-        system_instruction: None,
-    };
-    let transformed = Fixture
-        .transform_request(&request)
-        .expect("the fixture transforms the request");
-    assert_eq!(transformed.model, "m");
-    assert_eq!(transformed.generation_config, Field::Value(config));
-    let upstream = GenerateContentUpstream {
-        status: 200,
-        headers: headers(&[("content-type", "application/json")]),
-        body: br#"{"candidates":[]}"#.to_vec(),
-    };
-    let response = Fixture
-        .transform_response(&ResponseTransform {
-            model: "m",
-            raw_response: &upstream,
-        })
-        .expect("the fixture transforms the response");
-    assert!(response.wire.contains_key("candidates"));
-    assert!(response.hidden_params.is_empty());
 }

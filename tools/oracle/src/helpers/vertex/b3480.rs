@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_vertex::genai::genai_contract::config::{
-    BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest, ResponseHeaders,
-    ResponseTransform,
+    AuthTokenRequest, BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest,
+    ResponseHeaders, ResponseTransform,
 };
 use betterlite_vertex::genai::genai_contract::records::{
     GenerateContentConfigDict, GenerateContentRequestDict, GenerateContentResponse,
@@ -146,6 +146,13 @@ impl BaseGenerateContentConfig for ProviderConfig {
         &self,
         _request: &ResponseTransform<'_>,
     ) -> Result<GenerateContentResponse, FixtureError> {
+        Err(FixtureError::Unused)
+    }
+
+    fn auth_token_and_url(
+        &self,
+        _request: &AuthTokenRequest<'_>,
+    ) -> Result<(ResponseHeaders, String), FixtureError> {
         Err(FixtureError::Unused)
     }
 }
