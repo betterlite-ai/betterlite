@@ -1,0 +1,8 @@
+kind: helper
+name: aac-maps-mp3
+call:
+  vertex_speech:
+    function: aac_maps_mp3
+    formats: [mp3, opus, aac, flac, wav, pcm, ogg, '', null]
+env: {}
+compare: {ignore: []}
