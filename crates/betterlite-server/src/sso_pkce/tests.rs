@@ -170,10 +170,10 @@ fn generate_pkce_params_matches_the_rfc7636_vector() {
 fn generate_pkce_params_reports_a_broken_entropy_source() {
     let error = super::generate_pkce_params(&BrokenEntropy).unwrap_err();
     assert!(matches!(&error, PkceError::Entropy(_)));
-    assert_eq!(error.status(), 500);
-    assert_eq!(error.error_type(), "internal_server_error");
-    assert_eq!(error.param(), None);
-    assert_eq!(error.code(), "500");
+    assert_eq!(error.response().status, 500);
+    assert_eq!(error.response().error_type, "internal_server_error");
+    assert_eq!(error.response().param, None);
+    assert_eq!(error.response().code, "500");
 }
 
 #[test]
@@ -395,10 +395,10 @@ async fn a_strict_cache_miss_returns_the_pkce_cache_miss_error() {
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::MissingVerifier { .. }));
-    assert_eq!(error.status(), 401);
-    assert_eq!(error.error_type(), "auth_error");
-    assert_eq!(error.param(), Some("PKCE_CACHE_MISS"));
-    assert_eq!(error.code(), "401");
+    assert_eq!(error.response().status, 401);
+    assert_eq!(error.response().error_type, "auth_error");
+    assert_eq!(error.response().param, Some("PKCE_CACHE_MISS"));
+    assert_eq!(error.response().code, "401");
     assert!(cache.deletes().is_empty());
     assert!(written(&log).contains("no verifier was found in cache"));
 }
@@ -435,8 +435,8 @@ async fn an_empty_verifier_field_is_deleted_and_fails_in_strict_mode() {
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::EmptyVerifier { .. }));
-    assert_eq!(error.status(), 401);
-    assert_eq!(error.param(), Some("PKCE_CACHE_MISS"));
+    assert_eq!(error.response().status, 401);
+    assert_eq!(error.response().param, Some("PKCE_CACHE_MISS"));
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
 }
 
@@ -475,8 +475,8 @@ async fn a_corrupt_entry_is_deleted_before_the_strict_error() {
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::UnexpectedShape { .. }));
-    assert!(error.to_string().contains("(list)"));
-    assert_eq!(error.code(), "401");
+    assert!(error.to_string().contains("(List)"));
+    assert_eq!(error.response().code, "401");
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
     assert!(written(&log).contains("unrecognized format"));
 }

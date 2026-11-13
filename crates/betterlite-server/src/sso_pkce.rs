@@ -26,19 +26,6 @@ pub enum PkceCacheShape {
     Null,
 }
 
-impl PkceCacheShape {
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Object => "object",
-            Self::Boolean => "bool",
-            Self::Number => "number",
-            Self::List => "list",
-            Self::Null => "null",
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum PkceError {
     #[error("could not draw random bytes for the PKCE verifier")]
@@ -50,50 +37,41 @@ pub enum PkceError {
     )]
     EmptyVerifier { state: String },
     #[error(
-        "PKCE verifier for state '{state}' has an unrecognized format ({shape}); the cached entry may be corrupt"
+        "PKCE verifier for state '{state}' has an unrecognized format ({shape:?}); the cached entry may be corrupt"
     )]
-    UnexpectedShape { state: String, shape: &'static str },
+    UnexpectedShape {
+        state: String,
+        shape: PkceCacheShape,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PkceErrorResponse {
+    pub status: u16,
+    pub error_type: &'static str,
+    pub param: Option<&'static str>,
+    pub code: &'static str,
 }
 
 impl PkceError {
     // LiteLLM raises every cache-miss path as a 401 auth_error with param PKCE_CACHE_MISS
     #[must_use]
-    pub const fn status(&self) -> u16 {
+    pub const fn response(&self) -> PkceErrorResponse {
         match self {
-            Self::Entropy(_) => 500,
+            Self::Entropy(_) => PkceErrorResponse {
+                status: 500,
+                error_type: "internal_server_error",
+                param: None,
+                code: "500",
+            },
             Self::MissingVerifier { .. }
             | Self::EmptyVerifier { .. }
-            | Self::UnexpectedShape { .. } => 401,
-        }
-    }
-
-    #[must_use]
-    pub const fn error_type(&self) -> &'static str {
-        match self {
-            Self::Entropy(_) => "internal_server_error",
-            Self::MissingVerifier { .. }
-            | Self::EmptyVerifier { .. }
-            | Self::UnexpectedShape { .. } => "auth_error",
-        }
-    }
-
-    #[must_use]
-    pub const fn param(&self) -> Option<&'static str> {
-        match self {
-            Self::Entropy(_) => None,
-            Self::MissingVerifier { .. }
-            | Self::EmptyVerifier { .. }
-            | Self::UnexpectedShape { .. } => Some(PKCE_CACHE_MISS_PARAM),
-        }
-    }
-
-    #[must_use]
-    pub const fn code(&self) -> &'static str {
-        match self {
-            Self::Entropy(_) => "500",
-            Self::MissingVerifier { .. }
-            | Self::EmptyVerifier { .. }
-            | Self::UnexpectedShape { .. } => "401",
+            | Self::UnexpectedShape { .. } => PkceErrorResponse {
+                status: 401,
+                error_type: "auth_error",
+                param: Some(PKCE_CACHE_MISS_PARAM),
+                code: "401",
+            },
         }
     }
 }

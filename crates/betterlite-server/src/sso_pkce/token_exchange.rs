@@ -70,7 +70,7 @@ where
         Some(PkceCacheEntry::UnexpectedShape(shape)) => {
             tracing::debug!(
                 state,
-                shape = shape.name(),
+                ?shape,
                 "the PKCE verifier cache entry has an unexpected shape; treating it as a cache miss"
             );
             handle_missing_pkce_verifier(
@@ -127,13 +127,13 @@ where
         MissingKind::Unexpected(shape) => {
             tracing::error!(
                 state,
-                shape = shape.name(),
+                ?shape,
                 "the cached PKCE verifier has an unrecognized format; treating it as a cache miss"
             );
             caches.delete_verifier(cache_key).await;
             Err(PkceError::UnexpectedShape {
                 state: state.to_owned(),
-                shape: shape.name(),
+                shape,
             })
         }
         MissingKind::Absent => {

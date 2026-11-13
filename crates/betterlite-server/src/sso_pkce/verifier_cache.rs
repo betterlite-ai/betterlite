@@ -53,32 +53,23 @@ impl<T: AuthCacheTier> VerifierCache for AuthCache<T> {
 // Both cache tiers read a stored null as a miss, so only a present non-null value reaches this match
 fn stored_entry(value: &Json) -> Option<PkceCacheEntry> {
     match value {
-        Json::Null => None,
-        Json::Object(fields) => Some(object_entry(fields.get("code_verifier"))),
-        Json::Text(text) => Some(legacy_entry(text)),
+        Json::Object(fields) => match fields.get("code_verifier") {
+            Some(Json::Text(text)) if !text.is_empty() => {
+                Some(PkceCacheEntry::Verifier(SecretString::from(text.clone())))
+            }
+            Some(Json::Text(_)) | Some(Json::Null) => Some(PkceCacheEntry::EmptyVerifier),
+            Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) | None => {
+                Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Object))
+            }
+        },
+        Json::Text(text) if text.is_empty() => Some(PkceCacheEntry::EmptyVerifier),
+        Json::Text(text) => Some(PkceCacheEntry::LegacyVerifier(SecretString::from(
+            text.to_owned(),
+        ))),
         Json::Bool(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Boolean)),
         Json::Number(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::Number)),
         Json::List(_) => Some(PkceCacheEntry::UnexpectedShape(PkceCacheShape::List)),
-    }
-}
-
-fn object_entry(field: Option<&Json>) -> PkceCacheEntry {
-    match field {
-        Some(Json::Text(text)) if !text.is_empty() => {
-            PkceCacheEntry::Verifier(SecretString::from(text.clone()))
-        }
-        Some(Json::Text(_)) | Some(Json::Null) => PkceCacheEntry::EmptyVerifier,
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) | None => {
-            PkceCacheEntry::UnexpectedShape(PkceCacheShape::Object)
-        }
-    }
-}
-
-fn legacy_entry(text: &str) -> PkceCacheEntry {
-    if text.is_empty() {
-        PkceCacheEntry::EmptyVerifier
-    } else {
-        PkceCacheEntry::LegacyVerifier(SecretString::from(text.to_owned()))
+        Json::Null => None,
     }
 }
 
