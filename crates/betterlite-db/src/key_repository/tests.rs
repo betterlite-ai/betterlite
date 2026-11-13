@@ -65,19 +65,7 @@ fn none_record_stays_none() {
     assert!(to_model(None).unwrap().is_none());
 }
 
-#[test]
-fn each_nine_json_fields_decodes_once() {
-    let key = convert(&[
-        ("aliases", text(r#"{"a":1}"#)),
-        ("config", text(r#"{"b":2}"#)),
-        ("permissions", text(r#"{"c":3}"#)),
-        ("metadata", text(r#"{"d":4}"#)),
-        ("model_spend", text(r#"{"e":5}"#)),
-        ("model_max_budget", text(r#"{"f":6}"#)),
-        ("router_settings", text(r#"{"g":7}"#)),
-        ("budget_limits", text(r#"[{"h":8}]"#)),
-        ("litellm_budget_table", text(r#"{"budget_id":"b"}"#)),
-    ]);
+fn assert_nine(key: &LiteLLMVerificationToken) {
     assert_eq!(key.aliases.0.get("a"), Some(&data("1")));
     assert_eq!(key.config.0.get("b"), Some(&data("2")));
     assert_eq!(key.permissions.0.get("c"), Some(&data("3")));
@@ -109,6 +97,22 @@ fn each_nine_json_fields_decodes_once() {
 }
 
 #[test]
+fn each_nine_json_fields_decodes_once() {
+    let key = convert(&[
+        ("aliases", text(r#"{"a":1}"#)),
+        ("config", text(r#"{"b":2}"#)),
+        ("permissions", text(r#"{"c":3}"#)),
+        ("metadata", text(r#"{"d":4}"#)),
+        ("model_spend", text(r#"{"e":5}"#)),
+        ("model_max_budget", text(r#"{"f":6}"#)),
+        ("router_settings", text(r#"{"g":7}"#)),
+        ("budget_limits", text(r#"[{"h":8}]"#)),
+        ("litellm_budget_table", text(r#"{"budget_id":"b"}"#)),
+    ]);
+    assert_nine(&key);
+}
+
+#[test]
 fn already_decoded_values_unchanged() {
     let fields = [
         ("aliases", data(r#"{"a":1}"#)),
@@ -122,34 +126,7 @@ fn already_decoded_values_unchanged() {
         ("litellm_budget_table", data(r#"{"budget_id":"b"}"#)),
     ];
     let key = convert(&fields);
-    assert_eq!(key.aliases.0.get("a"), Some(&data("1")));
-    assert_eq!(key.config.0.get("b"), Some(&data("2")));
-    assert_eq!(key.permissions.0.get("c"), Some(&data("3")));
-    assert_eq!(key.metadata.0.get("d"), Some(&data("4")));
-    assert_eq!(key.model_spend.0.get("e"), Some(&data("5")));
-    assert_eq!(key.model_max_budget.0.get("f"), Some(&data("6")));
-    assert_eq!(
-        key.router_settings.as_ref().unwrap().0.get("g"),
-        Some(&data("7"))
-    );
-    assert_eq!(
-        key.budget_limits
-            .as_ref()
-            .unwrap()
-            .first()
-            .unwrap()
-            .0
-            .get("h"),
-        Some(&data("8"))
-    );
-    assert_eq!(
-        key.litellm_budget_table
-            .as_ref()
-            .unwrap()
-            .0
-            .get("budget_id"),
-        Some(&data(r#""b""#))
-    );
+    assert_nine(&key);
 }
 
 #[test]
@@ -526,14 +503,22 @@ fn json_string(value: &str) -> String {
 
 async fn seed_legacy(pool: &Pool, token: &str) {
     let aliases = json_string(r#"{"a":1}"#);
+    let config = json_string(r#"{"b":2}"#);
+    let permissions = json_string(r#"{"c":3}"#);
     let metadata = json_string(r#"{"d":4}"#);
+    let model_spend = json_string(r#"{"e":5}"#);
+    let model_max_budget = json_string(r#"{"f":6}"#);
     let router_settings = json_string(r#"{"g":7}"#);
     let budget_limits = json_string(r#"[{"h":8}]"#);
-    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases, metadata, router_settings, budget_limits) VALUES ($1, $2::text::jsonb, $3::text::jsonb, $4::text::jsonb, $5::text::jsonb)"#;
-    let parameters: [&(dyn ToSql + Sync); 5] = [
+    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases, config, permissions, metadata, model_spend, model_max_budget, router_settings, budget_limits) VALUES ($1, $2::text::jsonb, $3::text::jsonb, $4::text::jsonb, $5::text::jsonb, $6::text::jsonb, $7::text::jsonb, $8::text::jsonb, $9::text::jsonb)"#;
+    let parameters: [&(dyn ToSql + Sync); 9] = [
         &token,
         &aliases,
+        &config,
+        &permissions,
         &metadata,
+        &model_spend,
+        &model_max_budget,
         &router_settings,
         &budget_limits,
     ];
@@ -580,7 +565,11 @@ async fn assert_converted_legacy(repository: &VerificationTokenRepository<'_, Te
     let converted = repository.find_many_in(vec![key("legacy")]).await.unwrap();
     let stored = converted.first().unwrap();
     assert_eq!(stored.aliases.0.get("a"), Some(&data("1")));
+    assert_eq!(stored.config.0.get("b"), Some(&data("2")));
+    assert_eq!(stored.permissions.0.get("c"), Some(&data("3")));
     assert_eq!(stored.metadata.0.get("d"), Some(&data("4")));
+    assert_eq!(stored.model_spend.0.get("e"), Some(&data("5")));
+    assert_eq!(stored.model_max_budget.0.get("f"), Some(&data("6")));
     assert_eq!(
         stored.router_settings.as_ref().unwrap().0.get("g"),
         Some(&data("7"))
