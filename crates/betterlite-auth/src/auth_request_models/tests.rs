@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
-use serde_json::Number;
 
 use super::catalog::{
     CatalogError, Collaborators, DeploymentRecord, ManagedIdDecoders, ManagedIdError,
@@ -526,48 +525,39 @@ fn zero_one_many_format() {
 fn marker_exact_true_skips() {
     let body = object(r#"{"model": "body-model"}"#);
     let path_params = BTreeSet::new();
-    let mut markers = vec![Json::Bool(false), Json::Number(Number::from(1))];
-    markers.push(Json::Text("true".to_owned()));
-    for marker in markers {
-        let skipped = RequestSnapshot {
+    let decoders = StubDecoders;
+    let catalog = FakeCatalog::default();
+    let collaborators = Collaborators {
+        catalog: Some(&catalog),
+        decoders: &decoders,
+    };
+    for marker in [Some(false), None] {
+        let kept = RequestSnapshot {
             route: "/openai/deployments/path-model/chat/completions",
             body: &body,
             headers: None,
             query: None,
             dispatch: DispatchContext {
-                endpoint_marker: Some(&marker),
+                endpoint_marker: marker,
                 path_params: &path_params,
             },
             team_id: None,
         };
-        let decoders = StubDecoders;
-        let catalog = FakeCatalog::default();
-        let collaborators = Collaborators {
-            catalog: Some(&catalog),
-            decoders: &decoders,
-        };
         assert_eq!(
-            get_model_from_request(&skipped, &collaborators),
+            get_model_from_request(&kept, &collaborators),
             Ok(RequestedModels::One("body-model".to_owned()))
         );
     }
-    let marker = Json::Bool(true);
     let skipped = RequestSnapshot {
         route: "/openai/deployments/path-model/chat/completions",
         body: &body,
         headers: None,
         query: None,
         dispatch: DispatchContext {
-            endpoint_marker: Some(&marker),
+            endpoint_marker: Some(true),
             path_params: &path_params,
         },
         team_id: None,
-    };
-    let decoders = StubDecoders;
-    let catalog = FakeCatalog::default();
-    let collaborators = Collaborators {
-        catalog: Some(&catalog),
-        decoders: &decoders,
     };
     assert_eq!(
         get_model_from_request(&skipped, &collaborators),

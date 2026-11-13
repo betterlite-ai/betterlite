@@ -13,14 +13,15 @@ use super::{
 };
 
 pub struct DispatchContext<'context> {
-    // the dispatched endpoint's pass-through marker value, absent when it carries none
-    pub endpoint_marker: Option<&'context Json>,
+    // the dispatched endpoint's pass-through marker, absent when it carries none
+    pub endpoint_marker: Option<bool>,
     pub path_params: &'context BTreeSet<String>,
 }
 
 #[must_use]
 pub fn request_dispatched_to_pass_through_endpoint(context: &DispatchContext<'_>) -> bool {
-    matches!(context.endpoint_marker, Some(Json::Bool(true)))
+    // the marker must be the literal True, not a truthy value
+    context.endpoint_marker == Some(true)
 }
 
 #[must_use]

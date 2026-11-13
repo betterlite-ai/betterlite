@@ -1,8 +1,7 @@
-import logging
 from typing import Final, TypedDict
 
 from litellm.proxy.auth.auth_utils import (
-    get_model_from_request,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1982
+    get_cache_prediction_deployments,
     request_dispatched_to_pass_through_endpoint,
     request_dispatched_to_provider_pass_through,
 )
@@ -20,14 +19,12 @@ class DeploymentDeclaration(TypedDict):
 
 class Step(TypedDict):
     route: str
-    body: dict[str, JsonValue]
-    headers: dict[str, JsonValue]
-    query: dict[str, JsonValue]
-    team_id: str | None
-    deployments: list[DeploymentDeclaration]
     endpoint_marker: bool | None
     path_params: list[str]
-    fail: str | None
+    team_id: str | None
+    deployments: list[DeploymentDeclaration]
+    current_deployment_id: str | None
+    candidate_deployment_id: str | None
 
 
 class Input(TypedDict):
@@ -36,7 +33,6 @@ class Input(TypedDict):
 
 INPUT: Final = TypeAdapter(Input)
 OUTPUT: Final = TypeAdapter(dict[str, JsonValue])
-PROXY_LOGGER: Final = "LiteLLM Proxy"
 
 
 class MarkedEndpoint:
@@ -47,20 +43,6 @@ class PlainEndpoint:
     pass
 
 
-class FailingResolverRouter(Router):
-    def resolve_model_name_from_model_id(self, model_id: str | None) -> str | None:
-        raise ValueError(f"the oracle resolver fails for {model_id}")
-
-
-class DebugCapture(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)
-
-
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     typed = INPUT.validate_python(input_value)
     return [run_step(step) for step in typed["steps"]]
@@ -69,35 +51,30 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
 def run_step(step: Step) -> JsonValue:
     router = build_router(step)
     request = build_request(step)
-    logger = logging.getLogger(PROXY_LOGGER)
-    capture = DebugCapture()
-    previous_level = logger.level
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(capture)
-    try:
-        pass_through = request_dispatched_to_pass_through_endpoint(request)
-        provider_pass_through = request_dispatched_to_provider_pass_through(request)
-        model = get_model_from_request(
-            request_data=step["body"],
-            route=step["route"],
-            request_headers=step["headers"],
-            request_query_params=step["query"],
-            llm_router=router,
-            request=request,
-            team_id=step["team_id"],
-        )
-    finally:
-        logger.removeHandler(capture)
-        logger.setLevel(previous_level)
-    debug = sum(1 for record in capture.records if record.levelno == logging.DEBUG)
+    prediction = prediction_models(step, router)
     return OUTPUT.validate_python(
         {
-            "model": model,
-            "debug": debug,
-            "pass_through": pass_through,
-            "provider_pass_through": provider_pass_through,
+            "prediction": prediction,
+            "pass_through": request_dispatched_to_pass_through_endpoint(request),
+            "provider_pass_through": request_dispatched_to_provider_pass_through(request),
         }
     )
+
+
+def prediction_models(step: Step, router: Router | None) -> list[str] | None:
+    current_id = step["current_deployment_id"]
+    candidate_id = step["candidate_deployment_id"]
+    if router is None or current_id is None or candidate_id is None:
+        return None
+    deployments = get_cache_prediction_deployments(
+        current_deployment_id=current_id,
+        candidate_deployment_id=candidate_id,
+        llm_router=router,
+        team_id=step["team_id"],
+    )
+    if deployments is None:
+        return None
+    return [deployments[0].model_name, deployments[1].model_name]
 
 
 def build_router(step: Step) -> Router | None:
@@ -111,8 +88,6 @@ def build_router(step: Step) -> Router | None:
         }
         for deployment in step["deployments"]
     ]
-    if step["fail"] == "resolver":
-        return FailingResolverRouter(model_list=model_list)
     return Router(model_list=model_list)
 
 

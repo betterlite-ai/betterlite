@@ -176,10 +176,7 @@ impl ModelCatalog for StepCatalog {
         Ok(None)
     }
 
-    fn deployment(
-        &self,
-        deployment_id: &str,
-    ) -> Result<Option<DeploymentRecord>, CatalogError> {
+    fn deployment(&self, deployment_id: &str) -> Result<Option<DeploymentRecord>, CatalogError> {
         if self.failing {
             return Err(CatalogError::InvalidDeployment);
         }

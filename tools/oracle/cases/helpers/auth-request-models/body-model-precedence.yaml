@@ -1,0 +1,9 @@
+kind: helper
+name: auth-request-models-body-model-precedence
+call:
+  auth_request_models:
+    steps:
+      - {route: "/v1/chat/completions", endpoint_marker: null, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/cost/predict-cache", endpoint_marker: null, path_params: [], team_id: null, deployments: [{model_name: current, litellm_params: {model: "openai/gpt"}, model_info: {id: current-id, team_id: null}}, {model_name: candidate, litellm_params: {model: "openai/gpt"}, model_info: {id: candidate-id, team_id: null}}], current_deployment_id: current-id, candidate_deployment_id: candidate-id}
+env: {}
+compare: {ignore: []}

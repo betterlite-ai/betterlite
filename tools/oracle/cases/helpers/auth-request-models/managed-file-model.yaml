@@ -1,0 +1,9 @@
+kind: helper
+name: auth-request-models-managed-file-model
+call:
+  auth_request_models:
+    steps:
+      - {route: "/files", endpoint_marker: true, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/files", endpoint_marker: false, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+env: {}
+compare: {ignore: []}

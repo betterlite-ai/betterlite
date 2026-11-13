@@ -13,7 +13,6 @@ use betterlite_auth::auth_request_models::{
 use betterlite_auth::resource_hints::managed::{decode_character_id, decode_video_id};
 use betterlite_core::api::file_routing_ids::{legacy, routing};
 use betterlite_core::api::managed_resource_ids::{is_base64_encoded_unified_id, parse_unified_id};
-use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::auth_identity::AuthContext;
@@ -30,7 +29,7 @@ pub struct RequestModelStageInput {
     pub body: JsonObject,
     pub headers: Option<JsonObject>,
     pub query: Option<JsonObject>,
-    pub endpoint_marker: Option<Json>,
+    pub endpoint_marker: Option<bool>,
     pub path_params: BTreeSet<String>,
     pub team_id: Option<String>,
     pub resolver: Arc<RequestModelResolver>,
@@ -43,7 +42,7 @@ pub fn resolve(stage: &RequestModelStageInput) -> Result<RequestedModels, Catalo
         headers: stage.headers.as_ref(),
         query: stage.query.as_ref(),
         dispatch: DispatchContext {
-            endpoint_marker: stage.endpoint_marker.as_ref(),
+            endpoint_marker: stage.endpoint_marker,
             path_params: &stage.path_params,
         },
         team_id: stage.team_id.as_deref(),
