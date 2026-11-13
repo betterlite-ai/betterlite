@@ -466,3 +466,10 @@ path = "fuzz_targets/voxtral_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_video_identifiers"
+path = "fuzz_targets/openai_video_identifiers.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,26 @@
+kind: helper
+name: openai-video-identifiers-decode-permissive-fields
+call:
+  openai_video_identifiers:
+    calls:
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhO3ZpZGVvX2lkOnZpZA
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhO3ZpZGVvX2lkOnZpZA==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_eDt5O3o=
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_cHJlIGxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjptaWQ7bW8gZGVsIG1vZGVsX2lkOiBkZWw7dmlkZW9faWQ6b25lIHZpZGVvX2lkOnR3bw==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YTtiO2M7ZDtl
+        capture_debug: true
+      - op: decode_character_id
+        encoded: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjaGFyYWN0ZXJfaWQ6b25lIGNoYXJhY3Rlcl9pZDp0d287ZXh0cmE=
+        capture_debug: true
+env: {}
+compare:
+  ignore: []

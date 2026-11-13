@@ -1,0 +1,43 @@
+kind: helper
+name: openai-video-identifiers-video-probe-cursor
+call:
+  openai_video_identifiers:
+    calls:
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 3
+          name: clip.bin
+      - op: video_file_tuple
+        fixture:
+          kind: bytes_io
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 2
+      - op: video_file_tuple
+        fixture:
+          kind: failing_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 3
+          failure: tell
+      - op: video_file_tuple
+        fixture:
+          kind: failing_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 3
+          failure: seek
+      - op: video_file_tuple
+        fixture:
+          kind: failing_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 3
+          failure: read
+      - op: video_file_tuple
+        fixture:
+          kind: failing_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 3
+          failure: restore
+env: {}
+compare:
+  ignore: []

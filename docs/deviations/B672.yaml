@@ -1,0 +1,13 @@
+task: B672
+deviations:
+  - what: >-
+      A video filename's MIME type comes from the fixed mime_guess table instead of Python's
+      mimetypes.guess_type, so an extension whose entry differs between the two tables keeps
+      mime_guess's answer as long as it still starts with video/.
+    why: >-
+      Python's guess_type reads the host's mime.types on this platform, so its answer for an
+      extension outside the built-in table depends on the machine running LiteLLM; no single
+      answer can be copied. Any video/ guess wins in both implementations, and an unknown or
+      non-video extension falls back to video/mp4 in both, so a working upload keeps its MIME
+      for the common video extensions and its mp4 fallback everywhere else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L605-L608
