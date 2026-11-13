@@ -54,13 +54,14 @@ pub(super) enum OutcomeSpec {
 }
 
 pub(super) fn config_from(spec: &ConfigSpec) -> Result<ClientCredentialsConfig, Box<HelperError>> {
-    let token_endpoint_auth_method = match spec.token_endpoint_auth_method.as_deref() {
-        None => None,
-        Some(raw) => Some(
+    let token_endpoint_auth_method = spec
+        .token_endpoint_auth_method
+        .as_deref()
+        .map(|raw| {
             normalize_token_auth_method(raw)
-                .ok_or_else(|| value_error(format!("unknown token_endpoint_auth_method: {raw}")))?,
-        ),
-    };
+                .ok_or_else(|| value_error(format!("unknown token_endpoint_auth_method: {raw}")))
+        })
+        .transpose()?;
     Ok(ClientCredentialsConfig {
         header: HeaderCarrier::default(),
         client_id: spec.client_id.clone(),
@@ -70,34 +71,6 @@ pub(super) fn config_from(spec: &ConfigSpec) -> Result<ClientCredentialsConfig, 
         audience: spec.audience.clone(),
         upstream_resource: spec.upstream_resource.clone(),
         token_endpoint_auth_method,
-    })
-}
-
-pub(super) fn carrier_from(spec: Option<&CarrierSpec>) -> Result<HeaderCarrier, Box<HelperError>> {
-    let name = spec
-        .and_then(|carrier| carrier.header_name.as_deref())
-        .unwrap_or("Authorization");
-    let prefix = spec
-        .and_then(|carrier| carrier.value_prefix.as_deref())
-        .unwrap_or("Bearer");
-    HeaderCarrier::new(name, prefix).map_err(|error| value_error(error.to_string()))
-}
-
-pub(super) fn outcome(spec: &OutcomeSpec) -> Result<TokenEndpointOutcome, Box<HelperError>> {
-    Ok(match spec {
-        OutcomeSpec::Success { body } => TokenEndpointOutcome::Success {
-            body: serde_json::from_str(body).map_err(|error| value_error(error.to_string()))?,
-        },
-        OutcomeSpec::Denied {
-            status_code,
-            detail,
-        } => TokenEndpointOutcome::Denied {
-            status_code: *status_code,
-            detail: detail.clone(),
-        },
-        OutcomeSpec::Unreachable { detail } => TokenEndpointOutcome::Unreachable {
-            detail: detail.clone(),
-        },
     })
 }
 
@@ -234,18 +207,6 @@ pub(super) type RecordedCall = (String, Vec<(String, String)>);
 pub(super) struct ScriptedPost {
     pub(super) outcomes: Mutex<VecDeque<TokenEndpointOutcome>>,
     pub(super) calls: Mutex<Vec<RecordedCall>>,
-}
-
-impl ScriptedPost {
-    pub(super) fn calls_view(&self) -> Value {
-        let calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        Value::Array(
-            calls
-                .iter()
-                .map(|(url, form)| json!({"url": url, "form": form}))
-                .collect(),
-        )
-    }
 }
 
 #[async_trait]

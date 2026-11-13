@@ -11,7 +11,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
-use super::support::{CarrierSpec, carrier_from, runtime, value_error};
+use super::support::{CarrierSpec, runtime, value_error};
 use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
@@ -105,7 +105,14 @@ impl Refetch for ScriptedRefetch {
 }
 
 pub(super) fn run(input: &BearerInput) -> HelperResult {
-    let carrier = carrier_from(input.carrier.as_ref())?;
+    let carrier = match input.carrier.as_ref() {
+        Some(spec) => HeaderCarrier::new(
+            spec.header_name.as_deref().unwrap_or("Authorization"),
+            spec.value_prefix.as_deref().unwrap_or("Bearer"),
+        )
+        .map_err(|error| value_error(error.to_string()))?,
+        None => HeaderCarrier::default(),
+    };
     let executor = runtime()?;
     let mut scenarios = Vec::with_capacity(input.scenarios.len());
     for scenario in &input.scenarios {

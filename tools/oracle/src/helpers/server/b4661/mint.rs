@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsConfig;
 use betterlite_server::mcp::outbound_credentials::client_credentials::source::{
@@ -15,9 +15,27 @@ use serde_json::{Value, json};
 
 use super::support::{
     ConfigSpec, ManualClock, OutcomeSpec, RecordingBackend, ScriptedPost, config_from, epoch,
-    outcome, token_view, value_error,
+    token_view, value_error,
 };
 use crate::helpers::{HelperError, HelperResult};
+
+fn outcome(spec: &OutcomeSpec) -> Result<TokenEndpointOutcome, Box<HelperError>> {
+    Ok(match spec {
+        OutcomeSpec::Success { body } => TokenEndpointOutcome::Success {
+            body: serde_json::from_str(body).map_err(|error| value_error(error.to_string()))?,
+        },
+        OutcomeSpec::Denied {
+            status_code,
+            detail,
+        } => TokenEndpointOutcome::Denied {
+            status_code: *status_code,
+            detail: detail.clone(),
+        },
+        OutcomeSpec::Unreachable { detail } => TokenEndpointOutcome::Unreachable {
+            detail: detail.clone(),
+        },
+    })
+}
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MintInput {
@@ -74,10 +92,19 @@ pub(super) async fn minted(input: &MintInput) -> HelperResult {
     let config = config_from(&input.config)?;
     let (source, post, backend) = build_source(input)?;
     let results = mint_results(&source, &config, &input.operations).await;
+    let post_calls = {
+        let calls = post.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        Value::Array(
+            calls
+                .iter()
+                .map(|(url, form)| json!({"url": url, "form": form}))
+                .collect(),
+        )
+    };
     let (writes, deletes) = backend.state_view();
     Ok(json!({
         "results": results,
-        "post_calls": post.calls_view(),
+        "post_calls": post_calls,
         "writes": writes,
         "deletes": deletes,
     }))
