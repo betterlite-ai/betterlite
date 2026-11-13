@@ -856,6 +856,29 @@ async fn provider_litellm_params_take_the_call_drop_params(
     assert_eq!(call.litellm_params.drop_params, expected);
 }
 
+#[rstest::rstest]
+#[case::kwarg(Some(json("true")), None, true)]
+#[case::settings(None, Some(true), true)]
+#[case::absent(None, None, false)]
+#[tokio::test]
+async fn provider_drop_params_reach_the_mapping_policy(
+    #[case] kwarg: Option<Json>,
+    #[case] global: Option<bool>,
+    #[case] expected: bool,
+) {
+    let mut fixture = Fixture::new();
+    if let Some(value) = kwarg {
+        fixture
+            .args
+            .kwargs
+            .insert(String::from("drop_params"), value);
+    }
+    fixture.settings.drop_params = global;
+    run(&fixture).await.unwrap();
+    let policies = fixture.metadata.policies.lock().unwrap().clone();
+    assert_eq!(policies[0].drop_params, expected);
+}
+
 #[tokio::test]
 async fn provider_ollama_function_calling_falls_back_to_prompt() {
     let mut fixture = Fixture::new();
