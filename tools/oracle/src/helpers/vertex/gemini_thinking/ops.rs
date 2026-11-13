@@ -139,10 +139,10 @@ fn audio_answer(step: &Step) -> Value {
     let Some(audio) = &step.audio else {
         return json!({"error": {"status": null}});
     };
-    match map_audio_params(audio) {
-        Ok(config) => json!(config),
-        Err(error) => json!({"error": {"status": error.status()}}),
-    }
+    map_audio_params(audio).map_or_else(
+        |error| json!({"error": {"status": error.status()}}),
+        |config| json!(config),
+    )
 }
 
 fn server_flags(step: &Step) -> Value {

@@ -8,7 +8,6 @@ pub fn map_effort_to_budget(
     model: Option<&str>,
     budgets: &ThinkingBudgets,
 ) -> Result<ThinkingConfig, GeminiThinkingError> {
-    let include_thoughts = include_thoughts(effort)?;
     let thinking_budget = match effort {
         "minimal" => minimal_budget(model, budgets),
         "low" => budgets.low,
@@ -18,7 +17,7 @@ pub fn map_effort_to_budget(
         _ => 0,
     };
     Ok(ThinkingConfig {
-        include_thoughts: Some(include_thoughts),
+        include_thoughts: Some(include_thoughts(effort)?),
         thinking_budget: Some(thinking_budget),
         thinking_level: None,
     })
@@ -36,7 +35,8 @@ pub fn map_effort_to_level(
         "low" => ThinkingLevel::Low,
         "medium" => ThinkingLevel::Medium,
         "high" => ThinkingLevel::High,
-        _ => minimal_level(minimal),
+        _ if minimal => ThinkingLevel::Minimal,
+        _ => ThinkingLevel::Low,
     };
     Ok(ThinkingConfig {
         include_thoughts: Some(include_thoughts),
@@ -72,13 +72,5 @@ fn minimal_budget(model: Option<&str>, budgets: &ThinkingBudgets) -> i64 {
         budgets.minimal_flash
     } else {
         budgets.minimal
-    }
-}
-
-const fn minimal_level(supports_minimal: bool) -> ThinkingLevel {
-    if supports_minimal {
-        ThinkingLevel::Minimal
-    } else {
-        ThinkingLevel::Low
     }
 }
