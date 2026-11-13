@@ -9,10 +9,10 @@ from litellm.llms.modelscope.image_generation.transformation import (
 from litellm.types.utils import ImageResponse
 from pydantic import JsonValue, TypeAdapter
 
-from .steps import ImageBodyStep, ImageParamsStep, ImageReplyStep, Step, UrlStep
-from .support import (
+from .steps import (
     Object,
     Recorder,
+    Step,
     UnsupportedOptionError,
     install_environment,
     object_or_empty,
@@ -94,10 +94,12 @@ IMAGE_RESPONSE: ImageResponseFactory = ImageResponse
 
 
 def image_params(step: Step) -> JsonValue:
-    fields = TypeAdapter(ImageParamsStep).validate_python(step)
-    params = object_or_empty(fields.get("params"))
-    supported = IMAGES().get_supported_openai_params(fields["model"])
-    drop_params = fields.get("drop_params")
+    model = step.get("model")
+    if model is None:
+        raise ValueError("the image params step needs a model")
+    params = object_or_empty(step.get("params"))
+    supported = IMAGES().get_supported_openai_params(model)
+    drop_params = step.get("drop_params")
     if drop_params is None:
         drop_params = False
     kept: Object = {}
@@ -105,27 +107,27 @@ def image_params(step: Step) -> JsonValue:
         if name in supported:
             kept[name] = value
         elif not drop_params:
-            raise UnsupportedOptionError(name, fields["model"])
+            raise UnsupportedOptionError(name, model)
     optional: Object = {}
-    mapped = IMAGES().map_openai_params(
-        kept, optional, fields["model"], drop_params=drop_params
-    )
+    mapped = IMAGES().map_openai_params(kept, optional, model, drop_params=drop_params)
     answer: Object = {"params": mapped}
     return TypeAdapter(Object).validate_python(answer)
 
 
 def image_url(step: Step) -> JsonValue:
-    fields = TypeAdapter(UrlStep).validate_python(step)
-    install_environment({"MODELSCOPE_API_BASE": fields.get("env_base")})
-    return IMAGES().get_complete_url(fields.get("api_base"), None, "", {}, {})
+    install_environment({"MODELSCOPE_API_BASE": step.get("env_base")})
+    return IMAGES().get_complete_url(step.get("api_base"), None, "", {}, {})
 
 
 def image_body(step: Step) -> JsonValue:
-    fields = TypeAdapter(ImageBodyStep).validate_python(step)
+    model = step.get("model")
+    prompt = step.get("prompt")
+    if model is None or prompt is None:
+        raise ValueError("the image body step needs a model and a prompt")
     return IMAGES().transform_image_generation_request(
-        fields["model"],
-        fields["prompt"],
-        object_or_empty(fields.get("params")),
+        model,
+        prompt,
+        object_or_empty(step.get("params")),
         {},
         {},
     )
@@ -143,16 +145,19 @@ def image_datum(image: ImageDatum) -> Object:
 
 
 def image_reply(step: Step) -> JsonValue:
-    fields = TypeAdapter(ImageReplyStep).validate_python(step)
+    status = step.get("status")
+    text = step.get("body")
+    if status is None or text is None:
+        raise ValueError("the image reply step needs a status and a body")
     response = httpx.Response(
-        fields["status"],
-        content=fields["body"].encode(),
+        status,
+        content=text.encode(),
         request=httpx.Request("POST", "https://host"),
     )
     reply = IMAGES().transform_image_generation_response(
         "",
         response,
-        IMAGE_RESPONSE(created=fields.get("created")),
+        IMAGE_RESPONSE(created=step.get("created")),
         Recorder(),
         {},
         {},

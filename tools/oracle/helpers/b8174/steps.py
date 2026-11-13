@@ -1,5 +1,7 @@
-from typing import NotRequired, TypedDict
+import os
+from typing import TypedDict
 
+from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from pydantic import JsonValue
 
 Object = dict[str, JsonValue]
@@ -31,48 +33,27 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-class SpeechParamsStep(TypedDict, total=False):
-    voice: str | dict[str, JsonValue]
-    params: Object
+class Recorder(LiteLLMLoggingObj):
+    def __init__(self) -> None:
+        self.model_call_details: Object = {}
 
 
-class SpeechBodyStep(TypedDict):
-    model: str
-    input: str
-    voice: NotRequired[str | dict[str, JsonValue]]
-    params: NotRequired[Object]
+class UnsupportedOptionError(Exception):
+    status_code: int
+
+    def __init__(self, name: str, model: str) -> None:
+        super().__init__(f"parameter {name} is not supported for model {model}")
+        self.status_code = 400
 
 
-class UrlStep(TypedDict, total=False):
-    api_base: str
-    env_base: str
+def install_environment(values: dict[str, str | None]) -> None:
+    os.environ.clear()
+    for name, value in values.items():
+        if value is not None:
+            os.environ[name] = value
 
 
-class SpeechHeadersStep(TypedDict, total=False):
-    api_key: str
-    global_key: str
-    env_key: str
-
-
-class SpeechReplyStep(TypedDict):
-    status: int
-    body: str
-    headers: NotRequired[dict[str, str]]
-
-
-class ImageReplyStep(TypedDict):
-    status: int
-    body: str
-    created: NotRequired[int]
-
-
-class ImageParamsStep(TypedDict):
-    model: str
-    params: NotRequired[Object]
-    drop_params: NotRequired[bool]
-
-
-class ImageBodyStep(TypedDict):
-    model: str
-    prompt: str
-    params: NotRequired[Object]
+def object_or_empty(value: Object | None) -> Object:
+    if value is None:
+        return {}
+    return value

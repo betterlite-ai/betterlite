@@ -8,15 +8,7 @@ from litellm.llms.minimax.text_to_speech.transformation import (
 )
 from pydantic import JsonValue, TypeAdapter
 
-from .steps import (
-    SpeechBodyStep,
-    SpeechHeadersStep,
-    SpeechParamsStep,
-    SpeechReplyStep,
-    Step,
-    UrlStep,
-)
-from .support import Object, Recorder, install_environment, object_or_empty
+from .steps import Object, Recorder, Step, install_environment, object_or_empty
 
 
 class SpeechRequestData(TypedDict, total=False):
@@ -89,11 +81,10 @@ NO_DROP = False
 
 
 def speech_params(step: Step) -> JsonValue:
-    fields = TypeAdapter(SpeechParamsStep).validate_python(step)
     mapped_voice, mapped = SPEECH().map_openai_params(
         "",
-        object_or_empty(fields.get("params")),
-        fields.get("voice"),
+        object_or_empty(step.get("params")),
+        step.get("voice"),
         drop_params=NO_DROP,
     )
     answer: Object = {"voice": mapped_voice, "params": mapped}
@@ -101,16 +92,19 @@ def speech_params(step: Step) -> JsonValue:
 
 
 def speech_body(step: Step) -> JsonValue:
-    fields = TypeAdapter(SpeechBodyStep).validate_python(step)
+    model = step.get("model")
+    text = step.get("input")
+    if model is None or text is None:
+        raise ValueError("the speech body step needs a model and an input")
     mapped_voice, mapped = SPEECH().map_openai_params(
-        fields["model"],
-        object_or_empty(fields.get("params")),
-        fields.get("voice"),
+        model,
+        object_or_empty(step.get("params")),
+        step.get("voice"),
         drop_params=NO_DROP,
     )
     request = SPEECH().transform_text_to_speech_request(
-        fields["model"],
-        fields["input"],
+        model,
+        text,
         mapped_voice,
         mapped,
         {},
@@ -123,25 +117,26 @@ def speech_body(step: Step) -> JsonValue:
 
 
 def speech_url(step: Step) -> JsonValue:
-    fields = TypeAdapter(UrlStep).validate_python(step)
-    install_environment({"MINIMAX_API_BASE": fields.get("env_base")})
-    return SPEECH().get_complete_url("", fields.get("api_base"), {})
+    install_environment({"MINIMAX_API_BASE": step.get("env_base")})
+    return SPEECH().get_complete_url("", step.get("api_base"), {})
 
 
 def speech_headers(step: Step) -> JsonValue:
-    fields = TypeAdapter(SpeechHeadersStep).validate_python(step)
-    install_environment({"MINIMAX_API_KEY": fields.get("env_key")})
-    litellm.api_key = fields.get("global_key")
-    headers = SPEECH().validate_environment({}, "", api_key=fields.get("api_key"))
+    install_environment({"MINIMAX_API_KEY": step.get("env_key")})
+    litellm.api_key = step.get("global_key")
+    headers = SPEECH().validate_environment({}, "", api_key=step.get("api_key"))
     return TypeAdapter(Object).validate_python(headers)
 
 
 def speech_reply(step: Step) -> JsonValue:
-    fields = TypeAdapter(SpeechReplyStep).validate_python(step)
+    status = step.get("status")
+    text = step.get("body")
+    if status is None or text is None:
+        raise ValueError("the speech reply step needs a status and a body")
     response = httpx.Response(
-        fields["status"],
-        content=fields["body"].encode(),
-        headers=fields.get("headers"),
+        status,
+        content=text.encode(),
+        headers=step.get("headers"),
         request=httpx.Request("POST", "https://host"),
     )
     result = SPEECH().transform_text_to_speech_response("", response, Recorder())
