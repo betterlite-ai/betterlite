@@ -8,10 +8,13 @@ use super::MistralChatError;
 use super::reply::{
     decode_mistral_chat, handle_content_list_to_str_conversion, handle_empty_content_response,
 };
-use super::request::{
-    MessageTransform, RequestTransform, add_reasoning_system_prompt_if_needed,
+use super::messages::{
     handle_message_with_file, handle_name_in_message, handle_tool_call_message,
-    is_empty_assistant_message, strip_output_only_fields, transform_messages, transform_request,
+    is_empty_assistant_message, strip_output_only_fields,
+};
+use super::request::{
+    MessageTransform, RequestTransform, add_reasoning_system_prompt_if_needed, transform_messages,
+    transform_request,
 };
 use super::stream::chunk_parser;
 use crate::chat::ChatMessage;

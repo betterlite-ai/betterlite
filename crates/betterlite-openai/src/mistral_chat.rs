@@ -1,3 +1,4 @@
+pub mod messages;
 pub mod reply;
 pub mod request;
 pub mod stream;
