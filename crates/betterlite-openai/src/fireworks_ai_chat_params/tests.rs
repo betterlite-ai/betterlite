@@ -449,6 +449,7 @@ async fn null_thinking_is_not_a_conflict() {
         &mut capabilities,
         "unknown-model",
         &[
+            ("temperature", value("0.5")),
             ("thinking", Value::Null),
             ("reasoning_effort", value(r#""high""#)),
         ],
