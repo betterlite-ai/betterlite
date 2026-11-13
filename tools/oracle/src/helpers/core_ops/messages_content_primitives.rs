@@ -26,7 +26,8 @@ pub(crate) enum Input {
     TruncateToolName {
         name: String,
     },
-    IsProviderNativeToolDict {
+    #[serde(rename = "is_provider_native_tool_dict")]
+    NativeTool {
         tool: Object,
     },
     IsOpenaiFunctionTool {
@@ -47,21 +48,14 @@ pub(crate) enum Input {
     CompactionBlocks {
         fields: Object,
     },
-    MidSystemSupported {
-        model: Option<String>,
-        custom_llm_provider: Option<String>,
-        supported: Vec<String>,
-    },
+    MidSystemSupported(MidSystem),
     ChatToolParam {
         function: Object,
         tool: Json,
     },
-    CopyCacheControl {
-        source: Object,
-        target: Object,
-        model: Option<String>,
-    },
-    CarryCacheBreakpoint {
+    CopyCacheControl(CopyCache),
+    #[serde(rename = "carry_cache_breakpoint")]
+    CarryBreakpoint {
         source: Object,
         target: Object,
     },
@@ -71,7 +65,8 @@ pub(crate) enum Input {
     ImageSourceUrl {
         image_source: Json,
     },
-    ToolResultImagePart {
+    #[serde(rename = "tool_result_image_part")]
+    ImagePart {
         image_source: Json,
     },
     ToolResultPart {
@@ -90,9 +85,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let answer = match input {
             Input::TruncateToolName { name } => to_value(truncate_tool_name(name)),
-            Input::IsProviderNativeToolDict { tool } => {
-                to_value(is_provider_native_tool_dict(tool))
-            }
+            Input::NativeTool { tool } => to_value(is_provider_native_tool_dict(tool)),
             Input::IsOpenaiFunctionTool { tool } => to_value(is_openai_function_tool(tool)),
             Input::IsWebSearchTool { tool } => to_value(is_web_search_tool(tool)),
             Input::TranslatableParams => to_value(TRANSLATABLE_ANTHROPIC_PARAMS),
@@ -102,27 +95,15 @@ impl Helper for Op {
             } => to_value(attributes.then(|| tool_call_signature(tool_call)).flatten()),
             Input::ToolUseSignature { content } => to_value(tool_use_signature(content)),
             Input::CompactionBlocks { fields } => to_value(compaction_blocks(fields)),
-            Input::MidSystemSupported {
-                model,
-                custom_llm_provider,
-                supported,
-            } => to_value(mid_system(
-                model.as_deref(),
-                custom_llm_provider.as_deref(),
-                supported,
-            )?),
+            Input::MidSystemSupported(call) => to_value(call.supported()?),
             Input::ChatToolParam { function, tool } => to_value(tool_param(function, tool)?),
-            Input::CopyCacheControl {
-                source,
-                target,
-                model,
-            } => to_value(copied_target(source, target, model.as_deref())),
-            Input::CarryCacheBreakpoint { source, target } => {
+            Input::CopyCacheControl(call) => to_value(call.copied()),
+            Input::CarryBreakpoint { source, target } => {
                 to_value(carry_cache_breakpoint(source, target))
             }
             Input::ConsumesCacheControl { model } => to_value(target_consumes_cache_control(model)),
             Input::ImageSourceUrl { image_source } => to_value(image_source_url(image_source)),
-            Input::ToolResultImagePart { image_source } => {
+            Input::ImagePart { image_source } => {
                 to_value(tool_result_image_part(Some(image_source)))
             }
             Input::ToolResultPart { item } => to_value(tool_result_part(item)),
@@ -143,28 +124,42 @@ fn tool_param(function: &Object, tool: &Json) -> Result<ChatToolParam, Box<Helpe
     }
 }
 
-fn copied_target(source: &Object, target: &Object, model: Option<&str>) -> Object {
-    let mut copied = target.clone();
-    copy_cache_control(source, &mut copied, model);
-    copied
+#[derive(Debug, Deserialize)]
+pub(crate) struct CopyCache {
+    source: Object,
+    target: Object,
+    model: Option<String>,
 }
 
-fn mid_system(
-    model: Option<&str>,
-    custom_llm_provider: Option<&str>,
-    supported: &[String],
-) -> Result<bool, Box<HelperError>> {
-    let mut predicates = FlaggedModels {
-        models: supported.to_vec(),
-    };
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|source| failure("RuntimeError", None, source.to_string()))?;
-    Ok(runtime.block_on(mid_system_supported(
-        &mut predicates,
-        model,
-        custom_llm_provider,
-    )))
+impl CopyCache {
+    fn copied(&self) -> Object {
+        let mut copied = self.target.clone();
+        copy_cache_control(&self.source, &mut copied, self.model.as_deref());
+        copied
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MidSystem {
+    model: Option<String>,
+    custom_llm_provider: Option<String>,
+    supported: Vec<String>,
+}
+
+impl MidSystem {
+    fn supported(&self) -> Result<bool, Box<HelperError>> {
+        let mut predicates = FlaggedModels {
+            models: self.supported.clone(),
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map_err(|source| failure("RuntimeError", None, source.to_string()))?;
+        Ok(runtime.block_on(mid_system_supported(
+            &mut predicates,
+            self.model.as_deref(),
+            self.custom_llm_provider.as_deref(),
+        )))
+    }
 }
 
 fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
