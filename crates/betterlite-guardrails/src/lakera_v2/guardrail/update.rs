@@ -10,10 +10,7 @@ use super::LakeraV2Guardrail;
 use super::construction::resolve_timeout;
 
 impl LakeraV2Guardrail {
-    pub fn update_params(
-        &mut self,
-        params: &LitellmParams,
-    ) -> Result<(), LakeraV2Error> {
+    pub fn update_params(&mut self, params: &LitellmParams) -> Result<(), LakeraV2Error> {
         let extra = &params.base.extra;
         let on_flagged = read_option::<LakeraOnFlagged>(extra, "on_flagged")?;
         let template = read_option::<String>(extra, "advisory_system_message")?;

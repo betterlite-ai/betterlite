@@ -118,13 +118,7 @@ impl LakeraV2Guardrail {
             );
             return Ok(());
         }
-        let masked = scope::mask_instructions_pii(
-            data,
-            messages,
-            Some(response),
-            counts,
-            flags,
-        )?;
+        let masked = scope::mask_instructions_pii(data, messages, Some(response), counts, flags)?;
         if masked {
             tracing::warn!(
                 "Lakera Guardrail: Monitoring mode - PII detected, masked in place and allowing request"
