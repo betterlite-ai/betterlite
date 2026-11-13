@@ -1,0 +1,15 @@
+kind: helper
+name: agentops-preset-empty-service-name
+call:
+  b3851:
+    function: agentops_preset
+    environment:
+      AGENTOPS_SERVICE_NAME: ""
+    base:
+      exporters: []
+      mapper_names: [genai]
+      resource_attributes: {}
+env:
+  AGENTOPS_SERVICE_NAME: ""
+compare:
+  ignore: []
