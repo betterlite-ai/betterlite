@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-mid-system-empty-model
+call: {"messages_content_primitives": {"operation": "mid_system_supported", "model": "", "custom_llm_provider": "anthropic", "supported": [""]}}
+env: {}
+compare: {ignore: []}

@@ -591,10 +591,8 @@ tools/oracle/litellm/probes/passthrough_request_policies.py
 tools/oracle/litellm/probes/passthrough_selection.py
 tools/oracle/litellm/probes/pre_routing_registry.py
 tools/oracle/litellm/probes/prompt_affinity.py
-tools/oracle/litellm/probes/protocol.py
 tools/oracle/litellm/probes/quality_router.py
 tools/oracle/litellm/probes/redis_failure_policy.py
-tools/oracle/litellm/probes/registry.py
 tools/oracle/litellm/probes/request_batch.py
 tools/oracle/litellm/probes/request_scheduler.py
 tools/oracle/litellm/probes/responses_stream_fallback.py
@@ -638,7 +636,5 @@ tools/oracle/litellm/probes/usage_routing.py
 tools/oracle/litellm/probes/usage_routing_v2.py
 tools/oracle/litellm/probes/usage_v2_accounting.py
 tools/oracle/litellm/probes/wildcard_catalog.py
-tools/oracle/sdk_http/dispatch.py
 tools/oracle/sdk_http/openai_chat.py
-tools/oracle/sdk_http/vector_query_embedding.py
 tools/oracle/sdk_http/vector_store_embedding_executor.py

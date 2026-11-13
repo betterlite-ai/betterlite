@@ -1,0 +1,5 @@
+kind: helper
+name: protocol-charge-mcp-seed
+call: {protocol_charge: {function: mcp, mcp: {response_cost: null, tool_name: search, default_cost_per_query: 0.5, tool_name_to_cost_per_query: {search: 0}}}}
+env: {}
+compare: {ignore: []}

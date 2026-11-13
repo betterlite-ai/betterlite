@@ -1,0 +1,19 @@
+kind: helper
+name: enqueued-limit-exceeded
+call:
+  batch_enqueued_reserve:
+    tokens: 500
+    principal:
+      api_key: sk-oracle-key
+      team_id: team-oracle
+      metadata:
+        batch_enqueued_token_limit: 1000
+      team_metadata:
+        batch_enqueued_token_limit: 2000
+    redis:
+      reserve:
+        - [0, 950]
+      refund: []
+    memory: {seed: {}, read: []}
+env: {}
+compare: {ignore: []}

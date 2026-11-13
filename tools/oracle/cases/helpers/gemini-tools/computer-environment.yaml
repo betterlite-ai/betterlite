@@ -1,0 +1,19 @@
+kind: helper
+name: computer-environment
+call:
+  gemini_tools:
+    call:
+      tools:
+        - type: computer_use
+          environment: bogus
+          excluded_predefined_functions:
+            - x
+      functions: []
+      web_search_options: null
+      tool_choice: null
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}

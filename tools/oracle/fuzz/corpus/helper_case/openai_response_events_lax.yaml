@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-lax
+call:
+  openai_response_events:
+    lax_response_validation:
+      probes:
+        - {body: '{"id":7,"created_at":5,"output":"bad"}', status: 200, headers: {}, now: 1700000000}
+env: {}
+compare: {ignore: []}

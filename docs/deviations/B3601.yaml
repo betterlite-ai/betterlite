@@ -1,0 +1,25 @@
+task: B3601
+deviations:
+  - what: >-
+      A settings object whose request_fields or response_fields holds the wrong type makes
+      get_settings return None, so the caller falls back to the whole payload. LiteLLM's get_settings
+      raises a pydantic ValidationError and the guardrail call fails.
+    why: >-
+      get_settings returns Option by this task's signature, and the passthrough endpoint config
+      loader that could reject the value when the config loads does not exist yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L110-L111
+  - what: >-
+      Inherited key and team guardrails keep first-seen order, key before team, instead of the
+      iteration order of Python's set.
+    why: >-
+      LiteLLM collects the names in a set, whose iteration order changes between Python processes,
+      so no working setup can depend on it; B1108's merge keeps key before team.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3004-L3026
+  - what: >-
+      collect_guardrails does not raise the premium refusal when key or team metadata carries
+      guardrails on a deployment without premium features; the merged names are returned.
+    why: >-
+      The premium gate belongs to B1108's _add_guardrails_from_key_or_team_metadata, whose helper
+      is private to betterlite-core, and this task's collect_guardrails has no premium input or
+      error return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3007-L3016
