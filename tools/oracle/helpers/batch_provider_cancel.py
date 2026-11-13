@@ -2,6 +2,7 @@ import asyncio
 import os
 from collections.abc import Coroutine
 from typing import ClassVar, Final, Literal, Protocol, TypedDict, cast
+from unittest.mock import patch
 
 import litellm
 from litellm.batches import main as batch_main
@@ -9,6 +10,7 @@ from litellm.llms.bedrock.embed import embedding as bedrock_embedding
 from litellm.llms.bedrock.embed.embedding import BedrockEmbedding
 from litellm.types.utils import LiteLLMBatch
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 WIRE: Final = TypeAdapter(JsonValue)
 
@@ -188,6 +190,7 @@ def status_fields(status: Status) -> dict[str, JsonValue]:
 class ScriptedEmbedding(BedrockEmbedding):
     answer: ClassVar[dict[str, JsonValue]] = {}
 
+    @override
     async def _get_async_invoke_status(
         self,
         invocation_arn: str,
@@ -200,17 +203,11 @@ class ScriptedEmbedding(BedrockEmbedding):
 
 
 def async_invoke(status: Status) -> JsonValue:
-    previous = bedrock_embedding.BedrockEmbedding
-    previous_answer = ScriptedEmbedding.answer
-    ScriptedEmbedding.answer = status_fields(status)
-    bedrock_embedding.BedrockEmbedding = ScriptedEmbedding
-    try:
-        batch = ASYNC_STATUS(
-            batch_id=status["invocationArn"], aws_region_name="us-east-1"
-        )
-    finally:
-        bedrock_embedding.BedrockEmbedding = previous
-        ScriptedEmbedding.answer = previous_answer
+    with (
+        patch.object(bedrock_embedding, "BedrockEmbedding", ScriptedEmbedding),
+        patch.object(ScriptedEmbedding, "answer", status_fields(status)),
+    ):
+        batch = ASYNC_STATUS(batch_id=status["invocationArn"], aws_region_name="us-east-1")
     answer: dict[str, JsonValue] = {
         "batch": WIRE.validate_json(batch.model_dump_json()),
         "model": None,
