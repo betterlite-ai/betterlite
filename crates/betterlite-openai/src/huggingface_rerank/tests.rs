@@ -10,7 +10,7 @@ use betterlite_tokenizer::count::error::CountError;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::error::{HuggingfaceRerankError, MAX_RESPONSE_BYTES};
+use super::error::HuggingfaceRerankError;
 use super::headers::validate_environment;
 use super::params::{
     Params, SUPPORTED_RERANK_PARAMS, map_cohere_rerank_params, transform_rerank_request,
@@ -19,7 +19,7 @@ use super::response::{
     RerankResponseItem, ResponseRequest, decode_rerank_response, transform_rerank_response,
 };
 use super::url::{get_api_base, get_complete_url};
-use super::{RequestIdSource, TextTokenCounter};
+use super::{RequestIdSource, TextTokenCounter, Uuid4};
 use crate::api::rerank_contracts::records::{
     RerankResponse, RerankResponseDocument, RerankResponseMeta, RerankResponseResult, Score,
 };
@@ -457,6 +457,24 @@ fn response_uses_an_object_request_document() {
 }
 
 #[test]
+fn response_falls_back_to_the_request_document_for_an_empty_item_text() {
+    let response = success(
+        r#"[{"index": 0, "score": 0.5, "text": ""}]"#,
+        r#"{"query": "q", "texts": ["request"], "return_text": true}"#,
+        &[Some(1), Some(2)],
+    );
+    assert_eq!(results(&response)[0].document, Some(document("request")));
+}
+
+#[test]
+fn response_new_ids_are_distinct_version_four_uuids() {
+    let first = Uuid4.new_id();
+    let second = Uuid4.new_id();
+    assert_ne!(first, second);
+    assert_eq!(uuid::Uuid::parse_str(&first).unwrap().get_version_num(), 4);
+}
+
+#[test]
 fn response_skips_a_document_index_past_the_request_documents() {
     let response = success(
         r#"[{"index": 2, "score": 0.5}]"#,
@@ -586,7 +604,7 @@ fn response_non_object_item_is_an_item_error() {
 
 #[test]
 fn response_oversized_body_is_rejected() {
-    let body = vec![b' '; MAX_RESPONSE_BYTES + 1];
+    let body = vec![b' '; 1_048_577];
     assert!(matches!(
         decode_rerank_response(&body, Some(200)),
         Err(HuggingfaceRerankError::ResponseTooLarge { .. })
@@ -595,9 +613,9 @@ fn response_oversized_body_is_rejected() {
 
 #[test]
 fn response_body_at_the_limit_is_decoded() {
-    let mut body = vec![b' '; MAX_RESPONSE_BYTES];
+    let mut body = vec![b' '; 1_048_576];
     body[0] = b'[';
-    body[MAX_RESPONSE_BYTES - 1] = b']';
+    body[1_048_575] = b']';
     assert!(decode_rerank_response(&body, Some(200)).is_ok());
 }
 
