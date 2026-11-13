@@ -69,6 +69,7 @@ pub mod provider;
 pub mod ragflow_chat;
 pub mod regional_host_dispatch;
 pub mod replicate;
+pub mod sandbox_dispatch;
 pub mod sap_auth;
 pub mod sap_chat;
 pub mod sap_embedding;
