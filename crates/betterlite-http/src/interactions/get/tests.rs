@@ -350,6 +350,38 @@ fn get_interaction_passes_a_failing_status_to_the_response_transform() {
 }
 
 #[test]
+fn get_interaction_does_not_follow_a_redirect() {
+    let serving = support::serve_once(
+        support::reply(
+            "302 Found",
+            &[("location", "http://127.0.0.1:1/elsewhere")],
+            "",
+        ),
+        None,
+    );
+    let fixture = Fixture::default();
+    let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
+    let mut logging = Logging::default();
+
+    let output = get_interaction(
+        &fixture,
+        &mut clients,
+        &mut logging,
+        None,
+        Call::new(serving.address).request(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "");
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(&"response|302|int_1|-".to_owned()),
+        "{calls:?}"
+    );
+    serving.request.join().unwrap();
+}
+
+#[test]
 fn get_interaction_passes_a_transport_failure_through_the_error_handler() {
     let fixture = Fixture::default();
     let mut clients = HttpClients::new(support::policy(Verification::Enabled, None));
