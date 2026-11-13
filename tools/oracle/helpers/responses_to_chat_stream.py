@@ -24,13 +24,22 @@ class LineCall(TypedDict):
 Input: TypeAlias = EventCall | LineCall
 
 DUMP = TypeAdapter(dict[str, JsonValue])
-MODEL = TypeAdapter(ModelResponseStream)
 EVENT = TypeAdapter(dict[str, object])
 
 
 class LineReader(ResponsesStream):
+    def __init__(self) -> None:
+        super().__init__(iter([]), sync_stream=True)
+        self.chunks: list[ModelResponseStream] = []
+
+    def chunk_parser(self, chunk: dict[str, object]) -> ModelResponseStream:
+        parsed = super().chunk_parser(chunk)
+        self.chunks.append(parsed)
+        return parsed
+
     def read(self, line: str) -> ModelResponseStream:
-        return MODEL.validate_python(self._handle_string_chunk(line))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1342
+        self._handle_string_chunk(line)
+        return self.chunks.pop()
 
 
 def run(input_value: Input) -> JsonValue:
@@ -50,7 +59,7 @@ def _events(call: EventCall) -> JsonValue:
 
 
 def _lines(call: LineCall) -> JsonValue:
-    reader = LineReader(iter([]), sync_stream=True)
+    reader = LineReader()
     steps: list[JsonValue] = [
         {"chunk": DUMP.validate_json(reader.read(line).model_dump_json())} for line in call["lines"]
     ]
