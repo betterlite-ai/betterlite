@@ -1,0 +1,23 @@
+kind: probe
+name: catalog-updates-failed-restore-keeps-snapshot
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: true
+        steps:
+          - action: set
+            models:
+              - {model_name: g, model: "openai/flaky", id: a}
+              - {model_name: h, model: "openai/m3", id: c}
+          - action: upsert
+            model: {model_name: g, model: "bogus/x", id: a}
+compare:
+  expected_difference:
+    - pointer: /output/catalog_updates/steps/1/names
+      reference: [h, g]
+      rust: [g, h]
+      why: the betterlite probe refuses openai/flaky on its second admission, so the restore of the previous deployment fails and the earlier catalog stays as it was. LiteLLM admits it again and appends it to the end of the model list
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9995-L10021
+  ignore: []
