@@ -121,11 +121,14 @@ impl<H: AzureIo> SdkAzureGrants<H> {
         }
     }
 
-    fn token_through(
+    fn token_through<F>(
         &self,
         cell: &Mutex<Option<CachedToken>>,
-        fetch: impl FnOnce(&NativeGrants<'_, ProductionHost>) -> Result<ChainToken, AzureGrantError>,
-    ) -> Result<SecretString, AzureGrantError> {
+        fetch: F,
+    ) -> Result<SecretString, AzureGrantError>
+    where
+        F: FnOnce(&NativeGrants<'_, ProductionHost>) -> Result<ChainToken, AzureGrantError>,
+    {
         let now = TokenClock::now_unix_seconds(&*self.clock);
         if let Some(token) = cached(cell, now)? {
             return Ok(token);
