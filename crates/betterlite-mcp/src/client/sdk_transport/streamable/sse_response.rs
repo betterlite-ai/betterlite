@@ -23,12 +23,10 @@ use super::streamable::{
 enum Attempt {
     Complete,
     Ended,
-    Http,
-    Framing(SdkError),
-    Invalid(serde_json::Error),
+    Retry,
 }
 pub(super) fn event_message(sse: &Sse) -> Option<Result<RxJsonRpcMessage<RoleClient>, SdkError>> {
-    if sse.event.as_deref() != Some("message") {
+    if !matches!(sse.event.as_deref(), None | Some("message")) {
         warn!("Unknown SSE event: {}", sse.event.as_deref().unwrap_or(""));
         return None;
     }
@@ -57,6 +55,9 @@ impl StreamableCore {
             };
             match event {
                 Err(error) => {
+                    if !matches!(&error, SdkError::Sse(_) | SdkError::EventTooLarge { .. }) {
+                        return self.reconnect(event_id, retry_ms, id).await;
+                    }
                     return self
                         .push_error(CONNECTION_CLOSED, format!("{error}"), id)
                         .await;
@@ -111,16 +112,7 @@ impl StreamableCore {
             {
                 Attempt::Complete => return Ok(()),
                 Attempt::Ended => attempt = 0,
-                Attempt::Http => attempt = attempt.saturating_add(1),
-                Attempt::Framing(error) => {
-                    return self
-                        .push_error(CONNECTION_CLOSED, format!("{error}"), id)
-                        .await;
-                }
-                Attempt::Invalid(source) => {
-                    let message = format!("Failed to parse SSE message: {source}");
-                    return self.push_error(ErrorCode::PARSE_ERROR, message, id).await;
-                }
+                Attempt::Retry => attempt = attempt.saturating_add(1),
             }
         }
     }
@@ -147,7 +139,7 @@ impl StreamableCore {
             Ok(response) => response,
             Err(error) => {
                 debug!("Reconnection failed: {error}");
-                return Ok(Attempt::Http);
+                return Ok(Attempt::Retry);
             }
         };
         let HttpResponse {
@@ -158,7 +150,7 @@ impl StreamableCore {
         } = response;
         if !(200..=299).contains(&status) {
             drop(body.close().await);
-            return Ok(Attempt::Http);
+            return Ok(Attempt::Retry);
         }
         let is_sse = content_type(&headers).starts_with("text/event-stream");
         let mut events = EventStream::open(body, self.max_event_size);
@@ -168,18 +160,26 @@ impl StreamableCore {
             };
             match event {
                 Err(error) => {
-                    return Ok(if is_sse {
-                        Attempt::Framing(error)
-                    } else {
-                        Attempt::Http
-                    });
+                    let framing =
+                        matches!(&error, SdkError::Sse(_) | SdkError::EventTooLarge { .. });
+                    if !framing || !is_sse {
+                        return Ok(Attempt::Retry);
+                    }
+                    self.push_error(CONNECTION_CLOSED, format!("{error}"), id.clone())
+                        .await?;
+                    return Ok(Attempt::Complete);
                 }
                 Ok(sse) => {
                     track_event(event_id, retry_ms, &sse);
                     match self.handle_event(sse, id).await {
                         Ok(true) => return Ok(Attempt::Complete),
                         Ok(false) => {}
-                        Err(SdkError::Json(source)) => return Ok(Attempt::Invalid(source)),
+                        Err(SdkError::Json(source)) => {
+                            let message = format!("Failed to parse SSE message: {source}");
+                            self.push_error(ErrorCode::PARSE_ERROR, message, id.clone())
+                                .await?;
+                            return Ok(Attempt::Complete);
+                        }
                         Err(other) => return Err(other),
                     }
                 }

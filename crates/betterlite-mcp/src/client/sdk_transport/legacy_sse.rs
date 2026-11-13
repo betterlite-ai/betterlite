@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,13 +42,9 @@ enum Received {
 }
 fn endpoint_of(base: &Url, sse: &Sse) -> Result<Url, SdkError> {
     let data = sse.data.as_deref().unwrap_or_default();
-    let endpoint = match base.join(data) {
-        Ok(endpoint) => endpoint,
-        Err(source) => {
-            let context = io::Error::new(io::ErrorKind::InvalidData, source);
-            return Err(SdkError::Io(Arc::new(context)));
-        }
-    };
+    let endpoint = base
+        .join(data)
+        .map_err(|source| SdkError::EndpointUrl { source })?;
     let same_origin = endpoint.scheme() == base.scheme()
         && endpoint.host_str() == base.host_str()
         && endpoint.port() == base.port();
@@ -85,11 +80,7 @@ impl TransportContext for LegacySse {
             let mut events = EventStream::open(response.body, MAX_EVENT_SIZE);
             loop {
                 let Some(event) = events.next().await else {
-                    let context = io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "the SSE stream ended before its endpoint event",
-                    );
-                    return Err(SdkError::Io(Arc::new(context)));
+                    return Err(SdkError::EndpointMissing);
                 };
                 match event {
                     Err(error) => return Err(error),
@@ -120,7 +111,7 @@ impl LegacySseStreams {
                 Received::Stop
             }
             Ok(sse) => match sse.event.as_deref() {
-                Some("message") => {
+                None | Some("message") => {
                     let data = sse.data.as_deref().unwrap_or_default();
                     if data.is_empty() {
                         return Received::Skip;

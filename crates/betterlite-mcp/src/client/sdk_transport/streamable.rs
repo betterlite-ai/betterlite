@@ -3,7 +3,6 @@ pub mod post;
 pub mod sse_response;
 
 use std::future::Future;
-use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -162,11 +161,19 @@ impl StreamableCore {
         drop(self.incoming.try_send(Incoming::Closed));
     }
     pub(super) async fn close(&self) -> Result<(), SdkError> {
-        if self.session_id().is_some() {
+        let session = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state.session_id.take()
+        };
+        if let Some(session) = session {
+            let mut headers = self.headers();
+            if let Ok(value) = HeaderValue::from_str(&session) {
+                headers.insert(MCP_SESSION_ID, value);
+            }
             let request = McpHttpRequest {
                 method: Method::DELETE,
                 url: self.url.clone(),
-                headers: self.headers(),
+                headers,
                 body: Bytes::new(),
                 read_timeout: None,
             };
@@ -191,9 +198,7 @@ impl TransportContext for StreamableHttp {
         let core = Arc::clone(&self.core);
         async move {
             let Some(incoming) = incoming else {
-                return Err(SdkError::Io(Arc::new(io::Error::other(
-                    "the streamable HTTP transport is already open",
-                ))));
+                return Err(SdkError::AlreadyOpen);
             };
             Ok(StreamableStreams { core, incoming })
         }

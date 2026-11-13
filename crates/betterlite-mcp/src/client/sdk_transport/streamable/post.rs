@@ -161,9 +161,7 @@ impl StreamableCore {
     pub(super) async fn push(&self, message: RxJsonRpcMessage<RoleClient>) -> Result<(), SdkError> {
         match self.incoming.send(Incoming::Message(message)).await {
             Ok(()) => Ok(()),
-            Err(_) => Err(SdkError::Io(Arc::new(io::Error::other(
-                "the MCP session is closed",
-            )))),
+            Err(_) => Err(SdkError::SessionClosed),
         }
     }
     pub(super) async fn push_error(

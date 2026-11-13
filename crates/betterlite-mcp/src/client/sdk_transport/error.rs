@@ -20,6 +20,22 @@ pub enum SdkError {
     EventTooLarge { limit: usize },
     #[error("the message is not valid JSON-RPC")]
     Json(#[source] serde_json::Error),
+    #[error("the SSE endpoint URL is not valid")]
+    EndpointUrl(#[source] url::ParseError),
+    #[error("the SSE stream ended before its endpoint event")]
+    EndpointMissing,
+    #[error("the streamable HTTP transport is already open")]
+    AlreadyOpen,
+    #[error("the MCP session is closed")]
+    SessionClosed,
+    #[error("the SSE endpoint URL is not valid")]
+    EndpointUrl(#[source] url::ParseError),
+    #[error("the SSE stream ended before its endpoint event")]
+    EndpointMissing,
+    #[error("the streamable HTTP transport is already open")]
+    AlreadyOpen,
+    #[error("the MCP session is closed")]
+    SessionClosed,
     #[error("Endpoint origin does not match connection origin: {endpoint_url}")]
     OriginMismatch { endpoint_url: String },
     #[error("{message}")]

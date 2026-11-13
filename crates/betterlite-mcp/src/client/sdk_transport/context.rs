@@ -1,8 +1,8 @@
 use std::future::Future;
 use std::io;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use futures_util::future::BoxFuture;
 use rmcp::RoleClient;
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
@@ -22,47 +22,10 @@ pub enum SdkTransport {
     LegacySse(LegacySse),
     Stdio(StdioContext),
 }
-pub struct SdkStreams(Box<dyn BoxedStreams>);
-trait BoxedStreams: Send {
-    fn send_boxed(
-        &mut self,
-        item: TxJsonRpcMessage<RoleClient>,
-    ) -> BoxFuture<'static, Result<(), SdkError>>;
-    fn receive_boxed(&mut self) -> BoxFuture<'_, Option<RxJsonRpcMessage<RoleClient>>>;
-    fn close_boxed(&mut self) -> BoxFuture<'_, Result<(), SdkError>>;
-}
-
-impl<Streams> BoxedStreams for Streams
-where
-    Streams: Transport<RoleClient, Error = SdkError> + Send,
-{
-    fn send_boxed(
-        &mut self,
-        item: TxJsonRpcMessage<RoleClient>,
-    ) -> BoxFuture<'static, Result<(), SdkError>> {
-        Box::pin(Transport::<RoleClient>::send(self, item))
-    }
-    fn receive_boxed(&mut self) -> BoxFuture<'_, Option<RxJsonRpcMessage<RoleClient>>> {
-        Box::pin(Transport::<RoleClient>::receive(self))
-    }
-    fn close_boxed(&mut self) -> BoxFuture<'_, Result<(), SdkError>> {
-        Box::pin(Transport::<RoleClient>::close(self))
-    }
-}
-impl From<StreamableStreams> for SdkStreams {
-    fn from(streams: StreamableStreams) -> Self {
-        Self(Box::new(streams))
-    }
-}
-impl From<LegacySseStreams> for SdkStreams {
-    fn from(streams: LegacySseStreams) -> Self {
-        Self(Box::new(streams))
-    }
-}
-impl From<StdioRw> for SdkStreams {
-    fn from(streams: StdioRw) -> Self {
-        Self(Box::new(streams))
-    }
+pub enum SdkStreams {
+    Streamable(StreamableStreams),
+    LegacySse(LegacySseStreams),
+    Stdio(StdioRw),
 }
 fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
     match failure {
@@ -90,48 +53,46 @@ impl TransportContext for StdioContext {
         async move { self.0.exit().await.map_err(stdio_exit) }
     }
 }
-
-macro_rules! open_transport {
-    ($transport:expr) => {
-        match $transport {
-            SdkTransport::Streamable(inner) => SdkStreams::from(inner.enter().await?),
-            SdkTransport::LegacySse(inner) => SdkStreams::from(inner.enter().await?),
-            SdkTransport::Stdio(inner) => SdkStreams::from(inner.enter().await?),
-        }
-    };
-}
-
-macro_rules! close_transport {
-    ($transport:expr) => {
-        match $transport {
-            SdkTransport::Streamable(inner) => inner.exit().await,
-            SdkTransport::LegacySse(inner) => inner.exit().await,
-            SdkTransport::Stdio(inner) => inner.exit().await,
-        }
-    };
-}
+type BoxedResult<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 impl TransportContext for SdkTransport {
     type Streams = SdkStreams;
     type Error = SdkError;
-    fn enter(&mut self) -> impl Future<Output = Result<SdkStreams, SdkError>> + Send {
-        async move { open_transport!(self) }
+    async fn enter(&mut self) -> Result<SdkStreams, SdkError> {
+        match self {
+            Self::Streamable(transport) => Ok(SdkStreams::Streamable(transport.enter().await?)),
+            Self::LegacySse(transport) => Ok(SdkStreams::LegacySse(transport.enter().await?)),
+            Self::Stdio(transport) => Ok(SdkStreams::Stdio(transport.enter().await?)),
+        }
     }
-    fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
-        async move { close_transport!(self) }
+    async fn exit(self) -> Result<(), ExitFailure<SdkError>> {
+        match self {
+            Self::Streamable(transport) => transport.exit().await,
+            Self::LegacySse(transport) => transport.exit().await,
+            Self::Stdio(transport) => transport.exit().await,
+        }
     }
 }
 impl Transport<RoleClient> for SdkStreams {
     type Error = SdkError;
-    fn send(
-        &mut self,
-        item: TxJsonRpcMessage<RoleClient>,
-    ) -> impl Future<Output = Result<(), SdkError>> + Send + 'static {
-        self.0.send_boxed(item)
+    fn send(&mut self, item: TxJsonRpcMessage<RoleClient>) -> BoxedResult<Result<(), SdkError>> {
+        match self {
+            Self::Streamable(streams) => Box::pin(streams.send(item)),
+            Self::LegacySse(streams) => Box::pin(streams.send(item)),
+            Self::Stdio(streams) => Box::pin(streams.send(item)),
+        }
     }
-    fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
-        self.0.receive_boxed()
+    async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
+        match self {
+            Self::Streamable(streams) => streams.receive().await,
+            Self::LegacySse(streams) => streams.receive().await,
+            Self::Stdio(streams) => streams.receive().await,
+        }
     }
-    fn close(&mut self) -> impl Future<Output = Result<(), SdkError>> + Send {
-        self.0.close_boxed()
+    async fn close(&mut self) -> Result<(), SdkError> {
+        match self {
+            Self::Streamable(streams) => streams.close().await,
+            Self::LegacySse(streams) => streams.close().await,
+            Self::Stdio(streams) => streams.close().await,
+        }
     }
 }

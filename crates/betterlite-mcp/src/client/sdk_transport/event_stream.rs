@@ -44,25 +44,15 @@ impl EventStream {
 #[derive(Debug, thiserror::Error)]
 enum LimitError {
     #[error("the SSE source failed")]
-    Source(#[source] Box<dyn std::error::Error + Send + Sync>),
+    Source(#[source] McpHttpError),
     #[error("the SSE event is larger than {limit} bytes")]
     TooLarge { limit: usize },
-}
-impl LimitError {
-    fn into_sdk(self) -> SdkError {
-        match self {
-            Self::TooLarge { limit } => SdkError::EventTooLarge { limit },
-            Self::Source(source) => match source.downcast::<McpHttpError>() {
-                Ok(error) => SdkError::Http(Arc::new(*error)),
-                Err(other) => SdkError::Sse(SseError::Body(other)),
-            },
-        }
-    }
 }
 fn sdk_error(error: SseError) -> SdkError {
     match error {
         SseError::Body(source) => match source.downcast::<LimitError>() {
-            Ok(limit) => limit.into_sdk(),
+            Ok(LimitError::TooLarge { limit }) => SdkError::EventTooLarge { limit },
+            Ok(LimitError::Source(source)) => SdkError::Http(Arc::new(source)),
             Err(other) => SdkError::Sse(SseError::Body(other)),
         },
         framing => SdkError::Sse(framing),
@@ -71,35 +61,60 @@ fn sdk_error(error: SseError) -> SdkError {
 struct Limiter {
     maximum: usize,
     retained: usize,
-    blank: bool,
+    line: usize,
+    comment: bool,
+    after_cr: bool,
 }
 struct OverLimit;
+
+// httpx2 ends a line on CR, CRLF or LF and leaves comment lines out of the event size
 impl Limiter {
     const fn new(maximum: usize) -> Self {
         Self {
             maximum,
             retained: 0,
-            blank: false,
+            line: 0,
+            comment: false,
+            after_cr: false,
         }
     }
     fn observe(&mut self, chunk: &[u8]) -> Result<(), OverLimit> {
         for &byte in chunk {
-            match byte {
-                b'\n' => {
-                    if self.blank {
-                        self.retained = 0;
-                    }
-                    self.blank = !self.blank;
+            if self.after_cr {
+                self.after_cr = false;
+                if byte == b'\n' {
+                    continue;
                 }
-                b'\r' => {}
+            }
+            match byte {
+                b'\r' => {
+                    self.finish_line()?;
+                    self.after_cr = true;
+                }
+                b'\n' => self.finish_line()?,
                 _ => {
-                    self.blank = false;
-                    self.retained = self.retained.saturating_add(1);
-                    if self.retained > self.maximum {
+                    if self.line == 0 {
+                        self.comment = byte == b':';
+                    }
+                    self.line = self.line.saturating_add(1);
+                    if self.retained.saturating_add(self.line) > self.maximum {
                         return Err(OverLimit);
                     }
                 }
             }
+        }
+        Ok(())
+    }
+    fn finish_line(&mut self) -> Result<(), OverLimit> {
+        if self.line == 0 {
+            self.retained = 0;
+        } else if !self.comment {
+            self.retained = self.retained.saturating_add(self.line).saturating_add(1);
+        }
+        self.line = 0;
+        self.comment = false;
+        if self.retained.saturating_add(self.line) > self.maximum {
+            return Err(OverLimit);
         }
         Ok(())
     }
@@ -127,7 +142,7 @@ impl Stream for Bounded {
             }
             Poll::Ready(Some(Err(error))) => {
                 self.failed = true;
-                Poll::Ready(Some(Err(LimitError::Source(Box::new(error)))))
+                Poll::Ready(Some(Err(LimitError::Source(error))))
             }
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,

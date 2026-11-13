@@ -286,6 +286,18 @@ fn note_header(request: &RecordedRequest, name: &HeaderName) -> Option<String> {
         .map(|value| value.to_str().unwrap().to_owned())
 }
 
+fn cut_stream(first: Bytes) -> Response {
+    let items = vec![
+        Ok::<Bytes, std::io::Error>(first),
+        Err(std::io::Error::other("cut")),
+    ];
+    let mut response = Response::new(Body::from_stream(futures_util::stream::iter(items)));
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("text/event-stream"));
+    response
+}
+
 #[rstest]
 #[case::moved_post(307, Method::POST, true)]
 #[case::permanent_post(308, Method::POST, true)]
@@ -704,7 +716,7 @@ async fn a_get_stream_delivers_server_messages() {
 async fn an_sse_event_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_556 - prefix.len() - suffix.len();
+    let padding = 1_048_555 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\ndata: {json}\n\n");
@@ -724,7 +736,7 @@ async fn an_sse_event_at_the_size_limit_is_accepted() {
 async fn an_sse_event_with_crlf_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_556 - prefix.len() - suffix.len();
+    let padding = 1_048_555 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\r\ndata: {json}\r\n\r\n");
@@ -852,6 +864,142 @@ async fn a_legacy_post_with_an_error_status_fails_the_send() {
         SdkError::Http(source) => assert!(source.to_string().contains("400"), "{source}"),
         other => panic!("expected an HTTP error, got {other}"),
     }
+}
+
+#[tokio::test]
+async fn a_data_only_event_is_a_message() {
+    let server = TestServer::start(|_| {
+        streamed(vec![Bytes::from_static(
+            b"data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
+        )])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_cut_sse_body_reconnects_with_last_event_id() {
+    let server = TestServer::start(|request| {
+        if request.method == Method::POST {
+            return cut_stream(Bytes::from_static(
+                b"event: message\nid: cut-1\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
+            ));
+        }
+        streamed(vec![Bytes::from_static(
+            b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":\"server-9\",\"result\":{}}\n\n",
+        )])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+    let response = receive(&mut streams).await;
+    assert_eq!(response_id(&response), Some(RequestId::Number(7)));
+    let requests = server.requests();
+    assert_eq!(requests[1].method, Method::GET);
+    assert_eq!(
+        note_header(&requests[1], &LAST_EVENT_HEADER).as_deref(),
+        Some("cut-1")
+    );
+}
+
+#[tokio::test]
+async fn a_comment_line_does_not_count_toward_the_event_limit() {
+    let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
+    let suffix = "\"}}";
+    let padding = 524_288 - prefix.len() - suffix.len();
+    let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
+    let comment = format!(": {}", "c".repeat(600_000));
+    let server = TestServer::start(move |_| {
+        let event = format!("{comment}\nevent: message\ndata: {json}\n\n");
+        streamed(vec![Bytes::from(event)])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_cr_delimited_event_at_the_size_limit_is_accepted() {
+    let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
+    let suffix = "\"}}";
+    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
+    let server = TestServer::start(move |_| {
+        streamed(vec![Bytes::from(format!(
+            "event: message\rdata: {json}\r\r"
+        ))])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_second_close_sends_no_delete() {
+    let server = TestServer::start(|request| {
+        if request.method == Method::DELETE {
+            return answer(200, "", "");
+        }
+        let mut response = answer(
+            200,
+            "application/json",
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}",
+        );
+        response
+            .headers_mut()
+            .insert(SESSION_HEADER, HeaderValue::from_static("session-1"));
+        response
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(1, "initialize")).await;
+    let _response = receive(&mut streams).await;
+    <SdkStreams as Transport<RoleClient>>::close(&mut streams)
+        .await
+        .unwrap();
+    transport.exit().await.unwrap();
+    let deletes = server
+        .requests()
+        .into_iter()
+        .filter(|request| request.method == Method::DELETE)
+        .count();
+    assert_eq!(deletes, 1);
+}
+
+#[tokio::test]
+async fn a_data_only_legacy_event_is_a_message() {
+    let server = TestServer::start(|_| {
+        streamed(vec![Bytes::from_static(
+            b"event: endpoint\ndata: /messages\n\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n\n",
+        )])
+    })
+    .await;
+    let (mut transport, _handler) = legacy(server.url("/sse"));
+    let mut streams = enter(&mut transport).await;
+    let message = receive(&mut streams).await;
+    assert_eq!(response_id(&message), Some(RequestId::Number(1)));
 }
 
 struct UnusedInit;
