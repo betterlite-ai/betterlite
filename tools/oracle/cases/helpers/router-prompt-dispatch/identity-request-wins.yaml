@@ -1,0 +1,20 @@
+kind: helper
+name: prompt-dispatch-identity-request-wins
+call:
+  b8466:
+    function: resolve_prompt_identity
+    request:
+      prompt_id: request-id
+      prompt_variables:
+        name: request
+      prompt_label: request-label
+    deployment:
+      model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: deployment-id
+        prompt_variables:
+          name: deployment
+        prompt_label: deployment-label
+env: {}
+compare: {ignore: []}

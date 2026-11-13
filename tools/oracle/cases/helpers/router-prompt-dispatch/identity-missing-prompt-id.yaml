@@ -1,0 +1,12 @@
+kind: helper
+name: prompt-dispatch-identity-missing-prompt-id
+call:
+  b8466:
+    function: resolve_prompt_identity
+    request: {}
+    deployment:
+      model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+env: {}
+compare: {ignore: []}

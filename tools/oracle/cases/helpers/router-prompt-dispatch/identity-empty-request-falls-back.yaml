@@ -1,0 +1,19 @@
+kind: helper
+name: prompt-dispatch-identity-empty-request-falls-back
+call:
+  b8466:
+    function: resolve_prompt_identity
+    request:
+      prompt_id: ""
+      prompt_variables: {}
+      prompt_label: null
+    deployment:
+      model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: deployment-id
+        prompt_variables:
+          name: deployment
+        prompt_label: deployment-label
+env: {}
+compare: {ignore: []}

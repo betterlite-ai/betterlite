@@ -1,0 +1,13 @@
+kind: helper
+name: prompt-dispatch-identity-litellm-agent-skips-check
+call:
+  b8466:
+    function: resolve_prompt_identity
+    request: {}
+    deployment:
+      model_name: litellm_agent/support-bot
+      litellm_params:
+        model: litellm_agent/support-bot
+        prompt_label: production
+env: {}
+compare: {ignore: []}

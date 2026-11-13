@@ -1,0 +1,32 @@
+kind: helper
+name: prompt-dispatch-merge-drops-prompt-keys
+call:
+  b8466:
+    function: merge_prompt_request
+    new_model_has_deployments: true
+    request:
+      litellm_logging_obj: handle
+      api_base: https://request.invalid
+    deployment:
+      model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        api_base: https://deployment.invalid
+        prompt_id: deployment-id
+        prompt_variables:
+          name: deployment
+        prompt_label: deployment-label
+        bitbucket_config:
+          repository: repo
+        dotprompt_config:
+          path: prompts/greeting.prompt
+        prompt_version: 2
+    compiled:
+      model: gpt-4o
+      messages:
+        - role: user
+          content: compiled
+      optional_params:
+        temperature: 0.2
+env: {}
+compare: {ignore: []}

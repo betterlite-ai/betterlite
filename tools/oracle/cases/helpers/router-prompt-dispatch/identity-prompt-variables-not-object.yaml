@@ -1,0 +1,15 @@
+kind: helper
+name: prompt-dispatch-identity-prompt-variables-not-object
+call:
+  b8466:
+    function: resolve_prompt_identity
+    request:
+      prompt_variables:
+        - name
+    deployment:
+      model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: greeting
+env: {}
+compare: {ignore: []}
