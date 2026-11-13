@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-fine-tuning-adapter-size
+call:
+  vertex_fine_tuning:
+    operation: request
+    calls:
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_UNSPECIFIED}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_ONE}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_FOUR}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_EIGHT}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_SIXTEEN}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: null}
+      - data: {model: m, training_file: f}
+        original_hyperparameters: {adapter_size: ""}
+      - data: {model: m, training_file: f, hyperparameters: {n_epochs: 2}}
+        original_hyperparameters: {adapter_size: ADAPTER_SIZE_EIGHT}
+env: {}
+compare: {ignore: []}
