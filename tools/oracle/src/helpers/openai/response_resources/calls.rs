@@ -57,8 +57,10 @@ fn request_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
         .api_base
         .as_deref()
         .ok_or_else(|| invalid_input(String::from("a probe needs api_base")))?;
-    let request = request_of(probe, api_base)?;
-    Ok(request_output(&request))
+    match request_of(probe, api_base) {
+        Ok(request) => Ok(request_output(&request)),
+        Err(error) => Ok(json!({"error": {"status": error.status}})),
+    }
 }
 
 fn request_of(probe: &Probe, api_base: &str) -> Result<ResourceRequest, Box<HelperError>> {
