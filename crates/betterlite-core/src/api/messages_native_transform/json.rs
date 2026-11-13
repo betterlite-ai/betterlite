@@ -21,9 +21,8 @@ pub(crate) fn to_contract(value: &Json) -> ContractJson {
 }
 
 // serde already knows both shapes, so the reverse direction is its own round trip.
-pub(crate) fn from_contract(value: ContractJson) -> Result<Json, TransformError> {
-    match serde_json::to_string(&value) {
-        Ok(encoded) => serde_json::from_str(&encoded).map_err(TransformError::from),
-        Err(source) => Err(TransformError::from(source)),
-    }
+pub(crate) fn from_contract(value: &ContractJson) -> Result<Json, TransformError> {
+    serde_json::to_string(value)
+        .and_then(|encoded| serde_json::from_str(&encoded))
+        .map_err(TransformError::from)
 }

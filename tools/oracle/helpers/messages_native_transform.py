@@ -27,7 +27,6 @@ class Call(TypedDict):
 class Input(TypedDict):
     model_cost: dict[str, dict[str, JsonValue]]
     packaged: dict[str, JsonValue]
-    budgets: dict[str, int]
     calls: list[Call]
 
 
@@ -84,9 +83,6 @@ def outcome(request: JsonObject, watch: Watch) -> JsonObject:
         "warnings": WARNINGS.validate_python(watch.warnings),
         "debug": watch.transformation,
     }
-
-
-
 
 
 def call_result(call: Call) -> dict[str, JsonValue]:

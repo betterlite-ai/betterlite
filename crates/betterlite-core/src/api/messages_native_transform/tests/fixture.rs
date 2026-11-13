@@ -19,12 +19,11 @@ use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
-use betterlite_models::model_metadata_resolution::names::{NameNormalizers, VertexModelSets};
+use betterlite_models::model_metadata_resolution::names::{ModelCostMap, NameNormalizers};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde_json::value::RawValue;
 use tokio::runtime::{Builder, Runtime};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -127,8 +126,7 @@ pub(crate) fn capture() -> (DefaultGuard, Captured) {
 }
 
 pub(crate) struct World {
-    entries: indexmap::IndexMap<String, Box<RawValue>>,
-    vertex: VertexModelSets,
+    map: ModelCostMap,
     typed: ModelCatalog,
     generalizations: CatalogGeneralizations,
     provider_catalog: Catalog,
@@ -139,16 +137,13 @@ pub(crate) struct World {
     patterns: CandidatePatterns,
     runtime: RawCatalog,
     packaged: RawCatalog,
-    pub(crate) budgets: Settings,
+    budgets: Settings,
 }
 
 impl World {
     pub(crate) fn load(source: &str) -> Self {
-        let entries: indexmap::IndexMap<String, Box<RawValue>> =
-            serde_json::from_str(source).expect("pinned capability records");
         Self {
-            vertex: VertexModelSets::build(&entries),
-            entries,
+            map: ModelCostMap::parse(source.as_bytes()).expect("pinned capability records"),
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("empty catalog"),
             generalizations: CatalogGeneralizations::default(),
             provider_catalog: Catalog::new(),
@@ -183,8 +178,8 @@ impl World {
         let dynamic = NoDynamicMetadata;
         let mut environment = CapabilityEnvironment {
             metadata: MetadataEnvironment {
-                model_cost: &self.entries,
-                vertex: &self.vertex,
+                model_cost: &self.map.entries,
+                vertex: &self.map.vertex,
                 generalizations: &self.generalizations,
                 resolution: &resolution,
                 normalizers: NORMALIZERS,

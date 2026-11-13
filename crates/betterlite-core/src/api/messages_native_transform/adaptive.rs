@@ -107,7 +107,7 @@ where
     };
     request
         .optional_params
-        .insert("thinking".to_owned(), from_contract(thinking)?);
+        .insert("thinking".to_owned(), from_contract(&thinking)?);
     Ok(())
 }
 

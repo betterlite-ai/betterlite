@@ -21,8 +21,6 @@ use indexmap::IndexMap;
 
 pub const ADAPTIVE_THINKING: &str = "supports_adaptive_thinking";
 pub const REASONING: &str = "supports_reasoning";
-pub const XHIGH_EFFORT: &str = "supports_xhigh_reasoning_effort";
-pub const MAX_EFFORT: &str = "supports_max_reasoning_effort";
 
 pub type Thinking = IndexMap<String, Json>;
 

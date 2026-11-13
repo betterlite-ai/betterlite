@@ -80,8 +80,12 @@ where
         output_config: optional_params.get("output_config").map(to_contract),
     };
     normalize_legacy_shapes(capabilities, model, custom_llm_provider, &mut contract).await?;
-    write_contract(optional_params, "thinking", contract.thinking)?;
-    write_contract(optional_params, "output_config", contract.output_config)?;
+    write_contract(optional_params, "thinking", contract.thinking.as_ref())?;
+    write_contract(
+        optional_params,
+        "output_config",
+        contract.output_config.as_ref(),
+    )?;
     translate_adaptive_effort(
         capabilities,
         AdaptiveEffort {
@@ -100,7 +104,8 @@ where
             optional_params,
         },
     )
-    .await
+    .await;
+    Ok(())
 }
 
 async fn normalize_legacy_shapes<Capabilities>(
@@ -120,7 +125,7 @@ where
         custom_llm_provider,
         params: contract,
     };
-    capabilities.translate_legacy_thinking(&mut shapes).await
+    Ok(capabilities.translate_legacy_thinking(&mut shapes).await?)
 }
 
 fn finish_request(
@@ -142,9 +147,7 @@ fn finish_request(
         Json::Number(Number::from(max_tokens)),
     );
     body.insert("model".to_owned(), Json::Text(model.to_owned()));
-    for (key, entry) in optional_params {
-        body.insert(key, entry);
-    }
+    body.extend(optional_params);
     body
 }
 
@@ -165,7 +168,7 @@ fn take_max_tokens(params: &mut Object) -> Result<i64, TransformError> {
 fn write_contract(
     params: &mut Object,
     key: &str,
-    value: Option<ContractJson>,
+    value: Option<&ContractJson>,
 ) -> Result<(), TransformError> {
     match value {
         Some(updated) => {
@@ -219,7 +222,7 @@ fn convert_context_management(params: &mut Object) -> Result<(), TransformError>
     };
     params.insert(
         "context_management".to_owned(),
-        from_contract(ContractJson::Object(converted))?,
+        from_contract(&ContractJson::Object(converted))?,
     );
     Ok(())
 }

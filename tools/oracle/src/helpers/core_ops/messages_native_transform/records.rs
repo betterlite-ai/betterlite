@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Display;
 use std::future::{Future, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
@@ -23,16 +22,16 @@ use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::MetadataEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL, HfConfigClient};
-use betterlite_models::model_metadata_resolution::names::{NameNormalizers, VertexModelSets};
+use betterlite_models::model_metadata_resolution::names::{ModelCostMap, NameNormalizers};
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 use serde_json::Value;
-use serde_json::value::RawValue;
 use tokio::runtime::Runtime;
 
+use super::invalid;
 use crate::helpers::HelperError;
 
 fn region_model(model: &str) -> (Option<&str>, &str) {
@@ -48,7 +47,7 @@ const NORMALIZERS: NameNormalizers = NameNormalizers {
     mantle_region_split: region_model,
 };
 
-// The case names no huggingface model, so the transport refuses instead of reaching the network.
+// The cases name no huggingface model, so the transport refuses instead of reaching the network.
 pub(super) struct Offline;
 
 #[derive(Debug, thiserror::Error)]
@@ -67,8 +66,7 @@ impl ModelInfoClient for Offline {
 }
 
 pub(super) struct Records {
-    entries: IndexMap<String, Box<RawValue>>,
-    vertex: VertexModelSets,
+    map: ModelCostMap,
     typed: ModelCatalog,
     generalizations: CatalogGeneralizations,
     provider_catalog: Catalog,
@@ -85,17 +83,17 @@ pub(super) struct Records {
 impl Records {
     pub(super) fn load(
         model_cost: &IndexMap<String, Value>,
-        packaged: &Value,
-        budgets: Settings,
+        packaged: &IndexMap<String, Value>,
     ) -> Result<Self, Box<HelperError>> {
-        let bytes = serde_json::to_vec(model_cost).map_err(invalid)?;
-        let entries: IndexMap<String, Box<RawValue>> =
-            serde_json::from_slice(&bytes).map_err(invalid)?;
+        let cost_bytes =
+            serde_json::to_vec(model_cost).map_err(|source| invalid(source.to_string()))?;
+        let packaged_bytes =
+            serde_json::to_vec(packaged).map_err(|source| invalid(source.to_string()))?;
         Ok(Self {
-            vertex: VertexModelSets::build(&entries),
-            entries,
+            map: ModelCostMap::parse(&cost_bytes).map_err(|source| invalid(source.to_string()))?,
             // every case names its provider, so resolution never reads the typed catalog
-            typed: ModelCatalog::parse(b"{}", UnknownFields::Warn).map_err(invalid)?,
+            typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)
+                .map_err(|source| invalid(source.to_string()))?,
             generalizations: CatalogGeneralizations::default(),
             provider_catalog: Catalog::new(),
             hf: HfConfigClient {
@@ -105,10 +103,12 @@ impl Records {
             known: BTreeSet::new(),
             custom: BTreeSet::new(),
             environment: BTreeMap::new(),
-            patterns: CandidatePatterns::new().map_err(invalid)?,
-            runtime: serde_json::from_slice(&bytes).map_err(invalid)?,
-            packaged: serde_json::from_value(packaged.clone()).map_err(invalid)?,
-            budgets,
+            patterns: CandidatePatterns::new().map_err(|source| invalid(source.to_string()))?,
+            runtime: serde_json::from_slice(&cost_bytes)
+                .map_err(|source| invalid(source.to_string()))?,
+            packaged: serde_json::from_slice(&packaged_bytes)
+                .map_err(|source| invalid(source.to_string()))?,
+            budgets: Settings::default(),
         })
     }
 
@@ -139,8 +139,8 @@ impl Records {
         let dynamic = NoDynamicMetadata;
         let mut environment = CapabilityEnvironment {
             metadata: MetadataEnvironment {
-                model_cost: &self.entries,
-                vertex: &self.vertex,
+                model_cost: &self.map.entries,
+                vertex: &self.map.vertex,
                 generalizations: &self.generalizations,
                 resolution: &resolution,
                 normalizers: NORMALIZERS,
@@ -151,24 +151,12 @@ impl Records {
             provider_catalog: &self.provider_catalog,
             provider_generation: 0,
         };
-        let provider = request.custom_llm_provider;
         let mut capabilities = AnthropicCapabilities {
             environment: &mut environment,
             catalogs: &catalogs,
             budgets: &self.budgets,
-            llm_provider: provider,
+            llm_provider: request.custom_llm_provider,
         };
         runtime.block_on(transform_native_request(&mut capabilities, request))
     }
-}
-
-fn invalid<E: Display>(error: E) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }

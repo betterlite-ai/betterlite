@@ -46,10 +46,11 @@ where
         );
         return Ok(());
     };
-    request
-        .optional_params
-        .entry("thinking".to_owned())
-        .or_insert_with(|| from_contract(fitted))?;
+    if !request.optional_params.contains_key("thinking") {
+        request
+            .optional_params
+            .insert("thinking".to_owned(), from_contract(&fitted)?);
+    }
     apply_output_effort(capabilities, &effort, &mut request).await
 }
 
@@ -74,7 +75,7 @@ where
     let Some(mapped_effort) = output_config_effort(effort) else {
         return Err(TransformError::Anthropic {
             message: format!(
-                "Invalid reasoning_effort: {effort:?}. Must be one of: 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'none'"
+                "Invalid reasoning_effort: '{effort}'. Must be one of: 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'none'"
             ),
         });
     };

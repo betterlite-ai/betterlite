@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -8,13 +8,13 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 #[derive(Clone, Default)]
 pub(super) struct Watch {
-    notes: Arc<Mutex<Notes>>,
+    pub(super) notes: Arc<Mutex<Notes>>,
 }
 
 #[derive(Default)]
-struct Notes {
-    warnings: Vec<String>,
-    transformation: bool,
+pub(super) struct Notes {
+    pub(super) warnings: Vec<String>,
+    pub(super) transformation: bool,
 }
 
 #[derive(Default)]
@@ -28,30 +28,17 @@ impl Visit for Line {
     }
 }
 
-impl Watch {
-    pub(super) fn take(&self) -> (Vec<String>, bool) {
-        match self.notes.lock() {
-            Ok(notes) => (notes.warnings.clone(), notes.transformation),
-            Err(poisoned) => {
-                let notes = poisoned.into_inner();
-                (notes.warnings.clone(), notes.transformation)
-            }
-        }
-    }
-}
-
 impl<Inner: Subscriber> Layer<Inner> for Watch {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         let level = *event.metadata().level();
         let mut line = Line::default();
         event.record(&mut line);
-        let mut notes = match self.notes.lock() {
-            Ok(notes) => notes,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let mut notes = self.notes.lock().unwrap_or_else(PoisonError::into_inner);
         if level == Level::WARN {
             notes.warnings.push(line.0);
-        } else if level == Level::DEBUG && line.0.contains("TRANSFORMATION DEBUG") {
+            return;
+        }
+        if level == Level::DEBUG && line.0.contains("TRANSFORMATION DEBUG") {
             notes.transformation = true;
         }
     }

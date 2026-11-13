@@ -1,7 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::capabilities::{ADAPTIVE_THINKING, ThinkingCapabilities};
-use super::error::TransformError;
 
 pub(crate) struct TemperatureRule<'request> {
     pub(crate) model: &'request str,
@@ -12,8 +11,7 @@ pub(crate) struct TemperatureRule<'request> {
 pub(crate) async fn drop_incompatible_temperature<Capabilities>(
     capabilities: &mut Capabilities,
     request: TemperatureRule<'_>,
-) -> Result<(), TransformError>
-where
+) where
     Capabilities: ThinkingCapabilities + Send,
 {
     if capabilities
@@ -24,15 +22,15 @@ where
         )
         .await
     {
-        return Ok(());
+        return;
     }
     let params = request.optional_params;
     let temperature = params.get("temperature");
     if matches!(temperature, None | Some(Json::Null)) {
-        return Ok(());
+        return;
     }
     if matches!(temperature, Some(Json::Number(number)) if number.as_f64() == Some(1.0_f64)) {
-        return Ok(());
+        return;
     }
     let thinking_enabled = matches!(
         params.get("thinking"),
@@ -49,5 +47,4 @@ where
     if thinking_enabled || effort_enabled {
         params.shift_remove("temperature");
     }
-    Ok(())
 }
