@@ -5,6 +5,6 @@ call:
     function: endpoint_resolution
     request_route: null
     first_item: "data: {}"
-    entries: []
+    entries: [{call_type: completion, translation: OpenAIChatCompletionsHandler, chat_completions: true}]
 env: {}
 compare: {ignore: []}
