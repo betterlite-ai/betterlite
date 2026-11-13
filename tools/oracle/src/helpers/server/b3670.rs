@@ -62,7 +62,8 @@ impl Helper for Op {
                 raw_input,
                 expected_messages,
             } => provenance_answer(raw_input, expected_messages)?,
-            Request::ItemRewriteField { item } => rewrite_field_answer(item),
+            Request::ItemRewriteField { item } => item_rewrite_field(item)
+                .map_or(Value::Null, |field| Value::String(field.to_owned())),
             Request::RewrittenItem { item, rewritten } => rewritten_item_answer(item, rewritten)?,
             Request::ToolCallShapes { calls } => shapes_value(&tool_call_shapes(calls)),
             Request::PostGuardrailShapes {
@@ -81,10 +82,6 @@ fn provenance_answer(raw_input: &[Value], expected_messages: &[Value]) -> Helper
     input_item_provenance(raw_input, expected_messages)
         .or_value_error()
         .map(|provenance| provenance_value(provenance.as_ref()))
-}
-
-fn rewrite_field_answer(item: &Map<String, Value>) -> Value {
-    item_rewrite_field(item).map_or(Value::Null, |field| Value::String(field.to_owned()))
 }
 
 fn rewritten_item_answer(item: &Map<String, Value>, rewritten: &Value) -> HelperResult {
@@ -106,7 +103,8 @@ fn post_shapes_answer(
 fn rewrite_answer(before: &Value, after: &Value) -> Value {
     let before_shape = single_shape(before);
     let after_shape = single_shape(after);
-    shape_value(&tool_call_rewrite(&before_shape, &after_shape))
+    let rewrite = tool_call_rewrite(&before_shape, &after_shape);
+    json!({"name": rewrite.name, "arguments": rewrite.arguments})
 }
 
 fn undeliverable_answer(input: &Request) -> Value {
@@ -142,11 +140,11 @@ fn provenance_value(provenance: Option<&InputProvenance>) -> Value {
 }
 
 fn shapes_value(shapes: &[ToolCallShape]) -> Value {
-    Value::Array(shapes.iter().map(shape_value).collect())
-}
-
-fn shape_value(shape: &ToolCallShape) -> Value {
-    json!({"name": shape.name, "arguments": shape.arguments})
+    let mut values = Vec::with_capacity(shapes.len());
+    for shape in shapes {
+        values.push(json!({"name": shape.name, "arguments": shape.arguments}));
+    }
+    Value::Array(values)
 }
 
 fn single_shape(call: &Value) -> ToolCallShape {
