@@ -65,10 +65,6 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(String::from(text))
 }
 
-fn json(text: &str) -> Json {
-    serde_json::from_str(text).expect("a JSON value")
-}
-
 fn object(text: &str) -> Object {
     serde_json::from_str(text).expect("a JSON object")
 }
@@ -354,12 +350,20 @@ async fn oauth_is_skipped_when_a_key_resolves() {
     );
 }
 
+#[rstest]
+#[case::lowercase(&[("content-type", "text/plain")], "content-type", "text/plain")]
+#[case::capitalized(&[("Content-Type", "text/plain")], "Content-Type", "text/plain")]
+#[case::absent(&[], "Content-Type", "application/json")]
 #[tokio::test]
-async fn oauth_replaces_authorization_and_keeps_content_type_casing() {
+async fn oauth_replaces_authorization_and_keeps_content_type_casing(
+    #[case] pairs: &[(&str, &str)],
+    #[case] name: &str,
+    #[case] value: &str,
+) {
     let settings = settings();
     let mut oauth = Token("oauth-token");
     let resolved = validate_environment(Environment {
-        headers: headers(&[("content-type", "text/plain")]),
+        headers: headers(pairs),
         api_key: None,
         settings: &settings,
         model: "grok-4",
@@ -372,11 +376,8 @@ async fn oauth_replaces_authorization_and_keeps_content_type_casing() {
         resolved.get("Authorization"),
         Some(&String::from("Bearer oauth-token"))
     );
-    assert_eq!(
-        resolved.get("content-type"),
-        Some(&String::from("text/plain"))
-    );
-    assert!(!resolved.contains_key("Content-Type"));
+    assert_eq!(resolved.get(name), Some(&String::from(value)));
+    assert_eq!(resolved.len(), 2);
 }
 
 #[tokio::test]
@@ -605,8 +606,19 @@ fn a_chunk_with_usage_but_no_ticks_gets_no_cost() {
     );
     let reply = parse_chunk(&mut parsed, Uuid::nil, zero_clock).expect("a parsed chunk");
     assert_eq!(reply.choices.len(), 1);
+    assert_eq!(reply.choices[0].finish_reason.as_deref(), Some("stop"));
     let Some(Value::Object(usage)) = reply.usage else {
         panic!("the usage is missing");
     };
     assert!(!usage.contains_key("cost"));
+}
+
+#[test]
+fn a_chunk_without_a_usage_key_keeps_its_empty_choices() {
+    let mut parsed = chunk(
+        r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[]}"#,
+    );
+    let reply = parse_chunk(&mut parsed, Uuid::nil, zero_clock).expect("a parsed chunk");
+    assert!(reply.choices.is_empty());
+    assert_eq!(parsed["choices"].to_string(), "[]");
 }
