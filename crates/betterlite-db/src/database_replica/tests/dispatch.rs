@@ -211,8 +211,36 @@ fn degraded_writer_pin_allows_replica_read() {
 }
 
 #[test]
+fn reader_lookup_error_propagates() {
+    let fixture = Fixture::new();
+    fixture.writer().add_model("VerificationToken");
+    fixture.reader().fail_lookup("VerificationToken");
+    assert!(matches!(
+        fixture.routing.attribute("VerificationToken"),
+        Err(RouteError::Lookup {
+            source: FakeError::Lookup
+        })
+    ));
+}
+
+#[test]
+fn pinned_writer_missing_attribute_is_named() {
+    let fixture = Fixture::new();
+    let pinned = pin_writer(WriterPinnedClient::Writer(&fixture.routing.writer));
+    assert!(matches!(pinned, WriterPinnedClient::Writer(_)));
+    assert!(matches!(
+        pinned.attribute("missing_model"),
+        Err(RouteError::MissingAttribute { .. })
+    ));
+}
+
+#[test]
 fn raw_writer_pin_never_falls_back() {
     let fixture = Fixture::new();
+    assert_eq!(
+        writer_wrapper(WriterPinnedClient::Writer(&fixture.routing.writer)).side(),
+        Side::Writer
+    );
     assert_eq!(
         writer_wrapper(WriterPinnedClient::Routed(&fixture.routing)).side(),
         Side::Writer
