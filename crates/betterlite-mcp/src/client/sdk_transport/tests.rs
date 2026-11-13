@@ -48,7 +48,7 @@ use super::context::{SdkStreams, SdkTransport};
 use super::error::SdkError;
 use super::legacy_sse::LegacySse;
 use super::origin::next_request_within_origin;
-use super::streamable::StreamableHttp;
+use super::streamable::{StreamableCore, StreamableHttp};
 
 const BODY_LIMIT: usize = 0x0010_0000;
 const SESSION_HEADER: HeaderName = HeaderName::from_static("mcp-session-id");
@@ -326,15 +326,23 @@ fn an_upgrade_to_https_on_the_default_port_is_followed() {
     assert_eq!(target.url.as_str(), "https://example.com/mcp");
 }
 
-#[test]
-fn a_location_with_its_own_userinfo_is_not_followed() {
-    let sent = Url::parse("http://example.com/mcp").unwrap();
+#[rstest]
+#[case::new_userinfo("http://example.com/mcp", "http://user:pass@example.com/mcp", false)]
+#[case::password_without_user("http://example.com/mcp", "http://:pass@example.com/mcp", false)]
+#[case::other_user("http://a:x@example.com/mcp", "http://b:x@example.com/mcp", false)]
+#[case::other_password("http://a:x@example.com/mcp", "http://a:y@example.com/mcp", false)]
+#[case::same_userinfo("http://a:x@example.com/mcp", "http://a:x@example.com/mcp", true)]
+#[case::no_userinfo("http://a:x@example.com/mcp", "http://example.com/mcp", true)]
+fn the_userinfo_rule_follows_httpx2(
+    #[case] sent: &str,
+    #[case] location: &'static str,
+    #[case] followed: bool,
+) {
+    let sent = Url::parse(sent).unwrap();
     let mut headers = HeaderMap::new();
-    headers.insert(
-        LOCATION,
-        HeaderValue::from_static("http://user:pass@example.com/mcp"),
-    );
-    assert!(next_request_within_origin(&Method::GET, &sent, 307, &headers).is_none());
+    headers.insert(LOCATION, HeaderValue::from_static(location));
+    let target = next_request_within_origin(&Method::GET, &sent, 307, &headers);
+    assert_eq!(target.is_some(), followed);
 }
 
 #[tokio::test]
@@ -567,6 +575,9 @@ async fn an_sse_event_over_the_limit_fails_the_request() {
 #[tokio::test]
 async fn the_session_id_is_kept_and_the_delete_is_sent_on_close() {
     let server = TestServer::start(|request| {
+        if request.method == Method::DELETE && request.uri == "/mcp" {
+            return relocated(307, "/mcp2");
+        }
         if request.method == Method::DELETE {
             return answer(200, "", "");
         }
@@ -591,6 +602,7 @@ async fn the_session_id_is_kept_and_the_delete_is_sent_on_close() {
     let requests = server.requests();
     let delete = requests.last().unwrap();
     assert_eq!(delete.method, Method::DELETE);
+    assert_eq!(delete.uri, "/mcp2");
     assert_eq!(
         note_header(delete, &SESSION_HEADER).as_deref(),
         Some("session-1")
@@ -631,6 +643,65 @@ async fn a_get_stream_failure_reaches_the_handler() {
     );
     let recorded = handler.recorded.lock().unwrap().clone().unwrap();
     assert_eq!(recorded.kind(), StreamFailureKind::Http);
+    let gets = server
+        .requests()
+        .into_iter()
+        .filter(|request| request.method == Method::GET)
+        .count();
+    assert_eq!(gets, 2);
+}
+
+#[tokio::test]
+async fn a_get_stream_delivers_server_messages() {
+    let server = TestServer::start(|request| {
+        if request.method == Method::POST
+            && request.body.starts_with(b"{\"jsonrpc\":\"2.0\",\"id\":1")
+        {
+            let mut response = answer(
+                200,
+                "application/json",
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}",
+            );
+            response
+                .headers_mut()
+                .insert(SESSION_HEADER, HeaderValue::from_static("session-1"));
+            return response;
+        }
+        if request.method == Method::POST {
+            return answer(202, "", "");
+        }
+        streamed(vec![Bytes::from_static(
+            b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"x\"}}\n\n",
+        )])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(1, "initialize")).await;
+    let _response = receive(&mut streams).await;
+    send(&mut streams, initialized()).await;
+    let message = receive(&mut streams).await;
+    assert!(matches!(message, JsonRpcMessage::Notification(_)));
+}
+
+#[tokio::test]
+async fn an_sse_event_at_the_size_limit_is_accepted() {
+    let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
+    let suffix = "\"}}";
+    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
+    let server = TestServer::start(move |_| {
+        let event = format!("event: message\ndata: {json}\n\n");
+        streamed(vec![Bytes::from(event)])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
 }
 
 #[tokio::test]
@@ -788,6 +859,18 @@ async fn a_stdio_round_trip_through_the_async_rw_transport() {
     assert_eq!(response_id(&message), Some(RequestId::Number(1)));
     drop(streams);
     transport.exit().await.unwrap();
+}
+
+#[test]
+fn the_reconnection_delay_defaults_to_one_second() {
+    assert_eq!(
+        StreamableCore::retry_delay(None),
+        std::time::Duration::from_millis(1000)
+    );
+    assert_eq!(
+        StreamableCore::retry_delay(Some(25)),
+        std::time::Duration::from_millis(25)
+    );
 }
 
 #[tokio::test]

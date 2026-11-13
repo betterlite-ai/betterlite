@@ -88,9 +88,10 @@ fn redirect_location(url: &Url, status: u16, headers: &HeaderMap) -> Option<Stri
     let mut shown = location_target(url, status, headers)?;
     shown.set_query(None);
     shown.set_fragment(None);
-    if shown.set_username("").is_err() || shown.set_password(None).is_err() {
+    if shown.set_username("").is_err() {
         return None;
     }
+    shown.set_password(None).ok()?;
     Some(shown.to_string())
 }
 
