@@ -177,8 +177,9 @@ fn whole_positive_tokens(value: &Value) -> Option<Value> {
     if let Some(tokens) = number.as_i64() {
         return (tokens > 0).then_some(Value::from(tokens));
     }
+    // a negative integer is caught by the i64 arm, so a u64 here is always positive
     if let Some(tokens) = number.as_u64() {
-        return (tokens > 0).then_some(Value::from(tokens));
+        return Some(Value::from(tokens));
     }
     let parsed = number.as_f64()?;
     if !parsed.is_finite() || parsed <= 0.0_f64 {
