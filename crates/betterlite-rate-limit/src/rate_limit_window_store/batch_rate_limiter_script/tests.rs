@@ -50,8 +50,8 @@ fn register<S>(store: &mut WindowStore, script: &Arc<S>)
 where
     S: CounterScript + 'static,
 {
-    let script = Arc::clone(script);
-    store.rate_limiter_script = Some(script);
+    let shared: Arc<dyn CounterScript> = Arc::<S>::clone(script);
+    store.rate_limiter_script = Some(shared);
 }
 
 fn pair_reply() -> Vec<ScriptReply> {

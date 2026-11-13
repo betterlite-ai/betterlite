@@ -24,8 +24,8 @@ where
     S: CounterScript + 'static,
 {
     let mut store = store_with(FakeCache::new(kind));
-    let script = Arc::clone(script);
-    store.counter_read_script = Some(script);
+    let shared: Arc<dyn CounterScript> = Arc::<S>::clone(script);
+    store.counter_read_script = Some(shared);
     store
 }
 

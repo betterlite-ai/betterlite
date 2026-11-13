@@ -30,7 +30,7 @@ pub fn values_by_key_order(
         }
     }
     keys.iter()
-        .map(|key| by_key.get(key.as_str()).cloned().unwrap_or_default())
+        .map(|key| by_key.get(key.as_str()).cloned().flatten())
         .collect()
 }
 

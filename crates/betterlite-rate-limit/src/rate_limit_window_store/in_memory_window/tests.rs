@@ -139,12 +139,12 @@ async fn a_pass_waits_for_the_check_and_increment_lock() {
     let store = store_with(Arc::clone(&cache));
     let guard = store.check_and_increment_lock.lock().await;
     let pass = in_memory_cache_sliding_window(&store, &pair(), 100, WINDOW_TTL);
-    let mut pass = pin!(pass);
+    let mut pinned = pin!(pass);
     let mut context = Context::from_waker(Waker::noop());
-    assert!(pass.as_mut().poll(&mut context).is_pending());
+    assert!(pinned.as_mut().poll(&mut context).is_pending());
     assert!(cache.gets().is_empty());
     drop(guard);
-    let values = pass.await.expect("the sliding window pass");
+    let values = pinned.await.expect("the sliding window pass");
     assert_eq!(
         values,
         vec![

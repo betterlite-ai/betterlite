@@ -55,10 +55,12 @@ fn a_source_without_an_active_batch_declares_no_script_call() {
     let source = Arc::new(FakeBatchSource { batch: None });
     let mut store = store_with(FakeCache::new(Some(RedisCacheKind::Standalone)));
     store.request_batch = Some(source);
-    let script: Arc<dyn CounterScript> = FakeScript::new("return {}", Vec::new());
+    let fake = FakeScript::new("return {}", Vec::new());
+    let script: Arc<dyn CounterScript> = Arc::<FakeScript>::clone(&fake);
     let handles = pipeline_scripts(&store, &script, &calls());
     assert_eq!(handles.len(), 2);
     assert!(handles.iter().all(Option::is_none));
+    assert!(fake.calls().is_empty());
 }
 
 #[test]
