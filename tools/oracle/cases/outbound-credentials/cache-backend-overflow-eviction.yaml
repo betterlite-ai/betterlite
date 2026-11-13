@@ -1,0 +1,77 @@
+{
+  "kind": "helper",
+  "name": "cache-backend-overflow-eviction",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "cache",
+      "max_size": 2,
+      "operations": [
+        {
+          "op": "set",
+          "user_id": "user",
+          "server_id": "first",
+          "now_ms": 1000,
+          "ttl_ms": 60000,
+          "token": {
+            "access_token": "first-access",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "op": "set",
+          "user_id": "user",
+          "server_id": "second",
+          "now_ms": 1000,
+          "ttl_ms": 60000,
+          "token": {
+            "access_token": "second-access",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "op": "set",
+          "user_id": "user",
+          "server_id": "third",
+          "now_ms": 1000,
+          "ttl_ms": 60000,
+          "token": {
+            "access_token": "third-access",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "first",
+          "now_ms": 2000
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "second",
+          "now_ms": 2000
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "third",
+          "now_ms": 2000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

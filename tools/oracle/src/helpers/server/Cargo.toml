@@ -15,6 +15,7 @@ base64 = "0.23.1"
 betterlite = { path = "../../../../../crates/betterlite" }
 betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
