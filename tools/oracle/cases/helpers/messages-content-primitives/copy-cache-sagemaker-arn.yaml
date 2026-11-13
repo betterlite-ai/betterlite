@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-copy-cache-sagemaker-arn
+call: {"messages_content_primitives": {"operation": "copy_cache_control", "source": {"cache_control": {"type": "ephemeral", "ttl": "1h"}}, "target": {"type": "text"}, "model": "arn:aws:sagemaker:us-east-1:123:endpoint/my-bedrock-endpoint"}}
+env: {}
+compare: {ignore: []}

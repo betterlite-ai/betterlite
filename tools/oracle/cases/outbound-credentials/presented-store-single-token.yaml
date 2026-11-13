@@ -1,0 +1,22 @@
+{
+  "kind": "helper",
+  "name": "presented-store-single-token",
+  "call": {
+    "b4656": {
+      "function": "token",
+      "token": {
+        "access_token": "preview-access",
+        "expires_at_ms": null,
+        "refresh_token": null,
+        "scopes": [
+          "read"
+        ],
+        "identity_binding_proof": "preview-proof"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
