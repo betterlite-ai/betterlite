@@ -53,7 +53,10 @@ fn responses(probes: &[Probe], redactor: &Redactor) -> HelperResult {
 }
 
 fn request_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let api_base = required(probe.api_base.as_deref(), "api_base")?;
+    let api_base = probe
+        .api_base
+        .as_deref()
+        .ok_or_else(|| invalid_input(String::from("a probe needs api_base")))?;
     let request = request_of(probe, api_base)?;
     Ok(request_output(&request))
 }
@@ -65,8 +68,12 @@ fn request_of(probe: &Probe, api_base: &str) -> Result<ResourceRequest, Box<Help
                 invalid_input(String::from("a compact request probe needs input"))
             })?;
             let options = probe.params.clone().unwrap_or_default();
+            let model = probe
+                .model
+                .as_deref()
+                .ok_or_else(|| invalid_input(String::from("a probe needs model")))?;
             let request = CompactRequest {
-                model: required(probe.model.as_deref(), "model")?,
+                model,
                 input,
                 options: &options,
                 provider: probe.provider.unwrap_or(ProviderId::Openai),
@@ -75,7 +82,10 @@ fn request_of(probe: &Probe, api_base: &str) -> Result<ResourceRequest, Box<Help
             compact_request(&request, api_base).map_err(|error| response_error(&error))
         }
         Endpoint::List => list_input_items_request(
-            required(probe.response_id.as_deref(), "response_id")?,
+            probe
+                .response_id
+                .as_deref()
+                .ok_or_else(|| invalid_input(String::from("a probe needs response_id")))?,
             api_base,
             &query_of(probe),
         )
@@ -114,7 +124,10 @@ fn query_of(probe: &Probe) -> ListInputItemsQuery {
 
 fn response_value(probe: &Probe, redactor: &Redactor) -> Result<Value, Box<HelperError>> {
     let endpoint = endpoint(probe)?;
-    let body = required(probe.body.as_deref(), "body")?;
+    let body = probe
+        .body
+        .as_deref()
+        .ok_or_else(|| invalid_input(String::from("a probe needs body")))?;
     let Some(status) = probe.status else {
         return Err(invalid_input(String::from("a reply probe needs status")));
     };
@@ -240,16 +253,6 @@ fn endpoint(probe: &Probe) -> Result<Endpoint, Box<HelperError>> {
         || Err(invalid_input(String::from("a probe needs endpoint"))),
         Ok,
     )
-}
-
-fn required<'value>(
-    value: Option<&'value str>,
-    name: &str,
-) -> Result<&'value str, Box<HelperError>> {
-    match value {
-        Some(value) => Ok(value),
-        None => Err(invalid_input(format!("a probe needs {name}"))),
-    }
 }
 
 fn request_output(request: &ResourceRequest) -> Value {
