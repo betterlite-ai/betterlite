@@ -2,9 +2,12 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -26,6 +29,8 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 
 use super::call::{DEFAULT_TIMEOUT, PreparedImageVariation, prepare_image_variation};
 use super::client::{ClientKind, SharedSession, SuppliedClient};
@@ -730,6 +735,8 @@ async fn image_variations_logs_the_pre_call_then_the_post_call() {
         arguments.get("api_base"),
         Some(&Json::Text(String::from("https://example.test/v1/")))
     );
+    let headers = object(arguments.get("headers").unwrap());
+    assert!(headers.contains_key("x-caller"));
     let body = object(arguments.get("complete_input_dict").unwrap());
     let data = object(body.get("data").unwrap());
     assert!(data.get("size").is_none());
@@ -860,4 +867,53 @@ fn image_variation_params_default_to_the_sync_call() {
         object(inner.get("image").unwrap()).get("size"),
         Some(&number(7))
     );
+}
+
+async fn serve_variation_reply(listener: TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !received.windows(8).any(|window| window == b"PNGDATA\r") {
+        let read = stream.read(&mut chunk).await.unwrap();
+        received.extend_from_slice(&chunk[..read]);
+    }
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-request-id: req-9\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{OK_BODY}",
+        OK_BODY.len()
+    );
+    stream.write_all(reply.as_bytes()).await.unwrap();
+    String::from_utf8(received).unwrap()
+}
+
+#[tokio::test]
+async fn proxied_client_posts_multipart_to_the_variations_endpoint() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut local = request(image(Some("cat.png"), "PNGDATA"));
+    local.api_base = Some(format!("http://{address}/v1"));
+    local.boundary = String::from("wire-boundary");
+    let prepared = prepare_image_variation(local).unwrap();
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let (head, sent) = tokio::join!(
+        serve_variation_reply(listener),
+        send_image_variation(&prepared, &client)
+    );
+    let outcome = sent.unwrap();
+    let head = head.to_lowercase();
+    assert!(
+        head.starts_with("post /v1/images/variations http/1.1"),
+        "{head}"
+    );
+    assert!(head.contains("authorization: bearer sk-test"), "{head}");
+    assert!(
+        head.contains("content-type: multipart/form-data; boundary=wire-boundary"),
+        "{head}"
+    );
+    assert!(
+        head.contains("name=\"image\"; filename=\"cat.png\""),
+        "{head}"
+    );
+    assert!(head.contains("pngdata"), "{head}");
+    assert_eq!(outcome.reply.created, 7);
 }

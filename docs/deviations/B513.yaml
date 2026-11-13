@@ -1,13 +1,18 @@
 task: B513
 deviations:
-  - what: A reply that omits created, sends it as null, or sends it as 0 has no direct equivalent here: the shared image reply
-      decoder reads a missing or null created as the supplied clock, while LiteLLM's ImagesResponse requires the field and
-      LiteLLM's ImageResponse replaces a zero with the current time. A working OpenAI-compatible setup always sends created.
-    why: this slice reuses the image-generation reply decoder (B511) rather than adding a second image JSON parser, and the
-      decoder's created rule is part of that owner's contract.
+  - what: >-
+      A reply that omits created, sends it as null, or sends it as 0 has no direct equivalent here: the shared image
+      reply decoder reads a missing or null created as the supplied clock, while LiteLLM's ImagesResponse requires
+      the field and LiteLLM's ImageResponse replaces a zero with the current time. A working OpenAI-compatible setup
+      always sends created.
+    why: >-
+      this slice reuses the image-generation reply decoder (B511) rather than adding a second image JSON parser, and
+      the decoder's created rule is part of that owner's contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L192-L196
-  - what: An optional parameter named image is refused as missing data instead of replacing the uploaded image the way
-      LiteLLM's {"image": image, **optional_params} dict merge does.
-    why: the uploaded file is a typed ImageFile part here; a JSON value cannot take its place, so the branch reports the
+  - what: >-
+      An optional parameter named image is refused as missing data instead of replacing the uploaded image the way
+      LiteLLM's image plus optional params dict merge does.
+    why: >-
+      the uploaded file is a typed ImageFile part here, so a JSON value cannot take its place; the branch reports the
       missing data field rather than silently dropping the upload.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L32-L44
