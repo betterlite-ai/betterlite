@@ -69,6 +69,19 @@ fn tool_config(optional: &Object) -> Result<Option<ToolConfig>, GeminiOptionsErr
     }
 }
 
+pub fn map(
+    param: &str,
+    value: &Json,
+    optional: &mut Object,
+    context: &super::assembly::OptionsContext<'_>,
+) -> Result<(), GeminiOptionsError> {
+    match param {
+        "tool_choice" => map_choice(value, optional),
+        "parallel_tool_calls" => map_parallel(value, context.non_default, optional),
+        _ => map_web_search(value, optional),
+    }
+}
+
 pub fn map_choice(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
     let config = map_tool_choice(value)?;
     optional.insert("tool_choice".to_owned(), convert::encode(config)?);

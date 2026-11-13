@@ -17,6 +17,18 @@ struct EffortRequest {
     effort: Option<String>,
 }
 
+pub fn map(
+    param: &str,
+    value: &Json,
+    optional: &mut Object,
+    context: &OptionsContext<'_>,
+) -> Result<(), GeminiOptionsError> {
+    if param == "thinking" {
+        return map_thinking(value, optional, context);
+    }
+    map_reasoning_effort(value, optional, context)
+}
+
 pub fn map_reasoning_effort(
     value: &Json,
     optional: &mut Object,

@@ -74,21 +74,12 @@ fn map_param(
     warned: &mut bool,
 ) -> Result<usize, GeminiOptionsError> {
     match param {
-        "audio" => {
-            let audio: AudioParam = decode(value, "audio")?;
-            let speech = map_audio_params(&audio)?;
-            optional.insert("speechConfig".to_owned(), Json::Object(speech));
-        }
-        "response_format" => {
-            let format: Object = decode(value, "response_format")?;
-            apply_response_format(&format, context.model, optional, context.schema)?;
-        }
-        "reasoning_effort" => thinking::map_reasoning_effort(value, optional, context)?,
-        "thinking" => thinking::map_thinking(value, optional, context)?,
+        "audio" | "response_format" => map_media_param(param, value, optional, context)?,
+        "reasoning_effort" | "thinking" => thinking::map(param, value, optional, context)?,
         "tools" | "functions" => return tools::append(value, optional, context.schema),
-        "tool_choice" => tools::map_choice(value, optional)?,
-        "parallel_tool_calls" => tools::map_parallel(value, context.non_default, optional)?,
-        "web_search_options" => tools::map_web_search(value, optional)?,
+        "tool_choice" | "parallel_tool_calls" | "web_search_options" => {
+            tools::map(param, value, optional, context)?;
+        }
         "include_server_side_tool_invocations" => {
             if decode::<bool>(value, param)? {
                 optional.insert(param.to_owned(), Json::Bool(true));
@@ -97,6 +88,23 @@ fn map_param(
         _ => map_scalar(param, value, optional, context.model, warned)?,
     }
     Ok(0)
+}
+
+fn map_media_param(
+    param: &str,
+    value: &Json,
+    optional: &mut Object,
+    context: &OptionsContext<'_>,
+) -> Result<(), GeminiOptionsError> {
+    if param == "response_format" {
+        let format: Object = decode(value, param)?;
+        return apply_response_format(&format, context.model, optional, context.schema)
+            .map_err(GeminiOptionsError::Format);
+    }
+    let audio: AudioParam = decode(value, param)?;
+    let speech = map_audio_params(&audio)?;
+    optional.insert("speechConfig".to_owned(), Json::Object(speech));
+    Ok(())
 }
 
 fn map_scalar(
