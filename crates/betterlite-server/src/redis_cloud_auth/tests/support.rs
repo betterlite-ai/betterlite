@@ -178,7 +178,7 @@ impl AzureGrants for RecordingGrants {
             .push(call);
         match self.token {
             Some(token) => Ok(SecretString::from(token)),
-            None => Err(AzureGrantError::Build {
+            None => Err(AzureGrantError::Grant {
                 kind: "client secret",
                 message: "the test grant refuses".to_owned(),
             }),
@@ -200,8 +200,9 @@ impl AzureGrants for RecordingGrants {
             .push(call);
         self.token.map_or_else(
             || {
-                Err(AzureGrantError::ManagedIdentity {
-                    source: betterlite_azure::azure_managed_identity::error::ManagedIdentityError::NoEndpoint,
+                Err(AzureGrantError::Grant {
+                    kind: "managed identity",
+                    message: "the test grant refuses".to_owned(),
                 })
             },
             |token| Ok(SecretString::from(token)),
@@ -209,7 +210,7 @@ impl AzureGrants for RecordingGrants {
     }
 
     fn default_credential(&self, scope: &str) -> Result<SecretString, AzureGrantError> {
-        let token = self.token.ok_or_else(|| AzureGrantError::Build {
+        let token = self.token.ok_or_else(|| AzureGrantError::Grant {
             kind: "default",
             message: "the test grant refuses".to_owned(),
         })?;

@@ -3,10 +3,6 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
-use betterlite_azure::azure_client_secret::provider::ProviderCache;
-use betterlite_azure::azure_client_secret::transport::{
-    Clock as TokenClock, Transport as ClientSecretTransport,
-};
 use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use betterlite_azure::azure_managed_identity::runtime::FsTokenFiles;
@@ -87,87 +83,61 @@ async fn production_deps(
     })
 }
 
-struct AzureGrantParts {
-    http: Arc<AzureHttp>,
-    clock: Arc<ProductionClock>,
-    exchange: AzureOidcExchange,
-    redactor: Redactor,
-}
-
-fn azure_grant_parts(
-    config: &Config,
-    environment: &BTreeMap<String, String>,
-    http: &ProxiedClient,
-    runtime: &Handle,
-) -> Result<AzureGrantParts, CloudRedisAuthSetupError> {
-    let owned_http = Arc::new(AzureHttp {
-        runtime: runtime.clone(),
-        client: http.clone(),
-    });
-    let clock = Arc::new(ProductionClock);
-    let exchange = oidc_exchange(config, environment, &owned_http, &clock)?;
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|source| CloudRedisAuthSetupError::Redactor { source })?;
-    Ok(AzureGrantParts {
-        http: owned_http,
-        clock,
-        exchange,
-        redactor,
-    })
-}
-
 fn azure_grants(
     config: &Config,
     environment: &BTreeMap<String, String>,
     http: &ProxiedClient,
     runtime: &Handle,
 ) -> Result<Arc<dyn AzureGrants>, CloudRedisAuthSetupError> {
-    let parts = azure_grant_parts(config, environment, http, runtime)?;
-    let transport: Arc<dyn ClientSecretTransport> = Arc::clone(&parts.http);
-    let client_clock: Arc<dyn TokenClock> = Arc::clone(&parts.clock);
-    let client_secrets = Mutex::new(ProviderCache::new(
-        transport,
-        client_clock,
-        config.sections.azure_client_secret.clone(),
-    ));
-    let managed_environment = ManagedIdentityEnvironment::from_lookup(environment);
-    let chain_environment =
-        ChainEnvironment::from_settings(&config.sections.azure_default_chain, environment);
-    let host = ProductionHost {
-        environment: environment.clone(),
-    };
+    let azure_http = Arc::new(AzureHttp {
+        runtime: runtime.clone(),
+        client: http.clone(),
+    });
+    let clock = Arc::new(ProductionClock);
+    let (exchange, redactor) = exchange_and_redactor(config, environment, &azure_http, &clock)?;
     Ok(Arc::new(SdkAzureGrants::<AzureHttp> {
-        http: parts.http,
-        clock: parts.clock,
+        http: azure_http,
+        clock,
         files: StdFiles,
         ids: Arc::new(RandomIds),
         token_files: FsTokenFiles,
         scheduler: ThreadScheduler {
             runtime: runtime.clone(),
         },
-        host,
-        redactor: parts.redactor,
-        environment: managed_environment,
-        chain_environment,
-        exchange: parts.exchange,
+        host: ProductionHost {
+            environment: environment.clone(),
+        },
+        redactor,
+        environment: ManagedIdentityEnvironment::from_lookup(environment),
+        chain_environment: ChainEnvironment::from_settings(
+            &config.sections.azure_default_chain,
+            environment,
+        ),
+        exchange,
         authority_host: environment.get("AZURE_AUTHORITY_HOST").cloned(),
-        client_secrets,
+        client_secret_settings: config.sections.azure_client_secret.clone(),
+        client_secret_token: Mutex::new(None),
+        managed_identity_token: Mutex::new(None),
+        default_token: Mutex::new(None),
     }))
 }
 
-fn oidc_exchange(
+fn exchange_and_redactor(
     config: &Config,
     environment: &BTreeMap<String, String>,
     http: &Arc<AzureHttp>,
     clock: &Arc<ProductionClock>,
-) -> Result<AzureOidcExchange, CloudRedisAuthSetupError> {
+) -> Result<(AzureOidcExchange, Redactor), CloudRedisAuthSetupError> {
     let transport: Arc<dyn OidcTransport> = Arc::clone(http);
     let oidc_clock: Arc<dyn OidcClock> = Arc::clone(clock);
-    AzureOidcExchange::new(
+    let exchange = AzureOidcExchange::new(
         config.sections.azure_oidc_exchange.clone(),
         environment.clone(),
         transport,
         oidc_clock,
     )
-    .map_err(|source| CloudRedisAuthSetupError::OidcExchange { source })
+    .map_err(|source| CloudRedisAuthSetupError::OidcExchange { source })?;
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
+        .map_err(|source| CloudRedisAuthSetupError::Redactor { source })?;
+    Ok((exchange, redactor))
 }

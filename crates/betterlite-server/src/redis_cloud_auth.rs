@@ -1,6 +1,5 @@
 pub mod aws;
 pub mod azure;
-pub mod azure_grants;
 pub mod azure_http;
 pub mod azure_production;
 pub mod azure_runtime;

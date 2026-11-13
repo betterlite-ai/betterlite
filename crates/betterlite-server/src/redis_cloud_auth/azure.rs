@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use betterlite_azure::azure_client_secret::ClientSecretError;
 use betterlite_azure::azure_default_chain::error::DefaultChainError;
-use betterlite_azure::azure_managed_identity::error::ManagedIdentityError;
 use betterlite_config::sections::redis_credentials::azure::{
     AzureCredential, AzureSettings, AzureToken, AzureTokenFetcher,
 };
@@ -29,28 +27,18 @@ pub trait AzureGrants: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum AzureGrantError {
-    #[error("the Azure AD client secret credential could not produce a token: {source}")]
-    ClientSecret {
-        #[source]
-        source: ClientSecretError,
-    },
-    #[error("the Azure AD managed identity credential could not produce a token: {source}")]
-    ManagedIdentity {
-        #[source]
-        source: ManagedIdentityError,
-    },
-    #[error("the Azure AD default credential could not produce a token: {source}")]
-    Default {
-        #[source]
-        source: DefaultChainError,
-    },
     #[error("the Azure AD {kind} credential needs {fields}")]
     MissingSettings {
         kind: &'static str,
         fields: &'static str,
     },
-    #[error("the Azure AD {kind} credential could not be built: {message}")]
-    Build { kind: &'static str, message: String },
+    #[error("the Azure AD {kind} credential could not produce a token: {message}")]
+    Grant { kind: &'static str, message: String },
+    #[error("the Azure AD default credential could not produce a token: {source}")]
+    DefaultCredential {
+        #[source]
+        source: DefaultChainError,
+    },
 }
 
 pub struct AzureRedisTokens {

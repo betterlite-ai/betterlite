@@ -18,13 +18,10 @@ use axum::routing::any;
 use betterlite_azure::azure_arc_identity::{ArcHost, ArcRequest, ArcTransport};
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
-use betterlite_azure::azure_client_secret::provider::ProviderCache;
 use betterlite_azure::azure_client_secret::transport::{
     Clock as TokenClock, HttpMethod, HttpRequest, Transport as ClientSecretTransport,
 };
 use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
-use betterlite_azure::azure_default_chain::grant::{Grants, UsernamePasswordRecord};
-use betterlite_azure::azure_default_chain::native::NativeGrant;
 use betterlite_azure::azure_hosted_identity::request::{HostedRequest, HostedTransport};
 use betterlite_azure::azure_managed_identity::environment::ManagedIdentityEnvironment;
 use betterlite_azure::azure_managed_identity::imds::{ImdsRequest, ImdsTransport};

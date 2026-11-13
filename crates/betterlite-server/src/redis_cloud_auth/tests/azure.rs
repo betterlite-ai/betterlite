@@ -2,20 +2,25 @@ fn azure_fetcher(settings: AzureSettings, grants: Arc<dyn AzureGrants>) -> Azure
     AzureRedisTokens { settings, grants }
 }
 
-fn production_io() -> Arc<FakeIo> {
+const LIVE_TOKEN: &str = r#"{"access_token":"fixture-token","expires_in":3600}"#;
+const EXPIRED_TOKEN: &str = r#"{"access_token":"fixture-token","expires_in":0}"#;
+
+fn production_io(token_body: &'static str, rounds: usize) -> Arc<FakeIo> {
     let openid = r#"{"issuer":"https://login.microsoftonline.com/tenant/v2.0","authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}"#;
-    Arc::new(FakeIo::new(vec![
-        Reply {
+    let mut replies = Vec::new();
+    for _round in 0..rounds {
+        replies.push(Reply {
             url_contains: "well-known/openid-configuration",
             status: 200,
             body: openid,
-        },
-        Reply {
+        });
+        replies.push(Reply {
             url_contains: "/oauth2/v2.0/token",
             status: 200,
-            body: r#"{"access_token":"fixture-token","expires_in":3600}"#,
-        },
-    ]))
+            body: token_body,
+        });
+    }
+    Arc::new(FakeIo::new(replies))
 }
 
 fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
@@ -30,10 +35,6 @@ fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
         oidc_clock,
     )
     .unwrap();
-    let transport: Arc<dyn betterlite_azure::azure_client_secret::transport::Transport> =
-        Arc::clone(io);
-    let client_clock: Arc<dyn betterlite_azure::azure_client_secret::transport::Clock> =
-        Arc::clone(&clock);
     SdkAzureGrants::<FakeIo> {
         http: Arc::clone(io),
         clock,
@@ -51,11 +52,10 @@ fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
         chain_environment: ChainEnvironment::default(),
         exchange,
         authority_host: None,
-        client_secrets: Mutex::new(ProviderCache::new(
-            transport,
-            client_clock,
-            ClientSecretSettings::default(),
-        )),
+        client_secret_settings: ClientSecretSettings::default(),
+        client_secret_token: Mutex::new(None),
+        managed_identity_token: Mutex::new(None),
+        default_token: Mutex::new(None),
     }
 }
 
@@ -145,7 +145,13 @@ fn azure_a_grant_failure_is_reported() {
     let error = fetcher
         .fetch_token(AzureCredential::ManagedIdentity, AZURE_REDIS_SCOPE)
         .unwrap_err();
-    assert!(matches!(error, AzureGrantError::ManagedIdentity { .. }));
+    assert!(matches!(
+        error,
+        AzureGrantError::Grant {
+            kind: "managed identity",
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -180,54 +186,66 @@ fn azure_ad_provider_returns_the_username_and_token() {
     assert_eq!(token.expose_secret(), "azure-token");
 }
 
-#[test]
-fn azure_the_client_secret_credential_is_built_once() {
-    let io = production_io();
-    let grants = production_grants(&io);
-    let client_secret = SecretString::from("secret".to_owned());
-    let first = grants
-        .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)
-        .unwrap();
-    let second = grants
-        .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)
-        .unwrap();
+async fn two_client_secret_calls(io: &Arc<FakeIo>) -> (SecretString, SecretString) {
+    let grants = production_grants(io);
+    tokio::task::spawn_blocking(move || {
+        let client_secret = SecretString::from("secret".to_owned());
+        let first = grants
+            .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)
+            .unwrap();
+        let second = grants
+            .client_secret("tenant", "client", &client_secret, AZURE_REDIS_SCOPE)
+            .unwrap();
+        (first, second)
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_the_client_secret_credential_is_built_once() {
+    let io = production_io(LIVE_TOKEN, 1);
+    let (first, second) = two_client_secret_calls(&io).await;
     assert_eq!(first.expose_secret(), "fixture-token");
     assert_eq!(second.expose_secret(), "fixture-token");
     assert_eq!(io.requests().len(), 2);
 }
 
-#[test]
-fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
-    let grants = production_grants(&production_io());
-    let error = grants
-        .managed_identity("client", AZURE_REDIS_SCOPE)
-        .unwrap_err();
-    assert!(matches!(error, AzureGrantError::ManagedIdentity { .. }));
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_an_expired_token_is_fetched_again() {
+    let io = production_io(EXPIRED_TOKEN, 2);
+    let (first, second) = two_client_secret_calls(&io).await;
+    assert_eq!(first.expose_secret(), "fixture-token");
+    assert_eq!(second.expose_secret(), "fixture-token");
+    assert_eq!(io.requests().len(), 4);
 }
 
-#[test]
-fn azure_the_default_credential_reports_an_exhausted_chain() {
-    let grants = production_grants(&production_io());
-    let error = grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err();
-    assert!(matches!(error, AzureGrantError::Default { .. }));
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
+    let grants = production_grants(&production_io(LIVE_TOKEN, 1));
+    let error = tokio::task::spawn_blocking(move || {
+        grants
+            .managed_identity("client", AZURE_REDIS_SCOPE)
+            .unwrap_err()
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        error,
+        AzureGrantError::Grant {
+            kind: "managed identity",
+            ..
+        }
+    ));
 }
 
-#[test]
-fn azure_a_blank_tenant_uses_the_organizations_tenant() {
-    let grants = production_grants(&production_io());
-    let record = UsernamePasswordRecord {
-        client_id: "client".to_owned(),
-        username: "user".to_owned(),
-        password: SecretString::from("pw".to_owned()),
-        tenant_id: Some(String::new()),
-        scope: AZURE_REDIS_SCOPE.to_owned(),
-    };
-    let grant = Grants::username_password(&grants, &record).unwrap();
-    match grant {
-        NativeGrant::UsernamePassword(password) => assert_eq!(password.tenant, "organizations"),
-        NativeGrant::ClientSecret(_)
-        | NativeGrant::Certificate(_)
-        | NativeGrant::Workload(_)
-        | NativeGrant::ManagedIdentity(_) => panic!("expected a username and password grant"),
-    }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_the_default_credential_reports_an_exhausted_chain() {
+    let grants = production_grants(&production_io(LIVE_TOKEN, 1));
+    let error = tokio::task::spawn_blocking(move || {
+        grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err()
+    })
+    .await
+    .unwrap();
+    assert!(matches!(error, AzureGrantError::DefaultCredential { .. }));
 }

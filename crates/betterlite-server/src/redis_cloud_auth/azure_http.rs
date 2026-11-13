@@ -37,6 +37,7 @@ pub trait AzureIo:
     + ArcTransport
     + Send
     + Sync
+    + 'static
 {
 }
 
@@ -49,6 +50,7 @@ impl<T> AzureIo for T where
         + ArcTransport
         + Send
         + Sync
+        + 'static
 {
 }
 
