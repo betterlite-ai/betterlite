@@ -1,0 +1,11 @@
+kind: helper
+name: flat-cost-ignores-parallel-usage-for-other-providers
+call:
+  b3274:
+    model_cost: {"tavily/search": {"litellm_provider": "tavily", "mode": "search", "input_cost_per_query": 0.5}}
+    model: "tavily/search"
+    custom_llm_provider: "tavily"
+    number_of_queries: 2
+    optional_params: {"mode": "fast", "_parallel_ai_usage": [{"name": "sku_search", "count": 9}]}
+env: {}
+compare: {ignore: []}

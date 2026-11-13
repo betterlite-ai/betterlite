@@ -1,0 +1,11 @@
+kind: helper
+name: flat-pricing-unset-rate-is-free
+call:
+  b3274:
+    model_cost: {"tavily/search": {"litellm_provider": "tavily", "mode": "search"}}
+    model: "tavily/search"
+    custom_llm_provider: "tavily"
+    number_of_queries: 3
+    optional_params: {}
+env: {}
+compare: {ignore: []}
