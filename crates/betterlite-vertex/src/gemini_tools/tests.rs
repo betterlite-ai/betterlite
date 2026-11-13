@@ -94,6 +94,7 @@ fn function_declarations_are_grouped_first_and_keep_the_specials_that_coexist() 
             ]"#,
         )
     );
+    assert_eq!(mapped.warnings, 0);
 }
 
 #[test]
