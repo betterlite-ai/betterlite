@@ -86,7 +86,7 @@ fn a_tuned_endpoint_without_a_project_reports_vertex_400() {
         }],
     }));
     assert_eq!(value["calls"][0]["ok"], json!(false));
-    assert_eq!(value["calls"][0]["status"], json!(400));
+    assert_eq!(value["calls"][0]["status"], json!(400_i32));
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn an_unknown_zone_is_rejected() {
         "calls": [],
     }))
     .unwrap();
-    assert!(super::ops::run(&input).is_err());
+    super::ops::run(&input).unwrap_err();
 }
 
 #[test]
