@@ -10,7 +10,7 @@ pub enum FileUploadValidationError {
     Limit(#[from] ApiLimitError),
     #[error("the uploaded file could not be read")]
     Read {
-        #[source]
+        #[from]
         source: io::Error,
     },
 }

@@ -164,7 +164,7 @@ fn scan(
     limits: ApiLimits,
 ) -> Result<Option<BatchValidationFailure>, FileUploadValidationError> {
     match body {
-        FileBody::Bytes(bytes) => decode_file_upload_validation(bytes, line_shape, limits),
+        FileBody::Bytes(bytes) => decode_file_upload_validation(*bytes, line_shape, limits),
         FileBody::Seekable(reader) => scan_reader(&mut **reader, line_shape, limits),
     }
 }
