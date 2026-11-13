@@ -1,0 +1,24 @@
+kind: helper
+name: traversal-markers-and-leaves
+call:
+  database_reencryption:
+    op: replace
+    value:
+      api_key: litellm_enc::old-cipher
+      plain: visible
+      nested:
+        list:
+          - litellm_enc::a
+          - b
+          - 7
+          - null
+          - true
+    replacements:
+      old-cipher: new-cipher
+      a: ""
+      b: null
+    depth: 0
+    max_depth: 100
+env: {}
+compare:
+  ignore: []

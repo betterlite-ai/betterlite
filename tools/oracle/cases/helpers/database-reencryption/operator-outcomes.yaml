@@ -1,0 +1,14 @@
+kind: helper
+name: operator-outcomes
+call:
+  database_reencryption:
+    op: outcome
+    outcome:
+      kind: migrated
+      migrated: 3
+      remaining: 2
+      error_class: ValueError
+      error_message: unused
+env: {}
+compare:
+  ignore: []

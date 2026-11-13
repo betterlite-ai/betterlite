@@ -1,0 +1,18 @@
+kind: helper
+name: depth-cutoff
+call:
+  database_reencryption:
+    op: replace
+    value:
+      top: litellm_enc::a
+      list:
+        - litellm_enc::b
+    replacements:
+      a: done
+      b: done
+    depth: 0
+    max_depth: 1
+env:
+  DEFAULT_MAX_RECURSE_DEPTH: "1"
+compare:
+  ignore: []

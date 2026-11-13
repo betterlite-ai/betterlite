@@ -1,0 +1,17 @@
+kind: helper
+name: database-reencryption-depth
+call:
+  database_reencryption:
+    op: replace
+    value:
+      - litellm_enc::a
+      - litellm_enc::b
+    replacements:
+      a: done
+      b: done
+    depth: 0
+    max_depth: -1
+env:
+  DEFAULT_MAX_RECURSE_DEPTH: "-1"
+compare:
+  ignore: []
