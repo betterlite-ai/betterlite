@@ -55,6 +55,21 @@ fn delta(piece: &StreamChunk) -> &StreamDelta {
     &only_choice(piece).delta
 }
 
+struct BareSource;
+
+impl ChunkSource for BareSource {
+    fn next_chunk(&mut self) -> Result<Option<StreamChunk>, StreamFailure> {
+        Ok(None)
+    }
+}
+
+#[async_trait]
+impl AsyncChunkSource for BareSource {
+    async fn next_chunk(&mut self) -> Result<Option<StreamChunk>, StreamFailure> {
+        Ok(None)
+    }
+}
+
 struct TestSource {
     chunks: VecDeque<StreamChunk>,
     failure: Option<StreamFailure>,
@@ -585,6 +600,14 @@ fn splitter_pull_and_attributes_forwards_stream_attributes() {
     let bare = splitter(TestSource::new(Vec::new()));
     assert!(ChunkSource::chunks(&bare.source).is_none());
     assert!(ChunkSource::messages(&bare.source).is_none());
+}
+
+#[test]
+fn splitter_pull_and_attributes_default_stream_attributes_are_absent() {
+    assert!(ChunkSource::chunks(&BareSource).is_none());
+    assert!(ChunkSource::messages(&BareSource).is_none());
+    assert!(AsyncChunkSource::chunks(&BareSource).is_none());
+    assert!(AsyncChunkSource::messages(&BareSource).is_none());
 }
 
 #[test]
