@@ -1,7 +1,13 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use betterlite_config::sections::local_ttl_cache::Settings;
+use betterlite_context::local_ttl_cache::CacheValue;
+use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache, Ttl};
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use serde_json::{Map, Value, json};
 
@@ -16,8 +22,28 @@ fn message_map(value: &Value) -> Map<String, Value> {
     value.as_object().cloned().unwrap()
 }
 
+fn tool_call_cache(entries: &[(&str, &str)]) -> DualLocalCache {
+    let diagnostics = Diagnostics {
+        redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()),
+        emit: Arc::new(|_event| {}),
+    };
+    let cache = DualLocalCache::new(
+        None,
+        None,
+        &Settings::default(),
+        Arc::new(|| 0.0_f64),
+        diagnostics,
+    );
+    for (key, value) in entries {
+        let stored = serde_json::from_str::<CacheValue>(value).unwrap();
+        cache.set(key, stored, Ttl::Absent);
+    }
+    cache
+}
+
 fn provenance(raw_input: &[Value], expected_messages: &[Value]) -> Option<InputProvenance> {
-    input_item_provenance(raw_input, expected_messages).unwrap()
+    let cache = tool_call_cache(&[]);
+    input_item_provenance(raw_input, expected_messages, ApiLimits::default(), &cache).unwrap()
 }
 
 fn call_item() -> Value {
@@ -109,6 +135,31 @@ fn provenance_skips_an_item_that_produced_no_message() {
         provenance(&raw_input, &expected),
         Some(InputProvenance {
             item_for_message: BTreeMap::from([(0, 1)]),
+            tainted: BTreeSet::new(),
+        })
+    );
+}
+
+#[test]
+fn provenance_maps_a_cached_tool_output_item() {
+    let cache = tool_call_cache(&[(
+        "c1",
+        r#"{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}"#,
+    )]);
+    let raw_input = [json!({"type": "function_call_output", "call_id": "c1", "output": "r"})];
+    let expected = [
+        json!({
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}, "index": 0}
+            ]
+        }),
+        json!({"role": "tool", "content": "r", "tool_call_id": "c1"}),
+    ];
+    assert_eq!(
+        input_item_provenance(&raw_input, &expected, ApiLimits::default(), &cache).unwrap(),
+        Some(InputProvenance {
+            item_for_message: BTreeMap::from([(0, 0), (1, 0)]),
             tainted: BTreeSet::new(),
         })
     );
@@ -233,7 +284,13 @@ fn provenance_unit_an_empty_input_has_no_bounds() {
 
 #[test]
 fn provenance_error_a_converter_failure_is_not_an_untraceable_input() {
-    let error = input_item_provenance(&[json!({"role": "user", "content": true})], &[]);
+    let cache = tool_call_cache(&[]);
+    let error = input_item_provenance(
+        &[json!({"role": "user", "content": true})],
+        &[],
+        ApiLimits::default(),
+        &cache,
+    );
     assert!(matches!(
         error,
         Err(InputProvenanceError::Conversion { .. })

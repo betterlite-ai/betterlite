@@ -1,6 +1,5 @@
 use betterlite_core::api::response_chat_history::error::HistoryError;
 use betterlite_core::api::responses_input_messages::error::InputMessagesError;
-use betterlite_redact::error::RedactionError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -21,10 +20,5 @@ pub enum InputProvenanceError {
     InputItem {
         #[source]
         source: serde_json::Error,
-    },
-    #[error("the redactor patterns did not compile")]
-    Redactor {
-        #[source]
-        source: RedactionError,
     },
 }

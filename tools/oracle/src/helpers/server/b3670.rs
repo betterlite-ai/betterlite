@@ -1,5 +1,11 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use betterlite_config::sections::local_ttl_cache::Settings;
+use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_redact::error::RedactionError;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::guardrails::anthropic_translation::scan_targets::is_client_tool_use;
 use betterlite_server::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, item_rewrite_field, rewritten_input_item,
@@ -80,9 +86,25 @@ impl Helper for Op {
 }
 
 fn provenance_answer(raw_input: &[Value], expected_messages: &[Value]) -> HelperResult {
-    input_item_provenance(raw_input, expected_messages)
+    let cache = tool_call_cache().or_value_error()?;
+    input_item_provenance(raw_input, expected_messages, ApiLimits::default(), &cache)
         .or_value_error()
         .map(|provenance| provenance_value(provenance.as_ref()))
+}
+
+// LiteLLM's TOOL_CALLS_CACHE starts empty in the oracle's LiteLLM process, so the helper passes none
+fn tool_call_cache() -> Result<DualLocalCache, RedactionError> {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
+    Ok(DualLocalCache::new(
+        None,
+        None,
+        &Settings::default(),
+        Arc::new(|| 0.0_f64),
+        Diagnostics {
+            redactor: Arc::new(redactor),
+            emit: Arc::new(|_event| {}),
+        },
+    ))
 }
 
 fn rewritten_item_answer(item: &Map<String, Value>, rewritten: &Value) -> HelperResult {

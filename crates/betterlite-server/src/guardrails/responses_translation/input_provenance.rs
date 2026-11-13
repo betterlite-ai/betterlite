@@ -16,15 +16,12 @@ mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::slice;
-use std::sync::Arc;
 
-use betterlite_config::sections::local_ttl_cache::Settings;
-use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
+use betterlite_context::local_ttl_cache::dual::DualLocalCache;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::response_chat_history::history::{HistoryMessage, convert_history};
 use betterlite_core::api::responses_input_messages::{InputRequest, input_messages};
 use betterlite_models::decisions::Json;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Map, Value};
 
 use error::InputProvenanceError;
@@ -46,22 +43,23 @@ pub struct InputProvenance {
 pub fn input_item_provenance(
     raw_input: &[Value],
     expected_messages: &[Value],
+    limits: ApiLimits,
+    cache: &DualLocalCache,
 ) -> Result<Option<InputProvenance>, InputProvenanceError> {
     if raw_input.iter().any(|item| !item.is_object()) {
         return Ok(None);
     }
-    let cache = empty_cache()?;
     let items = to_json_items(raw_input)?;
     let mut solo_conversions = Vec::with_capacity(items.len());
     for item in &items {
-        solo_conversions.push(convert(slice::from_ref(item), &cache)?);
+        solo_conversions.push(convert(slice::from_ref(item), limits, cache)?);
     }
-    let full_conversion = convert(&items, &cache)?;
+    let full_conversion = convert(&items, limits, cache)?;
     if full_conversion.as_slice() != expected_messages {
         return Ok(None);
     }
     let units = provenance_unit_bounds(raw_input, &solo_conversions);
-    let unit_messages = unit_conversions(&items, &units, &solo_conversions, &cache)?;
+    let unit_messages = unit_conversions(&items, &units, &solo_conversions, limits, cache)?;
     if !unit_messages.iter().flatten().eq(full_conversion.iter()) {
         return Ok(None);
     }
@@ -72,6 +70,7 @@ fn unit_conversions(
     items: &[Json],
     units: &[(usize, usize)],
     solo_conversions: &[Vec<Value>],
+    limits: ApiLimits,
     cache: &DualLocalCache,
 ) -> Result<Vec<Vec<Value>>, InputProvenanceError> {
     let unit_starts: BTreeSet<usize> = units.iter().map(|(start, _)| *start).collect();
@@ -89,7 +88,7 @@ fn unit_conversions(
         unit_messages.push(if span == 1 {
             solo.clone()
         } else {
-            convert(&unit, cache)?
+            convert(&unit, limits, cache)?
         });
     }
     Ok(unit_messages)
@@ -238,12 +237,16 @@ fn convert_chat_row(row: &Value) -> Result<Vec<Value>, InputProvenanceError> {
     Ok(converted.input)
 }
 
-fn convert(items: &[Json], cache: &DualLocalCache) -> Result<Vec<Value>, InputProvenanceError> {
+fn convert(
+    items: &[Json],
+    limits: ApiLimits,
+    cache: &DualLocalCache,
+) -> Result<Vec<Value>, InputProvenanceError> {
     let request = InputRequest {
         input: Some(Json::List(items.to_vec())),
         instructions: None,
     };
-    input_messages(&request, false, ApiLimits::default(), cache)
+    input_messages(&request, false, limits, cache)
         .map_err(|source| InputProvenanceError::Conversion { source })
 }
 
@@ -255,20 +258,4 @@ fn to_json_items(raw_input: &[Value]) -> Result<Vec<Json>, InputProvenanceError>
         items.push(converted);
     }
     Ok(items)
-}
-
-fn empty_cache() -> Result<DualLocalCache, InputProvenanceError> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|source| InputProvenanceError::Redactor { source })?;
-    let diagnostics = Diagnostics {
-        redactor: Arc::new(redactor),
-        emit: Arc::new(|_event| {}),
-    };
-    Ok(DualLocalCache::new(
-        None,
-        None,
-        &Settings::default(),
-        Arc::new(|| 0.0_f64),
-        diagnostics,
-    ))
 }
