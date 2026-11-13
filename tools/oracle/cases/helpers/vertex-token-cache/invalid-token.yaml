@@ -1,0 +1,31 @@
+kind: helper
+name: vertex-token-cache-invalid-token
+call:
+  vertex_token_cache:
+    scenarios:
+      - credentials:
+          - name: reported-invalid
+            token: token-invalid
+            state: invalid
+            project_id: own-project
+          - name: token-absent
+            state: fresh
+            project_id: own-project
+          - name: project-unresolved
+            token: token-fresh
+            state: fresh
+        records:
+          - credential: reported-invalid
+            credentials: credential-a
+            cached_project: cached-project
+          - credential: token-absent
+            credentials: credential-b
+            cached_project: cached-project
+          - credential: project-unresolved
+            credentials: credential-c
+        probes:
+          - credentials: credential-a
+          - credentials: credential-b
+          - credentials: credential-c
+env: {}
+compare: {ignore: []}

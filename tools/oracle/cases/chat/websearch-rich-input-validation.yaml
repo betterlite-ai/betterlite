@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "websearch-rich-input-validation",
+  "call": {
+    "b4115": {
+      "operation": "rich_search_input",
+      "tool_inputs": [
+        {"objective": "find rust", "search_queries": ["one", "two", "three", "four", "five", "six"]},
+        {"objective": "   ", "search_queries": ["rust", "  ", 7, "cargo"]},
+        {"query": "plain"},
+        "not an object",
+        {"search_queries": []},
+        {"objective": "only the goal"}
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

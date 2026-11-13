@@ -1,0 +1,52 @@
+kind: helper
+name: azure-header-selection
+call:
+  azure_urls:
+    azure_header_selection:
+      - headers: {api-key: ""}
+        params: {api_key: fixture-key}
+        globals: {}
+        environment: {}
+        token_params: {azure_ad_token: fixture-token}
+      - headers: {}
+        params: {api_key: fixture-key}
+        globals: {}
+        environment: {}
+        token_params: {}
+      - headers: {API-Key: previous}
+        params: {api_key: fixture-key}
+        globals: {}
+        environment: {}
+        token_params: {}
+      - headers: {API-Key: previous}
+        params: {}
+        globals: {}
+        environment: {}
+        token_params: {azure_ad_token: fixture-token}
+      - headers: {}
+        params: {}
+        globals: {}
+        environment: {}
+        token_params: {azure_ad_token: ""}
+      - headers: {}
+        params: {}
+        globals: {}
+        environment: {}
+        token_params: {}
+      - headers: {}
+        params: {}
+        globals: {api_key: module-key}
+        environment: {}
+        token_params: {}
+      - headers: {}
+        params: {}
+        globals: {azure_key: azure-key}
+        environment: {}
+        token_params: {}
+      - headers: {}
+        params: {}
+        globals: {}
+        environment: {AZURE_OPENAI_API_KEY: environment-key}
+        token_params: {}
+env: {}
+compare: {ignore: []}

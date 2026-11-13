@@ -2,7 +2,7 @@ id: B7939
 milestone: M12 python
 title: Python types for logger integrations argilla to zerobus (types/integrations, observability and storage)
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7939-types-integration-loggers.yaml
 covers:
   - "litellm/types/integrations/argilla.py"

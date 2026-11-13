@@ -2,7 +2,7 @@ id: B7946
 milestone: M12 python
 title: Python types for proxy management endpoints common_daily_activity to model_management (types/proxy/management_endpoints)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7946-types-proxy-mgmt-endpoints-a.yaml
 covers:
   - "litellm/types/proxy/management_endpoints/common_daily_activity.py"

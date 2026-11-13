@@ -2,7 +2,7 @@ id: B8083
 milestone: M12 python
 title: Python A2A functions, errors and response objects
 status: todo
-depends_on: [B8081, B5657, B163]
+depends_on: [B8081, B5657, B163, B9951]
 file: tasks/B8083-python-a2a-functions.yaml
 covers:
   - "litellm/a2a_protocol/main.py"

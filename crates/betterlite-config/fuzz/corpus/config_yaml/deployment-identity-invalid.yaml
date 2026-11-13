@@ -1,0 +1,9 @@
+router_settings:
+  ignore_invalid_deployments: maybe
+
+model_list:
+  - model_name: identity-model
+    litellm_params:
+      api_key: sk-identity
+    model_info:
+      id: [not, an, id]

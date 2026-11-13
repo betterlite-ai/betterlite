@@ -1,0 +1,17 @@
+kind: helper
+name: studio-files-start-header-override
+call:
+  studio_files:
+    calls:
+      - function: create_plan
+        now: 1700000000
+        file:
+          data: [104, 105]
+          filename: notes.txt
+          content_type: text/plain
+          headers:
+            Content-Type: application/custom
+            X-Custom: kept
+            X-Goog-Upload-Command: custom
+env: {}
+compare: {ignore: []}

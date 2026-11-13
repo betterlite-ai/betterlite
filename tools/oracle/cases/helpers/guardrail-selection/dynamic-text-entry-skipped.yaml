@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-text-entry-skipped
+call:
+  b3665: {"function": "dynamic_request_body_params", "guardrail_name": "g", "event_hook": null, "default_on": false, "data": {"guardrails": ["g", {"g": {"extra_body": {"a": 1}}}]}}
+env: {}
+compare: {ignore: []}

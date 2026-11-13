@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-response-absent-usage
+call:
+  gemini_response:
+    model: gemini-2.5-flash
+    legacy_function: false
+    now: 1700000000
+    generated_id: 0123456789abcdef0123456789abcdef
+    headers: {}
+    body:
+      candidates:
+        - content:
+            parts:
+              - text: usage is required
+          finishReason: STOP
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: mask-content
+call:
+  b5471: {"function": "mask", "content": "hello world", "mask": "***", "start": 6, "end": 11}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: cli-login-pages-empty-and-prefilled-code
+call:
+  cli_login_page:
+    environment: {}
+    renders:
+      - page: verification
+        verify_url: "https://proxy.example.com/sso/cli/start"
+        browser_complete_token: browser-token
+        prefill_user_code: null
+      - page: verification
+        verify_url: "https://proxy.example.com/sso/cli/start"
+        browser_complete_token: browser-token
+        prefill_user_code: ""
+      - page: verification
+        verify_url: "https://proxy.example.com/sso/cli/start"
+        browser_complete_token: browser-token
+        prefill_user_code: K7QP-3M2N
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-signature-empty-string
+call: {"messages_content_primitives": {"operation": "tool_call_signature", "attributes": true, "tool_call": {"provider_specific_fields": {"thought_signature": ""}, "function": {"provider_specific_fields": {}}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-compaction-mixed-list
+call: {"messages_content_primitives": {"operation": "compaction_blocks", "fields": {"compaction_blocks": [{"type": "compaction", "content": "one"}, {"type": "text"}, 7, {"type": "compaction", "content": "two"}, "x", null]}}}
+env: {}
+compare: {ignore: []}

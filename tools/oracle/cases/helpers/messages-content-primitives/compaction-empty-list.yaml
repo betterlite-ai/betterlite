@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-compaction-empty-list
+call: {"messages_content_primitives": {"operation": "compaction_blocks", "fields": {"compaction_blocks": []}}}
+env: {}
+compare: {ignore: []}

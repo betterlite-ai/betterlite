@@ -1,0 +1,71 @@
+id: B9953
+title: Oracle probe protocol and registry off the legacy list
+description: >-
+  tools/oracle/litellm/probes/protocol.py reads probe requests and writes answers, and registry.py maps each probe
+  operation to its class, 111 of them. Both are on python-legacy.txt, so mypy and the Python rules skip them, and B3001
+  will add its probe to both. Max decided on 2026-11-13 that legacy files open tasks will edit get cleaned first.
+
+
+  Take both off python-legacy.txt and fix what the strict checks then find. mypy, run from the repo root as the hooks run
+  it, can't resolve `from probes.access_windows import ...`, because probes is a folder without `__init__.py`. An empty
+  tools/oracle/litellm/probes/__init__.py makes mypy see the package `probes` with tools/oracle/litellm as its base, and
+  `python -m probes` still loads all 111 operations. After that mypy finds four places where an Any reaches an
+  expression: registry.py reads stdin (`sys.stdin` is typed `TextIO | MaybeNone`, and `MaybeNone` is Any) and protocol.py
+  hands `random.shuffle` and `random.choices` around as values (L80, L87). The Python rules find three lines: the
+  `# noqa: S311` on registry.py L142, which has no upstream case, and the file-level `# pyright: strict, reportAny=true,
+  ...` comment in each file, which a strict file may not carry. Move those pyright settings into
+  tools/oracle/litellm/probes/pyrightconfig.json, as tools/oracle/sdk_http/pyrightconfig.json holds them for its folder,
+  so basedpyright keeps the same strictness for the two files. Keep every probe answer the same: the 95 probe cases pass
+  unchanged.
+scope:
+  paths:
+  - python-legacy.txt
+  - tools/oracle/litellm/probes/__init__.py
+  - tools/oracle/litellm/probes/pyrightconfig.json
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/tests/test_protocol.py
+  lint_tables: false
+references:
+- url: https://github.com/python/mypy/blob/ad02a35e623d105ab7340f75558716bc09f8242e/mypy/typeshed/stdlib/sys/__init__.pyi#L79
+  why: In the typeshed of mypy 2.4.1, the version uv.lock pins, sys.stdin is `TextIO | MaybeNone`, the Any that disallow_any_expr rejects.
+dod:
+- text: protocol.py and registry.py are off python-legacy.txt and pass ruff, the Python rules and mypy strict.
+  proof: [off-legacy, python-legacy, hooks]
+- text: The probe protocol tests pass, and the two files pass basedpyright strict.
+  proof: [protocol-tests, pyright]
+- text: Every probe case still gives the same answer.
+  proof: [probe-cases]
+checks:
+  optional: []
+  commands:
+  - id: off-legacy
+    why: A probe file is still on the legacy list or unchanged.
+    run: |-
+      for file in tools/oracle/litellm/probes/protocol.py tools/oracle/litellm/probes/registry.py; do
+        ! grep -q -x -F "${file}" python-legacy.txt || exit 1
+      done
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/litellm/probes/registry.py)"
+  - id: protocol-tests
+    why: The request and answer framing changed.
+    run: uv run --locked --project tools/oracle/litellm pytest tools/oracle/litellm/probes/tests
+  - id: pyright
+    why: The probe files fail the type checker the probe tasks run.
+    run: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/litellm/probes/pyrightconfig.json tools/oracle/litellm/probes/protocol.py tools/oracle/litellm/probes/registry.py
+  - id: probe-cases
+    why: A probe no longer answers the same way.
+    run: |-
+      mapfile -t cases < <(grep -l -r -E '^kind: probe' tools/oracle/cases)
+      cargo run --locked --quiet -p betterlite-oracle -- --self-check "${cases[@]}"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The other probe modules stay on the legacy list; B3001, the one open task in this folder, adds a new file.
+- The Rust side in tools/oracle/src does not change.
+pitfalls:
+- The oracle starts the probes with `python -m probes` from tools/oracle/litellm (routing_component_oracle.rs), so keep the `probes.` imports absolute.
+- 'The new probes/pyrightconfig.json carries the settings the two file comments carried (strict, reportAny, reportExplicitAny, reportImplicitOverride), so dropping the comments loosens nothing.'
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

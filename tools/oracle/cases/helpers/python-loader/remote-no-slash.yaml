@@ -1,0 +1,9 @@
+kind: helper
+name: remote-no-slash
+call:
+  b8042:
+    op: load
+    value: s3://bucket-only
+    config_file_path: config.yaml
+env: {}
+compare: {ignore: []}
