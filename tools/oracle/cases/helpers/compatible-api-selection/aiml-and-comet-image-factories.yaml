@@ -1,0 +1,13 @@
+kind: helper
+name: aiml-and-comet-image-factories
+call:
+  compatible_api_selection:
+    calls:
+      - family: image_generation
+        provider: aiml
+        model: aiml-image
+      - family: image_generation
+        provider: cometapi
+        model: comet-image
+env: {}
+compare: {ignore: []}

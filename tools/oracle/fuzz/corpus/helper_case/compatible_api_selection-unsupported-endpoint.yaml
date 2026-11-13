@@ -1,0 +1,20 @@
+kind: helper
+name: compatible-api-selection-unsupported-endpoint
+call:
+  compatible_api_selection:
+    calls:
+      - family: responses
+        provider: groq
+        identity: name
+        native: null
+        providers:
+          - provider: groq
+            supported_endpoints: ["/v1/responses/v2"]
+      - family: messages
+        provider: mistral
+        model: mistral-large
+        providers:
+          - provider: mistral
+            supported_endpoints: ["/v1/messages/v2"]
+env: {}
+compare: {ignore: []}
