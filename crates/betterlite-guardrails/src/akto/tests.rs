@@ -454,6 +454,79 @@ fn akto_guardrail_payload_carries_the_status_code() {
 }
 
 #[test]
+fn akto_guardrail_payload_stamps_the_current_time() {
+    let payload = guardrail()
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let time = string_field(&payload_fields(&payload), "time");
+    assert!(time.chars().all(|character| character.is_ascii_digit()));
+    assert!(time.len() >= 12);
+}
+
+#[rstest]
+#[case::zero_integer(GuardrailValue::SignedInteger(0), false)]
+#[case::one_integer(GuardrailValue::SignedInteger(1), true)]
+#[case::zero_unsigned(GuardrailValue::UnsignedInteger(0), false)]
+#[case::one_unsigned(GuardrailValue::UnsignedInteger(1), true)]
+#[case::zero_decimal(GuardrailValue::Decimal(0.0), false)]
+#[case::one_decimal(GuardrailValue::Decimal(1.0), true)]
+#[case::false_flag(GuardrailValue::Boolean(false), false)]
+#[case::true_flag(GuardrailValue::Boolean(true), true)]
+#[case::empty_text(GuardrailValue::Text(String::new()), false)]
+#[case::filled_text(GuardrailValue::Text("x".to_owned()), true)]
+#[case::empty_array(GuardrailValue::Array(Vec::new()), false)]
+#[case::filled_array(
+    GuardrailValue::Array(vec![GuardrailValue::Text("x".to_owned())]),
+    true
+)]
+#[case::empty_object(GuardrailValue::Object(BTreeMap::new()), false)]
+#[case::filled_object(
+    GuardrailValue::Object(BTreeMap::from([("k".to_owned(), GuardrailValue::Null)])),
+    true
+)]
+fn akto_guardrail_payload_skips_falsy_values(#[case] value: GuardrailValue, #[case] kept: bool) {
+    let inputs = AktoInputs {
+        texts: Vec::new(),
+        model: None,
+        tools: Some(value),
+        tool_calls: None,
+        structured_messages: None,
+    };
+    let payload = guardrail()
+        .build_akto_payload(&inputs, &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let decoded = decode_double(&string_field(&payload_fields(&payload), "requestPayload"));
+    let GuardrailValue::Object(body) = decoded else {
+        panic!("the request payload is not an object");
+    };
+    assert_eq!(body.contains_key("tools"), kept);
+}
+
+#[test]
+fn akto_guardrail_payload_ignores_empty_request_values() {
+    let request_data = BTreeMap::from([
+        ("messages".to_owned(), array(Vec::new())),
+        ("tools".to_owned(), array(Vec::new())),
+    ]);
+    let payload = guardrail()
+        .build_akto_payload(&inputs(), &request_data, 200, false)
+        .expect("payload");
+    assert_eq!(
+        decode_double(&string_field(&payload_fields(&payload), "requestPayload")),
+        object(vec![
+            ("model", text("gpt-4o")),
+            (
+                "messages",
+                array(vec![object(vec![
+                    ("role", text("user")),
+                    ("content", text("hello")),
+                ])]),
+            ),
+        ])
+    );
+}
+
+#[test]
 fn akto_guardrail_payload_uses_the_answer_as_the_response_body() {
     let request_data = BTreeMap::from([(
         "response".to_owned(),
@@ -720,6 +793,77 @@ async fn serve(captures: Captures) -> (String, JoinSet<std::io::Result<()>>) {
     (base, server)
 }
 
+// Hardcoded independently of MAX_RESPONSE_BYTES, so a mutation of that constant can't move this boundary too.
+const SPEC_MAX_RESPONSE_BYTES: usize = 1_048_576;
+
+fn padded_body(size: usize) -> String {
+    let base = "{\"data\":{\"guardrailsResult\":{\"Allowed\":true}}}";
+    let mut body = base.to_owned();
+    body.push_str(&" ".repeat(size.saturating_sub(base.len())));
+    body
+}
+
+async fn serve_fixed_body(body: String) -> (String, JoinSet<std::io::Result<()>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let router = Router::new().route(
+        "/api/http-proxy",
+        post(move || {
+            let body = body.clone();
+            async move { (AxumStatus::OK, body) }
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, server)
+}
+
+async fn send_to_body(body: String) -> AktoAnswer {
+    let (base, _server) = serve_fixed_body(body).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload = guardrail
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    guardrail
+        .send_request(true, false, &payload)
+        .await
+        .expect("answer")
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_accepts_a_body_at_the_limit() {
+    let answer = send_to_body(padded_body(SPEC_MAX_RESPONSE_BYTES)).await;
+    assert_eq!(answer.body.len(), SPEC_MAX_RESPONSE_BYTES);
+    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    assert!(verdict.allowed);
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_accepts_a_body_over_2048_bytes() {
+    let answer = send_to_body(padded_body(3000)).await;
+    assert_eq!(answer.body.len(), 3000);
+    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
+    assert!(verdict.allowed);
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_refuses_a_body_over_the_limit() {
+    let (base, _server) = serve_fixed_body(padded_body(SPEC_MAX_RESPONSE_BYTES + 1)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload = guardrail
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let error = guardrail
+        .send_request(true, false, &payload)
+        .await
+        .expect_err("response too large");
+    assert!(
+        matches!(error, AktoError::ResponseTooLarge { limit } if limit == SPEC_MAX_RESPONSE_BYTES)
+    );
+}
+
 #[tokio::test]
 async fn akto_guardrail_send_request_posts_the_mirroring_payload() {
     let captures: Captures = Arc::new(Mutex::new(Vec::new()));
@@ -784,9 +928,42 @@ async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
     let payload = guardrail
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
         .expect("payload");
-    guardrail
-        .fire_and_forget_request(true, true, &payload)
-        .await;
+    let path = log_path("fire-and-forget-error");
+    {
+        let _guard = log_to(&path);
+        guardrail
+            .fire_and_forget_request(true, true, &payload)
+            .await;
+    }
+    let written = fs::read_to_string(&path).expect("log contents");
+    fs::remove_file(&path).expect("remove log");
+    assert!(written.contains("non-200"));
+}
+
+#[tokio::test]
+async fn akto_guardrail_fire_and_forget_sends_the_request() {
+    let captures: Captures = Arc::new(Mutex::new(Vec::new()));
+    let (base, _server) = serve(Arc::clone(&captures)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload = guardrail
+        .build_akto_payload(&inputs(), &BTreeMap::new(), 200, false)
+        .expect("payload");
+    let path = log_path("fire-and-forget-success");
+    {
+        let _guard = log_to(&path);
+        guardrail
+            .fire_and_forget_request(true, true, &payload)
+            .await;
+    }
+    let recorded = captures.lock().expect("captures").pop().expect("request");
+    assert_eq!(
+        recorded.query.as_deref(),
+        Some("akto_connector=litellm&guardrails=true&ingest_data=true")
+    );
+    let written = fs::read_to_string(&path).expect("log contents");
+    fs::remove_file(&path).expect("remove log");
+    assert!(!written.contains("non-200"));
 }
 
 #[tokio::test]
@@ -879,6 +1056,21 @@ fn akto_guardrail_config_reads_the_environment() {
     assert_eq!(configured.api_key.expose_secret(), "env-key");
     assert_eq!(configured.account_id, "4242");
     assert_eq!(configured.vxlan_id, "9");
+}
+
+#[test]
+fn akto_guardrail_config_keeps_configured_ids() {
+    let source = config_source(
+        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      akto_account_id: '4242'\n      akto_vxlan_id: '7'\n",
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    let configured = &config.sections.akto_mirroring.guardrails[0];
+    assert_eq!(configured.account_id, "4242");
+    assert_eq!(configured.vxlan_id, "7");
 }
 
 #[test]
