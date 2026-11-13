@@ -12,8 +12,8 @@ use betterlite_openai::api::audio_file_input::{
 };
 use betterlite_openai::mistral_audio::error::MistralAudioError;
 use betterlite_openai::mistral_audio::transcription::{
-    OPENAI_PARAMS, VoxtralTranscription, complete_url, decode_voxtral_transcription_reply,
-    map_openai_params, transcription_request, validate_environment,
+    VoxtralTranscription, complete_url, decode_voxtral_transcript, map_openai_params,
+    transcription_request, validate_environment,
 };
 use betterlite_openai::openai_base_config::Object;
 use http::HeaderMap;
@@ -100,9 +100,17 @@ impl Helper for Op {
 fn probe_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let audio = processed(probe)?;
     let reply = probe.reply.as_ref().map(upstream).transpose()?;
-    Ok(match probe_value(probe, &audio, reply.as_ref()) {
-        Ok(value) => value,
-        Err(error) => raised(&error),
+    probe_value(probe, &audio, reply.as_ref()).map_err(failure)
+}
+
+fn failure(error: MistralAudioError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: String::from("MistralAudioError"),
+        status: Some(error.status()),
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
     })
 }
 
@@ -127,10 +135,9 @@ fn probe_value(
     let request = transcription_request(&probe.model, audio, &mapped)?;
     let response = match reply {
         None => Value::Null,
-        Some(raw) => transcription_view(&decode_voxtral_transcription_reply(raw)?),
+        Some(raw) => transcription_view(&decode_voxtral_transcript(raw)?),
     };
     Ok(json!({
-        "supported": OPENAI_PARAMS,
         "mapped": mapped,
         "headers": headers,
         "url": complete_url(probe.api_base.as_deref()),
@@ -172,13 +179,5 @@ fn transcription_view(decoded: &VoxtralTranscription) -> Value {
         "text": decoded.response.text,
         "fields": fields,
         "hidden": decoded.hidden,
-    })
-}
-
-fn raised(error: &MistralAudioError) -> Value {
-    json!({
-        "raised": {
-            "status": error.status(),
-        },
     })
 }

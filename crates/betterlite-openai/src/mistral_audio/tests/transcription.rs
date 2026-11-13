@@ -6,8 +6,8 @@ use secrecy::SecretString;
 use super::super::error::MistralAudioError;
 use super::super::reply::REPLY_LIMIT;
 use super::super::transcription::{
-    DEFAULT_BASE, OPENAI_PARAMS, complete_url, decode_voxtral_transcription_reply,
-    map_openai_params, transcription_request, validate_environment,
+    DEFAULT_BASE, OPENAI_PARAMS, complete_url, decode_voxtral_transcript, map_openai_params,
+    transcription_request, validate_environment,
 };
 use super::{object, response};
 use crate::api::audio_file_input::ProcessedAudioFile;
@@ -152,7 +152,7 @@ fn decodes_the_text_segments_and_language() {
         &[("Content-Type", "application/json")],
         br#"{"text":"hola","segments":[{"id":1,"text":"hola"}],"language":"es"}"#,
     );
-    let decoded = decode_voxtral_transcription_reply(&raw).expect("the reply decodes");
+    let decoded = decode_voxtral_transcript(&raw).expect("the reply decodes");
     assert_eq!(
         decoded.response,
         TranscriptionResponse {
@@ -175,8 +175,8 @@ fn an_absent_or_null_text_is_empty(
     #[case] text: Option<&str>,
     #[case] extra: &str,
 ) {
-    let decoded = decode_voxtral_transcription_reply(&response(200, &[], body.as_bytes()))
-        .expect("the reply decodes");
+    let decoded =
+        decode_voxtral_transcript(&response(200, &[], body.as_bytes())).expect("the reply decodes");
     assert_eq!(decoded.response.text.as_deref(), text);
     assert_eq!(decoded.response.extra, object(extra));
 }
@@ -185,8 +185,8 @@ fn an_absent_or_null_text_is_empty(
 #[case::absent(r#"{"text":"hi"}"#)]
 #[case::null(r#"{"text":"hi","segments":null,"language":null}"#)]
 fn preserves_the_optional_fields_by_presence(#[case] body: &str) {
-    let decoded = decode_voxtral_transcription_reply(&response(200, &[], body.as_bytes()))
-        .expect("the reply decodes");
+    let decoded =
+        decode_voxtral_transcript(&response(200, &[], body.as_bytes())).expect("the reply decodes");
     let segments = decoded.hidden.get("segments");
     let language = decoded.hidden.get("language");
     assert_eq!(
@@ -204,7 +204,7 @@ fn preserves_the_optional_fields_by_presence(#[case] body: &str) {
 #[case::flag(r#"{"text":true}"#)]
 #[case::list(r#"{"text":["hi"]}"#)]
 fn rejects_a_text_that_is_not_a_string(#[case] body: &str) {
-    let error = decode_voxtral_transcription_reply(&response(200, &[], body.as_bytes()))
+    let error = decode_voxtral_transcript(&response(200, &[], body.as_bytes()))
         .expect_err("the text is not a string");
     assert!(matches!(error, MistralAudioError::TextNotString));
     assert_eq!(error.status(), 500);
@@ -218,7 +218,7 @@ fn keeps_the_upstream_status_for_a_body_that_is_not_json(
     #[case] body: &[u8],
     #[case] expected: u16,
 ) {
-    let error = decode_voxtral_transcription_reply(&response(status, &[], body))
+    let error = decode_voxtral_transcript(&response(status, &[], body))
         .expect_err("the body does not decode");
     assert!(
         matches!(error, MistralAudioError::ReplyNotJson { status: raised } if raised == expected)
@@ -230,7 +230,7 @@ fn keeps_the_upstream_status_for_a_body_that_is_not_json(
 #[case::text(br#""x""#.as_slice())]
 #[case::number(b"7".as_slice())]
 fn rejects_a_transcription_reply_that_is_not_an_object(#[case] body: &[u8]) {
-    let error = decode_voxtral_transcription_reply(&response(200, &[], body))
+    let error = decode_voxtral_transcript(&response(200, &[], body))
         .expect_err("the body is not an object");
     assert!(matches!(error, MistralAudioError::ReplyNotObject));
     assert_eq!(error.status(), 500);
@@ -239,7 +239,7 @@ fn rejects_a_transcription_reply_that_is_not_an_object(#[case] body: &[u8]) {
 #[test]
 fn rejects_a_reply_larger_than_the_limit() {
     let oversized = vec![b'a'; REPLY_LIMIT + 1];
-    let error = decode_voxtral_transcription_reply(&response(200, &[], &oversized))
+    let error = decode_voxtral_transcript(&response(200, &[], &oversized))
         .expect_err("the reply is too large");
     assert!(matches!(error, MistralAudioError::ReplyTooLarge { limit } if limit == REPLY_LIMIT));
 }

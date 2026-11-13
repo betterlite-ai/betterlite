@@ -3,35 +3,24 @@ name: voxtral-speech-audio-data-and-header-rebuild
 call:
   voxtral_speech:
     probes:
-      - model: voxtral-small-latest
-        input: hello
-        optional_params: {response_format: wav}
+      - optional_params: {response_format: wav}
         environment_api_key: environment-key
         reply:
           status: 502
-          headers:
-            content-length: "99"
-            content-type: application/json
-            x-keep: "1"
+          headers: {content-length: "99", content-type: application/json, x-keep: "1"}
           body: '{"audio_data":"aGVsbG8="}'
-      - model: voxtral-small-latest
-        input: hello
-        environment_api_key: environment-key
+      - environment_api_key: environment-key
         reply:
           status: 200
           headers: {content-type: application/json}
           body: '{"audio_data":"aGVsbG8=","audio_format":"mp3"}'
-      - model: voxtral-small-latest
-        input: hello
-        optional_params: {response_format: flac}
+      - optional_params: {response_format: flac}
         environment_api_key: environment-key
         reply:
           status: 200
           headers: {content-type: application/json}
           body: '{"audio_data":"YWI="}'
-      - model: voxtral-small-latest
-        input: hello
-        optional_params: {response_format: MP3}
+      - optional_params: {response_format: MP3}
         environment_api_key: environment-key
         reply:
           status: 200

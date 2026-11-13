@@ -3,7 +3,7 @@
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::TextToSpeechRequestData;
 use betterlite_openai::mistral_audio::speech::decode_voxtral_reply;
-use betterlite_openai::mistral_audio::transcription::decode_voxtral_transcription_reply;
+use betterlite_openai::mistral_audio::transcription::decode_voxtral_transcript;
 use betterlite_openai::openai_base_config::Object;
 use http::HeaderMap;
 use libfuzzer_sys::fuzz_target;
@@ -23,5 +23,5 @@ fuzz_target!(|bytes: &[u8]| {
         headers: None,
     };
     drop(decode_voxtral_reply(&request, &response));
-    drop(decode_voxtral_transcription_reply(&response));
+    drop(decode_voxtral_transcript(&response));
 });

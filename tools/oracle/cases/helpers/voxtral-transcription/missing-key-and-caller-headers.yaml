@@ -6,20 +6,42 @@ call:
       - model: voxtral-small-latest
         filename: clip.wav
         content: abc
+        optional_params: {}
+        non_default_params: {}
         headers: {Authorization: "Bearer mine", x: trace}
+        api_key: null
+        environment_api_key: null
+        api_base: null
+        reply: null
       - model: voxtral-small-latest
         filename: clip.wav
         content: abc
+        optional_params: {}
+        non_default_params: {}
         headers: {authorization: lower}
         api_key: explicit-key
+        environment_api_key: null
+        api_base: null
+        reply: null
       - model: voxtral-small-latest
         filename: clip.wav
         content: abc
+        optional_params: {}
+        non_default_params: {}
+        headers: {}
+        api_key: null
         environment_api_key: environment-key
+        api_base: null
+        reply: null
       - model: voxtral-small-latest
         filename: clip.wav
         content: abc
+        optional_params: {}
+        non_default_params: {}
+        headers: {}
         api_key: explicit-key
         environment_api_key: environment-key
+        api_base: null
+        reply: null
 env: {}
 compare: {ignore: []}

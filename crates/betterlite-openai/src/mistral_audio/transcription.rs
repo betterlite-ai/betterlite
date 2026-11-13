@@ -112,7 +112,7 @@ fn form_value(field: &str, value: &Value) -> Result<String, MistralAudioError> {
     }
 }
 
-pub fn decode_voxtral_transcription_reply(
+pub fn decode_voxtral_transcript(
     response: &UpstreamResponse,
 ) -> Result<VoxtralTranscription, MistralAudioError> {
     let fields = reply_fields(response)?;

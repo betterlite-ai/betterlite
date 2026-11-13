@@ -7,8 +7,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::mistral_audio::error::MistralAudioError;
 use betterlite_openai::mistral_audio::speech::{
-    OPENAI_PARAMS, complete_url, decode_voxtral_reply, map_openai_params, request_body,
-    validate_environment,
+    decode_voxtral_reply, map_openai_params, request_body, validate_environment,
 };
 use betterlite_openai::openai_base_config::Object;
 use http::HeaderMap;
@@ -31,8 +30,6 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Probe {
-    model: String,
-    input: String,
     #[serde(default)]
     voice: Option<SpeechVoice>,
     #[serde(default)]
@@ -45,8 +42,6 @@ struct Probe {
     api_key: Option<String>,
     #[serde(default)]
     environment_api_key: Option<String>,
-    #[serde(default)]
-    api_base: Option<String>,
     #[serde(default)]
     reply: Option<Reply>,
 }
@@ -76,9 +71,17 @@ impl Helper for Op {
 
 fn probe_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let reply = probe.reply.as_ref().map(upstream).transpose()?;
-    Ok(match probe_value(probe, reply.as_ref()) {
-        Ok(value) => value,
-        Err(error) => raised(&error),
+    probe_value(probe, reply.as_ref()).map_err(failure)
+}
+
+fn failure(error: MistralAudioError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: String::from("MistralAudioError"),
+        status: Some(error.status()),
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
     })
 }
 
@@ -96,10 +99,10 @@ fn probe_value(probe: &Probe, reply: Option<&UpstreamResponse>) -> Result<Value,
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
     let headers = validate_environment(&caller, key.as_ref(), &settings)?;
-    let request = request_body(&probe.model, &probe.input, voice.as_deref(), &params);
     let response = match reply {
         None => Value::Null,
         Some(raw) => {
+            let request = request_body("voxtral", "", voice.as_deref(), &params);
             let content = decode_voxtral_reply(&request, raw)?;
             json!({
                 "status": content.status,
@@ -109,11 +112,8 @@ fn probe_value(probe: &Probe, reply: Option<&UpstreamResponse>) -> Result<Value,
         }
     };
     Ok(json!({
-        "supported": OPENAI_PARAMS,
         "mapping": {"voice": voice, "params": params},
         "headers": headers,
-        "url": complete_url(probe.api_base.as_deref()),
-        "request": {"dict_body": request.dict_body, "headers": request.headers},
         "response": response,
     }))
 }
@@ -124,13 +124,5 @@ fn upstream(reply: &Reply) -> Result<UpstreamResponse, Box<HelperError>> {
         status: reply.status,
         headers,
         body: reply.body.clone().into_bytes(),
-    })
-}
-
-fn raised(error: &MistralAudioError) -> Value {
-    json!({
-        "raised": {
-            "status": error.status(),
-        },
     })
 }

@@ -1,34 +1,23 @@
 import base64
-import datetime as dt
 import json
 import os
 from typing import Final, Protocol, TypedDict
 
 import httpx
-from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.mistral.audio_speech.transformation import (
-    MistralTextToSpeechConfig,
-    MistralTextToSpeechException,
+    MistralTextToSpeechConfig as Config,
 )
-from litellm.types.llms.openai import HttpxBinaryResponseContent
 from pydantic import JsonValue as Json
 
 Object = dict[str, Json]
-MESSAGES: Final[list[dict[str, Json]]] = []
-LOGGING: Final = LiteLLMLoggingObj(
-    model="voxtral",
-    messages=MESSAGES,
-    stream=False,
-    call_type="text_to_speech",
-    start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-    litellm_call_id="voxtral-speech",
-    function_id="voxtral_speech",
-)
 
 
-class Required(TypedDict):
-    model: str
-    input: str
+class LoggingStub(Logging):
+    def __init__(self) -> None: ...
+
+
+LOGGING: Final = LoggingStub()
 
 
 class Reply(TypedDict):
@@ -37,14 +26,13 @@ class Reply(TypedDict):
     body: str
 
 
-class Probe(Required, total=False):
+class Probe(TypedDict, total=False):
     voice: str | dict[str, Json]
     optional_params: Object
     kwargs: Object
     headers: dict[str, str]
     api_key: str
     environment_api_key: str
-    api_base: str
     reply: Reply
 
 
@@ -52,14 +40,7 @@ class Input(TypedDict):
     probes: list[Probe]
 
 
-class SpeechBody(TypedDict, total=False):
-    dict_body: Object
-    headers: dict[str, str]
-
-
 class SpeechConfig(Protocol):
-    def get_supported_openai_params(self, model: str) -> list[str]: ...
-
     def map_openai_params(
         self,
         _model: str,
@@ -72,45 +53,25 @@ class SpeechConfig(Protocol):
     ) -> tuple[str | None, Object]: ...
 
     def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        api_key: str | None = None,
-        api_base: str | None = None,
+        self, headers: dict[str, str], model: str, api_key: str | None = None
     ) -> dict[str, str]: ...
 
-    def get_complete_url(
-        self, model: str, api_base: str | None, litellm_params: Object
-    ) -> str: ...
 
-    def transform_text_to_speech_request(
-        self,
-        _model: str,
-        _input: str,
-        _voice: str | None,
-        _optional_params: Object,
-        _litellm_params: Object,
-        _headers: dict[str, str],
-        /,
-    ) -> SpeechBody: ...
-
-    def transform_text_to_speech_response(
-        self, model: str, raw_response: httpx.Response, logging_obj: LiteLLMLoggingObj
-    ) -> HttpxBinaryResponseContent: ...
+class Factory(Protocol):
+    def __call__(self) -> Config: ...
 
 
-class SpeechFactory(Protocol):
-    def __call__(self) -> SpeechConfig: ...
+MAKE: Factory = Config
 
 
-FACTORY: SpeechFactory = MistralTextToSpeechConfig
-
-
-def install_environment(probe: Probe) -> None:
-    os.environ.clear()
-    key = probe.get("environment_api_key")
-    if key is not None:
-        os.environ["MISTRAL_API_KEY"] = key
+def object_field(probe: Probe) -> tuple[Object, Object]:
+    optional = probe.get("optional_params")
+    if optional is None:
+        optional = {}
+    kwargs = probe.get("kwargs")
+    if kwargs is None:
+        kwargs = {}
+    return optional, kwargs
 
 
 def string_map(pairs: dict[str, str]) -> Object:
@@ -120,92 +81,54 @@ def string_map(pairs: dict[str, str]) -> Object:
     return fields
 
 
-def reply_request(body: Object) -> httpx.Request:
-    return httpx.Request(
-        "POST", "https://mistral.test/audio/speech", content=json.dumps(body)
+def speech_response(probe: Probe, params: Object) -> Json:
+    fixture = probe.get("reply")
+    if fixture is None:
+        return None
+    payload: Object = {}
+    if "response_format" in params:
+        payload["response_format"] = params["response_format"]
+    request = httpx.Request(
+        "POST", "https://mistral.test/audio/speech", content=json.dumps(payload)
     )
-
-
-def reply_response(fixture: Reply, request: httpx.Request) -> httpx.Response:
-    return httpx.Response(
+    reply = httpx.Response(
         fixture["status"],
         headers=fixture["headers"],
         content=fixture["body"].encode(),
         request=request,
     )
-
-
-def request_value(request: SpeechBody) -> Json:
-    body = request.get("dict_body")
-    headers = request.get("headers")
+    binary = Config.transform_text_to_speech_response(MAKE(), "voxtral", reply, LOGGING)
     return {
-        "dict_body": body,
-        "headers": None if headers is None else string_map(headers),
+        "status": binary.response.status_code,
+        "headers": string_map(dict(binary.response.headers)),
+        "body": base64.b64encode(binary.content).decode(),
     }
 
 
-def probe_value(config: SpeechConfig, probe: Probe) -> Json:
-    model = probe["model"]
-    optional_params = probe.get("optional_params")
-    if optional_params is None:
-        optional_params = {}
-    kwargs = probe.get("kwargs")
-    if kwargs is None:
-        kwargs = {}
-    voice, params = config.map_openai_params(
-        model, optional_params, probe.get("voice"), drop_params=False, kwargs=kwargs
+def probe_value(view: SpeechConfig, probe: Probe) -> Json:
+    optional, kwargs = object_field(probe)
+    voice, params = view.map_openai_params(
+        "voxtral", optional, probe.get("voice"), drop_params=False, kwargs=kwargs
     )
     caller = probe.get("headers")
     if caller is None:
         caller = {}
-    headers = string_map(
-        config.validate_environment(
-            headers=caller,
-            model=model,
-            api_key=probe.get("api_key"),
-        )
-    )
-    request = config.transform_text_to_speech_request(
-        model, probe["input"], voice, params, {}, {}
-    )
-    fixture = probe.get("reply")
-    response: Json = None
-    if fixture is not None:
-        body = request.get("dict_body")
-        if body is None:
-            raise ValueError("the speech request carries no body")
-        reply = reply_response(fixture, reply_request(body))
-        binary = config.transform_text_to_speech_response(
-            model=model, raw_response=reply, logging_obj=LOGGING
-        )
-        response = {
-            "status": binary.response.status_code,
-            "headers": string_map(dict(binary.response.headers)),
-            "body": base64.b64encode(binary.content).decode(),
-        }
     return {
-        "supported": list(config.get_supported_openai_params(model)),
         "mapping": {"voice": voice, "params": params},
-        "headers": headers,
-        "url": config.get_complete_url(
-            model=model, api_base=probe.get("api_base"), litellm_params={}
+        "headers": string_map(
+            view.validate_environment(caller, "voxtral", probe.get("api_key"))
         ),
-        "request": request_value(request),
-        "response": response,
+        "response": speech_response(probe, params),
     }
 
 
-def raised_value(config: SpeechConfig, probe: Probe) -> Json:
-    try:
-        return probe_value(config, probe)
-    except MistralTextToSpeechException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L63
-        return {"raised": {"status": error.status_code}}
-
-
 def run(input_value: Input) -> Json:
-    config = FACTORY()
+    config = MAKE()
     values: list[Json] = []
     for probe in input_value["probes"]:
-        install_environment(probe)
-        values.append(raised_value(config, probe))
+        os.environ.clear()
+        key = probe.get("environment_api_key")
+        if key is not None:
+            os.environ["MISTRAL_API_KEY"] = key
+        values.append(probe_value(config, probe))
     return values

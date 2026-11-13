@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::super::error::MistralAudioError;
 use super::super::speech::decode_voxtral_reply;
-use super::super::transcription::{VoxtralTranscription, decode_voxtral_transcription_reply};
+use super::super::transcription::{VoxtralTranscription, decode_voxtral_transcript};
 use super::{response, speech_request};
 use crate::files::records::BinaryContent;
 
@@ -31,7 +31,7 @@ fn audio_seed(bytes: &[u8]) -> Result<BinaryContent, MistralAudioError> {
 }
 
 fn transcription_seed(bytes: &[u8]) -> Result<VoxtralTranscription, MistralAudioError> {
-    decode_voxtral_transcription_reply(&upstream(bytes))
+    decode_voxtral_transcript(&upstream(bytes))
 }
 
 fn is_not_json(error: &MistralAudioError) -> bool {
@@ -75,26 +75,19 @@ fn not_json(bytes: &[u8]) -> bool {
             .is_some_and(is_not_json)
 }
 
-fn diarized(bytes: &[u8]) -> bool {
+fn optional_fields(bytes: &[u8], text: Option<&str>, nulls: bool) -> bool {
+    let segments = transcription_seed(bytes);
+    let Ok(decoded) = &segments else {
+        return false;
+    };
+    let present = decoded.response.extra.contains_key("segments")
+        && decoded.response.extra.contains_key("language");
+    let null_values = decoded.response.extra.get("segments") == Some(&Value::Null)
+        && decoded.response.extra.get("language") == Some(&Value::Null);
     matches!(audio_seed(bytes), Err(MistralAudioError::AudioDataMissing))
-        && matches!(
-            &transcription_seed(bytes),
-            Ok(decoded)
-                if decoded.response.text.as_deref() == Some("hola")
-                    && decoded.response.extra.contains_key("segments")
-                    && decoded.response.extra.contains_key("language")
-        )
-}
-
-fn null_fields(bytes: &[u8]) -> bool {
-    matches!(audio_seed(bytes), Err(MistralAudioError::AudioDataMissing))
-        && matches!(
-            &transcription_seed(bytes),
-            Ok(decoded)
-                if decoded.response.text.as_deref() == Some("")
-                    && decoded.response.extra.get("segments") == Some(&Value::Null)
-                    && decoded.response.extra.get("language") == Some(&Value::Null)
-        )
+        && decoded.response.text.as_deref() == text
+        && present
+        && (!nulls || null_values)
 }
 
 fn number_text(bytes: &[u8]) -> bool {
@@ -119,8 +112,8 @@ fn replays(path: &Path) -> bool {
         "speech-empty-audio" => empty_audio(&bytes),
         "speech-non-object" | "transcription-non-object" => not_an_object(&bytes),
         "speech-malformed" | "speech-non-json" | "transcription-malformed" => not_json(&bytes),
-        "transcription-diarization" => diarized(&bytes),
-        "transcription-null-fields" => null_fields(&bytes),
+        "transcription-diarization" => optional_fields(&bytes, Some("hola"), false),
+        "transcription-null-fields" => optional_fields(&bytes, Some(""), true),
         "transcription-number-text" => number_text(&bytes),
         "transcription-empty" => empty_transcription(&bytes),
         other => panic!("unknown corpus category {other}"),

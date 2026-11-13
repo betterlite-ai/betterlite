@@ -8,7 +8,10 @@ call:
         content: abc
         optional_params: {diarize: true, language: es}
         non_default_params: {timestamp_granularities: [word]}
+        headers: {}
+        api_key: null
         environment_api_key: environment-key
+        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -17,7 +20,11 @@ call:
         filename: clip.wav
         content: abc
         optional_params: {diarize: false, count: 3}
+        non_default_params: {}
+        headers: {}
+        api_key: null
         environment_api_key: environment-key
+        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -25,7 +32,12 @@ call:
       - model: voxtral-small-latest
         filename: clip.wav
         content: abc
+        optional_params: {}
+        non_default_params: {}
+        headers: {}
+        api_key: null
         environment_api_key: environment-key
+        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -35,7 +47,10 @@ call:
         content: abc
         optional_params: {temperature: 0.5}
         non_default_params: {model: other, language: fr, response_format: json}
+        headers: {}
+        api_key: null
         environment_api_key: environment-key
+        api_base: null
         reply:
           status: 429
           headers: {content-type: application/json}
