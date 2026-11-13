@@ -14,13 +14,14 @@ mod tests;
 pub mod wire;
 
 use choice::{named_mode, object_choice};
-use fields::required_string;
-use helper::{advisor_tool, computer_tool, function_tool, hosted_tool, push};
+use fields::field;
+use helper::{advisor_tool, computer_tool, function_tool, hosted_name, push, sent_fields};
 use mcp::{authorization_token, tool_configuration};
 use namespace::expand_namespace;
+use options::collect_options;
 use wire::{
-    ADVISOR_TYPE, CUSTOM_TYPE, ChoiceKind, MappedServer, McpServerTool, ToolChoice, ToolDefinition,
-    URL_TYPE,
+    ADVISOR_TYPE, CUSTOM_TYPE, ChoiceKind, HostedTool, MappedServer, McpServerTool, ToolChoice,
+    ToolDefinition, URL_TYPE,
 };
 
 // every tool type whose name starts with one of these maps as a hosted Anthropic tool
@@ -121,18 +122,31 @@ pub fn map_tool_helper(
     tool: &Json,
 ) -> Result<(Option<ToolDefinition>, Option<McpServerTool>), ToolsError> {
     let fields = tool.as_object().ok_or(ToolsError::NotAnObject)?;
-    let kind = required_string(fields, "type")?;
+    let kind =
+        field(fields, "type", "a string", Json::as_str)?.ok_or(ToolsError::Missing("type"))?;
     if matches!(kind, "function" | CUSTOM_TYPE) {
-        return Ok((Some(function_tool(tool, fields)?), None));
+        return Ok((
+            Some(ToolDefinition::Function(function_tool(tool, fields)?)),
+            None,
+        ));
     }
     if kind.starts_with("computer_") {
-        return Ok((Some(computer_tool(kind, fields)?), None));
+        return Ok((
+            Some(ToolDefinition::Computer(computer_tool(kind, fields)?)),
+            None,
+        ));
     }
     if HOSTED_PREFIXES
         .iter()
         .any(|prefix| kind.starts_with(prefix))
     {
-        return Ok((Some(hosted_tool(kind, fields)?), None));
+        let hosted = HostedTool {
+            kind: kind.to_owned(),
+            name: hosted_name(fields)?,
+            fields: sent_fields(fields),
+            options: collect_options(fields, kind)?,
+        };
+        return Ok((Some(ToolDefinition::Hosted(hosted)), None));
     }
     if kind == URL_TYPE {
         return Ok((None, Some(McpServerTool::Descriptor(fields.clone()))));
@@ -141,15 +155,17 @@ pub fn map_tool_helper(
         return Ok((None, Some(map_openai_mcp_server_tool(tool)?)));
     }
     if kind == ADVISOR_TYPE {
-        return Ok((Some(advisor_tool(fields)?), None));
+        return Ok((Some(ToolDefinition::Advisor(advisor_tool(fields)?)), None));
     }
     Err(ToolsError::UnsupportedType(kind.to_owned()))
 }
 
 pub fn map_openai_mcp_server_tool(tool: &Json) -> Result<McpServerTool, ToolsError> {
     let fields = tool.as_object().ok_or(ToolsError::NotAnObject)?;
-    let url = required_string(fields, "server_url")?;
-    let name = required_string(fields, "server_label")?;
+    let url = field(fields, "server_url", "a string", Json::as_str)?
+        .ok_or(ToolsError::Missing("server_url"))?;
+    let name = field(fields, "server_label", "a string", Json::as_str)?
+        .ok_or(ToolsError::Missing("server_label"))?;
     Ok(McpServerTool::Mapped(MappedServer {
         kind: URL_TYPE,
         url: url.to_owned(),

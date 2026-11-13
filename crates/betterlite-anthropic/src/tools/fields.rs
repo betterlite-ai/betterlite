@@ -2,59 +2,26 @@ use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::ToolsError;
 
-pub(super) fn required_string<'fields>(
+// absent and null both mean the caller left the field out, so a typed reader never sees either
+pub(super) fn field<'fields, T>(
     fields: &'fields Object,
     key: &'static str,
-) -> Result<&'fields str, ToolsError> {
-    match fields.get(key) {
-        Some(Json::Text(text)) => Ok(text.as_str()),
-        None | Some(Json::Null) => Err(ToolsError::Missing(key)),
-        Some(_) => Err(ToolsError::WrongType {
-            field: key,
-            expected: "a string",
-        }),
-    }
-}
-
-pub(super) fn optional_string<'fields>(
-    fields: &'fields Object,
-    key: &'static str,
-) -> Result<Option<&'fields str>, ToolsError> {
+    expected: &'static str,
+    extract: fn(&'fields Json) -> Option<T>,
+) -> Result<Option<T>, ToolsError> {
     match fields.get(key) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.as_str())),
-        Some(_) => Err(ToolsError::WrongType {
+        Some(value) => extract(value).map(Some).ok_or(ToolsError::WrongType {
             field: key,
-            expected: "a string",
+            expected,
         }),
     }
 }
 
-pub(super) fn required_number<'fields>(
-    fields: &'fields Object,
-    key: &'static str,
-) -> Result<&'fields Json, ToolsError> {
-    match fields.get(key) {
-        Some(number @ Json::Number(_)) => Ok(number),
-        None | Some(Json::Null) => Err(ToolsError::Missing(key)),
-        Some(_) => Err(ToolsError::WrongType {
-            field: key,
-            expected: "a number",
-        }),
-    }
-}
-
-pub(super) fn optional_number<'fields>(
-    fields: &'fields Object,
-    key: &'static str,
-) -> Result<Option<&'fields Json>, ToolsError> {
-    match fields.get(key) {
-        None | Some(Json::Null) => Ok(None),
-        Some(number @ Json::Number(_)) => Ok(Some(number)),
-        Some(_) => Err(ToolsError::WrongType {
-            field: key,
-            expected: "a number",
-        }),
+pub(super) const fn number(value: &Json) -> Option<&Json> {
+    match value {
+        Json::Number(_) => Some(value),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 

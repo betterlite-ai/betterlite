@@ -1,6 +1,19 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
+// the four optional blocks every mapped tool may carry
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct Options {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub defer_loading: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub allowed_callers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_examples: Option<Vec<Json>>,
+}
+
 pub const CUSTOM_TYPE: &str = "custom";
 pub const ADVISOR_TYPE: &str = "advisor_20260301";
 pub const URL_TYPE: &str = "url";
@@ -44,14 +57,8 @@ pub struct FunctionTool {
     pub eager_input_streaming: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_control: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_callers: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input_examples: Option<Vec<Json>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -63,12 +70,8 @@ pub struct ComputerTool {
     pub display_height_px: Json,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_number: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_control: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_callers: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 // every other field of a hosted tool is the caller's and goes back out as sent
@@ -79,6 +82,8 @@ pub struct HostedTool {
     pub name: String,
     #[serde(flatten)]
     pub fields: Object,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -91,12 +96,8 @@ pub struct AdvisorTool {
     pub max_uses: Option<Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caching: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cache_control: Option<Json>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub defer_loading: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub allowed_callers: Option<Vec<String>>,
+    #[serde(flatten)]
+    pub options: Options,
 }
 
 // a descriptor goes out on the wire, so it holds the token plainly and derives no Debug

@@ -2,12 +2,10 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::definitions::sanitize::{AnthropicInputSchema, sanitize_for_anthropic};
 
 use super::ToolsError;
-use super::fields::{
-    function_fields, non_null, optional_number, optional_string, required_number, required_string,
-};
-use super::options::{collect_options, insert_option};
+use super::fields::{field, function_fields, non_null, number};
+use super::options::collect_options;
 use super::wire::{
-    ADVISOR_TYPE, AdvisorTool, CUSTOM_TYPE, ComputerTool, FunctionTool, HostedTool, McpServerTool,
+    ADVISOR_TYPE, AdvisorTool, CUSTOM_TYPE, ComputerTool, FunctionTool, McpServerTool,
     ToolDefinition,
 };
 use crate::feature_flags::tools::eager_input_streaming_flag;
@@ -24,9 +22,22 @@ pub(super) fn push(
     }
 }
 
-pub(super) fn function_tool(tool: &Json, fields: &Object) -> Result<ToolDefinition, ToolsError> {
+pub(super) fn function_tool(tool: &Json, fields: &Object) -> Result<FunctionTool, ToolsError> {
     let function = function_fields(fields)?.ok_or(ToolsError::Missing("function"))?;
-    let schema = match non_null(function.get("parameters")) {
+    let named =
+        field(function, "name", "a string", Json::as_str)?.ok_or(ToolsError::Missing("name"))?;
+    Ok(FunctionTool {
+        name: named.to_owned(),
+        input_schema: function_schema(function)?,
+        kind: CUSTOM_TYPE,
+        eager_input_streaming: eager_input_streaming_flag(tool)?,
+        description: field(function, "description", "a string", Json::as_str)?.map(str::to_owned),
+        options: collect_options(fields, CUSTOM_TYPE)?,
+    })
+}
+
+fn function_schema(function: &Object) -> Result<Json, ToolsError> {
+    let declared = match non_null(function.get("parameters")) {
         None => Object::new(),
         Some(Json::Object(parameters)) => parameters.clone(),
         Some(_) => {
@@ -36,73 +47,42 @@ pub(super) fn function_tool(tool: &Json, fields: &Object) -> Result<ToolDefiniti
             });
         }
     };
-    let input_schema = schema_value(sanitize_for_anthropic(schema)?);
-    let eager_input_streaming = eager_input_streaming_flag(tool)?;
-    let name = required_string(function, "name")?;
-    let options = collect_options(fields, CUSTOM_TYPE)?;
-    Ok(ToolDefinition::Function(FunctionTool {
-        name: name.to_owned(),
-        input_schema,
-        kind: CUSTOM_TYPE,
-        eager_input_streaming,
-        description: optional_string(function, "description")?.map(str::to_owned),
-        cache_control: options.cache_control,
-        defer_loading: options.defer_loading,
-        allowed_callers: options.allowed_callers,
-        input_examples: options.input_examples,
-    }))
+    Ok(schema_value(sanitize_for_anthropic(declared)?))
 }
 
-pub(super) fn computer_tool(kind: &str, fields: &Object) -> Result<ToolDefinition, ToolsError> {
+pub(super) fn computer_tool(kind: &str, fields: &Object) -> Result<ComputerTool, ToolsError> {
     let function = function_fields(fields)?.ok_or(ToolsError::Missing("function"))?;
     let declared = non_null(function.get("parameters")).ok_or(ToolsError::Missing("parameters"))?;
     let parameters = declared.as_object().ok_or(ToolsError::WrongType {
         field: "parameters",
         expected: "an object",
     })?;
-    let display_width_px = required_number(parameters, "display_width_px")?.clone();
-    let display_height_px = required_number(parameters, "display_height_px")?.clone();
-    let name = optional_string(function, "name")?.unwrap_or("computer");
-    let options = collect_options(fields, kind)?;
-    Ok(ToolDefinition::Computer(ComputerTool {
+    let width = field(parameters, "display_width_px", "a number", number)?
+        .ok_or(ToolsError::Missing("display_width_px or display_height_px"))?
+        .clone();
+    let height = field(parameters, "display_height_px", "a number", number)?
+        .ok_or(ToolsError::Missing("display_width_px or display_height_px"))?
+        .clone();
+    let name = field(function, "name", "a string", Json::as_str)?;
+    Ok(ComputerTool {
         kind: kind.to_owned(),
-        name: name.to_owned(),
-        display_width_px,
-        display_height_px,
-        display_number: optional_number(parameters, "display_number")?.cloned(),
-        cache_control: options.cache_control,
-        defer_loading: options.defer_loading,
-        allowed_callers: options.allowed_callers,
-    }))
+        name: name.unwrap_or("computer").to_owned(),
+        display_width_px: width,
+        display_height_px: height,
+        display_number: field(parameters, "display_number", "a number", number)?.cloned(),
+        options: collect_options(fields, kind)?,
+    })
 }
 
-pub(super) fn hosted_tool(kind: &str, fields: &Object) -> Result<ToolDefinition, ToolsError> {
-    let name = hosted_name(fields)?;
-    let mut extra = fields.clone();
-    extra.shift_remove("type");
-    extra.shift_remove("name");
-    let options = collect_options(fields, kind)?;
-    insert_option(&mut extra, "cache_control", options.cache_control);
-    insert_option(
-        &mut extra,
-        "defer_loading",
-        options.defer_loading.map(Json::Bool),
-    );
-    insert_option(
-        &mut extra,
-        "allowed_callers",
-        options
-            .allowed_callers
-            .map(|callers| Json::List(callers.into_iter().map(Json::Text).collect())),
-    );
-    Ok(ToolDefinition::Hosted(HostedTool {
-        kind: kind.to_owned(),
-        name,
-        fields: extra,
-    }))
+// everything the caller sent except the two keys this mapper rewrites
+pub(super) fn sent_fields(fields: &Object) -> Object {
+    let mut sent = fields.clone();
+    sent.shift_remove("type");
+    sent.shift_remove("name");
+    sent
 }
 
-fn hosted_name(fields: &Object) -> Result<String, ToolsError> {
+pub(super) fn hosted_name(fields: &Object) -> Result<String, ToolsError> {
     if let Some(value) = fields.get("name") {
         return value
             .as_str()
@@ -116,22 +96,18 @@ fn hosted_name(fields: &Object) -> Result<String, ToolsError> {
         .ok_or(ToolsError::Missing("name"))
 }
 
-pub(super) fn advisor_tool(fields: &Object) -> Result<ToolDefinition, ToolsError> {
-    let model = fields
-        .get("model")
-        .and_then(Json::as_str)
-        .ok_or(ToolsError::AdvisorModel)?;
-    let options = collect_options(fields, ADVISOR_TYPE)?;
-    Ok(ToolDefinition::Advisor(AdvisorTool {
-        kind: ADVISOR_TYPE,
-        name: "advisor",
-        model: model.to_owned(),
-        max_uses: non_null(fields.get("max_uses")).cloned(),
-        caching: non_null(fields.get("caching")).cloned(),
-        cache_control: options.cache_control,
-        defer_loading: options.defer_loading,
-        allowed_callers: options.allowed_callers,
-    }))
+pub(super) fn advisor_tool(fields: &Object) -> Result<AdvisorTool, ToolsError> {
+    match fields.get("model") {
+        Some(Json::Text(model)) => Ok(AdvisorTool {
+            kind: ADVISOR_TYPE,
+            name: "advisor",
+            model: model.clone(),
+            max_uses: non_null(fields.get("max_uses")).cloned(),
+            caching: non_null(fields.get("caching")).cloned(),
+            options: collect_options(fields, ADVISOR_TYPE)?,
+        }),
+        None | Some(_) => Err(ToolsError::AdvisorModel),
+    }
 }
 
 fn schema_value(schema: AnthropicInputSchema) -> Json {
