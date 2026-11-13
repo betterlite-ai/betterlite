@@ -1,0 +1,32 @@
+kind: helper
+name: headers-with-context
+call:
+  b3790:
+    function: protect
+    settings:
+      api_key: test-key
+      on_flagged_action: null
+      async_mode: null
+      persist_session: null
+      include_scanners: true
+      include_evidence: true
+      fallback_on_error: null
+    key:
+      key_name: key-name
+      key_alias: key-alias
+      user_id: user-1
+      user_email: user@example.com
+      team_id: team-1
+      team_alias: team-name
+      org_id: org-1
+    data:
+      model: openai/gpt-4o
+      messages:
+        - role: user
+          content: hello
+    answer:
+      status: 200
+      body:
+        flagged: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+kind: helper
+name: payload-with-session
+call:
+  b3790:
+    function: protect
+    settings:
+      api_key: test-key
+      on_flagged_action: null
+      async_mode: null
+      persist_session: null
+      include_scanners: true
+      include_evidence: true
+      fallback_on_error: null
+    key:
+      key_name: null
+      key_alias: null
+      user_id: null
+      user_email: null
+      team_id: null
+      team_alias: null
+      org_id: null
+    data:
+      model: openai/gpt-4o
+      messages:
+        - role: user
+          content: hello
+      metadata:
+        pillar_session_id: sess-1
+    answer:
+      status: 200
+      body:
+        flagged: false
+        session_id: sess-2
+env: {}
+compare: {ignore: []}

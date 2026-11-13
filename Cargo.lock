@@ -1774,6 +1774,7 @@ dependencies = [
  "mime_guess",
  "mutants",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rcgen",
  "regex",
