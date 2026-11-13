@@ -1,6 +1,7 @@
 use std::iter::repeat_n;
 
 use betterlite_models::decisions::Json;
+use data_encoding::{BASE32, BASE32_NOPAD};
 use indexmap::IndexMap;
 
 use crate::vertex_batch_rows::error::BatchRowsError;
@@ -25,25 +26,18 @@ pub fn set_custom_id_labels(labels: &mut IndexMap<String, Json>, custom_id: &str
         .take(GCP_LABEL_VALUE_MAX_LEN)
         .collect();
     labels.insert(String::from(ORDINARY_LABEL), Json::Text(lossy));
-    let encoded = data_encoding::BASE32_NOPAD
-        .encode(custom_id.as_bytes())
-        .to_lowercase();
-    let characters: Vec<char> = encoded.chars().collect();
-    let chunks: Vec<String> = if characters.is_empty() {
-        vec![String::from(RAW_LABEL_PREFIX)]
-    } else {
-        characters
-            .chunks(MAX_ENCODED_LEN)
-            .map(|chunk| format!("{RAW_LABEL_PREFIX}{}", chunk.iter().collect::<String>()))
-            .collect()
-    };
-    let Some((first, rest)) = chunks.split_first() else {
-        return;
-    };
-    labels.insert(String::from(RAW_LABEL), Json::Text(first.clone()));
-    for (offset, chunk) in rest.iter().enumerate() {
-        let name = format!("{NUMBERED_RAW_LABEL_PREFIX}{}", offset.saturating_add(1));
-        labels.insert(name, Json::Text(chunk.clone()));
+    let encoded = BASE32_NOPAD.encode(custom_id.as_bytes()).to_lowercase();
+    let mut chunks: Vec<&[u8]> = encoded.as_bytes().chunks(MAX_ENCODED_LEN).collect();
+    if chunks.is_empty() {
+        chunks.push(b"");
+    }
+    for (index, chunk) in chunks.into_iter().enumerate() {
+        let name = match index {
+            0 => String::from(RAW_LABEL),
+            _ => format!("{NUMBERED_RAW_LABEL_PREFIX}{index}"),
+        };
+        let payload = String::from_utf8_lossy(chunk);
+        labels.insert(name, Json::Text(format!("{RAW_LABEL_PREFIX}{payload}")));
     }
 }
 
@@ -52,62 +46,46 @@ pub(crate) fn decode_gcp_label_value_chunks(chunks: &[&str]) -> Option<String> {
     for chunk in chunks {
         payload.push_str(chunk.strip_prefix(RAW_LABEL_PREFIX)?);
     }
-    decode_base32_text(&payload)
+    // Python pads the payload to eight symbols, rejects a padding a quantum cannot hold, and ignores leftover bits
+    let mut padded = payload.to_uppercase();
+    let padding = 8_usize.checked_sub(padded.chars().count().checked_rem(8)?)?;
+    padded.extend(repeat_n('=', padding.checked_rem(8)?));
+    let mut specification = BASE32.specification();
+    specification.check_trailing_bits = false;
+    let decoded = specification
+        .encoding()
+        .ok()?
+        .decode(padded.as_bytes())
+        .ok()?;
+    String::from_utf8(decoded).ok()
 }
 
 pub fn custom_id_from_labels(labels: &IndexMap<String, Json>) -> Result<String, BatchRowsError> {
-    let raw = match labels.get(RAW_LABEL) {
-        Some(Json::Text(raw)) if !raw.is_empty() => raw,
-        Some(Json::Text(_)) | None => return ordinary_label(labels),
-        Some(_) => {
-            return Err(BatchRowsError::Label {
-                label: String::from(RAW_LABEL),
-            });
-        }
+    let label = |name: &str| match labels.get(name) {
+        None => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.as_str())),
+        Some(_) => Err(BatchRowsError::Label {
+            label: name.to_owned(),
+        }),
     };
-    let mut chunks: Vec<&str> = vec![raw.as_str()];
-    let mut numbered: Vec<(u64, &str)> = Vec::new();
-    for (name, value) in labels {
+    let Some(raw) = label(RAW_LABEL)?.filter(|raw| !raw.is_empty()) else {
+        return Ok(label(ORDINARY_LABEL)?.unwrap_or(UNKNOWN_ID).to_owned());
+    };
+    let mut numbered = Vec::new();
+    for name in labels.keys() {
         let Some(suffix) = name.strip_prefix(NUMBERED_RAW_LABEL_PREFIX) else {
             continue;
         };
         if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
             continue;
         }
-        let number = suffix.parse().map_err(|_error| BatchRowsError::Label {
+        let number: u64 = suffix.parse().map_err(|_error| BatchRowsError::Label {
             label: name.clone(),
         })?;
-        let Json::Text(chunk) = value else {
-            return Err(BatchRowsError::Label {
-                label: name.clone(),
-            });
-        };
-        numbered.push((number, chunk.as_str()));
+        numbered.push((number, label(name)?.unwrap_or_default()));
     }
     numbered.sort_by_key(|(number, _chunk)| *number);
-    chunks.extend(numbered.iter().map(|(_number, chunk)| *chunk));
-    decode_gcp_label_value_chunks(&chunks).map_or_else(|| Ok(raw.clone()), Ok)
-}
-
-fn ordinary_label(labels: &IndexMap<String, Json>) -> Result<String, BatchRowsError> {
-    match labels.get(ORDINARY_LABEL) {
-        None => Ok(String::from(UNKNOWN_ID)),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(BatchRowsError::Label {
-            label: String::from(ORDINARY_LABEL),
-        }),
-    }
-}
-
-// Python pads the payload to eight symbols, rejects a padding a quantum cannot hold, and ignores leftover bits
-pub(crate) fn decode_base32_text(encoded: &str) -> Option<String> {
-    let mut padded = encoded.to_uppercase();
-    let remainder = padded.chars().count().checked_rem(8)?;
-    let padding = 8_usize.checked_sub(remainder)?.checked_rem(8)?;
-    padded.extend(repeat_n('=', padding));
-    let mut specification = data_encoding::BASE32.specification();
-    specification.check_trailing_bits = false;
-    let encoding = specification.encoding().ok()?;
-    let decoded = encoding.decode(padded.as_bytes()).ok()?;
-    String::from_utf8(decoded).ok()
+    let mut chunks = vec![raw];
+    chunks.extend(numbered.into_iter().map(|(_number, chunk)| chunk));
+    Ok(decode_gcp_label_value_chunks(&chunks).unwrap_or_else(|| raw.to_owned()))
 }

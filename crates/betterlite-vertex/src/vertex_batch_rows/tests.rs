@@ -23,7 +23,9 @@ use crate::vertex_batch_rows::labels::{
     set_custom_id_labels,
 };
 use crate::vertex_batch_rows::paths::{is_passthrough_managed_gcs_url, model_from_managed_gcs_url};
-use crate::vertex_batch_rows::types::{OpenAiBatchOutput, OpenAiBatchOutputError, VertexBatchRow};
+use crate::vertex_batch_rows::types::{
+    OpenAiBatchOutput, OpenAiBatchOutputError, RowField, VertexBatchRow,
+};
 
 fn row(source: &str) -> VertexBatchRow {
     decode_vertex_batch_row(source.as_bytes()).unwrap()
@@ -276,22 +278,24 @@ fn a_row_decodes_its_labels_and_optional_fields() {
     let decoded = row(
         r#"{"key": "a", "request": {"labels": {"litellm_custom_id": "req-1"}}, "status": "ok", "processed_time": "now"}"#,
     );
+    let request = decoded.request.object().unwrap();
+    let Some(Json::Object(labels)) = request.get("labels") else {
+        panic!("the request carries no labels");
+    };
     assert_eq!(
-        decoded
-            .labels()
-            .and_then(|labels| labels.get("litellm_custom_id")),
+        labels.get("litellm_custom_id"),
         Some(&Json::Text("req-1".to_owned()))
     );
     assert_eq!(decoded.key.as_deref(), Some("a"));
     assert_eq!(decoded.status.as_deref(), Some("ok"));
-    assert!(decoded.processed_time.is_some());
+    assert_ne!(decoded.processed_time, RowField::Absent);
 }
 
 #[rstest]
 #[case::null_processed_time(r#"{"request": {}, "response": {}, "processed_time": null}"#, true)]
 #[case::absent_processed_time(r#"{"request": {}, "response": {}}"#, false)]
 fn a_null_processed_time_still_counts_as_present(#[case] source: &str, #[case] present: bool) {
-    assert_eq!(row(source).processed_time.is_some(), present);
+    assert_eq!(row(source).processed_time != RowField::Absent, present);
 }
 
 #[rstest]
@@ -498,7 +502,7 @@ fn shuffled_embedding_groups_keep_the_first_seen_identifier_order() {
     let body = &outputs[0].response.as_ref().unwrap().body;
     assert_eq!(
         body,
-        &serde_json::from_str::<Json>(
+        &serde_json::from_str::<IndexMap<String, Json>>(
             r#"{"object":"list","model":"","data":[{"object":"embedding","embedding":[1],"index":0},{"object":"embedding","embedding":[2],"index":1},{"object":"embedding","embedding":[3],"index":2}],"usage":{"prompt_tokens":12,"completion_tokens":0,"completion_tokens_details":null,"prompt_tokens_details":null,"total_tokens":12}}"#
         )
         .unwrap()
@@ -510,11 +514,8 @@ fn embedding_groups_name_their_batch_model() {
     let rows = embedding_rows(&[("id#0/1", "[1]", "")]);
     let outputs = regroup(&rows, Some("text-embedding-005"));
     let body = &outputs[0].response.as_ref().unwrap().body;
-    let Json::Object(fields) = body else {
-        panic!("the embedding body is not an object");
-    };
     assert_eq!(
-        fields.get("model"),
+        body.get("model"),
         Some(&Json::Text("text-embedding-005".to_owned()))
     );
 }
@@ -524,10 +525,7 @@ fn embedding_values_may_be_a_base64_string() {
     let rows = embedding_rows(&[("id#0/1", r#""AAAA""#, "")]);
     let outputs = regroup(&rows, None);
     let body = &outputs[0].response.as_ref().unwrap().body;
-    let Json::Object(fields) = body else {
-        panic!("the embedding body is not an object");
-    };
-    let Some(Json::List(data)) = fields.get("data") else {
+    let Some(Json::List(data)) = body.get("data") else {
         panic!("the embedding data is not a list");
     };
     assert_eq!(
@@ -579,6 +577,13 @@ fn a_failed_element_reports_its_status() {
 }
 
 #[test]
+fn a_failed_element_without_a_response_still_reports_its_status() {
+    let source = r#"{"key": "id#0/1", "request": {}, "status": "quota"}"#;
+    let outputs = regroup(&[row(source)], None);
+    assert_eq!(outputs[0].error.as_ref().unwrap().message, "quota");
+}
+
+#[test]
 fn an_embedding_row_without_a_response_is_refused() {
     let source = r#"{"key": "id#0/1", "request": {}, "status": ""}"#;
     let error = regroup_embeddings(&[row(source)], None, &mut ids()).unwrap_err();
@@ -616,7 +621,7 @@ fn a_prompt_token_count_past_u32_is_refused() {
 
 #[test]
 fn batch_output_rows_inject_the_given_id() {
-    let body = serde_json::from_str::<Json>(r#"{"object": "list"}"#).unwrap();
+    let body = serde_json::from_str::<IndexMap<String, Json>>(r#"{"object": "list"}"#).unwrap();
     let output =
         openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(7));
     assert_eq!(output.id, "batch_req_00000000-0000-0000-0000-000000000007");
@@ -625,7 +630,7 @@ fn batch_output_rows_inject_the_given_id() {
 
 #[test]
 fn batch_output_rows_read_the_body_id_as_the_request_id() {
-    let body = serde_json::from_str::<Json>(r#"{"id": "chatcmpl-1"}"#).unwrap();
+    let body = serde_json::from_str::<IndexMap<String, Json>>(r#"{"id": "chatcmpl-1"}"#).unwrap();
     let output =
         openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
     assert_eq!(
@@ -636,7 +641,7 @@ fn batch_output_rows_read_the_body_id_as_the_request_id() {
 
 #[test]
 fn batch_output_rows_copy_a_body_id_of_any_type() {
-    let body = serde_json::from_str::<Json>(r#"{"id": 5}"#).unwrap();
+    let body = serde_json::from_str::<IndexMap<String, Json>>(r#"{"id": 5}"#).unwrap();
     let output =
         openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
     assert_eq!(
@@ -647,7 +652,7 @@ fn batch_output_rows_copy_a_body_id_of_any_type() {
 
 #[test]
 fn batch_output_rows_without_a_body_id_report_an_empty_request_id() {
-    let body = serde_json::from_str::<Json>(r#"{"object": "list"}"#).unwrap();
+    let body = serde_json::from_str::<IndexMap<String, Json>>(r#"{"object": "list"}"#).unwrap();
     let output =
         openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
     assert_eq!(

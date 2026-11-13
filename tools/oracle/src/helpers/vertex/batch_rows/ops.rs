@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_vertex::vertex_batch_rows::{
     decode::{
         decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
@@ -7,10 +8,11 @@ use betterlite_vertex::vertex_batch_rows::{
     embeddings::regroup_embeddings,
     labels::{custom_id_from_labels, set_custom_id_labels},
     paths::{is_passthrough_managed_gcs_url, model_from_managed_gcs_url},
+    types::VertexBatchRow,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::helpers::OrHelperError as _;
@@ -38,7 +40,10 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
         Input::Encode { custom_ids } => encode(custom_ids),
         Input::Rows { rows } => batch_rows(rows),
         Input::Regroup { rows, model } => regroup(rows, model.as_deref()),
-        Input::Urls { urls } => Ok(managed_urls(urls)),
+        Input::Urls { urls } => Ok(json!({"rows": urls.iter().map(|url| json!({
+            "passthrough": is_passthrough_managed_gcs_url(url),
+            "model": model_from_managed_gcs_url(url),
+        })).collect::<Vec<_>>()})),
     }
 }
 
@@ -53,11 +58,18 @@ fn encode(custom_ids: &[String]) -> crate::helpers::HelperResult {
     Ok(json!({"rows": rows}))
 }
 
-fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
-    let mut found = Vec::with_capacity(values.len());
+fn decode_rows(values: &[Json]) -> Result<Vec<VertexBatchRow>, Box<HelperError>> {
+    let mut rows = Vec::with_capacity(values.len());
     for value in values {
         let bytes = serde_json::to_vec(value).or_value_error()?;
-        let row = decode_vertex_batch_row(&bytes).or_value_error()?;
+        rows.push(decode_vertex_batch_row(&bytes).or_value_error()?);
+    }
+    Ok(rows)
+}
+
+fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
+    let mut found = Vec::with_capacity(values.len());
+    for row in decode_rows(values)? {
         let key = split_vertex_batch_key(&row).or_value_error()?;
         found.push(json!({
             "custom_id": key.custom_id,
@@ -71,29 +83,11 @@ fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
 }
 
 fn regroup(values: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
-    let mut decoded = Vec::with_capacity(values.len());
-    for value in values {
-        let bytes = serde_json::to_vec(value).or_value_error()?;
-        decoded.push(decode_vertex_batch_row(&bytes).or_value_error()?);
-    }
     let mut next = 0_u128;
-    let outputs = regroup_embeddings(&decoded, model, &mut || {
+    let outputs = regroup_embeddings(&decode_rows(values)?, model, &mut || {
         next = next.saturating_add(1);
         Uuid::from_u128(next)
     })
     .or_value_error()?;
     Ok(json!({"rows": outputs}))
-}
-
-fn managed_urls(values: &[String]) -> Value {
-    let rows: Vec<Value> = values
-        .iter()
-        .map(|url| {
-            json!({
-                "passthrough": is_passthrough_managed_gcs_url(url),
-                "model": model_from_managed_gcs_url(url),
-            })
-        })
-        .collect();
-    json!({"rows": rows})
 }

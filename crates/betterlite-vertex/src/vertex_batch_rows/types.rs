@@ -2,48 +2,36 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-// LiteLLM tests these fields with `in`, so a null value still counts as present
-#[derive(Debug, Clone, Deserialize)]
+// LiteLLM tests these fields with `in`, so an explicit null counts as present
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum RowField {
-    Null,
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
     Value(Json),
+}
+
+impl RowField {
+    #[must_use]
+    pub const fn object(&self) -> Option<&IndexMap<String, Json>> {
+        let Self::Value(Json::Object(fields)) = self else {
+            return None;
+        };
+        Some(fields)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VertexBatchRow {
-    #[serde(default)]
     pub key: Option<String>,
     #[serde(default)]
-    pub request: Option<RowField>,
-    #[serde(default)]
+    pub request: RowField,
     pub status: Option<String>,
     #[serde(default)]
-    pub processed_time: Option<RowField>,
+    pub processed_time: RowField,
     #[serde(default)]
-    pub response: Option<RowField>,
-}
-
-impl VertexBatchRow {
-    // LiteLLM reads labels off a request that is a mapping and ignores any other shape
-    #[must_use]
-    pub fn labels(&self) -> Option<&IndexMap<String, Json>> {
-        let Some(RowField::Value(Json::Object(request))) = self.request.as_ref() else {
-            return None;
-        };
-        let Some(Json::Object(labels)) = request.get("labels") else {
-            return None;
-        };
-        Some(labels)
-    }
-
-    #[must_use]
-    pub const fn response_object(&self) -> Option<&IndexMap<String, Json>> {
-        let Some(RowField::Value(Json::Object(response))) = self.response.as_ref() else {
-            return None;
-        };
-        Some(response)
-    }
+    pub response: RowField,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +41,7 @@ pub struct BatchKey {
     pub total: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OpenAiBatchOutput {
     pub id: String,
     pub custom_id: String,
@@ -61,14 +49,14 @@ pub struct OpenAiBatchOutput {
     pub error: Option<OpenAiBatchOutputError>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OpenAiBatchOutputResponse {
     pub status_code: u16,
     pub request_id: Json,
-    pub body: Json,
+    pub body: IndexMap<String, Json>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OpenAiBatchOutputError {
     pub code: String,
     pub message: String,

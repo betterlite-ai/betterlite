@@ -10,63 +10,72 @@ pub fn decode_vertex_batch_row(bytes: &[u8]) -> Result<VertexBatchRow, BatchRows
     if bytes.trim_ascii_start().first() == Some(&b'[') {
         return Err(BatchRowsError::NotAnObject);
     }
-    serde_json::from_slice(bytes).map_err(|source| BatchRowsError::Decode { source })
+    Ok(serde_json::from_slice(bytes)?)
 }
 
 #[must_use]
 pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
-    if row.request.is_none() {
-        return false;
-    }
-    let embedding = row
-        .response_object()
-        .and_then(|response| response.get("embedding"));
-    if matches!(embedding, Some(Json::Object(_))) {
-        return true;
-    }
-    let Some(RowField::Value(Json::Object(request))) = row.request.as_ref() else {
-        return false;
-    };
-    !row.status.as_deref().unwrap_or_default().is_empty() && request.contains_key("content")
+    let embedded = matches!(
+        row.response
+            .object()
+            .and_then(|fields| fields.get("embedding")),
+        Some(Json::Object(_))
+    );
+    let failed = row
+        .request
+        .object()
+        .is_some_and(|fields| fields.contains_key("content"));
+    row.request != RowField::Absent
+        && (embedded
+            || (failed
+                && row
+                    .status
+                    .as_deref()
+                    .is_some_and(|status| !status.is_empty())))
 }
 
 #[must_use]
 pub fn is_generate_output_row(row: &VertexBatchRow) -> bool {
-    let marked = row.request.is_some() && row.response.is_some() && row.processed_time.is_some();
-    let generated = row.response_object().is_some_and(|response| {
-        response.contains_key("candidates") || response.contains_key("promptFeedback")
+    if [&row.request, &row.response, &row.processed_time].contains(&&RowField::Absent) {
+        return false;
+    }
+    let generated = row.response.object().is_some_and(|fields| {
+        fields.contains_key("candidates") || fields.contains_key("promptFeedback")
     });
-    marked && (generated || !row.status.as_deref().unwrap_or_default().is_empty())
+    generated
+        || row
+            .status
+            .as_deref()
+            .is_some_and(|status| !status.is_empty())
 }
 
 pub fn split_vertex_batch_key(row: &VertexBatchRow) -> Result<BatchKey, BatchRowsError> {
     let Some(key) = row.key.as_deref() else {
-        let custom_id = row
-            .labels()
-            .map_or_else(|| Ok(String::from(UNKNOWN_ID)), custom_id_from_labels)?;
+        let declared = row.request.object().and_then(|fields| fields.get("labels"));
+        let custom_id = if let Some(Json::Object(labels)) = declared {
+            custom_id_from_labels(labels)?
+        } else {
+            String::from(UNKNOWN_ID)
+        };
         return Ok(BatchKey {
             custom_id,
             index: 0,
             total: 1,
         });
     };
-    let (custom_id, index, total) = fan_out_suffix(key).unwrap_or((key, 0, 1));
+    // LiteLLM's pattern is `[^#]*#\d+/\d+`, so a second `#` or `/` leaves the key whole
+    let suffix = key.split_once('#').and_then(|(custom_id, tail)| {
+        let (index, total) = tail.split_once('/')?;
+        let digits = |text: &str| text.bytes().all(|byte| byte.is_ascii_digit());
+        if !digits(index) || !digits(total) {
+            return None;
+        }
+        Some((custom_id, index.parse().ok()?, total.parse().ok()?))
+    });
+    let (custom_id, index, total) = suffix.unwrap_or((key, 0, 1));
     Ok(BatchKey {
         custom_id: decode_batch_correlation(CorrelationInput::Key(custom_id.as_bytes()))?,
         index,
         total,
     })
-}
-
-fn fan_out_suffix(key: &str) -> Option<(&str, u32, u32)> {
-    let (custom_id, tail) = key.split_once('#')?;
-    let (index, total) = tail.split_once('/')?;
-    Some((custom_id, position(index)?, position(total)?))
-}
-
-fn position(text: &str) -> Option<u32> {
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    text.parse().ok()
 }

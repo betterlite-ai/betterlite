@@ -12,102 +12,88 @@ use crate::vertex_batch_rows::types::{
 
 pub const VERTEX_AI_ERROR: &str = "vertex_ai_error";
 
-type Element<'row> = (BatchKey, Option<&'row str>, &'row IndexMap<String, Json>);
-
 pub fn regroup_embeddings(
     rows: &[VertexBatchRow],
     model: Option<&str>,
     next_id: &mut dyn FnMut() -> Uuid,
 ) -> Result<Vec<OpenAiBatchOutput>, BatchRowsError> {
-    let mut groups: IndexMap<String, Vec<Element<'_>>> = IndexMap::new();
+    let mut groups: IndexMap<String, Vec<(BatchKey, &VertexBatchRow)>> = IndexMap::new();
     for row in rows {
         let key = split_vertex_batch_key(row)?;
-        let Some(response) = row.response_object() else {
-            return Err(BatchRowsError::Shape {
-                custom_id: key.custom_id,
-                field: "response",
-            });
-        };
-        groups.entry(key.custom_id.clone()).or_default().push((
-            key,
-            row.status.as_deref(),
-            response,
-        ));
+        groups
+            .entry(key.custom_id.clone())
+            .or_default()
+            .push((key, row));
     }
     let mut outputs = Vec::with_capacity(groups.len());
     for (custom_id, mut group) in groups {
-        group.sort_by_key(|(key, _status, _response)| (key.index, key.total));
-        outputs.push(embedding_output(&custom_id, &group, model, next_id())?);
+        group.sort_by_key(|(key, _row)| (key.index, key.total));
+        let (body, error) = match failure_message(&group) {
+            Some(message) => (
+                None,
+                Some(OpenAiBatchOutputError {
+                    code: String::from(VERTEX_AI_ERROR),
+                    message,
+                }),
+            ),
+            None => (Some(embedding_body(&custom_id, &group, model)?), None),
+        };
+        outputs.push(openai_batch_output_row(custom_id, body, error, next_id()));
     }
     Ok(outputs)
 }
 
-fn embedding_output(
-    custom_id: &str,
-    group: &[Element<'_>],
-    model: Option<&str>,
-    id: Uuid,
-) -> Result<OpenAiBatchOutput, BatchRowsError> {
-    let failure = group
+fn failure_message(group: &[(BatchKey, &VertexBatchRow)]) -> Option<String> {
+    let failed = group
         .iter()
-        .find_map(|(_key, status, _response)| status.filter(|text| !text.is_empty()));
-    let mut total = 0_u32;
-    let mut positions = Vec::with_capacity(group.len());
-    for (key, _status, _response) in group {
-        total = total.max(key.total);
-        positions.push(key.index);
+        .find_map(|(_key, row)| row.status.as_deref().filter(|status| !status.is_empty()));
+    if let Some(status) = failed {
+        return Some(status.to_owned());
     }
-    let error = failure.map_or_else(
-        || {
-            positions.iter().copied().ne(0..total).then(|| {
-                output_error(&format!(
-                    "Vertex returned embeddings for input positions {positions:?} of the {total} requested"
-                ))
-            })
-        },
-        |status| Some(output_error(status)),
-    );
-    let body = match error {
-        Some(_) => None,
-        None => Some(embedding_body(custom_id, group, model)?),
-    };
-    Ok(openai_batch_output_row(
-        custom_id.to_owned(),
-        body,
-        error,
-        id,
-    ))
+    let positions: Vec<u32> = group.iter().map(|(key, _row)| key.index).collect();
+    let total = group
+        .iter()
+        .map(|(key, _row)| key.total)
+        .max()
+        .unwrap_or_default();
+    positions.iter().copied().ne(0..total).then(|| {
+        format!(
+            "Vertex returned embeddings for input positions {positions:?} of the {total} requested"
+        )
+    })
 }
 
 fn embedding_body(
     custom_id: &str,
-    group: &[Element<'_>],
+    group: &[(BatchKey, &VertexBatchRow)],
     model: Option<&str>,
-) -> Result<Json, BatchRowsError> {
+) -> Result<IndexMap<String, Json>, BatchRowsError> {
+    let shape = |field| BatchRowsError::Shape {
+        custom_id: custom_id.to_owned(),
+        field,
+    };
     let mut data = Vec::with_capacity(group.len());
-    let mut tokens: i64 = 0;
-    for (offset, (_key, _status, response)) in group.iter().enumerate() {
-        let field = match response.get("embedding") {
+    let mut tokens = 0_i64;
+    for (position, (_key, row)) in group.iter().enumerate() {
+        let response = row.response.object().ok_or_else(|| shape("response"))?;
+        let found = match response.get("embedding") {
             Some(Json::Object(fields)) => fields.get("values"),
             _ => None,
         };
-        let Some(values) = field else {
-            return Err(shape(custom_id, "embedding.values"));
-        };
-        let encoded =
-            serde_json::to_value(values).map_err(|source| BatchRowsError::Decode { source })?;
-        let embedding = serde_json::from_value(encoded)
-            .map_err(|_error| shape(custom_id, "embedding.values"))?;
+        let embedding = found
+            .and_then(|values| serde_json::to_value(values).ok())
+            .and_then(|encoded| serde_json::from_value(encoded).ok())
+            .ok_or_else(|| shape("embedding.values"))?;
         data.push(EmbeddingRecord {
             object: String::from("embedding"),
             embedding,
-            index: u32::try_from(offset).map_err(|_error| shape(custom_id, "index"))?,
+            index: u32::try_from(position).map_err(|_error| shape("index"))?,
         });
         tokens = tokens
             .checked_add(embedding_prompt_token_count(response))
-            .ok_or_else(|| shape(custom_id, "usage"))?;
+            .ok_or_else(|| shape("usage"))?;
     }
-    let prompt_tokens = u32::try_from(tokens).map_err(|_error| shape(custom_id, "usage"))?;
+    let prompt_tokens = u32::try_from(tokens).map_err(|_error| shape("usage"))?;
     let body = EmbeddingResponse {
         object: String::from("list"),
         data,
@@ -120,51 +106,28 @@ fn embedding_body(
             total_tokens: prompt_tokens,
         },
     };
-    let encoded =
-        serde_json::to_value(&body).map_err(|source| BatchRowsError::Decode { source })?;
-    serde_json::from_value(encoded).map_err(|source| BatchRowsError::Decode { source })
+    Ok(serde_json::to_value(&body).and_then(serde_json::from_value)?)
 }
 
 #[must_use]
 pub fn openai_batch_output_row(
     custom_id: String,
-    body: Option<Json>,
+    body: Option<IndexMap<String, Json>>,
     error: Option<OpenAiBatchOutputError>,
     id: Uuid,
 ) -> OpenAiBatchOutput {
-    let response = body.map(|encoded| OpenAiBatchOutputResponse {
+    let response = body.map(|fields| OpenAiBatchOutputResponse {
         status_code: 200,
-        request_id: request_id(&encoded),
-        body: encoded,
+        request_id: fields
+            .get("id")
+            .cloned()
+            .unwrap_or_else(|| Json::Text(String::new())),
+        body: fields,
     });
     OpenAiBatchOutput {
         id: format!("batch_req_{id}"),
         custom_id,
         response,
         error,
-    }
-}
-
-fn request_id(body: &Json) -> Json {
-    let Json::Object(fields) = body else {
-        return Json::Text(String::new());
-    };
-    fields
-        .get("id")
-        .cloned()
-        .unwrap_or_else(|| Json::Text(String::new()))
-}
-
-fn output_error(message: &str) -> OpenAiBatchOutputError {
-    OpenAiBatchOutputError {
-        code: String::from(VERTEX_AI_ERROR),
-        message: message.to_owned(),
-    }
-}
-
-fn shape(custom_id: &str, field: &'static str) -> BatchRowsError {
-    BatchRowsError::Shape {
-        custom_id: custom_id.to_owned(),
-        field,
     }
 }

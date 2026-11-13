@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::str::from_utf8;
 
-use percent_encoding::percent_decode_str;
+use percent_encoding::percent_decode;
 
 use crate::vertex_batch_rows::error::BatchRowsError;
-use crate::vertex_batch_rows::labels::{RAW_LABEL, RAW_LABEL_PREFIX, decode_base32_text};
+use crate::vertex_batch_rows::labels::{RAW_LABEL, decode_gcp_label_value_chunks};
 
 #[derive(Clone, Copy)]
 pub enum CorrelationInput<'input> {
@@ -14,19 +14,13 @@ pub enum CorrelationInput<'input> {
 
 pub fn decode_batch_correlation(input: CorrelationInput<'_>) -> Result<String, BatchRowsError> {
     match input {
-        CorrelationInput::Key(bytes) => {
-            let text = from_utf8(bytes).map_err(|source| BatchRowsError::Utf8 {
+        CorrelationInput::Key(bytes) => percent_decode(bytes)
+            .decode_utf8()
+            .map(Cow::into_owned)
+            .map_err(|source| BatchRowsError::Utf8 {
                 field: "key",
                 source,
-            })?;
-            percent_decode_str(text)
-                .decode_utf8()
-                .map(Cow::into_owned)
-                .map_err(|source| BatchRowsError::Utf8 {
-                    field: "key",
-                    source,
-                })
-        }
+            }),
         CorrelationInput::LabelChunks(chunks) => {
             let mut texts = Vec::with_capacity(chunks.len());
             for chunk in chunks {
@@ -38,14 +32,7 @@ pub fn decode_batch_correlation(input: CorrelationInput<'_>) -> Result<String, B
             let Some(first) = texts.first() else {
                 return Ok(String::new());
             };
-            let mut payload = String::new();
-            for text in &texts {
-                let Some(rest) = text.strip_prefix(RAW_LABEL_PREFIX) else {
-                    return Ok((*first).to_owned());
-                };
-                payload.push_str(rest);
-            }
-            Ok(decode_base32_text(&payload).unwrap_or_else(|| (*first).to_owned()))
+            Ok(decode_gcp_label_value_chunks(&texts).unwrap_or_else(|| (*first).to_owned()))
         }
     }
 }

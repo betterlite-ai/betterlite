@@ -5,9 +5,7 @@ from fastuuid import UUID
 from litellm._uuid import uuid as litellm_uuid
 from litellm.llms.vertex_ai.files import transformation
 from litellm.llms.vertex_ai.files.transformation import is_passthrough_managed_gcs_url
-from pydantic import JsonValue, TypeAdapter
-
-LABELS: Final = TypeAdapter(dict[str, JsonValue])
+from pydantic import JsonValue
 
 
 class Handlers(NamedTuple):
@@ -26,11 +24,11 @@ HANDLERS: Final[Handlers] = Handlers(*cast(Handlers, (transformation._set_litell
 
 class FixedUuid:
     def __init__(self) -> None:
-        self.count = 0
+        self.issued = 0
 
     def uuid4(self) -> UUID:
-        self.count += 1
-        return UUID(int=self.count)
+        self.issued += 1
+        return UUID(int=self.issued)
 
 
 litellm_uuid.uuid4 = FixedUuid().uuid4
@@ -60,55 +58,31 @@ class UrlsInput(TypedDict):
 Input = EncodeInput | RowsInput | RegroupInput | UrlsInput
 
 
-def encode(fields: EncodeInput) -> JsonValue:
-    rows: list[JsonValue] = []
-    for custom_id in fields["custom_ids"]:
-        labels: dict[str, str] = {}
-        HANDLERS.set_labels(labels, custom_id)
-        row: dict[str, JsonValue] = {
-            "labels": LABELS.validate_python(labels),
-            "custom_id": HANDLERS.read_labels(labels),
-        }
-        rows.append(row)
-    return {"rows": rows}
-
-
-def rows(fields: RowsInput) -> JsonValue:
-    found: list[JsonValue] = []
-    for row in fields["rows"]:
-        custom_id, index, total = HANDLERS.split_key(row)
-        entry: dict[str, JsonValue] = {
-            "custom_id": custom_id,
-            "embeddings": HANDLERS.is_embedding(row),
-            "generate": HANDLERS.is_generate(row),
-            "index": index,
-            "total": total,
-        }
-        found.append(entry)
-    return {"rows": found}
-
-
-def regroup(fields: RegroupInput) -> JsonValue:
-    inputs: list[Mapping[str, JsonValue]] = list(fields["rows"])
-    return {"rows": list(HANDLERS.transform(inputs, fields["model"]))}
-
-
-def urls(fields: UrlsInput) -> JsonValue:
-    rows: list[JsonValue] = [
-        {
-            "passthrough": is_passthrough_managed_gcs_url(url),
-            "model": HANDLERS.model_of(url),
-        }
-        for url in fields["urls"]
-    ]
-    return {"rows": rows}
-
-
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "encode":
-        return encode(input_value)
+        encoded: list[JsonValue] = []
+        for custom_id in input_value["custom_ids"]:
+            labels: dict[str, str] = {}
+            HANDLERS.set_labels(labels, custom_id)
+            encoded.append({"labels": {**labels}, "custom_id": HANDLERS.read_labels(labels)})
+        return {"rows": encoded}
     if input_value["operation"] == "rows":
-        return rows(input_value)
+        found: list[JsonValue] = []
+        for row in input_value["rows"]:
+            custom_id, index, total = HANDLERS.split_key(row)
+            found.append({
+                "custom_id": custom_id,
+                "embeddings": HANDLERS.is_embedding(row),
+                "generate": HANDLERS.is_generate(row),
+                "index": index,
+                "total": total,
+            })
+        return {"rows": found}
     if input_value["operation"] == "regroup":
-        return regroup(input_value)
-    return urls(input_value)
+        inputs: list[Mapping[str, JsonValue]] = list(input_value["rows"])
+        return {"rows": list(HANDLERS.transform(inputs, input_value["model"]))}
+    urls: list[JsonValue] = [
+        {"passthrough": is_passthrough_managed_gcs_url(url), "model": HANDLERS.model_of(url)}
+        for url in input_value["urls"]
+    ]
+    return {"rows": urls}
