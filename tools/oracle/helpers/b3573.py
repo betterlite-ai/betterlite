@@ -1,6 +1,7 @@
 import asyncio
 import datetime as dt
-from typing import Final, Literal, TypedDict
+from collections.abc import Collection
+from typing import Final, Literal, Protocol, TypedDict, TypeVar
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -12,8 +13,45 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 
 JSON: Final = TypeAdapter(JsonValue)
 USER_ID: Final = TypeAdapter(str | None)
-HANDLER: Final = PassThroughEndpointHandler()
-HANDLER_SOURCE: Final = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py"
+
+Result_co = TypeVar("Result_co", covariant=True, default=object)
+
+
+class InputView(Protocol):
+    async def process_input_messages(
+        self,
+        data: dict[str, JsonValue],
+        guardrail_to_apply: CustomGuardrail,
+        litellm_logging_obj: Logging | None = None,
+    ) -> Collection[str]: ...
+
+
+class OutputView(Protocol[Result_co]):
+    async def process_output_response(
+        self,
+        response: JsonValue,
+        guardrail_to_apply: CustomGuardrail,
+        litellm_logging_obj: Logging | None = None,
+        user_api_key_dict: UserAPIKeyAuth | None = None,
+        request_data: dict[str, JsonValue] | None = None,
+    ) -> Result_co: ...
+
+
+class TextExtraction(Protocol):
+    def _extract_text_for_guardrail(
+        self, data: dict[str, JsonValue], field_expressions: list[str] | None
+    ) -> str: ...
+
+    def text(self, data: dict[str, JsonValue], field_expressions: list[str] | None) -> str:
+        return self._extract_text_for_guardrail(data, field_expressions)
+
+
+class HandlerReader(PassThroughEndpointHandler, TextExtraction):
+    def settings(self, logging_obj: Logging | None, guardrail_name: str | None) -> JsonValue:
+        settings = self._get_guardrail_settings(logging_obj, guardrail_name)
+        if settings is None:
+            return None
+        return JSON.validate_json(settings.model_dump_json())
 
 
 class LoggingSpec(TypedDict):
@@ -46,6 +84,14 @@ class OutputCall(TypedDict):
     response: JsonValue
     request_data: dict[str, JsonValue] | None
     user_api_key: dict[str, JsonValue] | None
+
+
+class OutputArgs(TypedDict):
+    response: JsonValue
+    guardrail: CustomGuardrail
+    logging_obj: Logging | None
+    user_api_key_dict: UserAPIKeyAuth | None
+    request_data: dict[str, JsonValue] | None
 
 
 Call = SettingsCall | ExtractCall | InputCall | OutputCall
@@ -89,41 +135,53 @@ def build_user_key(user_api_key: dict[str, JsonValue] | None) -> UserAPIKeyAuth 
     return auth
 
 
-def settings_answer(call: SettingsCall) -> JsonValue:
-    settings = HANDLER._get_guardrail_settings(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L32
-        build_logging(call["logging"]), call["guardrail_name"]
+async def call_input(
+    handler: InputView,
+    data: dict[str, JsonValue],
+    guardrail: CustomGuardrail,
+    logging_obj: Logging | None,
+) -> Collection[str]:
+    return await handler.process_input_messages(
+        data=data,
+        guardrail_to_apply=guardrail,
+        litellm_logging_obj=logging_obj,
     )
-    if settings is None:
-        return None
-    return JSON.validate_json(settings.model_dump_json())
 
 
-def extract_answer(call: ExtractCall) -> JsonValue:
-    text = HANDLER._extract_text_for_guardrail(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L53
-        data=call["data"], field_expressions=call["field_expressions"]
+async def call_output(handler: OutputView, args: OutputArgs) -> JsonValue:
+    returned = await handler.process_output_response(
+        response=args["response"],
+        guardrail_to_apply=args["guardrail"],
+        litellm_logging_obj=args["logging_obj"],
+        user_api_key_dict=args["user_api_key_dict"],
+        request_data=args["request_data"],
     )
-    return normalised_text(text)
+    return JSON.validate_python(returned)
 
 
 async def input_answer(call: InputCall) -> JsonValue:
-    returned = await HANDLER.process_input_messages(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L88
-        data=call["data"],
-        guardrail_to_apply=CustomGuardrail(guardrail_name=call["guardrail_name"]),
-        litellm_logging_obj=build_logging(call["logging"]),
+    returned = await call_input(
+        PassThroughEndpointHandler(),
+        call["data"],
+        CustomGuardrail(guardrail_name=call["guardrail_name"]),
+        build_logging(call["logging"]),
     )
     return {"returned": JSON.validate_python(returned)}
 
 
 async def output_answer(call: OutputCall) -> JsonValue:
     request_data = call["request_data"]
-    returned = await HANDLER.process_output_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L129
-        response=call["response"],
-        guardrail_to_apply=CustomGuardrail(guardrail_name=call["guardrail_name"]),
-        litellm_logging_obj=build_logging(call["logging"]),
-        user_api_key_dict=build_user_key(call["user_api_key"]),
-        request_data=request_data,
+    returned = await call_output(
+        PassThroughEndpointHandler(),
+        {
+            "response": call["response"],
+            "guardrail": CustomGuardrail(guardrail_name=call["guardrail_name"]),
+            "logging_obj": build_logging(call["logging"]),
+            "user_api_key_dict": build_user_key(call["user_api_key"]),
+            "request_data": request_data,
+        },
     )
-    answer: dict[str, JsonValue] = {"returned": JSON.validate_python(returned)}
+    answer: dict[str, JsonValue] = {"returned": returned}
     if request_data is not None:
         answer["request_data"] = request_data
     return answer
@@ -131,9 +189,9 @@ async def output_answer(call: OutputCall) -> JsonValue:
 
 async def answer(call: Call) -> JsonValue:
     if call["function"] == "settings":
-        return settings_answer(call)
+        return HandlerReader().settings(build_logging(call["logging"]), call["guardrail_name"])
     if call["function"] == "extract":
-        return extract_answer(call)
+        return normalised_text(HandlerReader().text(call["data"], call["field_expressions"]))
     if call["function"] == "input":
         return await input_answer(call)
     return await output_answer(call)
