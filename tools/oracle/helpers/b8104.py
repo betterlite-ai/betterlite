@@ -193,27 +193,25 @@ def raw_response(probe: ReplyProbe) -> httpx.Response:
     return response
 
 
-def usage_view(usage: UsageFields | None) -> JsonValue:
-    if usage is None:
-        return None
-    return {
-        "input_tokens": usage["input_tokens"],
-        "output_tokens": usage["output_tokens"],
-        "total_tokens": usage["total_tokens"],
-    }
-
-
 def fields_view(reply: BaseModel, logging_obj: Logging) -> JsonValue:
     record = TypeAdapter(ReplyFields).validate_json(reply.model_dump_json())
     hidden = Hidden.model_validate(reply)
     post = Recorded.model_validate(logging_obj).model_call_details
+    usage = record["usage"]
+    usage_value: JsonValue = None
+    if usage is not None:
+        usage_value = {
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"],
+            "total_tokens": usage["total_tokens"],
+        }
     return {
         "id": record["id"],
         "created_at": record["created_at"],
         "reasoning": record["reasoning"],
         "text": record["text"],
         "output": record["output"],
-        "usage": usage_view(record["usage"]),
+        "usage": usage_value,
         "headers": hidden.params["headers"],
         "additional_headers": hidden.params["additional_headers"],
         "post_call": {

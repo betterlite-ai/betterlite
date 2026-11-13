@@ -1,6 +1,5 @@
 use betterlite_http::error::HttpError;
 use betterlite_openai::response_input::error::ResponseInputError;
-use betterlite_openai::response_resources::error::ResponseResourceError;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
 
@@ -37,8 +36,6 @@ pub enum ManusResponsesError {
     },
     #[error(transparent)]
     Request(#[from] ResponseInputError),
-    #[error(transparent)]
-    Resource(#[from] ResponseResourceError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("the request parameters are not an object")]

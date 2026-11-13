@@ -6,7 +6,7 @@ deviations:
   - what: The lax-validation debug line names the validation error and omits the response body, where LiteLLM logs the whole raw_response_json.
     why: A provider response can carry credentials, and betterlite never writes a response body into a log line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L219-L225
-  - what: A reply that fails record validation is returned as a record built from the fields betterlite can type plus its unknown vendor fields, and the raw fields stay on the reply value; LiteLLM's model_construct keeps every mistyped field on the object.
+  - what: A reply that fails record validation is returned as a record built from the fields betterlite can type; LiteLLM's model_construct keeps every mistyped field on the object.
     why: A Rust record has typed fields, so a mistyped id or output cannot be carried as-is; dropping the whole reply would lose a response LiteLLM returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L219-L225
   - what: A JSON body that is not an object raises the upstream-status OpenAI error, where LiteLLM raises an unhandled AttributeError outside its try block and returns a 500.

@@ -81,6 +81,30 @@ impl ManusResponsesConfig {
     }
 }
 
+macro_rules! unsupported_request {
+    ($($name:ident($request:ty) => $result:ty, $operation:literal;)*) => {
+        $(
+            fn $name(&self, _request: &$request) -> Result<$result, Self::Error> {
+                Err(error::ManusResponsesError::UnsupportedOperation { operation: $operation })
+            }
+        )*
+    };
+}
+
+macro_rules! unsupported_response {
+    ($($name:ident => $result:ty, $operation:literal;)*) => {
+        $(
+            fn $name(
+                &self,
+                _response: &ResponsesUpstream,
+                _logging: &mut ResponsesLogging,
+            ) -> Result<$result, Self::Error> {
+                Err(error::ManusResponsesError::UnsupportedOperation { operation: $operation })
+            }
+        )*
+    };
+}
+
 #[async_trait]
 impl ResponsesProviderConfig for ManusResponsesConfig {
     type Error = error::ManusResponsesError;
@@ -142,18 +166,7 @@ impl ResponsesProviderConfig for ManusResponsesConfig {
         response: &ResponsesUpstream,
         logging: &mut ResponsesLogging,
     ) -> Result<ResponsesApiResponse, Self::Error> {
-        reply::transform(self, response, logging).map(|reply| reply.response)
-    }
-
-    fn transform_streaming_response(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesAPIStreamingResponse, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "streaming response",
-        })
+        reply::transform(self, response, logging)
     }
 
     fn transform_get_request(&self, request: &IdRequest) -> Result<PreparedRequest, Self::Error> {
@@ -165,82 +178,31 @@ impl ResponsesProviderConfig for ManusResponsesConfig {
         response: &ResponsesUpstream,
         logging: &mut ResponsesLogging,
     ) -> Result<ResponsesApiResponse, Self::Error> {
-        reply::transform(self, response, logging).map(|reply| reply.response)
+        reply::transform(self, response, logging)
     }
 
-    fn transform_delete_request(
-        &self,
-        _request: &IdRequest,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "delete request",
-        })
-    }
+    unsupported_request!(
+        transform_delete_request(IdRequest) => PreparedRequest, "delete request";
+        transform_input_items_request(InputItemsRequest) => PreparedRequest, "input items request";
+        transform_cancel_request(IdRequest) => PreparedRequest, "cancel request";
+        transform_compact_request(CompactRequest) => PreparedRequest, "compact request";
+    );
 
-    fn transform_delete_response(
+    unsupported_response!(
+        transform_delete_response => DeleteResponseResult, "delete response";
+        transform_input_items_response => Params, "input items response";
+        transform_cancel_response => ResponsesApiResponse, "cancel response";
+        transform_compact_response => ResponsesApiResponse, "compact response";
+    );
+
+    fn transform_streaming_response(
         &self,
-        _response: &ResponsesUpstream,
+        _model: &str,
+        _chunk: &Json,
         _logging: &mut ResponsesLogging,
-    ) -> Result<DeleteResponseResult, Self::Error> {
+    ) -> Result<ResponsesAPIStreamingResponse, Self::Error> {
         Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "delete response",
-        })
-    }
-
-    fn transform_input_items_request(
-        &self,
-        _request: &InputItemsRequest,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "input items request",
-        })
-    }
-
-    fn transform_input_items_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<Params, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "input items response",
-        })
-    }
-
-    fn transform_cancel_request(
-        &self,
-        _request: &IdRequest,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "cancel request",
-        })
-    }
-
-    fn transform_cancel_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "cancel response",
-        })
-    }
-
-    fn transform_compact_request(
-        &self,
-        _request: &CompactRequest,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "compact request",
-        })
-    }
-
-    fn transform_compact_response(
-        &self,
-        _response: &ResponsesUpstream,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesApiResponse, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "compact response",
+            operation: "streaming response",
         })
     }
 }

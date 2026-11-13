@@ -1,6 +1,4 @@
-use betterlite_models::call_helpers::headers::{
-    AdditionalHeaders, HeaderSource, process_response_headers,
-};
+use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::response_events::RawResponse;
@@ -32,13 +30,6 @@ const ADDITIONAL_HEADERS_KEY: &str = "additional_headers";
 const LOG_EVENT_TYPE_KEY: &str = "log_event_type";
 const ORIGINAL_RESPONSE_KEY: &str = "original_response";
 const ADDITIONAL_ARGS_KEY: &str = "additional_args";
-
-pub(super) struct ManusReply {
-    pub(super) response: ResponsesApiResponse,
-    pub(super) loose: Option<Params>,
-    pub(super) headers: IndexMap<String, String>,
-    pub(super) additional_headers: AdditionalHeaders,
-}
 
 fn reply_failure(upstream: &ResponsesUpstream, text: &str) -> ManusResponsesError {
     ManusResponsesError::from(ResponsesContractError::BaseLlm(BaseLlmException {
@@ -131,30 +122,15 @@ fn insert_defaults(config: &ManusResponsesConfig, fields: &mut Params) {
 fn validate(
     config: &ManusResponsesConfig,
     fields: &Params,
-) -> Result<(ResponsesApiResponse, Option<Params>), ManusResponsesError> {
+) -> Result<ResponsesApiResponse, ManusResponsesError> {
     let value = serde_json::to_value(json::object_of(fields))?;
     match serde_json::from_value::<ResponsesApiResponse>(value) {
-        Ok(response) => Ok((response, None)),
+        Ok(response) => Ok(response),
         Err(error) => {
             tracing::debug!(error = %error, "Error constructing ResponsesAPIResponse");
-            let response = construct_loose(config, fields)?;
-            Ok((response, Some(fields.clone())))
+            construct_loose(config, fields)
         }
     }
-}
-
-pub(super) fn record_hidden(
-    logging: &mut ResponsesLogging,
-    headers: &Headers,
-    additional: &AdditionalHeaders,
-) {
-    logging
-        .model_call_details
-        .insert(String::from(HEADERS_KEY), json::headers_object(headers));
-    logging.model_call_details.insert(
-        String::from(ADDITIONAL_HEADERS_KEY),
-        Json::Object(additional.clone()),
-    );
 }
 
 pub(super) fn headers_of(upstream: &ResponsesUpstream) -> IndexMap<String, String> {
@@ -170,24 +146,26 @@ fn finish(
     upstream: &ResponsesUpstream,
     logging: &mut ResponsesLogging,
     fields: &Params,
-) -> Result<ManusReply, ManusResponsesError> {
-    let (response, loose) = validate(config, fields)?;
+) -> Result<ResponsesApiResponse, ManusResponsesError> {
+    let response = validate(config, fields)?;
     let headers = headers_of(upstream);
     let additional_headers = process_response_headers(HeaderSource::Upstream(&headers));
-    record_hidden(logging, &upstream.headers, &additional_headers);
-    Ok(ManusReply {
-        response,
-        loose,
-        headers,
-        additional_headers,
-    })
+    logging.model_call_details.insert(
+        String::from(HEADERS_KEY),
+        json::headers_object(&upstream.headers),
+    );
+    logging.model_call_details.insert(
+        String::from(ADDITIONAL_HEADERS_KEY),
+        Json::Object(additional_headers),
+    );
+    Ok(response)
 }
 
 pub(super) fn transform(
     config: &ManusResponsesConfig,
     upstream: &ResponsesUpstream,
     logging: &mut ResponsesLogging,
-) -> Result<ManusReply, ManusResponsesError> {
+) -> Result<ResponsesApiResponse, ManusResponsesError> {
     let text = String::from_utf8_lossy(&upstream.body).into_owned();
     record_post_call(logging, &text);
     let mut fields = parse_fields(upstream, &text)?;

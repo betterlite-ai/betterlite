@@ -11,34 +11,6 @@ use super::super::ManusResponsesConfig;
 use super::super::error::ManusResponsesError;
 use super::{CREATED_AT_FIELD, ID_FIELD, OUTPUT_FIELD, REASONING_FIELD, TEXT_FIELD, USAGE_FIELD};
 
-// the typed record keeps every documented reply field, so an unknown vendor field stays in extra
-const TYPED_FIELDS: [&str; 24] = [
-    "id",
-    "created_at",
-    "error",
-    "incomplete_details",
-    "instructions",
-    "metadata",
-    "model",
-    "object",
-    "output",
-    "parallel_tool_calls",
-    "temperature",
-    "tool_choice",
-    "tools",
-    "top_p",
-    "max_output_tokens",
-    "previous_response_id",
-    "reasoning",
-    "status",
-    "text",
-    "truncation",
-    "usage",
-    "user",
-    "store",
-    "_hidden_params",
-];
-
 pub(super) fn zero_usage() -> Json {
     Json::Object(IndexMap::from([
         (String::from("input_tokens"), Json::Number(Number::from(0))),
@@ -106,11 +78,6 @@ pub(super) fn construct_loose(
         .cloned()
         .unwrap_or_else(zero_usage);
     record.insert(String::from(USAGE_FIELD), usage);
-    for (name, value) in fields {
-        if !TYPED_FIELDS.contains(&name.as_str()) {
-            record.insert(name.clone(), value.clone());
-        }
-    }
     let value = serde_json::to_value(Json::Object(record))?;
     Ok(serde_json::from_value(value)?)
 }

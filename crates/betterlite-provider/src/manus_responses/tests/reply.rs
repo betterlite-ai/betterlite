@@ -146,12 +146,9 @@ fn a_body_that_fails_validation_is_still_returned() {
     let mut logging = ResponsesLogging::default();
     let reply = crate::manus_responses::reply::transform(&plain_config(), &upstream, &mut logging)
         .expect("a mistyped body is still returned");
-    assert_eq!(reply.response.id, format!("unknown-{SUFFIX}"));
-    assert_eq!(reply.response.created_at, 5);
-    assert!(reply.response.output.is_empty());
-    let loose = reply.loose.expect("the raw fields stay available");
-    assert_eq!(loose.get("id"), Some(&Json::Number(7.into())));
-    assert_eq!(loose.get("output"), Some(&Json::Text(String::from("bad"))));
+    assert_eq!(reply.id, format!("unknown-{SUFFIX}"));
+    assert_eq!(reply.created_at, 5);
+    assert!(reply.output.is_empty());
 }
 
 #[test]
