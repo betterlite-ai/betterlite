@@ -32,7 +32,7 @@ fn joined(parts: &[&str], separator: &str) -> Option<String> {
 pub fn extract_response_text(response: &ResponseSource<'_>) -> Option<String> {
     match response {
         ResponseSource::Body(body) => {
-            chat_completion_text(*body).or_else(|| responses_api_text(*body))
+            chat_completion_text(body).or_else(|| responses_api_text(body))
         }
         ResponseSource::OutputText(text) => {
             if text.is_empty() {
