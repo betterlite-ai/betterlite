@@ -15,7 +15,7 @@ fn the_optional_credentials_default_to_absent() {
     assert!(settings.tenant_id.is_none());
     assert!(settings.client_id.is_none());
     assert!(settings.client_secret.is_none());
-    assert!(settings.uses_account_key());
+    assert!(settings.account_key.is_some());
 }
 
 #[test]
@@ -31,8 +31,8 @@ fn an_empty_optional_variable_counts_as_unset() {
     ];
     let settings = settings(&variables);
     assert!(settings.tenant_id.is_none());
-    assert!(!settings.uses_account_key());
-    assert!(settings.uses_credential_chain());
+    assert!(settings.account_key.is_none());
+    assert!(settings.tenant_id.is_none());
     assert_eq!(settings.endpoint_suffix, "core.windows.net");
 }
 
@@ -45,7 +45,10 @@ fn the_endpoint_suffix_builds_both_endpoints() {
     ];
     let settings = settings(&variables);
     assert_eq!(
-        settings.dfs_endpoint(),
+        format!(
+            "https://{}.dfs.{}",
+            settings.account_name, settings.endpoint_suffix
+        ),
         "https://acct.dfs.core.chinacloudapi.cn"
     );
     assert_eq!(
@@ -66,8 +69,8 @@ fn the_service_principal_values_are_read_and_kept_secret() {
             .map(secrecy::ExposeSecret::expose_secret),
         Some("secret-1")
     );
-    assert!(!settings.uses_account_key());
-    assert!(!settings.uses_credential_chain());
+    assert!(settings.account_key.is_none());
+    assert!(settings.client_secret.is_some());
 }
 
 #[test]

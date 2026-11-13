@@ -17,10 +17,6 @@ pub enum StorageAuthorization<'secret> {
     },
 }
 
-fn header(name: &str, value: &str) -> (String, String) {
-    (name.to_owned(), value.to_owned())
-}
-
 pub fn storage_request(
     method: Method,
     url: String,
@@ -30,14 +26,14 @@ pub fn storage_request(
     body: Vec<u8>,
 ) -> Result<StorageRequest, SigningError> {
     let mut headers = headers;
-    headers.push(header("x-ms-version", STORAGE_API_VERSION));
+    headers.push(("x-ms-version".to_owned(), STORAGE_API_VERSION.to_owned()));
     match auth {
-        StorageAuthorization::Bearer(token) => headers.push(header(
-            "Authorization",
-            &format!("Bearer {}", token.expose_secret()),
+        StorageAuthorization::Bearer(token) => headers.push((
+            "Authorization".to_owned(),
+            format!("Bearer {}", token.expose_secret()),
         )),
         StorageAuthorization::SharedKey { account, key } => {
-            headers.push(header("x-ms-date", &http_date(now)));
+            headers.push(("x-ms-date".to_owned(), http_date(now)));
             let mut request = StorageRequest {
                 method,
                 url,
@@ -47,7 +43,7 @@ pub fn storage_request(
                 deadline: STORAGE_TIMEOUT,
             };
             let value = shared_key_authorization(account, key, &request)?;
-            request.headers.push(header("Authorization", &value));
+            request.headers.push(("Authorization".to_owned(), value));
             return Ok(request);
         }
     }
@@ -71,7 +67,7 @@ pub fn create_file_request(
         format!("{base_url}?resource=file"),
         auth,
         now,
-        vec![header("Content-Length", "0")],
+        vec![("Content-Length".to_owned(), "0".to_owned())],
         Vec::new(),
     )
 }
@@ -87,7 +83,7 @@ pub fn append_data_request(
         format!("{base_url}?action=append&position=0"),
         auth,
         now,
-        vec![header("Content-Type", "application/json")],
+        vec![("Content-Type".to_owned(), "application/json".to_owned())],
         json_payload.as_bytes().to_vec(),
     )
 }
@@ -103,7 +99,7 @@ pub fn append_bytes_request(
         format!("{base_url}?action=append&position=0"),
         auth,
         now,
-        vec![header("Content-Type", "application/json")],
+        vec![("Content-Type".to_owned(), "application/json".to_owned())],
         content.to_vec(),
     )
 }
@@ -119,7 +115,7 @@ pub fn flush_data_request(
         format!("{base_url}?action=flush&position={position}"),
         auth,
         now,
-        vec![header("Content-Length", "0")],
+        vec![("Content-Length".to_owned(), "0".to_owned())],
         Vec::new(),
     )
 }
@@ -149,7 +145,7 @@ pub fn create_directory_request(
         format!("{directory_url}?resource=directory"),
         auth,
         now,
-        vec![header("Content-Length", "0")],
+        vec![("Content-Length".to_owned(), "0".to_owned())],
         Vec::new(),
     )
 }

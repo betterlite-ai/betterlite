@@ -4,8 +4,7 @@ use betterlite_config::loader::EnvironmentLookup;
 
 use super::token::{ChainError, ChainProviderFactory, ChainTokenProvider};
 
-// B677 owns DeploymentIdentityCredential, and betterlite-azure depends on betterlite-openai, which depends on this
-// crate, so the chain provider cannot be built here without a crate cycle; the catalog leaves the seam unwired.
+// B677 owns this chain but betterlite-azure depends on betterlite-openai, which depends on this crate (a cycle)
 pub struct UnwiredChainFactory {
     pub environment: Arc<dyn EnvironmentLookup + Send + Sync>,
 }

@@ -152,7 +152,7 @@ impl AzureBlobStorageLogger {
         let mut uploaded = 0_usize;
         for payload in batch {
             if let Err(error) = self
-                .async_upload_payload_to_azure_blob_storage(payload)
+                .upload_payload(payload)
                 .await
             {
                 tracing::error!(%error, "AzureBlobStorageLogger Error sending batch API");

@@ -163,7 +163,10 @@ async fn drive(scenario: &Scenario) -> Value {
 
 fn describe_settings(settings: &AzureStorageSettings) -> Value {
     json!({
-        "dfs_endpoint": settings.dfs_endpoint(),
+        "dfs_endpoint": format!(
+                "https://{}.dfs.{}",
+                settings.account_name, settings.endpoint_suffix
+            ),
         "account_name": settings.account_name.clone(),
         "file_system": settings.file_system.clone(),
         "endpoint_suffix": settings.endpoint_suffix.clone(),
@@ -211,16 +214,18 @@ async fn perform(
             } else {
                 logger.async_log_success_event(queued).await
             };
-            raised(outcome.err().map(|error| error.to_string()))
+            outcome
+                .err()
+                .map_or(Value::Null, |error| json!({ "raised": error.to_string() }))
         }
         Action::Upload { id } => {
             let Ok(payload) = payload_for(base, id) else {
                 return json!({ "raised": "payload" });
             };
-            let outcome = logger
-                .async_upload_payload_to_azure_blob_storage(&payload)
-                .await;
-            raised(outcome.err().map(|error| error.to_string()))
+            let outcome = logger.upload_payload(&payload).await;
+            outcome
+                .err()
+                .map_or(Value::Null, |error| json!({ "raised": error.to_string() }))
         }
         Action::Token => match logger.set_valid_azure_ad_token().await {
             Ok(token) => json!({ "token": token.expose_secret() }),

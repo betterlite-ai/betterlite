@@ -10,7 +10,7 @@ use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 use super::{
     AzureBlobStorageLogger, AzureStorageError, CachedClient, SERVICE_CLIENT_TTL, dated_directory,
 };
-use crate::azure_storage_logging::filename::{adls_safe_file_name, encode_path_segment};
+use crate::azure_storage_logging::filename::{adls_safe_file_name, storage_url};
 use crate::azure_storage_logging::http_ops::{
     StorageAuthorization, append_bytes_request, append_data_request, create_directory_request,
     create_file_request, directory_exists_request, flush_data_request,
@@ -25,11 +25,11 @@ const FIRST_ERROR_STATUS: u16 = 400;
 const NOT_FOUND: u16 = 404;
 
 impl AzureBlobStorageLogger {
-    pub async fn async_upload_payload_to_azure_blob_storage(
+    pub async fn upload_payload(
         &self,
         payload: &StandardLoggingPayload,
     ) -> Result<(), AzureStorageError> {
-        if self.settings.uses_account_key() {
+        if self.settings.account_key.is_some() {
             self.upload_with_account_key(payload).await
         } else {
             self.upload_with_token(payload).await
@@ -47,11 +47,13 @@ impl AzureBlobStorageLogger {
         let json_payload = format!("{dumped}\n");
         let now = self.deps.clock.now_unix();
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
-        let base_url = format!(
-            "{}/{}/{}",
-            self.settings.dfs_endpoint(),
-            encode_path_segment(&self.settings.file_system),
-            encode_path_segment(&file_name)
+        let endpoint = format!(
+            "https://{}.dfs.{}",
+            self.settings.account_name, self.settings.endpoint_suffix
+        );
+        let base_url = storage_url(
+            &endpoint,
+            &[self.settings.file_system.as_str(), file_name.as_str()],
         );
         let _created = self
             .execute(create_file_request(&base_url, &auth, now)?, "create")
@@ -82,11 +84,13 @@ impl AzureBlobStorageLogger {
             key: &client.key,
         };
         let directory = dated_directory(now).ok_or(AzureStorageError::Date)?;
-        let directory_url = format!(
-            "{}/{}/{}",
-            self.settings.dfs_endpoint(),
-            encode_path_segment(&self.settings.file_system),
-            encode_path_segment(&directory)
+        let endpoint = format!(
+            "https://{}.dfs.{}",
+            self.settings.account_name, self.settings.endpoint_suffix
+        );
+        let directory_url = storage_url(
+            &endpoint,
+            &[self.settings.file_system.as_str(), directory.as_str()],
         );
         let exists = self
             .execute(
@@ -103,7 +107,7 @@ impl AzureBlobStorageLogger {
                 .await?;
         }
         let file_name = adls_safe_file_name(Some(payload.id.as_str()), self.deps.ids.as_ref());
-        let base_url = format!("{directory_url}/{}", encode_path_segment(&file_name));
+        let base_url = storage_url(&directory_url, &[file_name.as_str()]);
         let content = safe_dumps(payload, DEFAULT_MAX_RECURSE_DEPTH, None)
             .map_err(AzureStorageError::Serialize)?
             .into_bytes();
@@ -153,7 +157,10 @@ impl AzureBlobStorageLogger {
     }
 
     pub async fn set_valid_azure_ad_token(&self) -> Result<SecretString, TokenError> {
-        if self.settings.uses_credential_chain() {
+        if self.settings.tenant_id.is_none()
+            && self.settings.client_id.is_none()
+            && self.settings.client_secret.is_none()
+        {
             let provider = self.chain_provider()?;
             // the chain walk probes IMDS and may run a CLI, so it runs off the async worker
             let token = tokio::task::spawn_blocking(move || provider.token())

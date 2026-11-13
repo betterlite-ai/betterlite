@@ -41,8 +41,7 @@ fn unquote(text: &str) -> String {
         .into_owned()
 }
 
-// A Responses API id is base64 behind `resp_`, so its `=` padding and `/` are rewritten; every other id keeps its
-// name unless a path segment is empty, `.` or `..`, which gets the same rewrite. The extension is always added.
+// a resp_ base64 id or an empty, . or .. segment gets the slash and padding rewrite, and .json is always added
 #[must_use]
 pub fn adls_safe_file_name(payload_id: Option<&str>, ids: &dyn IdSource) -> String {
     let Some(name) = payload_id else {
@@ -60,6 +59,11 @@ pub fn adls_safe_file_name(payload_id: Option<&str>, ids: &dyn IdSource) -> Stri
 }
 
 #[must_use]
-pub fn encode_path_segment(segment: &str) -> String {
-    utf8_percent_encode(segment, PATH_SEGMENT).to_string()
+pub fn storage_url(endpoint: &str, segments: &[&str]) -> String {
+    let mut url = endpoint.to_owned();
+    for segment in segments {
+        url.push('/');
+        url.push_str(&utf8_percent_encode(segment, PATH_SEGMENT));
+    }
+    url
 }

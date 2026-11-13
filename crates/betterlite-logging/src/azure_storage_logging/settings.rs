@@ -40,11 +40,6 @@ pub struct AzureStorageSettings {
     pub batch: BatchSettings,
 }
 
-// an empty variable counts as unset, the way LiteLLM's `or` chains read the environment
-fn non_empty(environment: &dyn EnvironmentLookup, name: &str) -> Option<String> {
-    environment.lookup(name).filter(|value| !value.is_empty())
-}
-
 fn batch_variables(environment: &dyn EnvironmentLookup) -> BTreeMap<String, String> {
     BATCH_VARIABLES
         .into_iter()
@@ -58,27 +53,38 @@ fn batch_variables(environment: &dyn EnvironmentLookup) -> BTreeMap<String, Stri
 
 impl AzureStorageSettings {
     pub fn from_environment(environment: &dyn EnvironmentLookup) -> Result<Self, SettingsError> {
-        let account_name = non_empty(environment, ACCOUNT_NAME_VARIABLE)
+        let account_name = environment
+            .lookup(ACCOUNT_NAME_VARIABLE)
+            .filter(|value| !value.is_empty())
             .ok_or(SettingsError::MissingAccountName)?;
-        let file_system =
-            non_empty(environment, FILE_SYSTEM_VARIABLE).ok_or(SettingsError::MissingFileSystem)?;
-        let endpoint_suffix = non_empty(environment, ENDPOINT_SUFFIX_VARIABLE)
+        let file_system = environment
+            .lookup(FILE_SYSTEM_VARIABLE)
+            .filter(|value| !value.is_empty())
+            .ok_or(SettingsError::MissingFileSystem)?;
+        let endpoint_suffix = environment
+            .lookup(ENDPOINT_SUFFIX_VARIABLE)
+            .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_ENDPOINT_SUFFIX.to_owned());
         Ok(Self {
             account_name,
             file_system,
             endpoint_suffix,
-            tenant_id: non_empty(environment, TENANT_ID_VARIABLE),
-            client_id: non_empty(environment, CLIENT_ID_VARIABLE),
-            client_secret: non_empty(environment, CLIENT_SECRET_VARIABLE).map(SecretString::from),
-            account_key: non_empty(environment, ACCOUNT_KEY_VARIABLE).map(SecretString::from),
+            tenant_id: environment
+                .lookup(TENANT_ID_VARIABLE)
+                .filter(|value| !value.is_empty()),
+            client_id: environment
+                .lookup(CLIENT_ID_VARIABLE)
+                .filter(|value| !value.is_empty()),
+            client_secret: environment
+                .lookup(CLIENT_SECRET_VARIABLE)
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from),
+            account_key: environment
+                .lookup(ACCOUNT_KEY_VARIABLE)
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from),
             batch: BatchSettings::from_environment(&batch_variables(environment))?,
         })
-    }
-
-    #[must_use]
-    pub fn dfs_endpoint(&self) -> String {
-        format!("https://{}.dfs.{}", self.account_name, self.endpoint_suffix)
     }
 
     #[must_use]
@@ -87,16 +93,5 @@ impl AzureStorageSettings {
             "https://{}.blob.{}",
             self.account_name, self.endpoint_suffix
         )
-    }
-
-    #[must_use]
-    pub fn uses_account_key(&self) -> bool {
-        self.account_key.is_some()
-    }
-
-    // LiteLLM branches to the credential chain only when all three service-principal values are absent
-    #[must_use]
-    pub fn uses_credential_chain(&self) -> bool {
-        self.tenant_id.is_none() && self.client_id.is_none() && self.client_secret.is_none()
     }
 }

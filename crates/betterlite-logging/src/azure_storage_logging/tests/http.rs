@@ -15,7 +15,7 @@ async fn the_token_path_creates_appends_and_flushes_one_file() {
     let payload = payload("resp_YWJj/ZA==");
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload)
+        .upload_payload(&payload)
         .await
         .expect("the scripted storage accepts the upload");
     let calls = fixture.transport.calls();
@@ -72,7 +72,7 @@ async fn a_failed_create_stops_before_the_append() {
     let payload = payload("id-1");
     let error = fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload)
+        .upload_payload(&payload)
         .await
         .expect_err("a 500 is an upload failure");
     assert!(error.to_string().contains("500"));
@@ -95,12 +95,12 @@ async fn each_upload_writes_its_own_file() {
     );
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-1"))
+        .upload_payload(&payload("id-1"))
         .await
         .expect("first upload");
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-2"))
+        .upload_payload(&payload("id-2"))
         .await
         .expect("second upload");
     let calls = fixture.transport.calls();

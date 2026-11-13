@@ -102,11 +102,6 @@ fn operation(call: &StorageRequest) -> &'static str {
     "other"
 }
 
-fn parsed_body(call: &StorageRequest) -> Option<Value> {
-    let text = std::str::from_utf8(&call.body).ok()?;
-    serde_json::from_str(text.trim_end_matches('\n')).ok()
-}
-
 fn describe(call: &StorageRequest) -> Value {
     let op = operation(call);
     if op == "entra_token" {
@@ -114,10 +109,11 @@ fn describe(call: &StorageRequest) -> Value {
     }
     let mut described = json!({ "op": op, "url": call.url });
     if op == "append" {
-        let trailing_newline = call.body.ends_with(b"\n");
+        let text = std::str::from_utf8(&call.body).unwrap_or_default();
+        let body: Option<Value> = serde_json::from_str(text.trim_end_matches('\n')).ok();
         if let Some(fields) = described.as_object_mut() {
-            fields.insert("body".to_owned(), json!(parsed_body(call)));
-            fields.insert("trailing_newline".to_owned(), json!(trailing_newline));
+            fields.insert("body".to_owned(), json!(body));
+            fields.insert("trailing_newline".to_owned(), json!(text.ends_with('\n')));
         }
     }
     described

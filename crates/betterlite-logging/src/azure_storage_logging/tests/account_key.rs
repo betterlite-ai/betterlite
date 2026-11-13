@@ -13,7 +13,7 @@ async fn the_account_key_path_creates_the_dated_directory_and_the_file() {
     let payload = payload("id-1");
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload)
+        .upload_payload(&payload)
         .await
         .expect("the scripted account-key upload succeeds");
     let calls = fixture.transport.calls();
@@ -58,7 +58,7 @@ async fn an_existing_directory_is_not_created_again() {
     let fixture = fixture(&ACCOUNT, &[Reply::OK]);
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-1"))
+        .upload_payload(&payload("id-1"))
         .await
         .expect("upload");
     let calls = fixture.transport.calls();
@@ -74,7 +74,7 @@ async fn the_client_is_closed_and_recreated_after_its_ttl() {
     let fixture = fixture(&ACCOUNT, &[Reply::OK]);
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-1"))
+        .upload_payload(&payload("id-1"))
         .await
         .expect("first upload");
     fixture
@@ -82,7 +82,7 @@ async fn the_client_is_closed_and_recreated_after_its_ttl() {
         .advance(SERVICE_CLIENT_TTL.as_secs().saturating_sub(1));
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-2"))
+        .upload_payload(&payload("id-2"))
         .await
         .expect("second upload reuses the client");
     assert_eq!(fixture.logger.created_clients.load(Ordering::SeqCst), 1);
@@ -90,7 +90,7 @@ async fn the_client_is_closed_and_recreated_after_its_ttl() {
     fixture.clock.advance(1);
     fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-3"))
+        .upload_payload(&payload("id-3"))
         .await
         .expect("third upload rebuilds the client");
     assert_eq!(fixture.logger.created_clients.load(Ordering::SeqCst), 2);
@@ -111,7 +111,7 @@ async fn a_failed_directory_create_stops_the_upload() {
     );
     let error = fixture
         .logger
-        .async_upload_payload_to_azure_blob_storage(&payload("id-1"))
+        .upload_payload(&payload("id-1"))
         .await
         .expect_err("a 403 fails the upload");
     assert!(error.to_string().contains("403"));
