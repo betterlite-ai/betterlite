@@ -1,0 +1,12 @@
+kind: helper
+name: a2a-output-locations
+call:
+  b6163: {"function": "output", "scenarios": [
+    {"response": {"jsonrpc": "2.0", "id": 1, "result": {"parts": [{"kind": "text", "text": "direct"}], "message": {"parts": [{"kind": "text", "text": "nested"}]}, "artifact": {"parts": [{"kind": "text", "text": "artifact"}]}, "status": {"message": {"parts": [{"kind": "text", "text": "status"}]}}, "artifacts": [{"parts": [{"kind": "text", "text": "first"}]}, {"parts": [{"kind": "text", "text": "second"}]}]}}, "reply": ["a", "b", "c", "d", "e", "f"]},
+    {"response": {"result": {"parts": [{"kind": "text", "text": "direct"}], "artifacts": [{"parts": [{"kind": "text", "text": "first"}]}]}}, "request_data": {"response": "kept", "litellm_metadata": {"keep": true}}, "reply": ["x"]},
+    {"response": "text"},
+    {"response": {"jsonrpc": "2.0", "id": 2, "result": {"kind": "task"}}},
+    {"response": {"result": {}}}
+  ]}
+env: {}
+compare: {ignore: []}
