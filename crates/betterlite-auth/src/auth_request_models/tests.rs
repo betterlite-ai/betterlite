@@ -8,12 +8,12 @@ use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
 use super::catalog::{
-    CatalogError, Collaborators, DeploymentRecord, ManagedIdDecoders, ManagedIdError,
+    CatalogError, Collaborators, DeploymentRecord, EmptyCatalog, ManagedIdDecoders, ManagedIdError,
     ManagedIdField, ModelCatalog,
 };
 use super::managed::{
     cache_prediction_model_candidates, extract_models_from_managed_resource_id,
-    get_cache_prediction_deployments,
+    get_cache_prediction_deployments, resolve_model_id_with_router,
 };
 use super::model::get_model_from_request;
 use super::sources::{
@@ -22,7 +22,7 @@ use super::sources::{
 };
 use super::{
     RequestedModels, append_model_candidates, dedupe_model_candidates, format_model_candidates,
-    route_matches_any_marker, route_uses_model_routing_sources,
+    is_falsey, route_matches_any_marker, route_uses_model_routing_sources,
 };
 
 fn object(text: &str) -> JsonObject {
@@ -587,6 +587,11 @@ fn provider_endpoint_presence() {
 #[case("/azure_ai/chat/gpt-4/chat/completions", Some("gpt-4"))]
 #[case("/azure/chat/unknown/chat/completions", None)]
 #[case("/v1/chat/completions", None)]
+#[case("/openai/deployments/dep-model/chat/completions", Some("dep-model"))]
+#[case("/openai/deployments/dep-model", Some("dep-model"))]
+#[case("/openai/deployments//chat/completions", None)]
+#[case("/OpenAI/deployments/dep-model/chat/completions", None)]
+#[case("/AZURE/chat/gpt-4/chat/completions", Some("gpt-4"))]
 fn azure_openai_path_fallback(#[case] route: &str, #[case] expected: Option<&str>) {
     let catalog = FakeCatalog {
         model_names: BTreeSet::from(["gpt-4".to_owned()]),
@@ -777,6 +782,100 @@ fn bedrock_path_overrides_body() {
     assert_eq!(
         resolve("/bedrock/not-a-model-path", &body, None),
         RequestedModels::One("body-model".to_owned())
+    );
+    assert_eq!(
+        resolve("/bedrock/anthropic.claude-v2/invoke", &body, None),
+        RequestedModels::One("body-model".to_owned())
+    );
+}
+
+#[test]
+fn azure_prefix_is_stripped_before_matching() {
+    let catalog = FakeCatalog {
+        model_names: BTreeSet::from(["azure".to_owned()]),
+        ..FakeCatalog::default()
+    };
+    let body = object(r#"{"model": "body-model"}"#);
+    assert_eq!(
+        resolve("/azure/chat/completions", &body, Some(&catalog)),
+        RequestedModels::One("body-model".to_owned())
+    );
+    assert_eq!(
+        resolve("/azure_ai/chat/completions", &body, Some(&catalog)),
+        RequestedModels::One("body-model".to_owned())
+    );
+}
+
+#[rstest]
+#[case("/v1beta/models/:generateContent")]
+#[case("/v1/models/gpt-4")]
+#[case("/v1beta/models/no-colon")]
+#[case("/models/no-colon")]
+fn google_path_without_model_is_ignored(#[case] route: &str) {
+    assert_eq!(
+        resolve(route, &JsonObject::new(), None),
+        RequestedModels::None
+    );
+}
+
+#[rstest]
+#[case(Json::Null)]
+#[case(Json::Bool(false))]
+#[case(Json::Text(String::new()))]
+#[case(Json::List(Vec::new()))]
+#[case(Json::Object(JsonObject::new()))]
+#[case(serde_json::from_str("0").expect("zero parses"))]
+#[case(serde_json::from_str("0.0").expect("zero parses"))]
+fn falsey_model_appends_target_model_names(#[case] model: Json) {
+    assert!(is_falsey(&model));
+    let mut body = object(r#"{"target_model_names": "t"}"#);
+    body.insert("model".to_owned(), model);
+    assert_eq!(
+        simple_candidates("/v1/chat/completions", &body).last(),
+        Some(&"t".to_owned())
+    );
+}
+
+#[rstest]
+#[case(Json::Bool(true))]
+#[case(Json::Text("m".to_owned()))]
+#[case(serde_json::from_str("1").expect("one parses"))]
+#[case(serde_json::from_str("0.5").expect("fraction parses"))]
+fn truthy_model_skips_target_model_names(#[case] model: Json) {
+    assert!(!is_falsey(&model));
+    let mut body = object(r#"{"target_model_names": "t"}"#);
+    body.insert("model".to_owned(), model);
+    assert!(!simple_candidates("/v1/chat/completions", &body).contains(&"t".to_owned()));
+}
+
+#[test]
+fn empty_catalog_knows_nothing() {
+    let catalog = EmptyCatalog;
+    assert_eq!(catalog.resolve_model_name_from_model_id("m"), Ok(None));
+    assert_eq!(catalog.deployment("d"), Ok(None));
+    assert_eq!(catalog.model_names(), Ok(BTreeSet::new()));
+    assert_eq!(catalog.model_list(), Ok(Vec::new()));
+}
+
+#[test]
+fn model_id_resolution_keeps_original_unless_named() {
+    let catalog = FakeCatalog {
+        resolved: BTreeMap::from([
+            ("named".to_owned(), "group".to_owned()),
+            ("blank".to_owned(), String::new()),
+        ]),
+        ..FakeCatalog::default()
+    };
+    for (model_id, expected) in [("named", "group"), ("blank", "blank"), ("other", "other")] {
+        assert_eq!(
+            resolve_model_id_with_router(Some(model_id.to_owned()), Some(&catalog)),
+            Some(expected.to_owned())
+        );
+    }
+    assert_eq!(resolve_model_id_with_router(None, Some(&catalog)), None);
+    assert_eq!(
+        resolve_model_id_with_router(Some("named".to_owned()), None),
+        Some("named".to_owned())
     );
 }
 

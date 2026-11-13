@@ -56,7 +56,7 @@ impl ModelCatalog for EmptyCatalog {
     }
 
     fn model_list(&self) -> Result<Vec<DeploymentRecord>, CatalogError> {
-        Ok(Vec::new())
+        Ok(vec![])
     }
 }
 

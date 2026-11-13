@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
-use axum::http::{Request, StatusCode, header};
+use axum::http::{HeaderValue, Request, StatusCode, header};
 use axum::routing::post;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use betterlite_auth::auth_request_models::catalog::{
@@ -18,6 +18,7 @@ use betterlite_auth::auth_request_models::sources::{
 };
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
@@ -25,6 +26,7 @@ use tower::ServiceExt as _;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
 };
+use crate::auth::{headers_json, model_stage_input, query_json};
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -349,4 +351,38 @@ fn video_character_field_specific() {
 fn empty_and_nonstring_ids_yield_no_hints() {
     let body = object(r#"{"file_id": "", "batch_id": 7, "video_id": null}"#);
     assert!(candidates_with_catalog(&body, &FakeCatalog::default()).is_empty());
+}
+
+#[test]
+fn request_headers_and_query_reach_the_stage() {
+    let mut request = Request::builder()
+        .uri("/files/list?model=x%20y&purpose=batch")
+        .header("x-model", "gpt-4")
+        .body(Body::empty())
+        .expect("the request builds");
+    request.headers_mut().insert(
+        "x-binary",
+        HeaderValue::from_bytes(&[0xff, 0xfe]).expect("opaque bytes are a valid header value"),
+    );
+    let headers = headers_json(request.headers());
+    assert_eq!(headers.len(), 1);
+    assert_eq!(
+        headers.get("x-model"),
+        Some(&Json::Text("gpt-4".to_owned()))
+    );
+    let query = query_json(request.uri().query());
+    assert_eq!(query.len(), 2);
+    assert_eq!(query.get("model"), Some(&Json::Text("x y".to_owned())));
+    assert_eq!(query.get("purpose"), Some(&Json::Text("batch".to_owned())));
+    assert!(query_json(None).is_empty());
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let resolver = resolver_with(FakeCatalog::default());
+    let stage = model_stage_input(&request, master_context(&master_key), &resolver);
+    assert_eq!(stage.route, "/files/list");
+    assert_eq!(stage.headers, Some(headers));
+    assert_eq!(stage.query, Some(query));
+    assert!(stage.body.is_empty());
+    assert!(stage.path_params.is_empty());
+    assert_eq!(stage.endpoint_marker, None);
+    assert_eq!(stage.team_id, None);
 }
