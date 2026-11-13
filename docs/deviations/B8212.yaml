@@ -3,3 +3,6 @@ deviations:
   - what: The initializer returns QohashArgs and registers nothing.
     why: B3682 owns the registry and the registration, as with B3681.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/__init__.py#L26-L36
+  - what: When the generic API fails open and passes the call through, the returned inputs carry texts, images, tools and structured_messages but not tool_calls or model.
+    why: The generic API in betterlite returns one response type for a scan answer and for a fail-open pass-through, so the Nexus guardrail cannot tell them apart and builds its inputs the way LiteLLM does after a scan answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py#L327-L330

@@ -134,7 +134,7 @@ impl GuardrailContract for QostodianNexus {
         let request = self.request_for(&inputs, request_data, input_type, logging_obj.as_deref());
         async move {
             match self.generic.apply_guardrail(request).await {
-                Ok(response) => Ok(inputs_from_response(&inputs, response)),
+                Ok(response) => Ok(inputs_from_response(response)),
                 Err(GenericGuardrailAPIError::Blocked { reason }) => Err(blocked_failure(&reason)),
                 Err(error) => Err(GuardrailFailure::Other(error.to_string())),
             }

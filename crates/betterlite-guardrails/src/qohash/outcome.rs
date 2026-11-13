@@ -3,24 +3,12 @@ use crate::generic_guardrail_contracts::GenericGuardrailAPIResponse;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
-pub(super) fn inputs_from_response(
-    inputs: &GuardrailApiInputs,
-    response: GenericGuardrailAPIResponse,
-) -> GuardrailApiInputs {
-    let texts = match response.texts {
-        Some(values) if !values.is_empty() => values,
-        _ => inputs.texts.clone().unwrap_or_default(),
-    };
-    let images = response
-        .images
-        .filter(|values| !values.is_empty())
-        .or_else(|| inputs.images.clone().filter(|values| !values.is_empty()));
-    let tools = response
-        .tools
-        .filter(|values| !values.is_empty())
-        .or_else(|| inputs.tools.clone().filter(|values| !values.is_empty()));
+pub(super) fn inputs_from_response(response: GenericGuardrailAPIResponse) -> GuardrailApiInputs {
+    // the generic API already puts the caller's rows back where the scan returned none
+    let images = response.images.filter(|values| !values.is_empty());
+    let tools = response.tools.filter(|values| !values.is_empty());
     GuardrailApiInputs {
-        texts: Some(texts),
+        texts: Some(response.texts.unwrap_or_default()),
         images,
         tools,
         tool_calls: None,

@@ -10,6 +10,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::routing::post;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rstest::rstest;
@@ -20,8 +21,8 @@ use tokio::task::JoinSet;
 
 use super::{
     API_BASE_VARIABLE, DEFAULT_API_BASE, GUARDRAIL_NAME, GUARDRAIL_PATH, LITELLM_VERSION,
-    NEXUS_HEADERS, QostodianNexus, QostodianNexusError, QostodianNexusParams,
-    SUPPORTED_EVENT_HOOKS,
+    NEXUS_HEADERS, QostodianNexus, QostodianNexusConfigModel, QostodianNexusError,
+    QostodianNexusParams, SUPPORTED_EVENT_HOOKS,
 };
 use crate::generic_guardrail_api::DEFAULT_TIMEOUT;
 use crate::generic_guardrail_contracts::{
@@ -295,6 +296,10 @@ fn nexus_supports_pre_call_during_call_and_post_call() {
 fn nexus_config_model_is_the_generic_model_with_the_nexus_api_base() {
     let nexus = build(nexus_params(), &[]);
     let model = nexus.get_config_model().unwrap();
+    assert_eq!(
+        QostodianNexusConfigModel::ui_friendly_name(),
+        "Qostodian Nexus"
+    );
     assert_eq!(
         serde_json::to_value(model).unwrap(),
         serde_json::json!({"optional_params": null, "api_base": null})
@@ -596,4 +601,48 @@ async fn apply_guardrail_reports_a_scan_error_as_an_other_failure() {
         .await
         .expect_err("fails closed");
     assert!(matches!(failure, GuardrailFailure::Other(_)));
+}
+
+#[tokio::test]
+async fn apply_guardrail_drops_empty_images_and_tools_like_litellm() {
+    let (base, _captured, _server) = start_server(200, r#"{"action": "NONE"}"#).await;
+    let nexus = build_with_base(&base);
+    let mut inputs = text_inputs(&["hello"]);
+    inputs.images = Some(Vec::new());
+    inputs.tools = Some(Vec::new());
+    let mut request_data = BTreeMap::new();
+    let result = nexus
+        .apply_guardrail(inputs, &mut request_data, GuardrailInputType::Request, None)
+        .await
+        .expect("allowed");
+    assert_eq!(result.images, None);
+    assert_eq!(result.tools, None);
+    assert_eq!(result.texts, Some(vec!["hello".to_owned()]));
+}
+
+#[tokio::test]
+async fn apply_guardrail_uses_the_default_message_for_an_empty_block_reason() {
+    let (base, _captured, _server) =
+        start_server(200, r#"{"action": "BLOCKED", "blocked_reason": ""}"#).await;
+    let nexus = build_with_base(&base);
+    let mut request_data = BTreeMap::new();
+    let failure = nexus
+        .apply_guardrail(
+            text_inputs(&["secret"]),
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect_err("blocked");
+    assert_eq!(
+        failure,
+        GuardrailFailure::GuardrailRaised {
+            guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
+            message: "Content violates policy".to_owned(),
+            wrap_default_message: false,
+            status_code: 400,
+            blocked_content: true,
+        }
+    );
 }
