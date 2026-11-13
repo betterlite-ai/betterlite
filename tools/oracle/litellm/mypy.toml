@@ -1,6 +1,9 @@
 [tool.mypy]
 # Kept apart from pyproject.toml, a key of the oracle answer cache, so a mypy change keeps the cached LiteLLM answers
 python_version = "3.11"
+# probes has no __init__.py, since pyright reads one as a package and rejects every absolute import inside it
+mypy_path = "tools/oracle/litellm:tools/oracle/helpers:tools/oracle/fixtures:tools/oracle/sdk_http:crates/betterlite-python/python:crates/betterlite-python/tests"
+explicit_package_bases = true
 strict = true
 disallow_any_explicit = true
 disallow_any_expr = true

@@ -1,0 +1,9 @@
+kind: helper
+name: messages-native-prepare-supported-fields
+call:
+  messages_native_prepare:
+    function: supported_fields
+    providers: [null, anthropic, bedrock]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,27 @@
+kind: helper
+name: voxtral-transcription-diarize-and-hidden-segments
+call:
+  voxtral_transcription:
+    probes:
+      - optional_params: {diarize: true, language: es}
+        non_default_params: {timestamp_granularities: [word]}
+        headers: {}
+        api_key: null
+        environment_api_key: environment-key
+      - optional_params: {diarize: false, count: 3}
+        non_default_params: {}
+        headers: {}
+        api_key: null
+        environment_api_key: null
+      - optional_params: {temperature: 0.5}
+        non_default_params: {model: other, language: fr, response_format: json}
+        headers: {}
+        api_key: explicit-key
+        environment_api_key: null
+      - optional_params: {language: en, response_format: verbose_json}
+        non_default_params: {model: other, diarize: true, response_format: json}
+        headers: {}
+        api_key: null
+        environment_api_key: environment-key
+env: {}
+compare: {ignore: []}

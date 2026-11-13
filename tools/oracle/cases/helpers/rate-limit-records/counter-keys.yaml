@@ -1,0 +1,10 @@
+kind: helper
+name: rate-limit-records-counter-keys
+call:
+  b3031:
+    function: counter_keys
+    key: team
+    value: abc
+    rate_limit_type: requests
+env: {}
+compare: {ignore: []}

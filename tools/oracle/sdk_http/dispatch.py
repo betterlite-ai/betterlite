@@ -4,6 +4,10 @@ import sys
 from pydantic import BaseModel, ConfigDict
 
 from anthropic_beta_config import BetaConfigCall, run_beta_config
+from messages_header_stream import (
+    MessagesHeaderStreamCall,
+    run_messages_header_stream,
+)
 from openai_chat import ChatCall, run_chat
 from vector_query_embedding import QueryEmbeddingCall, run_query
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
@@ -40,6 +44,12 @@ class AnthropicBetaConfigCall(BaseModel):
     anthropic_beta_config: BetaConfigCall
 
 
+class MessagesHeaderStreamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    messages_header_stream: MessagesHeaderStreamCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,6 +58,7 @@ class Request(BaseModel):
         | VectorStoreEmbeddingExecutorCall
         | VectorQueryEmbeddingCall
         | AnthropicBetaConfigCall
+        | MessagesHeaderStreamRequest
     )
     api_base: str
 
@@ -65,6 +76,10 @@ def main() -> None:
             )
         elif isinstance(request.call, AnthropicBetaConfigCall):
             output = run_beta_config(request.call.anthropic_beta_config, request.api_base)
+        elif isinstance(request.call, MessagesHeaderStreamRequest):
+            output = run_messages_header_stream(
+                request.call.messages_header_stream, request.api_base
+            )
         elif isinstance(request.call, VectorQueryEmbeddingCall):
             output = run_query(
                 request.call.vector_query_embedding, request.api_base
