@@ -1,0 +1,30 @@
+kind: helper
+name: database-refresh-loop-expiry-fallback-600
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:p@h/d"
+        now: "2024-01-01T00:00:00"
+      - function: seconds_until_refresh
+        auth: rds
+        url: null
+        now: "2024-01-01T00:00:00"
+      - function: seconds_until_refresh
+        auth: azure
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h/d"
+        now: "2024-01-01T00:00:00"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:p@h/d"
+        now: "2024-01-01T00:00:00"
+      - function: parse_expiration
+        auth: rds
+        token: "garbage"
+      - function: parse_expiration
+        auth: azure
+        token: "garbage"
+env: {}
+compare: {ignore: []}

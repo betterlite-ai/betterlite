@@ -1,0 +1,19 @@
+kind: helper
+name: openai-response-events-last-terminal-wins
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    last_terminal_wins:
+      probes:
+        - chunks:
+            - 'data: {"type":"response.completed","response":{"id":"first","created_at":1,"output":[]}}'
+            - 'data: {"type":"response.incomplete","response":{"id":"second","created_at":2,"output":[]}}'
+            - garbage
+            - 'data:{"type":"response.failed","response":{"id":"third","created_at":3,"output":[]}}'
+        - chunks:
+            - '{"type":"response.completed","response":{"id":"bare","created_at":4,"output":[]}}'
+            - 'data:  {"type":"response.failed","response":{"id":"spaced","created_at":5,"output":[]}}'
+        - chunks:
+            - 'data: {"type":"response.completed","response":{"id":"broken","created_at":6,"output":"bad"}}'
+            - 'data: {"type":"response.completed","response":{"id":"latest","created_at":7,"output":[]}}'

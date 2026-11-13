@@ -1,0 +1,23 @@
+kind: helper
+name: database-refresh-loop-disabled-auth-expiry
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: parse_expiration
+        auth: disabled
+        token: "t?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900"
+      - function: seconds_until_refresh
+        auth: disabled
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:00:00"
+      - function: is_token_expired
+        auth: disabled
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:00:00"
+      - function: token_refresh_not_needed
+        auth: disabled
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:00:00"
+env: {}
+compare: {ignore: []}
