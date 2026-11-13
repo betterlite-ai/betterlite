@@ -1,10 +1,12 @@
 mod tests;
 
-use std::env::{self, VarError};
+use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use camino::Utf8PathBuf;
+use clap::Args;
 use determinator::Determinator;
 use determinator::rules::DeterminatorRules;
 use guppy::CargoMetadata;
@@ -16,30 +18,89 @@ use crate::git::git;
 use crate::process::check_command;
 
 pub(crate) const RULES: &str = include_str!("affected/rules.toml");
+// .github/scripts/test-seconds.sh writes it from a main run, and a package it lacks counts as one second
+const SECONDS: &str = ".config/test-seconds.toml";
 
-pub(crate) fn affected(root: &Path, only_edited: bool) -> Result<Vec<String>, GateError> {
-    match env::var("GATE_ALL_TESTS") {
-        Ok(all) if !all.is_empty() => return Ok(vec!["--workspace".to_owned()]),
-        Ok(_) | Err(VarError::NotPresent) => {}
-        Err(VarError::NotUnicode(_)) => return Err(GateError::NotUnicode("GATE_ALL_TESTS")),
-    }
-    let base = resolve_base(root)?;
-    packages(root, &base, only_edited)
+#[derive(Clone, Copy, Args)]
+pub(crate) struct Shard {
+    #[arg(
+        long = "shard",
+        requires = "count",
+        value_name = "I",
+        help = "Print only shard I: the packages split over the --shards count by the test seconds in .config/test-seconds.toml, largest first onto the lightest shard"
+    )]
+    pub(crate) index: Option<u16>,
+    #[arg(
+        long = "shards",
+        requires = "index",
+        value_name = "N",
+        help = "How many shards --shard splits the packages over"
+    )]
+    pub(crate) count: Option<u16>,
 }
 
-fn packages(root: &Path, base: &str, only_edited: bool) -> Result<Vec<String>, GateError> {
+pub(crate) fn affected(
+    root: &Path,
+    only_edited: bool,
+    shard: Shard,
+) -> Result<Vec<String>, GateError> {
+    let split = shard.index.zip(shard.count);
+    if let Some((index, count)) = split.filter(|&(index, count)| index == 0 || index > count) {
+        return Err(GateError::Shard { index, count });
+    }
+    let all = env::var_os("GATE_ALL_TESTS").is_some_and(|value| !value.is_empty());
+    if all && split.is_none() {
+        return Ok(vec!["--workspace".to_owned()]);
+    }
+    let graph = package_graph(root)?;
+    let workspace = graph.workspace();
+    let names: Vec<String> = if all {
+        workspace
+            .iter()
+            .map(|package| package.name().to_owned())
+            .collect()
+    } else {
+        packages(root, &resolve_base(root)?, &graph, only_edited)?
+    };
+    let Some((index, count)) = split else {
+        return Ok(arguments(
+            workspace.iter().len(),
+            names.iter().map(String::as_str).collect(),
+        ));
+    };
+    let path = root.join(SECONDS);
+    let text = fs::read_to_string(&path).map_err(|source| GateError::Read {
+        path: path.clone(),
+        source,
+    })?;
+    let seconds: BTreeMap<String, u64> =
+        toml::from_str(&text).map_err(|source| GateError::Toml {
+            path,
+            source: Box::new(source),
+        })?;
+    Ok(arguments(
+        workspace.iter().len(),
+        share(&names, &seconds, usize::from(index), usize::from(count)),
+    ))
+}
+
+fn packages(
+    root: &Path,
+    base: &str,
+    new: &PackageGraph,
+    only_edited: bool,
+) -> Result<Vec<String>, GateError> {
     let changed = changed_paths(root, base)?;
     let snapshot = tempfile::tempdir().map_err(|source| GateError::Write {
         path: env::temp_dir(),
         source,
     })?;
     let old = package_graph(&unpack_base(root, base, snapshot.path())?)?;
-    let new = package_graph(root)?;
     let rules = DeterminatorRules::parse(RULES).map_err(|source| GateError::Affected {
         what: "the affected-package rules".to_owned(),
         source: Box::new(source),
     })?;
-    let mut determinator = Determinator::new(&old, &new);
+    let mut determinator = Determinator::new(&old, new);
     determinator
         .set_rules(&rules)
         .map_err(|source| GateError::Affected {
@@ -55,12 +116,42 @@ fn packages(root: &Path, base: &str, only_edited: bool) -> Result<Vec<String>, G
     } else {
         computed.affected_set
     };
-    let names: Vec<&str> = selected
+    Ok(selected
         .packages(DependencyDirection::Forward)
         .filter(PackageMetadata::in_workspace)
-        .map(|package| package.name())
+        .map(|package| package.name().to_owned())
+        .collect())
+}
+
+// each shard computes the split on its own, so ties go by name
+pub(crate) fn share<'names>(
+    names: &'names [String],
+    seconds: &BTreeMap<String, u64>,
+    index: usize,
+    count: usize,
+) -> Vec<&'names str> {
+    let mut weighted: Vec<(u64, &str)> = names
+        .iter()
+        .map(|name| {
+            (
+                seconds.get(name).copied().unwrap_or(1).max(1),
+                name.as_str(),
+            )
+        })
         .collect();
-    Ok(arguments(new.workspace().iter().len(), names))
+    weighted.sort_unstable_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(right.1)));
+    let mut loads = vec![0_u64; count];
+    let mut mine = Vec::new();
+    for (weight, name) in weighted {
+        let Some((bin, load)) = loads.iter_mut().enumerate().min_by_key(|entry| *entry.1) else {
+            break;
+        };
+        *load = load.saturating_add(weight);
+        if bin.saturating_add(1) == index {
+            mine.push(name);
+        }
+    }
+    mine
 }
 
 pub(crate) fn arguments(members: usize, mut names: Vec<&str>) -> Vec<String> {
