@@ -187,10 +187,8 @@ fn map_modalities(value: &Json, optional: &mut Object) -> Result<(), GeminiOptio
 
 fn map_tier(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
     let tier: String = decode(value, "service_tier")?;
-    optional.insert(
-        "service_tier".to_owned(),
-        Json::Text(map_service_tier(&tier)),
-    );
+    let mapped = Json::Text(map_service_tier(&tier));
+    optional.insert("service_tier".to_owned(), mapped);
     Ok(())
 }
 
