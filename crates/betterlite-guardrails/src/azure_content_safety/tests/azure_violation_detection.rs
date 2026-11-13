@@ -121,6 +121,14 @@ async fn copies_a_throttling_status_for_the_post_call_hook() {
 }
 
 #[tokio::test]
+async fn maps_a_status_outside_the_error_range_to_server_error() {
+    let server = mock(302, "{}").await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
 async fn surfaces_a_transport_failure() {
     let hook = legacy("http://127.0.0.1:1", None);
     let error = hook.test_violation("hello", None).await.unwrap_err();
