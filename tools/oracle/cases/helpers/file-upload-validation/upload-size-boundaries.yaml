@@ -1,0 +1,28 @@
+kind: helper
+name: file-upload-validation-upload-size-boundaries
+call:
+  file_upload_validation:
+    calls:
+      - function: upload_size
+        source: {kind: bytes, data: "eA==", repeat: 1048576, pad: 0}
+        max_file_size_mb: 1
+      - function: upload_size
+        source: {kind: bytes, data: "eA==", repeat: 1048577, pad: 0}
+        max_file_size_mb: 1
+      - function: upload_size
+        source: {kind: seekable, data: "eA==", repeat: 1048577, pad: 0, position: 7}
+        max_file_size_mb: 1
+      - function: upload_size
+        source: {kind: seekable, data: "eA==", repeat: 512, pad: 0, position: 7}
+        max_file_size_mb: 1
+      - function: upload_size
+        source: {kind: bytes, data: "eA==", repeat: 10, pad: 0}
+        max_file_size_mb: null
+      - function: upload_size
+        source: {kind: bytes, data: "eA==", repeat: 10, pad: 0}
+        max_file_size_mb: 0
+      - function: upload_size
+        source: {kind: bytes, data: "eA==", repeat: 10, pad: 0}
+        max_file_size_mb: -1
+env: {}
+compare: {ignore: []}

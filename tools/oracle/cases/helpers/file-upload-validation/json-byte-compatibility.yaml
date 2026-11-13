@@ -1,0 +1,62 @@
+kind: helper
+name: file-upload-validation-json-byte-compatibility
+call:
+  file_upload_validation:
+    calls:
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "77u/eyJjdXN0b21faWQiOjEsIm1ldGhvZCI6Im0iLCJ1cmwiOiJ1IiwiYm9keSI6e319", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "//57ACIAYwB1AHMAdABvAG0AXwBpAGQAIgA6ADEALAAiAG0AZQB0AGgAbwBkACIAOgAiAG0AIgAsACIAdQByAGwAIgA6ACIAdQAiACwAIgBiAG8AZAB5ACIAOgB7AH0AfQA=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "AAD+/wAAAHsAAAAiAAAAYwAAAHUAAABzAAAAdAAAAG8AAABtAAAAXwAAAGkAAABkAAAAIgAAADoAAAAxAAAALAAAACIAAABtAAAAZQAAAHQAAABoAAAAbwAAAGQAAAAiAAAAOgAAACIAAABtAAAAIgAAACwAAAAiAAAAdQAAAHIAAABsAAAAIgAAADoAAAAiAAAAdQAAACIAAAAsAAAAIgAAAGIAAABvAAAAZAAAAHkAAAAiAAAAOgAAAHsAAAB9AAAAfQ==", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "ewAiAGMAdQBzAHQAbwBtAF8AaQBkACIAOgAxACwAIgBtAGUAdABoAG8AZAAiADoAIgBtACIALAAiAHUAcgBsACIAOgAiAHUAIgAsACIAYgBvAGQAeQAiADoAewB9AH0A", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "eyJjdXN0b21faWQiOiJcdWQ4MDAiLCJtZXRob2QiOiJtIiwidXJsIjoidSIsImJvZHkiOnt9fQ==", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "eyJjdXN0b21faWQiOjEsImN1c3RvbV9pZCI6MiwibWV0aG9kIjpudWxsLCJ1cmwiOm51bGwsImJvZHkiOm51bGx9", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "eyJjdXN0b21faWQiOk5hTiwibWV0aG9kIjotSW5maW5pdHksInVybCI6SW5maW5pdHksImJvZHkiOnt9fQ==", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "Ilx1RDgzRFx1REUwMCI=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "AAD+/wARAAA=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "IsCAIg==", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "Iu2ggCI=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+env: {}
+compare: {ignore: []}

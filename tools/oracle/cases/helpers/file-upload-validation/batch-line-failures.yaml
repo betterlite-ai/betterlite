@@ -1,0 +1,47 @@
+kind: helper
+name: file-upload-validation-batch-line-failures
+call:
+  file_upload_validation:
+    calls:
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "CiANCg==", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "Cns=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "Cv8=", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "Cltd", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: bytes, data: "ewp7Cnt9", repeat: 1, pad: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: seekable, data: "CnsK", repeat: 1, pad: 0, position: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+      - function: batch
+        filename: "x.jsonl"
+        source: {kind: seekable, data: "eyJjdXN0b21faWQiOjEsIm1ldGhvZCI6Im0iLCJ1cmwiOiJ1IiwiYm9keSI6e319Cg==", repeat: 1, pad: 0, position: 0}
+        max_batch_file_size_mb: null
+        line_shape: openai
+env: {}
+compare: {ignore: []}

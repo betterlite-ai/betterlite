@@ -1,0 +1,17 @@
+kind: helper
+name: file-upload-validation-unsafe-filename-components
+call:
+  file_upload_validation:
+    calls:
+      - {function: unsafe_filename, filename: null}
+      - {function: unsafe_filename, filename: ""}
+      - {function: unsafe_filename, filename: ".env"}
+      - {function: unsafe_filename, filename: "report..pdf"}
+      - {function: unsafe_filename, filename: "report.v2.pdf"}
+      - {function: unsafe_filename, filename: "dir/file.pdf"}
+      - {function: unsafe_filename, filename: "../file"}
+      - {function: unsafe_filename, filename: "dir/../file"}
+      - {function: unsafe_filename, filename: "dir\\..\\file"}
+      - {function: unsafe_filename, filename: "a\0b"}
+env: {}
+compare: {ignore: []}
