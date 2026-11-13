@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -467,6 +468,34 @@ pub(crate) async fn cancel_after_started<Operation, Output, Started>(
         }
         Either::Right(((), _operation)) => {}
     }
+}
+
+pub(crate) fn set_reader_unavailable<Client>(routing: &RoutingDatabase<Client>, unavailable: bool) {
+    routing
+        .availability
+        .reader_unavailable
+        .store(unavailable, Ordering::SeqCst);
+}
+
+pub(crate) fn set_writer_unavailable<Client>(routing: &RoutingDatabase<Client>, unavailable: bool) {
+    routing
+        .availability
+        .writer_unavailable
+        .store(unavailable, Ordering::SeqCst);
+}
+
+pub(crate) fn reader_unavailable<Client>(routing: &RoutingDatabase<Client>) -> bool {
+    routing
+        .availability
+        .reader_unavailable
+        .load(Ordering::SeqCst)
+}
+
+pub(crate) fn writer_unavailable<Client>(routing: &RoutingDatabase<Client>) -> bool {
+    routing
+        .availability
+        .writer_unavailable
+        .load(Ordering::SeqCst)
 }
 
 pub(crate) fn secret(value: &str) -> SecretString {
