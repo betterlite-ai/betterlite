@@ -496,6 +496,7 @@ const VALID_AND_INVALID_PRICES: &str =
 #[rstest]
 #[case::recraft("recraft")]
 #[case::azure_ai("azure_ai")]
+#[case::fal_ai("fal_ai")]
 #[case::vertex("vertex_ai")]
 #[case::openai("openai")]
 fn only_valid_deployment_prices_reach_the_policy(#[case] provider: &str) {
