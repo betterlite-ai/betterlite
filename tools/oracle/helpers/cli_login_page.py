@@ -1,7 +1,8 @@
-import os
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypedDict
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+from litellm.proxy.common_utils.html_forms import cli_sso_success, native_client_consent
+from litellm.proxy.management_endpoints.ui_sso import _render_cli_sso_verification_page  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L624
+from pydantic import JsonValue
 
 
 class Team(TypedDict):
@@ -65,8 +66,8 @@ def optional_element(html: str, opening: str, closing: str) -> str | None:
     return normalized(element(html, opening, closing))
 
 
-def verification_facts(html: str) -> Json:
-    facts: dict[str, Json] = {
+def verification_facts(html: str) -> JsonValue:
+    facts: dict[str, JsonValue] = {
         "page": "verification",
         "referrer": None,
         "script": None,
@@ -83,21 +84,19 @@ def verification_facts(html: str) -> Json:
     return facts
 
 
-def consent_facts(html: str) -> Json:
+def consent_facts(html: str) -> JsonValue:
     lifetime = int(between(html, "expires within ", " hours"))
-    team_hidden: Json = None
+    team_hidden: JsonValue = None
     if '<input type="hidden" name="team_id"' in html:
-        team_hidden = normalized(
-            element(html, '<input type="hidden" name="team_id"', ">")
-        )
-    logout: Json = "lite logout" if "<code>lite logout</code>" in html else None
+        team_hidden = normalized(element(html, '<input type="hidden" name="team_id"', ">"))
+    logout: JsonValue = "lite logout" if "<code>lite logout</code>" in html else None
     denied = normalized(
         element(html, '<button type="submit" name="decision" value="deny"', "</button>")
     )
     approved = normalized(
         element(html, '<button type="submit" name="decision" value="approve"', "</button>")
     )
-    facts: dict[str, Json] = {
+    facts: dict[str, JsonValue] = {
         "page": "consent",
         "referrer": normalized(element(html, '<meta name="referrer"', ">")),
         "script": None,
@@ -116,12 +115,12 @@ def consent_facts(html: str) -> Json:
     return facts
 
 
-def completion_facts(html: str) -> Json:
+def completion_facts(html: str) -> JsonValue:
     script_block = between(html, "<script>", "</script>")
-    script: list[Json] = [
+    script: list[JsonValue] = [
         line.strip() for line in script_block.splitlines() if line.strip()
     ]
-    facts: dict[str, Json] = {
+    facts: dict[str, JsonValue] = {
         "page": "completion",
         "referrer": None,
         "script": script,
@@ -137,15 +136,13 @@ def completion_facts(html: str) -> Json:
     return facts
 
 
-def render_page(render: Render) -> Json:
+def render_page(render: Render) -> JsonValue:
     if render["page"] == "verification":
-        from litellm.proxy.management_endpoints import ui_sso  # noqa: PLC0415  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/native_client_consent.py#L5
-        page = ui_sso._render_cli_sso_verification_page(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L624
+        page = _render_cli_sso_verification_page(
             render["verify_url"], render["browser_complete_token"], render["prefill_user_code"]
         )
         return verification_facts(page)
     if render["page"] == "consent":
-        from litellm.proxy.common_utils.html_forms import native_client_consent  # noqa: PLC0415  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/native_client_consent.py#L5
         teams = [(team["id"], team["label"]) for team in render["teams"]]
         page = native_client_consent.render_native_client_consent_page(
             client_origin=render["client_origin"],
@@ -155,12 +152,11 @@ def render_page(render: Render) -> Json:
             complete_url=render["complete_url"],
         )
         return consent_facts(page)
-    from litellm.proxy.common_utils.html_forms import cli_sso_success  # noqa: PLC0415  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/native_client_consent.py#L5
     return completion_facts(cli_sso_success.render_cli_sso_success_page())
 
 
-def run(input_value: Input) -> Json:
-    # the lifetime is a constant read at import, so the environment goes in first
-    for name, value in input_value["environment"].items():
-        os.environ[name] = value
-    return [render_page(render) for render in input_value["renders"]]
+def run(input_value: Input) -> JsonValue:
+    return [
+        render_page(render)
+        for render in input_value["renders"]
+    ]

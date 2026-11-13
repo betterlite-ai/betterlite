@@ -23,5 +23,6 @@ call:
             label: "Three <Four> 'five'"
         flow_handle: "handle'q"
         complete_url: "https://proxy.example.com/authorize/complete?x=1&y=2&z=\"3\""
-env: {}
+env:
+  CLI_JWT_EXPIRATION_HOURS: "12"
 compare: {ignore: []}

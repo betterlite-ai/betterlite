@@ -18,6 +18,7 @@ call:
         flow_handle: "f&<>"
         complete_url: "https://proxy.example.com/complete?a&b"
       - page: completion
-env: {}
+env:
+  CLI_JWT_EXPIRATION_HOURS: "8"
 compare:
   ignore: []
