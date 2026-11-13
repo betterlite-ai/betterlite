@@ -142,7 +142,17 @@ fn transcription_request_skips_every_unset_supported_param() {
     json!({"text": "", "transcript": "two"})
 )]
 #[case::an_empty_body_gives_the_empty_string(json!({}), "", json!({}))]
-fn decode_transcription_reply_reads_the_text(
+#[case::seconds_wins(json!({"seconds": 3, "duration": 9}), "", json!({"seconds": 3, "duration": 3}))]
+#[case::a_zero_second_is_kept(json!({"seconds": 0}), "", json!({"seconds": 0, "duration": 0}))]
+#[case::a_null_second_falls_back(
+    json!({"seconds": null, "duration": 9}),
+    "",
+    json!({"seconds": null, "duration": 9})
+)]
+#[case::duration_alone_is_written_back(json!({"duration": 9}), "", json!({"duration": 9}))]
+#[case::a_null_duration_stays_null(json!({"duration": null}), "", json!({"duration": null}))]
+#[case::no_duration_key_adds_none(json!({"text": "x"}), "x", json!({"text": "x"}))]
+fn decode_transcription_reply_reads_the_text_and_normalizes_the_duration(
     #[case] source: serde_json::Value,
     #[case] text: &str,
     #[case] hidden: serde_json::Value,
@@ -151,26 +161,6 @@ fn decode_transcription_reply_reads_the_text(
     let transcription =
         decode_transcription_reply(&body, 200, &Headers::new()).expect("a transcription");
     assert_eq!(transcription.response.text.as_deref(), Some(text));
-    assert_eq!(
-        serde_json::to_value(&transcription.hidden).expect("hidden"),
-        hidden
-    );
-}
-
-#[rstest]
-#[case::seconds_wins(json!({"seconds": 3, "duration": 9}), json!({"seconds": 3, "duration": 3}))]
-#[case::a_zero_second_is_kept(json!({"seconds": 0}), json!({"seconds": 0, "duration": 0}))]
-#[case::a_null_second_falls_back(json!({"seconds": null, "duration": 9}), json!({"seconds": null, "duration": 9}))]
-#[case::duration_alone_is_written_back(json!({"duration": 9}), json!({"duration": 9}))]
-#[case::a_null_duration_stays_null(json!({"duration": null}), json!({"duration": null}))]
-#[case::no_duration_key_adds_none(json!({"text": "x"}), json!({"text": "x"}))]
-fn decode_transcription_reply_normalizes_the_duration(
-    #[case] source: serde_json::Value,
-    #[case] hidden: serde_json::Value,
-) {
-    let body = serde_json::to_vec(&source).expect("bytes");
-    let transcription =
-        decode_transcription_reply(&body, 200, &Headers::new()).expect("a transcription");
     assert_eq!(
         serde_json::to_value(&transcription.hidden).expect("hidden"),
         hidden

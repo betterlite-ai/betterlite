@@ -60,7 +60,7 @@ pub(crate) enum Input {
     },
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HeaderProvider {
     OvhcloudEmbedding,
@@ -118,6 +118,15 @@ pub(crate) struct TranscriptionCall {
     filename: String,
     content: String,
     env: BTreeMap<String, String>,
+}
+
+impl HeaderProvider {
+    const fn env_name(self) -> &'static str {
+        match self {
+            Self::ScalewayAudio => "SCW_SECRET_KEY",
+            Self::OvhcloudEmbedding | Self::OvhcloudAudio => "OVHCLOUD_API_KEY",
+        }
+    }
 }
 
 impl Helper for Op {
@@ -189,11 +198,10 @@ fn env_key(env: &BTreeMap<String, String>, name: &str) -> Option<SecretString> {
         .map(SecretString::from)
 }
 
-
 mod wire;
 use self::wire::{
-    chat_request_value, chunk_value, embedding_reply_value, embedding_request_value,
-    header_value, transcription_reply_value, transcription_request_value,
+    chat_request_value, chunk_value, embedding_reply_value, embedding_request_value, header_value,
+    transcription_reply_value, transcription_request_value,
 };
 pub(super) fn processed(call: &TranscriptionCall) -> Result<ProcessedAudioFile, Value> {
     let file = AudioFile::Tuple(AudioTuple {
@@ -225,4 +233,3 @@ pub(super) fn fields_pairs(fields: &[(String, Value)]) -> Value {
             .collect(),
     )
 }
-

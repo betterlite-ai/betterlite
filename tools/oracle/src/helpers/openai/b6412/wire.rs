@@ -1,3 +1,4 @@
+use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::openai_base_config::Headers;
@@ -28,7 +29,7 @@ use super::{
 
 pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
     let messages: &[ChatMessage] = &[];
-    let environment = BTreeMap::<String, String>::new();
+    let environment = std::collections::BTreeMap::<String, String>::new();
     let transform = ChatTransform {
         model: &call.model,
         messages,
@@ -52,28 +53,19 @@ pub(super) fn chunk_value(chunk: &JsonObject) -> Value {
 
 pub(super) fn header_value(provider: HeaderProvider, call: &HeaderCall) -> Value {
     let explicit = call.api_key.clone().map(SecretString::from);
-    let from_env = match provider {
-        HeaderProvider::ScalewayAudio => env_key(&call.env, "SCW_SECRET_KEY"),
-        HeaderProvider::OvhcloudEmbedding | HeaderProvider::OvhcloudAudio => {
-            env_key(&call.env, "OVHCLOUD_API_KEY")
-        }
-    };
-    match provider {
-        HeaderProvider::OvhcloudEmbedding => json!({
-            "ok": true,
-            "headers": embedding_headers(&call.headers, explicit.as_ref(), from_env.as_ref()),
-        }),
-        HeaderProvider::OvhcloudAudio => json!({
-            "ok": true,
-            "headers": ovhcloud_audio_headers(&call.headers, explicit.as_ref(), from_env.as_ref()),
-        }),
-        HeaderProvider::ScalewayAudio => {
-            match scaleway_headers(&call.headers, explicit.as_ref(), from_env.as_ref()) {
-                Ok(headers) => json!({"ok": true, "headers": headers}),
-                Err(error) => json!({"ok": false, "status": error.status_code}),
-            }
-        }
+    let from_env = env_key(&call.env, provider.env_name());
+    if provider == HeaderProvider::ScalewayAudio {
+        return match scaleway_headers(&call.headers, explicit.as_ref(), from_env.as_ref()) {
+            Ok(headers) => json!({"ok": true, "headers": headers}),
+            Err(error) => json!({"ok": false, "status": error.status_code}),
+        };
     }
+    let headers = if provider == HeaderProvider::OvhcloudEmbedding {
+        embedding_headers(&call.headers, explicit.as_ref(), from_env.as_ref())
+    } else {
+        ovhcloud_audio_headers(&call.headers, explicit.as_ref(), from_env.as_ref())
+    };
+    json!({"ok": true, "headers": headers})
 }
 
 pub(super) fn embedding_request_value(call: &EmbeddingCall) -> Value {
@@ -88,66 +80,69 @@ pub(super) fn embedding_reply_value(call: &ReplyCall) -> Value {
     }
 }
 
-pub(super) fn transcription_request_value(provider: AudioProvider, call: &TranscriptionCall) -> Value {
+pub(super) fn transcription_request_value(
+    provider: AudioProvider,
+    call: &TranscriptionCall,
+) -> Value {
     let file = match processed(call) {
         Ok(file) => file,
         Err(failure) => return failure,
     };
     match provider {
-        AudioProvider::Ovhcloud => {
-            let from_env = env_key(&call.env, "OVHCLOUD_API_KEY");
-            let headers = ovhcloud_audio_headers(&Headers::new(), None, from_env.as_ref());
-            let request = ovhcloud_form(&call.model, &file, &call.optional_params);
-            json!({
-                "url": ovhcloud_audio_url(call.api_base.as_deref()),
-                "ok": true,
-                "headers": headers,
-                "form": fields_pairs(&request.fields),
-                "file": file_value(&request.file),
-            })
-        }
-        AudioProvider::Scaleway => {
-            let from_env = env_key(&call.env, "SCW_SECRET_KEY");
-            let url = scaleway_url(call.api_base.as_deref());
-            let headers = match scaleway_headers(&Headers::new(), None, from_env.as_ref()) {
-                Ok(headers) => headers,
-                Err(error) => return json!({"url": url, "ok": false, "status": error.status_code}),
-            };
-            let request = scaleway_form(&call.model, &file, &call.optional_params);
-            json!({
-                "url": url,
-                "ok": true,
-                "headers": headers,
-                "form": fields_pairs(&request.fields),
-                "file": file_value(&request.file),
-            })
-        }
+        AudioProvider::Ovhcloud => ovhcloud_transcription_value(call, &file),
+        AudioProvider::Scaleway => scaleway_transcription_value(call, &file),
     }
 }
 
+fn ovhcloud_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
+    let from_env = env_key(&call.env, "OVHCLOUD_API_KEY");
+    let headers = ovhcloud_audio_headers(&Headers::new(), None, from_env.as_ref());
+    let request = ovhcloud_form(&call.model, file, &call.optional_params);
+    json!({
+        "url": ovhcloud_audio_url(call.api_base.as_deref()),
+        "ok": true,
+        "headers": headers,
+        "form": fields_pairs(&request.fields),
+        "file": file_value(&request.file),
+    })
+}
+
+fn scaleway_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
+    let url = scaleway_url(call.api_base.as_deref());
+    let from_env = env_key(&call.env, "SCW_SECRET_KEY");
+    let Ok(headers) = scaleway_headers(&Headers::new(), None, from_env.as_ref()) else {
+        return json!({"url": url, "ok": false, "status": 401});
+    };
+    let request = scaleway_form(&call.model, file, &call.optional_params);
+    json!({
+        "url": url,
+        "ok": true,
+        "headers": headers,
+        "form": fields_pairs(&request.fields),
+        "file": file_value(&request.file),
+    })
+}
+
 pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCall) -> Value {
-    match provider {
-        AudioProvider::Ovhcloud => {
-            match ovhcloud_reply(call.body.as_bytes(), call.status, &call.headers) {
-                Ok(transcription) => {
-                    json!({"ok": true, "value": {"text": transcription.response.text}})
-                }
-                Err(error) => json!({"ok": false, "status": error.status_code}),
-            }
-        }
+    let reply = match provider {
+        AudioProvider::Ovhcloud => ovhcloud_reply(call.body.as_bytes(), call.status, &call.headers)
+            .map(|transcription| json!({"text": transcription.response.text})),
         AudioProvider::Scaleway => {
-            match scaleway_reply(call.body.as_bytes(), call.status, &call.headers) {
-                Ok(transcription) => {
-                    let mut value = json!({"text": transcription.response.text});
-                    for name in ["segments", "language"] {
-                        if let Some(field) = transcription.response.extra.get(name) {
-                            value[name] = json!(field);
-                        }
-                    }
-                    json!({"ok": true, "value": value})
-                }
-                Err(error) => json!({"ok": false, "status": error.status_code}),
-            }
+            scaleway_reply(call.body.as_bytes(), call.status, &call.headers).map(scaleway_text)
+        }
+    };
+    match reply {
+        Ok(value) => json!({"ok": true, "value": value}),
+        Err(error) => json!({"ok": false, "status": error.status_code}),
+    }
+}
+
+fn scaleway_text(transcription: betterlite_openai::scaleway_audio::reply::Transcription) -> Value {
+    let mut value = json!({"text": transcription.response.text});
+    for name in ["segments", "language"] {
+        if let Some(field) = transcription.response.extra.get(name) {
+            value[name] = json!(field);
         }
     }
+    value
 }
