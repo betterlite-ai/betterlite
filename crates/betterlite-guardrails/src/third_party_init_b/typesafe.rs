@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use secrecy::SecretString;
 
 use super::error::ThirdPartyInitBError;
-use super::{InitResult, OptionalParams, unreachable_fallback_text};
+use super::{InitResult, ParamsView, decode, unreachable_fallback_text};
 
 mod tests;
 
@@ -34,9 +34,9 @@ pub fn initialize_typesafe(
 ) -> InitResult<TypeSafeArgs> {
     let name = guardrail_name.ok_or(ThirdPartyInitBError::MissingTypesafeName)?;
     let extra = &params.base.extra;
-    let optional = OptionalParams::parse(extra)?;
+    let view = ParamsView::parse(extra)?;
     let (relevance_threshold, min_chars_to_evaluate, max_result_chars_in_state) =
-        optional_tuning(&optional)?;
+        optional_tuning(&view)?;
     let sent = params
         .base
         .sent_fields()
@@ -62,22 +62,32 @@ pub fn initialize_typesafe(
 }
 
 // TypeSafeGuardrailOptionalParams validates these three in _optional_params before the class is built
-fn optional_tuning(
-    optional: &OptionalParams<'_>,
-) -> InitResult<(Option<f64>, Option<i64>, Option<i64>)> {
-    let relevance_threshold = optional.read::<f64>("relevance_threshold")?;
+fn optional_tuning(view: &ParamsView<'_>) -> InitResult<(Option<f64>, Option<i64>, Option<i64>)> {
+    let relevance_threshold = decode(
+        "relevance_threshold",
+        view.optional
+            .and_then(|entries| entries.get("relevance_threshold")),
+    )?;
     if relevance_threshold.is_some_and(|threshold| !RELEVANCE_BOUNDS.contains(&threshold)) {
         return Err(ThirdPartyInitBError::InvalidParam {
             name: "relevance_threshold".to_owned(),
         });
     }
-    let min_chars_to_evaluate = optional.read::<i64>("min_chars_to_evaluate")?;
+    let min_chars_to_evaluate = decode(
+        "min_chars_to_evaluate",
+        view.optional
+            .and_then(|entries| entries.get("min_chars_to_evaluate")),
+    )?;
     if min_chars_to_evaluate.is_some_and(|chars| chars < 0) {
         return Err(ThirdPartyInitBError::InvalidParam {
             name: "min_chars_to_evaluate".to_owned(),
         });
     }
-    let max_result_chars_in_state = optional.read::<i64>("max_result_chars_in_state")?;
+    let max_result_chars_in_state = decode(
+        "max_result_chars_in_state",
+        view.optional
+            .and_then(|entries| entries.get("max_result_chars_in_state")),
+    )?;
     if max_result_chars_in_state.is_some_and(|chars| chars < 1) {
         return Err(ThirdPartyInitBError::InvalidParam {
             name: "max_result_chars_in_state".to_owned(),

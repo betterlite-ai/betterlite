@@ -4,13 +4,11 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::SecretString;
 
 use super::error::ThirdPartyInitBError;
-use super::{
-    InitResult, OptionalParams, read_config_default, read_config_value, read_extra_default,
-};
+use super::{InitResult, ParamsView, decode, defaulted};
 
 mod tests;
 
-const DEFAULT_ON_FLAGGED_ACTION: &str = "monitor";
+const DEFAULT_ACTION: &str = "monitor";
 
 #[derive(Debug, Clone)]
 pub struct PillarArgs {
@@ -35,27 +33,19 @@ pub fn initialize_pillar(
     let name = guardrail_name
         .filter(|name| !name.is_empty())
         .ok_or(ThirdPartyInitBError::MissingPillarName)?;
-    let extra = &params.base.extra;
-    let optional = OptionalParams::parse(extra)?;
+    let view = ParamsView::parse(&params.base.extra)?;
     Ok(PillarArgs {
         name: name.to_owned(),
         api_key: params.base.fields.api_key.clone(),
         api_base: params.base.fields.api_base.clone(),
-        on_flagged_action: read_extra_default(
-            extra,
-            "on_flagged_action",
-            DEFAULT_ON_FLAGGED_ACTION.to_owned(),
-        )?,
+        on_flagged_action: defaulted(&view, "on_flagged_action", DEFAULT_ACTION.to_owned())?,
         event_hook: params.mode.clone(),
         default_on: params.base.fields.default_on.unwrap_or_default(),
-        async_mode: read_config_value(extra, &optional, "async_mode")?,
-        persist_session: read_config_value(extra, &optional, "persist_session")?,
-        include_scanners: read_config_default(extra, &optional, "include_scanners", true)?,
-        include_evidence: read_config_default(extra, &optional, "include_evidence", true)?,
-        fallback_on_error: read_config_value(extra, &optional, "fallback_on_error")?,
-        timeout: match optional.read::<f64>("timeout")? {
-            Some(timeout) => Some(timeout),
-            None => params.base.fields.timeout,
-        },
+        async_mode: decode("async_mode", view.merged.get("async_mode"))?,
+        persist_session: decode("persist_session", view.merged.get("persist_session"))?,
+        include_scanners: defaulted(&view, "include_scanners", true)?,
+        include_evidence: defaulted(&view, "include_evidence", true)?,
+        fallback_on_error: decode("fallback_on_error", view.merged.get("fallback_on_error"))?,
+        timeout: decode("timeout", view.merged.get("timeout"))?.or(params.base.fields.timeout),
     })
 }

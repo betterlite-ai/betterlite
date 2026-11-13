@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::SecretString;
 
 use super::error::ThirdPartyInitBError;
-use super::{InitResult, read_extra};
+use super::{InitResult, decode};
 
 mod tests;
 
@@ -28,8 +28,8 @@ pub fn initialize_xecguard(
     params: &LitellmParams,
     guardrail_name: Option<&str>,
 ) -> InitResult<XecGuardArgs> {
-    let extra = &params.base.extra;
-    let grounding_strictness = read_extra::<String>(extra, "grounding_strictness")?;
+    let values = &params.base.extra.0;
+    let grounding_strictness = decode("grounding_strictness", values.get("grounding_strictness"))?;
     if let Some(strictness) = &grounding_strictness {
         if !GROUNDING_STRICTNESS.contains(&strictness.as_str()) {
             return Err(ThirdPartyInitBError::InvalidParam {
@@ -41,9 +41,9 @@ pub fn initialize_xecguard(
         name: guardrail_name.unwrap_or_default().to_owned(),
         api_base: params.base.fields.api_base.clone(),
         api_key: params.base.fields.api_key.clone(),
-        xecguard_model: read_extra(extra, "xecguard_model")?,
-        policy_names: read_extra(extra, "policy_names")?,
-        block_on_error: read_extra(extra, "block_on_error")?,
+        xecguard_model: decode("xecguard_model", values.get("xecguard_model"))?,
+        policy_names: decode("policy_names", values.get("policy_names"))?,
+        block_on_error: decode("block_on_error", values.get("block_on_error"))?,
         grounding_strictness,
         timeout: params.base.fields.timeout,
         event_hook: params.mode.clone(),

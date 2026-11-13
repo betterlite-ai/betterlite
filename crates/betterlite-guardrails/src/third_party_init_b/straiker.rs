@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::ThirdPartyInitBError;
-use super::{InitResult, OptionalParams, read_config_value, unreachable_fallback_text};
+use super::{InitResult, ParamsView, decode, unreachable_fallback_text};
 
 mod tests;
 
@@ -47,10 +47,7 @@ pub fn initialize_straiker(
 ) -> InitResult<StraikerArgs> {
     let (name, api_key, api_base) = required_identity(params, guardrail_name)?;
     let extra = &params.base.extra;
-    let optional = OptionalParams::parse(extra)?;
-    let timeout = read_config_value(extra, &optional, "timeout")?;
-    let fail_on_error = read_config_value(extra, &optional, "fail_on_error")?;
-    let unreachable_fallback = read_config_value(extra, &optional, "unreachable_fallback")?;
+    let view = ParamsView::parse(extra)?;
     Ok(StraikerArgs {
         name,
         api_key,
@@ -58,22 +55,27 @@ pub fn initialize_straiker(
         source: source_name(extra),
         event_hook: params.mode.clone(),
         default_on: params.base.fields.default_on.unwrap_or_default(),
-        timeout: timeout.unwrap_or(params.base.fields.timeout),
-        max_retries: read_config_value(extra, &optional, "max_retries")?,
-        initial_backoff: read_config_value(extra, &optional, "initial_backoff")?,
-        max_backoff: read_config_value(extra, &optional, "max_backoff")?,
-        unreachable_fallback: unreachable_fallback.unwrap_or_else(|| {
+        timeout: decode("timeout", view.merged.get("timeout"))?.or(params.base.fields.timeout),
+        max_retries: decode("max_retries", view.merged.get("max_retries"))?,
+        initial_backoff: decode("initial_backoff", view.merged.get("initial_backoff"))?,
+        max_backoff: decode("max_backoff", view.merged.get("max_backoff"))?,
+        unreachable_fallback: decode(
+            "unreachable_fallback",
+            view.merged.get("unreachable_fallback"),
+        )?
+        .unwrap_or_else(|| {
             unreachable_fallback_text(params.base.fields.unreachable_fallback).to_owned()
         }),
-        fail_on_error: fail_on_error.unwrap_or(params.base.fields.fail_on_error),
-        max_payload_bytes: read_config_value(extra, &optional, "max_payload_bytes")?,
-        custom_headers: read_config_value(extra, &optional, "custom_headers")?,
-        metadata: read_config_value(extra, &optional, "metadata")?,
-        verbose: read_config_value(extra, &optional, "verbose")?,
-        api_version: known_api_version(read_config_value(extra, &optional, "api_version")?),
-        agent_ref: read_config_value(extra, &optional, "agent_ref")?,
-        client: read_config_value(extra, &optional, "client")?,
-        format_hint: checked_format_hint(read_config_value(extra, &optional, "format_hint")?)?,
+        fail_on_error: decode("fail_on_error", view.merged.get("fail_on_error"))?
+            .unwrap_or(params.base.fields.fail_on_error),
+        max_payload_bytes: decode("max_payload_bytes", view.merged.get("max_payload_bytes"))?,
+        custom_headers: decode("custom_headers", view.merged.get("custom_headers"))?,
+        metadata: decode("metadata", view.merged.get("metadata"))?,
+        verbose: decode("verbose", view.merged.get("verbose"))?,
+        api_version: known_api_version(decode("api_version", view.merged.get("api_version"))?),
+        agent_ref: decode("agent_ref", view.merged.get("agent_ref"))?,
+        client: decode("client", view.merged.get("client"))?,
+        format_hint: checked_format_hint(value_at(view.merged.get("format_hint"), "format_hint")?)?,
     })
 }
 
