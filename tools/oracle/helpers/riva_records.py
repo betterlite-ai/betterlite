@@ -93,6 +93,13 @@ class Transformation(Protocol):
     ) -> TranscriptionResponse: ...
 
 
+class ConfigFactory(Protocol):
+    def __call__(self) -> Transformation: ...
+
+
+CONFIG: ConfigFactory = RivaConfig
+
+
 class FakeCode:
     def __init__(self, name: JsonValue) -> None:
         self.name = name
@@ -117,11 +124,6 @@ class Raises:
 class FakeError(Exception):
     code: JsonValue | Returns | Raises = None
     details: JsonValue | Returns | Raises = None
-
-
-def transformation() -> Transformation:
-    config: Transformation = RivaConfig()
-    return config
 
 
 def attribute_value(attribute: Attribute) -> JsonValue | Returns | Raises:
@@ -154,7 +156,7 @@ def fake_error(spec: ErrorSpec) -> FakeError:
 
 
 def transform(call: Call) -> JsonValue:
-    config = transformation()
+    config = CONFIG()
     optional = config.map_openai_params(
         non_default_params=call["params"],
         optional_params={},
@@ -171,7 +173,7 @@ def transform(call: Call) -> JsonValue:
 
 
 def transcription(call: Call) -> JsonValue:
-    built = transformation().build_transcription_response(
+    built = CONFIG().build_transcription_response(
         final_results=_FINALS.validate_python(call["final_results"]),
         response_format=call["response_format"],
         duration_seconds=call["duration_seconds"],
