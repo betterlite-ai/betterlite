@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::block_code_execution::lifecycle::{
     BlockCodeExecutionError, BlockCodeExecutionGuardrail, BlockCodeExecutionParams,
     DEFAULT_EVENT_HOOKS, DEFAULT_GUARDRAIL_NAME, EventHookSelection, SUPPORTED_EVENT_HOOKS,
-    hook_name,
 };
 use betterlite_guardrails::guardrail_base::error::GuardrailBaseError;
 use rstest::rstest;
@@ -100,14 +99,14 @@ fn an_unsupported_but_valid_hook_follows_the_strict_modes_flag(
     #[case] rejected: bool,
 ) {
     let mut configured = params();
-    configured.event_hook = Some(EventHookSelection::One("logging_only".to_owned()));
+    configured.event_hook = Some(EventHookSelection::One("pre_mcp_call".to_owned()));
     let result = BlockCodeExecutionGuardrail::new(configured, strict);
     if rejected {
         assert!(matches!(
             result,
             Err(BlockCodeExecutionError::Base(
                 GuardrailBaseError::UnsupportedEventHook { ref hook, .. }
-            )) if hook == "logging_only"
+            )) if hook == "pre_mcp_call"
         ));
     } else {
         assert!(result.is_ok());
@@ -165,11 +164,18 @@ fn default_on_reaches_the_parent() {
 
 #[test]
 fn the_default_hooks_match_the_wire_names() {
-    let names: Vec<&str> = DEFAULT_EVENT_HOOKS
-        .iter()
-        .map(|hook| hook_name(*hook))
-        .collect();
-    assert_eq!(names, ["pre_call", "post_call"]);
+    assert_eq!(
+        serde_json::to_string(&DEFAULT_EVENT_HOOKS).expect("serialize"),
+        r#"["pre_call","post_call"]"#
+    );
+    let built = guardrail(params());
+    assert_eq!(
+        built.base.settings.event_hook,
+        Some(LitellmParamsMode::Many(vec![
+            "pre_call".to_owned(),
+            "post_call".to_owned()
+        ]))
+    );
     assert_eq!(
         SUPPORTED_EVENT_HOOKS,
         [

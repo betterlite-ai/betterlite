@@ -4,8 +4,6 @@ use betterlite_config::sections::content_filter_records::BlockCodeAction;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use regex::Regex;
-use serde::de::IntoDeserializer as _;
-use serde::de::value::{Error as TextError, StrDeserializer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -13,6 +11,7 @@ use crate::block_code_execution::block_detection::{BlockDetector, FENCED_BLOCK_P
 use crate::block_code_execution::text_scanning::CodeBlockScanner;
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::error::GuardrailBaseError;
+use crate::guardrail_base::hooks::validate_event_hook;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 
 pub const DEFAULT_GUARDRAIL_NAME: &str = "block_code_execution";
@@ -25,6 +24,18 @@ pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
 
 pub const DEFAULT_EVENT_HOOKS: [GuardrailEventHooks; 2] =
     [GuardrailEventHooks::PreCall, GuardrailEventHooks::PostCall];
+
+// every valid wire name, so a typo fails here whatever LITELLM_STRICT_GUARDRAIL_MODES says
+const ALL_EVENT_HOOKS: [GuardrailEventHooks; 8] = [
+    GuardrailEventHooks::PreCall,
+    GuardrailEventHooks::PostCall,
+    GuardrailEventHooks::DuringCall,
+    GuardrailEventHooks::LoggingOnly,
+    GuardrailEventHooks::PreMcpCall,
+    GuardrailEventHooks::DuringMcpCall,
+    GuardrailEventHooks::PostMcpCall,
+    GuardrailEventHooks::RealtimeInputTranscription,
+];
 
 const BLOCK_CODE_EXECUTION_SWITCHES: GuardrailSwitches = GuardrailSwitches {
     use_native_during_call_hook: false,
@@ -95,9 +106,14 @@ impl BlockCodeExecutionGuardrail {
     ) -> Result<Self, BlockCodeExecutionError> {
         let name = match params.guardrail_name {
             Some(name) if !name.is_empty() => name,
-            Some(_empty) | None => DEFAULT_GUARDRAIL_NAME.to_owned(),
+            Some(_) | None => DEFAULT_GUARDRAIL_NAME.to_owned(),
         };
-        let mode = event_hook_mode(&params.event_hook)?;
+        let mode = event_hook_mode(&params.event_hook);
+        validate_event_hook(
+            Some(&mode),
+            &ALL_EVENT_HOOKS,
+            &BLOCK_CODE_EXECUTION_SWITCHES,
+        )?;
         let settings = GuardrailSettings {
             guardrail_name: Some(name),
             supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
@@ -142,47 +158,10 @@ impl BlockCodeExecutionGuardrail {
     }
 }
 
-fn event_hook_mode(
-    selection: &Option<EventHookSelection>,
-) -> Result<LitellmParamsMode, GuardrailBaseError> {
+fn event_hook_mode(selection: &Option<EventHookSelection>) -> LitellmParamsMode {
     match selection {
-        None => Ok(LitellmParamsMode::Many(
-            DEFAULT_EVENT_HOOKS
-                .iter()
-                .map(|hook| hook_name(*hook).to_owned())
-                .collect(),
-        )),
-        Some(EventHookSelection::One(name)) => {
-            parse_event_hook(name)?;
-            Ok(LitellmParamsMode::One(name.clone()))
-        }
-        Some(EventHookSelection::Many(names)) => {
-            for name in names {
-                parse_event_hook(name)?;
-            }
-            Ok(LitellmParamsMode::Many(names.clone()))
-        }
-    }
-}
-
-fn parse_event_hook(name: &str) -> Result<GuardrailEventHooks, GuardrailBaseError> {
-    let text: StrDeserializer<'_, TextError> = name.into_deserializer();
-    GuardrailEventHooks::deserialize(text).map_err(|_unknown| {
-        GuardrailBaseError::UnknownEventHook {
-            hook: name.to_owned(),
-        }
-    })
-}
-
-pub const fn hook_name(hook: GuardrailEventHooks) -> &'static str {
-    match hook {
-        GuardrailEventHooks::PreCall => "pre_call",
-        GuardrailEventHooks::PostCall => "post_call",
-        GuardrailEventHooks::DuringCall => "during_call",
-        GuardrailEventHooks::LoggingOnly => "logging_only",
-        GuardrailEventHooks::PreMcpCall => "pre_mcp_call",
-        GuardrailEventHooks::DuringMcpCall => "during_mcp_call",
-        GuardrailEventHooks::PostMcpCall => "post_mcp_call",
-        GuardrailEventHooks::RealtimeInputTranscription => "realtime_input_transcription",
+        None => LitellmParamsMode::Many(vec!["pre_call".to_owned(), "post_call".to_owned()]),
+        Some(EventHookSelection::One(name)) => LitellmParamsMode::One(name.clone()),
+        Some(EventHookSelection::Many(names)) => LitellmParamsMode::Many(names.clone()),
     }
 }

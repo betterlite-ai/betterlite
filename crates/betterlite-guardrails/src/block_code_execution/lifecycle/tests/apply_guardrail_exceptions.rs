@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::block_code_execution::registration::status_for_failure;
+use betterlite_guardrails::block_code_execution::registration::{
+    ApplyGuardrailError, status_for_failure,
+};
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_records::record::{GuardrailRecordContext, GuardrailStatus};
@@ -73,6 +75,44 @@ fn a_request_block_records_an_intervention() {
     assert_eq!(
         records[0].guardrail_status,
         GuardrailStatus::GuardrailIntervened
+    );
+}
+
+#[test]
+fn the_block_language_comes_from_the_first_blocked_detection() {
+    let mut configured = params();
+    configured.blocked_languages = Some(vec!["python".to_owned()]);
+    let built = guardrail(configured);
+    let mut data = request_data();
+    let text = "```rust\na\n```\n```python\nb\n```";
+    let (outcome, records) = apply_capturing(
+        &built,
+        inputs(&[text]),
+        &mut data,
+        GuardrailInputType::Response,
+    );
+    let Err(ApplyGuardrailError::Guardrail(GuardrailFailure::HttpObject { detail, .. })) = outcome
+    else {
+        panic!("a response block must be an object failure");
+    };
+    assert_eq!(
+        detail.get("language"),
+        Some(&GuardrailValue::Text("python".to_owned()))
+    );
+    let GuardrailValue::Array(detections) = &records[0].guardrail_response else {
+        panic!("the record carries its detections");
+    };
+    assert_eq!(detections.len(), 2);
+    let GuardrailValue::Object(first) = &detections[0] else {
+        panic!("a detection is an object");
+    };
+    assert_eq!(
+        first.get("language"),
+        Some(&GuardrailValue::Text("rust".to_owned()))
+    );
+    assert_eq!(
+        first.get("action_taken"),
+        Some(&GuardrailValue::Text("allow".to_owned()))
     );
 }
 

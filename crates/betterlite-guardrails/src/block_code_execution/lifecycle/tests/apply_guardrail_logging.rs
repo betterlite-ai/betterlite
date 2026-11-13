@@ -119,7 +119,7 @@ fn the_confidence_score_is_the_maximum_across_detections() {
     let mut data = request_data();
     let (_outcome, records) = apply_capturing(
         &built,
-        inputs(&["```python\na\n```\n```text\nb\n```"]),
+        inputs(&["```text\nb\n```\n```python\na\n```"]),
         &mut data,
         GuardrailInputType::Response,
     );

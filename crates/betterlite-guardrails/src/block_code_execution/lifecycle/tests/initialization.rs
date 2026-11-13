@@ -1,10 +1,15 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::sections::content_filter_records::BlockCodeAction;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_guardrails::block_code_execution::initializer::{
     InitializerError, initialize_guardrail,
 };
+use rstest::rstest;
 
 use crate::block_code_execution::support::{FakeRegistry, guardrail_entry, litellm_params};
 
@@ -31,7 +36,7 @@ fn the_full_configuration_reaches_the_guardrail() {
             "mode": ["pre_call", "post_call"],
             "blocked_languages": ["python", "bash"],
             "action": "mask",
-            "confidence_threshold": 2.5,
+            "confidence_threshold": 0.9,
             "detect_execution_intent": false,
             "default_on": true
         }"#,
@@ -58,7 +63,7 @@ fn the_full_configuration_reaches_the_guardrail() {
     assert_eq!(instance.scanner.action, BlockCodeAction::Mask);
     assert_eq!(
         instance.scanner.detector.confidence_threshold.to_bits(),
-        1.0_f64.to_bits()
+        0.9_f64.to_bits()
     );
     assert!(!instance.scanner.detect_execution_intent);
 }
@@ -154,6 +159,50 @@ fn a_numeric_string_confidence_threshold_is_read() {
         instance.scanner.detector.confidence_threshold.to_bits(),
         0.7_f64.to_bits()
     );
+}
+
+#[rstest]
+#[case::above_the_range("2.5")]
+#[case::below_the_range("-0.1")]
+fn an_out_of_range_confidence_threshold_is_rejected(#[case] threshold: &str) {
+    let params = litellm_params(&format!(
+        r#"{{"guardrail": "block_code_execution", "mode": "pre_call", "confidence_threshold": {threshold}}}"#
+    ));
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a value outside 0.0..=1.0 fails the config load");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+    ));
+}
+
+#[test]
+fn a_not_a_number_confidence_threshold_is_rejected() {
+    let fields = BTreeMap::from([
+        (
+            "guardrail".to_owned(),
+            GuardrailValue::Text("block_code_execution".to_owned()),
+        ),
+        (
+            "mode".to_owned(),
+            GuardrailValue::Text("pre_call".to_owned()),
+        ),
+        (
+            "confidence_threshold".to_owned(),
+            GuardrailValue::Decimal(f64::NAN),
+        ),
+    ]);
+    let params = LitellmParams::try_from(OpaqueParams(fields)).expect("params");
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("NaN is outside 0.0..=1.0");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+    ));
 }
 
 #[test]

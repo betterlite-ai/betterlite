@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use betterlite_config::sections::content_filter_records::BlockCodeAction;
+use betterlite_config::sections::content_filter_records::{BlockCodeAction, ConfidenceThreshold};
 use betterlite_config::sections::guardrail_identity::enums::SupportedGuardrailIntegrations;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
@@ -168,7 +168,17 @@ fn confidence_threshold(params: &LitellmParams) -> Result<f64, InitializerError>
     let Some(value) = get_param(params, ParamKey::ConfidenceThreshold) else {
         return Ok(DEFAULT_CONFIDENCE_THRESHOLD);
     };
-    match &value {
+    let number = threshold_number(&value)?;
+    ConfidenceThreshold::try_from(number)
+        .map(|threshold| threshold.0)
+        .map_err(|_out_of_range| InitializerError::InvalidParam {
+            field: ParamKey::ConfidenceThreshold.name().to_owned(),
+        })
+}
+
+// LiteLLM's config model declares confidence_threshold with ge=0.0 and le=1.0, so this check happens where it enters
+fn threshold_number(value: &GuardrailValue) -> Result<f64, InitializerError> {
+    match value {
         GuardrailValue::Null => Ok(DEFAULT_CONFIDENCE_THRESHOLD),
         GuardrailValue::Text(text) => {
             match betterlite_env::number::<f64>("confidence_threshold", text) {
@@ -180,7 +190,7 @@ fn confidence_threshold(params: &LitellmParams) -> Result<f64, InitializerError>
             }
         }
         GuardrailValue::SignedInteger(_) | GuardrailValue::UnsignedInteger(_) => {
-            decode(ParamKey::ConfidenceThreshold, &value)
+            decode(ParamKey::ConfidenceThreshold, value)
         }
         GuardrailValue::Decimal(number) => Ok(*number),
         GuardrailValue::Boolean(_) | GuardrailValue::Array(_) | GuardrailValue::Object(_) => {
