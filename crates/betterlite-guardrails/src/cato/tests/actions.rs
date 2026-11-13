@@ -9,6 +9,7 @@ use std::time::Duration;
 use axum::Json;
 use axum::Router;
 use axum::extract::State;
+use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -22,6 +23,7 @@ use super::{array_of, body, field_text, list, object, text};
 use crate::cato::error::CatoError;
 use crate::cato::{
     CallHook, CatoGuardrail, CatoParams, DEFAULT_BLOCK_MESSAGE, DEFAULT_TIMEOUT, LITELLM_VERSION,
+    MAX_RESPONSE_BYTES,
 };
 
 type Captured = Arc<Mutex<Vec<(BTreeMap<String, String>, String)>>>;
@@ -78,6 +80,25 @@ async fn serve(status: StatusCode, answer: Answer) -> (String, Server, Captured)
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (base, server, captured)
+}
+
+async fn serve_raw(raw: String) -> (String, Server) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let router = Router::new().route(
+        "/fw/v1/analyze",
+        post(move || {
+            let raw = raw.clone();
+            async move { ([(CONTENT_TYPE, "application/json")], raw) }
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, server)
+}
+
+fn raw_answer_of_size(size: usize) -> String {
+    format!("{{\"padding\":\"{}\"}}", "a".repeat(size - 14))
 }
 
 async fn handle(
@@ -410,4 +431,30 @@ async fn cato_guardrail_uses_the_default_timeout_when_none_is_configured() {
     let guardrail = build(&base);
     server.shutdown().await;
     assert_eq!(guardrail.timeout, DEFAULT_TIMEOUT);
+}
+
+#[tokio::test]
+async fn cato_guardrail_accepts_an_answer_of_exactly_the_size_limit() {
+    let (base, mut server) = serve_raw(raw_answer_of_size(MAX_RESPONSE_BYTES)).await;
+    let mut data = chat_data();
+    let result = build(&base)
+        .call(&mut data, CallHook::PreCall, None, None)
+        .await;
+    server.shutdown().await;
+    result.expect("an answer at the limit is read");
+}
+
+#[tokio::test]
+async fn cato_guardrail_rejects_an_answer_over_the_size_limit() {
+    let (base, mut server) = serve_raw(raw_answer_of_size(MAX_RESPONSE_BYTES + 1)).await;
+    let mut data = chat_data();
+    let error = build(&base)
+        .call(&mut data, CallHook::PreCall, None, None)
+        .await
+        .expect_err("too large");
+    server.shutdown().await;
+    assert!(matches!(
+        error,
+        CatoError::ResponseTooLarge { limit } if limit == MAX_RESPONSE_BYTES
+    ));
 }
