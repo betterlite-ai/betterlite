@@ -1,0 +1,8 @@
+kind: helper
+name: rate-limit-records-sibling-counter-keys
+call:
+  b3031:
+    function: sibling_counter_keys
+    window_key: "team:abc:window"
+env: {}
+compare: {ignore: []}
