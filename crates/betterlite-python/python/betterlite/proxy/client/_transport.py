@@ -6,6 +6,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from http.client import HTTPResponse
 
+from typing_extensions import override
+
 from betterlite.types.utils.values import JsonValue
 
 CLIENT_ERRORS = range(400, 500)
@@ -42,11 +44,11 @@ class Response:
 
     def iter_lines(self) -> Iterator[bytes]:
         if self.stream is None:
-            for line in self.text.splitlines():
-                yield line.encode("utf-8")
+            for text_line in self.text.splitlines():
+                yield text_line.encode("utf-8")
             return
-        for line in self.stream:
-            yield line.rstrip(b"\r\n")
+        for raw_line in self.stream:
+            yield raw_line.rstrip(b"\r\n")
 
     def consume(self) -> None:
         if self.stream is None:
@@ -80,6 +82,7 @@ class Request:
 class _BodyRequest(urllib.request.Request):
     raw_body: bool = False
 
+    @override
     def has_header(self, header_name: str) -> bool:
         if self.raw_body and header_name == "Content-type":
             return True

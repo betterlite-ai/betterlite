@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, overload
 
 from betterlite.types.utils.values import JsonValue
@@ -42,7 +43,7 @@ class ModelGroupsManagementClient:
             raise
         reply = response.json()
         match reply:
-            case {"data": data}:
-                return data
-            case _:
+            case dict() if "data" in reply:
+                return reply["data"]
+            case dict() | list() | str() | bool() | int() | float() | datetime() | None:
                 raise RequestError("the model group info reply has no data")

@@ -1,5 +1,5 @@
 import urllib.parse
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 from betterlite.types.utils.values import JsonValue
 
@@ -19,7 +19,7 @@ class HTTPClient:
         method: str,
         uri: str,
         *,
-        data: Mapping[str, str] | Sequence[tuple[str, str]] | bytes | None = None,
+        data: Mapping[str, str] | list[tuple[str, str]] | bytes | None = None,
         json: JsonValue = None,
         headers: dict[str, str] | None = None,
         params: dict[str, str] | None = None,
@@ -43,7 +43,7 @@ class HTTPClient:
 
 
 def _payload(
-    data: Mapping[str, str] | Sequence[tuple[str, str]] | bytes | None,
+    data: Mapping[str, str] | list[tuple[str, str]] | bytes | None,
     headers: dict[str, str],
 ) -> bytes | None:
     if data is None:
@@ -51,7 +51,7 @@ def _payload(
     match data:
         case bytes():
             return data
-        case Mapping() | Sequence():
+        case list() | Mapping():
             encoded = urllib.parse.urlencode(data).encode("utf-8")
             names = (name.lower() for name in headers)
             if "content-type" not in names:

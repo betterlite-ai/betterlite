@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import datetime
 
 from betterlite.types.utils.values import JsonValue
 
@@ -31,9 +32,9 @@ class UsersManagementClient:
         response.raise_for_status()
         reply = response.json()
         match reply:
-            case {"users": users}:
-                return users
-            case _:
+            case dict() if "users" in reply:
+                return reply["users"]
+            case dict() | list() | str() | bool() | int() | float() | datetime() | None:
                 return reply
 
     def get_user(self, user_id: str | None = None) -> JsonValue:
