@@ -1,0 +1,23 @@
+kind: helper
+name: tool-search-and-examples
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: tools, tools: [{type: tool_search_tool_regex_20251119}]}
+      - {function: tools, tools: [{type: tool_search_tool_bm25_20251119}]}
+      - {function: tools, tools: [{type: tool_search_tool_regex_20251120}]}
+      - {function: tools, tools: []}
+      - {function: tools, tools: null}
+      - {function: tools, tools: [{allowed_callers: [code_execution_20250825]}]}
+      - {function: tools, tools: [{type: function, function: {allowed_callers: [code_execution_20250825]}}]}
+      - {function: tools, tools: [{allowed_callers: [code_execution_20250101]}]}
+      - {function: tools, tools: [{allowed_callers: []}]}
+      - {function: tools, tools: [{allowed_callers: code_execution_20250825}]}
+      - {function: tools, tools: [{input_examples: [{value: one}]}]}
+      - {function: tools, tools: [{type: function, function: {input_examples: [{value: one}]}}]}
+      - {function: tools, tools: [{input_examples: []}]}
+      - {function: tools, tools: [{input_examples: one}]}
+      - {function: tools, tools: [{type: function, function: {name: run}}]}
+env: {}
+compare: {ignore: []}

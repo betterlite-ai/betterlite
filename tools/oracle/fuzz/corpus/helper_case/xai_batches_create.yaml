@@ -1,0 +1,11 @@
+kind: helper
+name: xai-batches-create-seed
+call:
+  xai_batches:
+    operation: create
+    env: {XAI_API_KEY: environment}
+    xai_key: module
+    calls:
+      - {api_base: null, api_key: explicit, data: {input_file_id: file-1}, endpoint: null, batch: {batch_id: batch_1}}
+env: {}
+compare: {ignore: []}

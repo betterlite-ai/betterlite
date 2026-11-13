@@ -1,0 +1,8 @@
+task: B1686
+deviations:
+  - what: Cache normalization and custom call prices use checked counters and Decimal values; overflow produces a typed pricing failure instead of float rounding or infinity.
+    why: Early custom prices must meet the same finite money contract as catalog prices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L447-L506
+  - what: The ProviderPricePolicy trait is declared in betterlite-core (cost::call_price::policy) and betterlite-provider implements it, instead of the trait living in betterlite-provider. An operation nobody installed returns the policy module's own UnavailableAdapter failure.
+    why: betterlite-provider already reaches betterlite-core through betterlite-bedrock and betterlite-a2a, so a core to provider dependency would be a cycle.
+    link: ""
