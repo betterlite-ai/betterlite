@@ -31,14 +31,14 @@ fn failure(input: Value) -> HelperError {
 fn stream_usage_updates_merges_the_client_options() {
     let value = answer(json!({
         "function": "stream_usage_updates",
-        "data": {"stream": true, "stream_options": {"a": 1, "include_usage": false}},
+        "data": {"stream": true, "stream_options": {"a": true, "include_usage": false}},
         "route_type": "acompletion",
         "supports": true
     }));
     assert_eq!(
         value,
         json!({
-            "stream_options": {"a": 1, "include_usage": true},
+            "stream_options": {"a": true, "include_usage": true},
             "_litellm_strip_stream_usage": true
         })
     );
@@ -87,7 +87,7 @@ fn file_search_store_ids_are_sorted_and_deduplicated() {
 fn a_bad_store_id_is_a_400() {
     let error = failure(json!({
         "function": "file_search_store_ids",
-        "data": {"tools": [{"type": "file_search", "vector_store_ids": ["vs_1", 1]}]}
+        "data": {"tools": [{"type": "file_search", "vector_store_ids": ["vs_1", true]}]}
     }));
     assert_eq!(
         (error.class.as_str(), error.status),
@@ -99,7 +99,7 @@ fn a_bad_store_id_is_a_400() {
 fn request_model_answers_the_validated_model() {
     let mixed = answer(json!({
         "function": "request_model",
-        "data": {"model": ["gpt-4o", 7]}
+        "data": {"model": ["gpt-4o", true]}
     }));
     assert_eq!(mixed, Value::Null);
     let listed = answer(json!({

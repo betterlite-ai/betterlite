@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::FpCategory;
 
-use serde_json::{Map, Number, Value, json};
+use serde_json::{Map, Number, Value};
 use uuid::Uuid;
 
 use crate::pre_call::failure::PreCallFailure;
@@ -82,7 +82,9 @@ fn forced_usage(
 ) -> Map<String, Value> {
     match stream_options {
         None => {
-            updates.insert("stream_options".to_owned(), json!({"include_usage": true}));
+            let mut options = Map::new();
+            options.insert("include_usage".to_owned(), Value::Bool(true));
+            updates.insert("stream_options".to_owned(), Value::Object(options));
         }
         Some(Value::Object(existing)) if !existing.contains_key("include_usage") => {
             let mut merged = existing.clone();
@@ -94,18 +96,21 @@ fn forced_usage(
     updates
 }
 
-pub fn streamable_models<K: PreCallKey>(
+pub fn streamable_models<K>(
     model: &Value,
     router: Option<&dyn RouterView<K>>,
     team_id: Option<&str>,
     check: &dyn StreamOptionsCheck,
-) -> bool {
-    let Some(model) = model.as_str() else {
+) -> bool
+where
+    K: PreCallKey,
+{
+    let Some(name) = model.as_str() else {
         return false;
     };
-    let resolved = router.map_or_else(Vec::new, |view| view.resolved_models(model, team_id));
+    let resolved = router.map_or_else(Vec::new, |view| view.resolved_models(name, team_id));
     if resolved.is_empty() {
-        return check.supports(model);
+        return check.supports(name);
     }
     resolved.iter().all(|candidate| check.supports(candidate))
 }
@@ -151,9 +156,14 @@ fn tool_store_ids(fields: &Map<String, Value>) -> Result<&[Value], PreCallFailur
 }
 
 fn bad_store_ids() -> PreCallFailure {
+    let mut detail = Map::new();
+    detail.insert(
+        "error".to_owned(),
+        Value::String("file_search.vector_store_ids must be a list of strings".to_owned()),
+    );
     PreCallFailure::Http {
         status: 400,
-        detail: json!({"error": "file_search.vector_store_ids must be a list of strings"}),
+        detail: Value::Object(detail),
     }
 }
 
@@ -190,11 +200,13 @@ pub fn apply_overrides(data: &mut Map<String, Value>, overrides: &CliOverrides) 
     }
 }
 
-pub fn apply_aliases<K: PreCallKey>(
+pub fn apply_aliases<K>(
     data: &mut Map<String, Value>,
     alias_map: &BTreeMap<String, String>,
     key: &K,
-) {
+) where
+    K: PreCallKey,
+{
     let configured = data
         .get("model")
         .and_then(Value::as_str)
@@ -218,7 +230,7 @@ pub fn write_queue_time(data: &mut Map<String, Value>, bucket: &str, start: f64)
         .and_then(Value::as_f64);
     // float_arithmetic is denied; a fused multiply-add computes start - arrival
     let queue_time = arrival.and_then(|seconds| Number::from_f64(seconds.mul_add(-1.0_f64, start)));
-    let Some(queue_time) = queue_time else {
+    let Some(seconds) = queue_time else {
         return;
     };
     let entry = data
@@ -228,6 +240,6 @@ pub fn write_queue_time(data: &mut Map<String, Value>, bucket: &str, start: f64)
         *entry = Value::Object(Map::new());
     }
     if let Value::Object(fields) = entry {
-        fields.insert("queue_time_seconds".to_owned(), Value::Number(queue_time));
+        fields.insert("queue_time_seconds".to_owned(), Value::Number(seconds));
     }
 }
