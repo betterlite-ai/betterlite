@@ -112,7 +112,10 @@ impl HeartbeatDatabase for FakeDatabase {
         Box::pin(self.settle(Step::Prune, FakeError::Prune))
     }
 
-    fn deregister(&self, worker_id: &str) -> HeartbeatFuture<'_, (), FakeError> {
+    fn deregister<'database>(
+        &'database self,
+        worker_id: &'database str,
+    ) -> HeartbeatFuture<'database, (), FakeError> {
         self.record(Call::Deregister {
             worker_id: worker_id.to_owned(),
         });

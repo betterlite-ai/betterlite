@@ -40,7 +40,10 @@ pub trait HeartbeatDatabase: Sync {
 
     fn prune(&self, retention_seconds: f64) -> HeartbeatFuture<'_, (), Self::Error>;
 
-    fn deregister(&self, worker_id: &str) -> HeartbeatFuture<'_, (), Self::Error>;
+    fn deregister<'database>(
+        &'database self,
+        worker_id: &'database str,
+    ) -> HeartbeatFuture<'database, (), Self::Error>;
 
     fn count_live_workers(
         &self,
@@ -80,7 +83,10 @@ where
         })
     }
 
-    fn deregister(&self, worker_id: &str) -> HeartbeatFuture<'_, (), Self::Error> {
+    fn deregister<'database>(
+        &'database self,
+        worker_id: &'database str,
+    ) -> HeartbeatFuture<'database, (), Self::Error> {
         Box::pin(async move {
             self.client.execute(DEREGISTER_SQL, &[&worker_id]).await?;
             Ok(())
@@ -225,5 +231,5 @@ where
         let count = (*row).ok_or(CensusError::InvalidRow)?;
         first.get_or_insert(count);
     }
-    first.map_or_else(|| Err(CensusError::MissingRow), Ok)
+    first.ok_or(CensusError::MissingRow)
 }

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::support::RecordingLogger;
 use crate::database_diagnostics::initialization::{
     DiagnosticFormat, DiagnosticSettings, initialize_logging,
@@ -68,4 +70,19 @@ fn default_settings_use_info_and_text() {
     initialize_logging(&DiagnosticSettings::default(), &mut logger).unwrap();
     assert_eq!(logger.formats, vec![DiagnosticFormat::Text]);
     assert_eq!(logger.levels, vec![LogLevel::Info]);
+}
+
+#[rstest]
+#[case::notset("NoTsEt", LogLevel::NotSet)]
+#[case::debug("debug", LogLevel::Debug)]
+#[case::info("Info", LogLevel::Info)]
+#[case::warn("warn", LogLevel::Warning)]
+#[case::warning("WARNING", LogLevel::Warning)]
+#[case::error("error", LogLevel::Error)]
+#[case::fatal("fatal", LogLevel::Critical)]
+#[case::critical("Critical", LogLevel::Critical)]
+fn initialization_sets_casefolded_level(#[case] level: &str, #[case] expected: LogLevel) {
+    let mut logger = RecordingLogger::default();
+    initialize_logging(&settings(false, level), &mut logger).unwrap();
+    assert_eq!(logger.levels, vec![expected]);
 }

@@ -102,6 +102,32 @@ async fn upsert_failure_skips_prune() {
 }
 
 #[tokio::test]
+async fn prune_failure_debug_after_upsert() {
+    let capture = capture_logs();
+    let database = FakeDatabase::default().failing(Step::Prune);
+    let identity = RecordingIdentity::new("host-a");
+    let service = ProxyWorkerHeartbeat::new(Some("worker-a"), &identity).unwrap();
+    service.beat(&database).await;
+    assert_eq!(
+        database.calls(),
+        vec![
+            Call::Upsert {
+                worker_id: "worker-a".to_owned(),
+                hostname: "host-a".to_owned(),
+            },
+            Call::Prune {
+                seconds: "3600".to_owned(),
+            },
+        ]
+    );
+    assert!(
+        capture
+            .logs
+            .has("DEBUG", "Proxy worker heartbeat write failed: prune failed")
+    );
+}
+
+#[tokio::test]
 async fn deregister_failure_debug() {
     let capture = capture_logs();
     let database = FakeDatabase::default().failing(Step::Deregister);
@@ -190,6 +216,12 @@ async fn count_failure_debug_unknown() {
     let database = FakeDatabase::default().failing(Step::Count);
     let count = count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await;
     assert_eq!(count, None);
+    assert_eq!(
+        database.calls(),
+        vec![Call::Count {
+            seconds: "180".to_owned(),
+        }]
+    );
     assert!(
         capture
             .logs
