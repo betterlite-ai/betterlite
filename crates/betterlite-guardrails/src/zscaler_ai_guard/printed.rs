@@ -90,12 +90,11 @@ pub fn quote_text(text: &str) -> String {
 }
 
 fn write_escape(rendered: &mut String, character: char) -> std::fmt::Result {
-    let code = u32::from(character);
-    if code < 0x100 {
+    if let Ok(code) = u8::try_from(character) {
         write!(rendered, "\\x{code:02x}")
-    } else if code < 0x1_0000 {
+    } else if let Ok(code) = u16::try_from(character) {
         write!(rendered, "\\u{code:04x}")
     } else {
-        write!(rendered, "\\U{code:08x}")
+        write!(rendered, "\\U{:08x}", u32::from(character))
     }
 }

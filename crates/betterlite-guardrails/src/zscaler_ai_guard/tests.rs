@@ -499,6 +499,28 @@ async fn a_null_metadata_policy_id_sends_no_policy_id() {
 }
 
 #[tokio::test]
+async fn a_zero_metadata_policy_id_is_not_sent() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let data = request_data(r#"{"metadata": {"zguard_policy_id": 0}}"#);
+    guardrail
+        .apply_guardrail(inputs(&["hello"]), &data, GuardrailInputType::Request)
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    assert_eq!(
+        serde_json::to_value(&seen[0].body).unwrap(),
+        serde_json::json!({"direction": "IN", "content": "hello"})
+    );
+}
+
+#[test]
+fn an_unsigned_zero_policy_id_is_not_sent() {
+    let wire = metadata::policy_id_wire(&GuardrailValue::UnsignedInteger(0)).unwrap();
+    assert_eq!(wire, None);
+}
+
+#[tokio::test]
 async fn a_response_direction_is_out() {
     let mock = mock(200, r#"{"statusCode": 200, "action": "DETECT"}"#).await;
     let guardrail = guardrail(&mock.base);
