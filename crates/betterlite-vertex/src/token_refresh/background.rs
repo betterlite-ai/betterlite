@@ -15,8 +15,7 @@ pub(crate) struct RefreshJob {
     pub(super) done: watch::Receiver<bool>,
 }
 
-// one ledger per credential cache: the server's tracker and the in-flight map must be drained together
-pub struct RefreshLedger {
+pub(crate) struct RefreshLedger {
     pub(super) tasks: TaskTracker,
     pub(super) jobs: Arc<Mutex<BTreeMap<CredentialKey, RefreshJob>>>,
     pub(super) next: AtomicU64,
@@ -24,18 +23,12 @@ pub struct RefreshLedger {
 
 impl RefreshLedger {
     #[must_use]
-    pub fn new(tasks: TaskTracker) -> Self {
+    pub(super) fn new(tasks: TaskTracker) -> Self {
         Self {
             tasks,
             jobs: Arc::new(Mutex::new(BTreeMap::new())),
             next: AtomicU64::new(0),
         }
-    }
-
-    // a closed tracker refuses new background work, and draining waits for the refreshes already running
-    pub async fn shutdown(&self) {
-        self.tasks.close();
-        self.tasks.wait().await;
     }
 }
 
