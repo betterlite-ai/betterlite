@@ -1550,6 +1550,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -2387,6 +2388,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-db",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
