@@ -1,0 +1,17 @@
+kind: helper
+name: destination-langfuse-operator-host-unchecked
+call:
+  b3851:
+    function: destination_for
+    environment:
+      LANGFUSE_OTEL_HOST: internal.example
+    allowed_hosts: []
+    callback_name: langfuse_otel
+    params:
+      langfuse_public_key: pk-lf-1
+      langfuse_secret_key: sk-lf-1
+    service_name: null
+env:
+  LANGFUSE_OTEL_HOST: internal.example
+compare:
+  ignore: []

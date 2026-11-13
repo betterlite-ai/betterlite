@@ -1,0 +1,17 @@
+kind: helper
+name: newrelic-preset-eu-region-upper-case
+call:
+  b3851:
+    function: newrelic_preset
+    environment:
+      NEW_RELIC_LICENSE_KEY: license-1
+      NEW_RELIC_REGION: EU
+    base:
+      exporters: []
+      mapper_names: []
+      resource_attributes: {}
+env:
+  NEW_RELIC_LICENSE_KEY: license-1
+  NEW_RELIC_REGION: EU
+compare:
+  ignore: []

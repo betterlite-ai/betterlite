@@ -1,0 +1,19 @@
+kind: helper
+name: managed_object_union
+call:
+  managed_resource_rows:
+    rows:
+      - name: managed_object_batch
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"batch","file_object":{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating"}}}'
+      - name: managed_object_fine_tuning
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"fine-tune","file_object":{"id":"ft","created_at":1,"hyperparameters":{"n_epochs":3},"model":"m","object":"fine_tuning.job","organization_id":"o","result_files":[],"status":"queued","training_file":"f"}}}'
+      - name: managed_object_response
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"response","file_object":{"id":"r","created_at":1,"object":"response","output":[]}}}'
+      - name: managed_object_container_purpose
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"container","file_object":{"id":"r","created_at":1,"object":"response","output":[]}}}'
+      - name: managed_object_unknown_purpose
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"other","file_object":{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating"}}}'
+      - name: managed_object_non_object
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"batch","file_object":"batch"}}'
+env: {}
+compare: {ignore: []}

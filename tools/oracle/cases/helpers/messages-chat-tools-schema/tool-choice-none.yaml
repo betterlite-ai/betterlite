@@ -1,0 +1,8 @@
+kind: helper
+name: messages-chat-tools-schema-tool-choice-none
+call:
+  messages_chat_tools_schema:
+    operation: tool_choice
+    tool_choice: {type: none}
+env: {}
+compare: {ignore: []}

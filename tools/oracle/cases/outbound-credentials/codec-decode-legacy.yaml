@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "codec-decode-legacy",
+  "call": {
+    "b4656": {
+      "function": "codec",
+      "operation": "decode",
+      "plaintext": "legacy-access"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

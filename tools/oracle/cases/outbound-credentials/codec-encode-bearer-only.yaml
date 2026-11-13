@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "codec-encode-bearer-only",
+  "call": {
+    "b4656": {
+      "function": "codec",
+      "operation": "encode",
+      "token": {
+        "access_token": "access-secret",
+        "expires_at_ms": null,
+        "refresh_token": null,
+        "scopes": [],
+        "identity_binding_proof": null
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

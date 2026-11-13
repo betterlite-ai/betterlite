@@ -1,0 +1,22 @@
+kind: probe
+name: unknown-model
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      deployment_catalog:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: d1}
+          - {model_name: team-one, model: "openai/team-m", id: t1, team_id: team-a, team_public_model_name: shared}
+        model_group_alias: {ghost-alias: ghost, blank: ""}
+        lookups:
+          - {model: nope, specific_deployment: false}
+          - {model: ghost-alias, specific_deployment: false}
+          - {model: blank, specific_deployment: false}
+          - {model: shared, specific_deployment: false}
+          - {model: shared, specific_deployment: false, team_id: team-b}
+          - {model: shared, specific_deployment: false, team_id: ""}
+          - {model: "openai/missing", specific_deployment: true}
+          - {model: missing-id, specific_deployment: false}
+compare:
+  ignore: []

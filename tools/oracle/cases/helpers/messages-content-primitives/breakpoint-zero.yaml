@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-breakpoint-zero
+call: {"messages_content_primitives": {"operation": "carry_cache_breakpoint", "source": {"prompt_cache_breakpoint": 0}, "target": {"type": "text"}}}
+env: {}
+compare: {ignore: []}

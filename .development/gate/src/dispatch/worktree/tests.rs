@@ -6,7 +6,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use super::{prepare, seed};
+use super::{needs_own_gate, prepare};
 use crate::git::{common_dir, coordinator, git};
 
 fn fixture() -> (TempDir, PathBuf) {
@@ -114,44 +114,22 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
 }
 
 #[test]
-fn a_new_checkout_gets_the_seed_target_and_only_files_changed_since_are_newer() {
+fn a_checkout_builds_its_own_gate_only_without_a_shared_build_of_its_clean_gate() {
     let (folder, root) = fixture();
-    fs::write(root.join("stable"), "same\n").unwrap();
-    git(&root, &["add", "stable"]).unwrap();
-    git(&root, &["commit", "-qm", "stable file"]).unwrap();
-    let seeded = git(&root, &["rev-parse", "HEAD"]).unwrap();
-    fs::write(root.join("counter"), "two\n").unwrap();
-    git(&root, &["commit", "-qam", "second counter"]).unwrap();
-    let store = folder.path().join("clippy-seed");
-    fs::create_dir_all(store.join("target/debug")).unwrap();
-    fs::write(store.join("target/debug/unit"), "built\n").unwrap();
-    fs::write(store.join("lock"), "").unwrap();
-    fs::write(store.join("commit"), &seeded).unwrap();
-    let target = folder.path().join("B123");
-    prepare(&root, &target, "task/B123-counter").unwrap();
-
-    seed(&store, &target).unwrap();
-
-    let unit = target.join("target/debug/unit");
-    assert_eq!(fs::read_to_string(&unit).unwrap(), "built\n");
-    let built = fs::metadata(&unit).unwrap().modified().unwrap();
-    let stable = fs::metadata(target.join("stable")).unwrap();
-    let counter = fs::metadata(target.join("counter")).unwrap();
-    assert!(stable.modified().unwrap() < built);
-    assert!(counter.modified().unwrap() >= built);
-    let status = ["status", "--porcelain", "--untracked-files=no"];
-    assert_eq!(git(&target, &status).unwrap(), "");
-}
-
-#[test]
-fn a_new_checkout_without_a_seed_gets_no_target() {
-    let (folder, root) = fixture();
-    let target = folder.path().join("B123");
-    prepare(&root, &target, "task/B123-counter").unwrap();
-
-    seed(&folder.path().join("clippy-seed"), &target).unwrap();
-
-    assert!(!target.join("target").exists());
+    let gate = root.join(".development/gate");
+    fs::create_dir_all(&gate).unwrap();
+    fs::write(gate.join("Cargo.toml"), "[package]\n").unwrap();
+    git(&root, &["add", ".development/gate/Cargo.toml"]).unwrap();
+    git(&root, &["commit", "-qm", "gate manifest"]).unwrap();
+    let tree = git(&root, &["rev-parse", "HEAD:.development/gate"]).unwrap();
+    let builds = folder.path().join("builds");
+    assert!(needs_own_gate(&root, None).unwrap());
+    assert!(needs_own_gate(&root, Some(&builds)).unwrap());
+    fs::create_dir_all(builds.join(tree.trim())).unwrap();
+    fs::write(builds.join(tree.trim()).join("gate"), "").unwrap();
+    assert!(!needs_own_gate(&root, Some(&builds)).unwrap());
+    fs::write(gate.join("Cargo.toml"), "[package]\nname = \"gate\"\n").unwrap();
+    assert!(needs_own_gate(&root, Some(&builds)).unwrap());
 }
 
 #[test]
@@ -194,4 +172,21 @@ fn migration_refuses_an_unfinished_git_operation() {
     assert!(error.to_string().contains("unfinished Git operation"));
     assert!(target.join(".git").is_file());
     assert_eq!(fs::read_to_string(marker).unwrap(), head);
+}
+
+#[test]
+fn a_task_checkout_runs_no_git_hooks() {
+    let (folder, root) = fixture();
+    let hooks = common_dir(&root).unwrap().join("hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
+    let target = folder.path().join("B123");
+    let branch = "task/B123-counter";
+    prepare(&root, &target, branch).unwrap();
+    assert!(!target.join(".git/hooks/pre-commit").exists());
+    fs::write(target.join(".git/hooks/pre-push"), "#!/bin/sh\nexit 1\n").unwrap();
+    prepare(&root, &target, branch).unwrap();
+    assert!(!target.join(".git/hooks/pre-push").exists());
+    fs::write(target.join("counter"), "two\n").unwrap();
+    git(&target, &["commit", "-qam", "second counter"]).unwrap();
 }

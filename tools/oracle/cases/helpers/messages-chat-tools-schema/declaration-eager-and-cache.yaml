@@ -1,0 +1,13 @@
+kind: helper
+name: messages-chat-tools-schema-declaration-eager-and-cache
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: anthropic/claude-3-opus
+      messages: []
+      tools:
+        - {name: first, eager_input_streaming: true}
+        - {name: second, cache_control: {type: ephemeral}}
+env: {}
+compare: {ignore: []}

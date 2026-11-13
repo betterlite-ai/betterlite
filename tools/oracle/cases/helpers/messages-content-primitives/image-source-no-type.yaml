@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-source-no-type
+call: {"messages_content_primitives": {"operation": "image_source_url", "image_source": {"data": "YWJj"}}}
+env: {}
+compare: {ignore: []}

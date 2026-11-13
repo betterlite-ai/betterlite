@@ -1,0 +1,15 @@
+kind: helper
+name: provenance-tool-call-joins-assistant
+call:
+  b3670:
+    function: input_item_provenance
+    raw_input:
+      - {"role": "assistant", "content": "hello"}
+      - {"type": "function_call", "call_id": "c1", "name": "f", "arguments": "{}"}
+    expected_messages:
+      - role: assistant
+        content: hello
+        tool_calls:
+          - {"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}, "index": 0}
+env: {}
+compare: {ignore: []}

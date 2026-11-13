@@ -1,0 +1,15 @@
+kind: helper
+name: messages-chat-tools-schema-format-invalid-truthy
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      output_format: {type: text}
+      output_config:
+        format:
+          type: json_schema
+          schema: {type: object, properties: {nested: {type: string}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,35 @@
+{
+  "kind": "helper",
+  "name": "refreshing-store-unexpired",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "refreshing",
+      "inner": [
+        {
+          "kind": "token",
+          "token": {
+            "access_token": "unexpired-access",
+            "expires_at_ms": 2000000,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        }
+      ],
+      "refresher": [],
+      "operations": [
+        {
+          "op": "fetch",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1000000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

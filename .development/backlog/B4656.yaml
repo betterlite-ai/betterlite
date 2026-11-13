@@ -1,14 +1,14 @@
 id: B4656
 milestone: M9 agents and mcp
 title: MCP OAuth token stores and cache codecs
-status: todo
+status: done
 depends_on: [B733]
 file: tasks/B4656-mcp-oauth-token-stores.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{oauth_token_store,token_cache_codec,dual_cache_token_backend,v2_token_store,presented_token_store}.py"
 parent: B137
 split_from: B137
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1500

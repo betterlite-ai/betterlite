@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-truncate-other-suffix
+call: {"messages_content_primitives": {"operation": "truncate_tool_name", "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab"}}
+env: {}
+compare: {ignore: []}

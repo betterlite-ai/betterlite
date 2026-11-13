@@ -1,0 +1,17 @@
+kind: helper
+name: image-request-options-size-and-param
+call:
+  image_request_options:
+    calls:
+      - function: size
+        optional_params:
+          size: 1024x1024
+      - function: param
+        key: quality
+        optional_params:
+          quality: hd
+      - function: call_type
+        call_type: image_edit
+env: {}
+compare:
+  ignore: []

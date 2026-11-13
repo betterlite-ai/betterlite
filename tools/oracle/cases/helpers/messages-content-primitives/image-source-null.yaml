@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-source-null
+call: {"messages_content_primitives": {"operation": "image_source_url", "image_source": null}}
+env: {}
+compare: {ignore: []}
