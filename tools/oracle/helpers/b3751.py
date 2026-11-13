@@ -7,6 +7,7 @@ from litellm.proxy.guardrails.guardrail_hooks.akto.akto import AktoGuardrail
 from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
+from typing_extensions import override
 
 
 class AktoSettings(TypedDict, total=False):
@@ -42,6 +43,7 @@ class ScriptedTransport(httpx.AsyncBaseTransport):
         self.answer = answer
         self.requests: list[httpx.Request] = []
 
+    @override
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         status = self.answer.get("status")

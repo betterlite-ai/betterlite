@@ -11,7 +11,7 @@ use betterlite_guardrails::akto::payload::AktoInputs;
 use betterlite_guardrails::akto::transport::AktoAnswer;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 

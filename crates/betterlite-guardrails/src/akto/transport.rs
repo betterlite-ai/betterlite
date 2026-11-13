@@ -23,7 +23,7 @@ pub struct GuardrailVerdict {
     pub reason: String,
 }
 
-pub fn build_query_params(guardrails: bool, ingest_data: bool) -> BTreeMap<String, String> {
+pub(super) fn build_query_params(guardrails: bool, ingest_data: bool) -> BTreeMap<String, String> {
     let mut params =
         BTreeMap::from([("akto_connector".to_owned(), AKTO_CONNECTOR_NAME.to_owned())]);
     if guardrails {
