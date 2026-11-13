@@ -337,8 +337,11 @@ struct Observation {
     selected: Option<(String, Option<Json>)>,
     updated: bool,
     compile_model: Option<String>,
+    compile_messages: Option<Vec<Json>>,
     compile_non_default: Option<JsonObject>,
     compile_prompt_id: Option<Option<Json>>,
+    compile_variables: Option<Option<Json>>,
+    compile_label: Option<Option<Json>>,
     compile_injected: Option<bool>,
     direct: Option<JsonObject>,
     fallbacks: Option<JsonObject>,
@@ -351,7 +354,7 @@ struct FakeFailure;
 struct FakePorts {
     deployment: DeploymentSpec,
     compiled: CompiledPrompt,
-    has_deployments: bool,
+    group_model: String,
     observed: Mutex<Observation>,
 }
 
@@ -383,15 +386,18 @@ impl PromptPorts for FakePorts {
     ) -> Result<CompiledPrompt, FakeFailure> {
         let mut observed = self.observed.lock().unwrap();
         observed.compile_model = Some(call.model.to_owned());
+        observed.compile_messages = Some(call.messages.to_vec());
         observed.compile_non_default = Some(call.non_default_params.clone());
         observed.compile_prompt_id = Some(call.prompt_id.cloned());
+        observed.compile_variables = Some(call.prompt_variables.cloned());
+        observed.compile_label = Some(call.prompt_label.cloned());
         observed.compile_injected = Some(call.injected_for_every_deployment);
         drop(observed);
         Ok(self.compiled.clone())
     }
 
-    fn has_deployments(&self, _model: &str) -> bool {
-        self.has_deployments
+    fn has_deployments(&self, model: &str) -> bool {
+        model == self.group_model
     }
 
     async fn call_direct(&self, request: JsonObject) -> Result<Json, FakeFailure> {
@@ -409,8 +415,13 @@ fn prompt_deployment() -> DeploymentSpec {
     let mut litellm_params = JsonObject::new();
     litellm_params.insert("model".to_owned(), text("langfuse/my-prompt"));
     litellm_params.insert("prompt_id".to_owned(), text("greeting"));
+    litellm_params.insert(
+        "prompt_variables".to_owned(),
+        object(&[("name", text("world"))]),
+    );
+    litellm_params.insert("prompt_label".to_owned(), text("production"));
     DeploymentSpec {
-        model_name: "langfuse/my-prompt".to_owned(),
+        model_name: "support-prompt".to_owned(),
         litellm_params,
         model_info: JsonObject::new(),
         extra: JsonObject::new(),
@@ -422,7 +433,7 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
     let ports = FakePorts {
         deployment: prompt_deployment(),
         compiled: compiled(),
-        has_deployments: false,
+        group_model: "other-model".to_owned(),
         observed: Mutex::new(Observation::default()),
     };
     let request = object(&[
@@ -433,7 +444,7 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
         ("original_function", text("acompletion")),
     ]);
     let messages = [object(&[("role", text("user"))])];
-    let answer = prompt_factory("langfuse/my-prompt", &messages, request, &ports)
+    let answer = prompt_factory("support-prompt", &messages, request, &ports)
         .await
         .unwrap();
     assert_eq!(answer, text("answer"));
@@ -442,13 +453,22 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
 
 fn assert_reference_arguments(observed: &Observation) {
     let (selected_model, specific) = observed.selected.as_ref().unwrap();
-    assert_eq!(selected_model, "langfuse/my-prompt");
+    assert_eq!(selected_model, "support-prompt");
     assert_eq!(specific, &Some(Json::Bool(true)));
     assert!(observed.updated);
     assert_eq!(
         observed.compile_model.as_deref(),
         Some("langfuse/my-prompt")
     );
+    assert_eq!(
+        observed.compile_messages,
+        Some(vec![object(&[("role", text("user"))])])
+    );
+    assert_eq!(
+        observed.compile_variables,
+        Some(Some(object(&[("name", text("world"))])))
+    );
+    assert_eq!(observed.compile_label, Some(Some(text("production"))));
     assert_eq!(
         observed.compile_non_default,
         Some(object(&[("custom_provider_param", text("kept"))]))
@@ -471,10 +491,11 @@ async fn prompt_factory_sends_a_model_group_through_the_fallbacks() {
             messages: Vec::new(),
             optional_params: JsonObject::new(),
         },
-        has_deployments: true,
+        group_model: "gpt-4o".to_owned(),
         observed: Mutex::new(Observation::default()),
     };
-    let answer = prompt_factory("langfuse/my-prompt", &[], JsonObject::new(), &ports)
+    let request = object(&[("original_function", text("acompletion"))]);
+    let answer = prompt_factory("support-prompt", &[], request, &ports)
         .await
         .unwrap();
     assert_eq!(answer, text("answer"));
@@ -490,7 +511,7 @@ async fn prompt_factory_returns_the_identity_error_before_it_compiles() {
     let ports = FakePorts {
         deployment: deployment("langfuse/my-prompt"),
         compiled: compiled(),
-        has_deployments: false,
+        group_model: "gpt-4o".to_owned(),
         observed: Mutex::new(Observation::default()),
     };
     let error = prompt_factory("langfuse/my-prompt", &[], JsonObject::new(), &ports)
@@ -510,7 +531,7 @@ async fn prompt_factory_fails_when_the_deployment_has_no_model() {
             extra: JsonObject::new(),
         },
         compiled: compiled(),
-        has_deployments: false,
+        group_model: "gpt-4o".to_owned(),
         observed: Mutex::new(Observation::default()),
     };
     let request = object(&[("prompt_id", text("greeting"))]);
