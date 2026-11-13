@@ -39,13 +39,13 @@ pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
 
 #[must_use]
 pub fn is_generate_output_row(row: &VertexBatchRow) -> bool {
-    if [&row.request, &row.response, &row.processed_time].contains(&&RowField::Absent) {
-        return false;
-    }
-    let generated = row.response.object().is_some_and(|fields| {
-        fields.contains_key("candidates") || fields.contains_key("promptFeedback")
+    let fields = [&row.request, &row.response, &row.processed_time];
+    let answered = ["candidates", "promptFeedback"].iter().any(|name| {
+        row.response
+            .object()
+            .is_some_and(|keys| keys.contains_key(*name))
     });
-    generated || has_status(row)
+    fields.iter().all(|field| **field != RowField::Absent) && (answered || has_status(row))
 }
 
 pub fn split_vertex_batch_key(row: &VertexBatchRow) -> Result<BatchKey, BatchRowsError> {
