@@ -1,0 +1,35 @@
+kind: helper
+name: malformed-duration
+call:
+  vertex_recognition:
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":"2.5s"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":"2s"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":"abc"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":"2ms"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":"s"}}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[]}'
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"results":[],"metadata":{"totalBilledDuration":null}}'
+env: {}
+compare: {ignore: []}

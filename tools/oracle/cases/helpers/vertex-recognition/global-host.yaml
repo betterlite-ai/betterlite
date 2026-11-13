@@ -1,0 +1,10 @@
+kind: helper
+name: global-host
+call:
+  vertex_recognition:
+    steps:
+      - {step: url, api_base: null, location: global, project: my-project}
+      - {step: url, api_base: 'https://proxy.example///', location: global, project: my-project}
+      - {step: url, api_base: null, location: europe-west1, project: my-project}
+env: {}
+compare: {ignore: []}

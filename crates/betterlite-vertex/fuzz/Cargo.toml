@@ -13,8 +13,10 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = "../../betterlite-bedrock" }
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-vertex = { path = ".." }
+http = "1.5.0"
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
@@ -107,6 +109,13 @@ bench = false
 [[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_recognition"
+path = "fuzz_targets/vertex_recognition.rs"
 test = false
 doc = false
 bench = false
