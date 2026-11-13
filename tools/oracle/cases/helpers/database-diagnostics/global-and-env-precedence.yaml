@@ -1,0 +1,30 @@
+kind: helper
+name: database-diagnostics-global-and-env-precedence
+call:
+  database_diagnostics:
+    function: json_enabled
+    format_scenarios: []
+    enabled_scenarios:
+      - mode: attribute
+        global_enabled: true
+        json_logs: "false"
+      - mode: attribute
+        global_enabled: false
+        json_logs: "true"
+      - mode: missing_attribute
+        global_enabled: false
+        json_logs: "true"
+      - mode: import_error
+        global_enabled: false
+        json_logs: "TRUE"
+      - mode: import_error
+        global_enabled: false
+        json_logs: " true"
+      - mode: import_error
+        global_enabled: false
+        json_logs: "1"
+      - mode: attribute_error
+        global_enabled: false
+        json_logs: "true"
+env: {}
+compare: {ignore: []}
