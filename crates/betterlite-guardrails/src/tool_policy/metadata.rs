@@ -92,8 +92,8 @@ pub(super) fn request_route_from_data(
         .and_then(object_value)
         .filter(|fields| !fields.is_empty());
     // an empty litellm_metadata has no route either, so it needs no empty check of its own
-    let bucket =
-        metadata.or_else(|| request_data.get("litellm_metadata").and_then(object_value))?;
+    let litellm_metadata = request_data.get("litellm_metadata").and_then(object_value);
+    let bucket = metadata.or(litellm_metadata)?;
     let Some(GuardrailValue::Text(route)) = bucket.get("user_api_key_request_route") else {
         return None;
     };
