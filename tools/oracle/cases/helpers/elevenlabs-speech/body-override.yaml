@@ -1,0 +1,14 @@
+kind: helper
+name: elevenlabs-speech-body-override
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: request, text: hello, optional_params: {}}
+    - {function: request, text: hello, optional_params: {seed: 1, stability: null}}
+    - {function: request, text: hello, optional_params: {text: from options, model_id: from_options}}
+    - {function: request, text: hello, optional_params: {text: from options, extra_body: {text: from extra, model_id: from_extra}}}
+    - {function: request, text: hello, optional_params: {extra_body: {text: null, seed: 5}}}
+    - {function: request, text: hello, optional_params: {extra_body: text}}
+    - {function: request, text: hello, optional_params: {voice_settings: {speed: 1.2}, seed: 7}}
+compare: {ignore: []}
+env: {}

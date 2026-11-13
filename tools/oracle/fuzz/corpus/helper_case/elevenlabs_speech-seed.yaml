@@ -1,0 +1,14 @@
+kind: helper
+name: elevenlabs-speech-seed
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: Lily, optional_params: {response_format: mp3, speed: 1.2}, kwargs: {extra_body: {seed: 3}}}
+    - {function: request, text: hello, optional_params: {seed: 1}}
+    - function: url
+      api_base: null
+      environment: {ELEVENLABS_API_BASE: "https://env.test/"}
+      litellm_params: {__elevenlabs_voice_id__: voice, __elevenlabs_query_params__: {output_format: mp3_44100_128}}
+    - {function: headers, headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, environment: {ELEVENLABS_API_KEY: d}}
+compare: {ignore: []}
+env: {}
