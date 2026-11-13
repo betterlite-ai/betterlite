@@ -23,7 +23,6 @@ use super::azure::AzureGrants;
 use super::azure_http::AzureHttp;
 use super::azure_production::SdkAzureGrants;
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
-use super::gcp::AdcTokenSource;
 use super::gcp_production::VertexAdcTokenSource;
 use super::{CloudRedisAuthDeps, cloud_redis_auth};
 
@@ -51,36 +50,27 @@ pub async fn production_cloud_redis_auth(
     if config.sections.redis_credentials.provider.is_none() {
         return Ok(None);
     }
-    let deps = production_deps(config, environment, http).await?;
-    Ok(cloud_redis_auth(&config.sections.redis_credentials, &deps))
-}
-
-async fn production_deps(
-    config: &Config,
-    environment: &BTreeMap<String, String>,
-    http: ProxiedClient,
-) -> Result<CloudRedisAuthDeps, CloudRedisAuthSetupError> {
     let runtime = Handle::current();
-    let adc: Arc<dyn AdcTokenSource> = Arc::new(VertexAdcTokenSource {
-        runtime: runtime.clone(),
-        environment: config.sections.vertex_credential_sources.adc.clone(),
-        files: VertexFiles,
-        http: GoogleAuth {
-            client: http.clone(),
-            policy: HttpPolicy::default(),
-        },
-    });
     let azure = azure_grants(config, environment, &http, &runtime)?;
     let aws = load_default_provider()
         .await
         .ok_or(CloudRedisAuthSetupError::AwsCredentialsMissing)?;
-    Ok(CloudRedisAuthDeps {
+    let deps = CloudRedisAuthDeps {
+        adc: Arc::new(VertexAdcTokenSource {
+            runtime: runtime.clone(),
+            environment: config.sections.vertex_credential_sources.adc.clone(),
+            files: VertexFiles,
+            http: GoogleAuth {
+                client: http.clone(),
+                policy: HttpPolicy::default(),
+            },
+        }),
         runtime,
         http,
-        adc,
         azure,
         aws,
-    })
+    };
+    Ok(cloud_redis_auth(&config.sections.redis_credentials, &deps))
 }
 
 fn azure_grants(
