@@ -3318,6 +3318,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-tokenizer",
+ "data-encoding",
  "google-cloud-auth",
  "google-cloud-gax",
  "google-cloud-speech-v2",
