@@ -94,17 +94,32 @@ pub(super) fn transcription_request_value(
     }
 }
 
+// both transcription requests answer with the url, the headers, the ordered form and the file tuple
+fn form_answer(
+    url: String,
+    headers: Headers,
+    fields: &[(String, Value)],
+    file: &ProcessedAudioFile,
+) -> Value {
+    json!({
+        "url": url,
+        "ok": true,
+        "headers": headers,
+        "form": fields_pairs(fields),
+        "file": file_value(file),
+    })
+}
+
 fn ovhcloud_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
     let from_env = env_key(&call.env, "OVHCLOUD_API_KEY");
     let headers = ovhcloud_audio_headers(&Headers::new(), None, from_env.as_ref());
     let request = ovhcloud_form(&call.model, file, &call.optional_params);
-    json!({
-        "url": ovhcloud_audio_url(call.api_base.as_deref()),
-        "ok": true,
-        "headers": headers,
-        "form": fields_pairs(&request.fields),
-        "file": file_value(&request.file),
-    })
+    form_answer(
+        ovhcloud_audio_url(call.api_base.as_deref()),
+        headers,
+        &request.fields,
+        &request.file,
+    )
 }
 
 fn scaleway_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioFile) -> Value {
@@ -114,13 +129,7 @@ fn scaleway_transcription_value(call: &TranscriptionCall, file: &ProcessedAudioF
         return json!({"url": url, "ok": false, "status": 401});
     };
     let request = scaleway_form(&call.model, file, &call.optional_params);
-    json!({
-        "url": url,
-        "ok": true,
-        "headers": headers,
-        "form": fields_pairs(&request.fields),
-        "file": file_value(&request.file),
-    })
+    form_answer(url, headers, &request.fields, &request.file)
 }
 
 pub(super) fn transcription_reply_value(provider: AudioProvider, call: &ReplyCall) -> Value {
