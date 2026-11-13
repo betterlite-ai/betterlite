@@ -1,0 +1,11 @@
+kind: helper
+name: openai-response-resources-cancel-response
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    cancel_response:
+      probes:
+        - {endpoint: cancel, body: '{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}', status: 200, headers: {x-request-id: req-1}}
+        - {endpoint: cancel, body: '{"id":"resp_2","created_at":5,"output":"bad"}', status: 200}
+        - {endpoint: cancel, body: 'not json', status: 502}
