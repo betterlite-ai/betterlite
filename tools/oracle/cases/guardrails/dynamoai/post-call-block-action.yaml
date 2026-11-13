@@ -1,0 +1,24 @@
+kind: helper
+name: dynamoai-post-call-block-action
+call:
+  b3768:
+    mode: post_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: hello}
+    choices:
+      - {role: assistant, content: the answer, index: 0}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: BLOCK
+        appliedPolicies:
+          - policy: {name: Toxicity}
+            outputs: {action: BLOCK, message: blocked text}
+env: {}
+compare: {ignore: []}

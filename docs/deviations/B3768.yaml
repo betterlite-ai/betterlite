@@ -1,0 +1,14 @@
+task: B3768
+deviations:
+  - what: DynamoAI error messages use betterlite's own wording in failure scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L255-L287
+  - what: A response whose top level is not a JSON object, or whose appliedPolicies entries are not objects, is reported as a typed malformed-response error with guardrail status guardrail_failed_to_respond instead of an AttributeError escaping the hook.
+    why: LiteLLM calls .get on the decoded value in _process_dynamoai_guardrails_response, so non-object input raises AttributeError and surfaces as a 500; a typed error names the failure without relying on an unhandled exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L188-L222
+  - what: An unrecognised finalAction string is rejected as a malformed response, while LiteLLM treats any action other than NONE and BLOCK as success.
+    why: The declared DynamoAI response type lists BLOCK, WARN, REDACT, SANITIZE and NONE, and betterlite reports a value outside a declared closed set as an error that names the field instead of silently classifying it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/dynamoai.py#L241-L249
+  - what: policy_ids and model_id set in litellm_params are used by betterlite, while LiteLLM's initialize_guardrail forwards only api_key and api_base so those two config fields reach the class from the environment only.
+    why: The DynamoAIGuardrailConfigModel declares both fields, so a config that sets them means to configure the guardrail; betterlite honours the declared config instead of dropping it silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/dynamoai/__init__.py#L12-L22
