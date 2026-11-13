@@ -1,0 +1,15 @@
+kind: helper
+name: a2a-error-chunk
+call:
+  b3679:
+    function: http_error_emission
+    call_type: asend_message
+    status_code: 403
+    detail: {error: boom, code: 5, retryable: true}
+    responses_so_far: []
+    request_data: {data: {id: data-id}}
+    stream_started: true
+    responses_yielded: null
+    translation: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: redundant-scan
+call:
+  b3679:
+    function: redundant_scan
+    scan_key: {texts: [hello], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+    last_scan_key: {texts: [hello], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+env: {}
+compare: {ignore: []}

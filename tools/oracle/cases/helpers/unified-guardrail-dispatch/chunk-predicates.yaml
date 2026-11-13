@@ -1,0 +1,8 @@
+kind: helper
+name: chunk-predicates
+call:
+  b3679:
+    function: chunk_predicates
+    item: {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: hi, role: assistant, tool_calls: [{id: call_1, type: function, index: 0, function: {name: f, arguments: "{}"}}]}, finish_reason: end_turn}]}
+env: {}
+compare: {ignore: []}

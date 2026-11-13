@@ -82,9 +82,13 @@ impl BaseTranslation for ScriptedTranslation {
     fn build_stream_error_items(
         &self,
         _failure: &Self::Failure,
-        _responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[GuardrailValue]>,
     ) -> Option<Vec<GuardrailValue>> {
-        self.error_items.clone()
+        let items = self.error_items.as_ref()?;
+        let count = responses_so_far.map_or(0, <[GuardrailValue]>::len);
+        let mut echoed = items.clone();
+        echoed.push(GuardrailValue::Text(format!("items={count}")));
+        Some(echoed)
     }
 }
 

@@ -1,0 +1,10 @@
+kind: helper
+name: tool-call-passthrough
+call:
+  b3679:
+    function: tool_call_passthrough
+    item: {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 3, delta: {content: secret, role: assistant, tool_calls: [{id: call_1, type: function, index: 0, function: {name: f, arguments: "{}"}}]}, finish_reason: end_turn}]}
+    reasons: []
+    held: []
+env: {}
+compare: {ignore: []}
