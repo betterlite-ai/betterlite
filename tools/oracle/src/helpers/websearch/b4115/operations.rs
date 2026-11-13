@@ -7,9 +7,9 @@ use betterlite_websearch::execution::rich_input::rich_search_input;
 use betterlite_websearch::execution::short_circuit::ShortCircuitRequest;
 use betterlite_websearch::records::RichWebSearchInput;
 use serde::Serialize;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
-use super::Input;
+use super::{Input, Operation};
 use super::fakes::{self, RecordedCall};
 
 #[derive(Serialize)]
@@ -19,42 +19,44 @@ struct ExecuteOutput {
     calls: Vec<RecordedCall>,
 }
 
-pub(super) fn short_circuit(input: &Input) -> crate::helpers::HelperResult {
-    let execution = fakes::build(input);
-    let request = ShortCircuitRequest {
-        model: &input.model,
-        messages: &input.messages,
-        tools: input.tools.as_deref(),
-        custom_llm_provider: input.custom_llm_provider.as_deref(),
-    };
-    let runtime = Builder::new_current_thread().build().map_err(failure)?;
-    let response =
-        runtime.block_on(execution.try_short_circuit_search(&request, input.kwargs.as_ref()));
-    serde_json::to_value(response).map_err(failure)
-}
-
-pub(super) fn execute_search(input: &Input) -> crate::helpers::HelperResult {
-    let execution = fakes::build(input);
-    let rich = input
-        .tool_inputs
-        .first()
-        .and_then(|raw| rich_search_input(&ToolInput::from(raw.clone())));
-    let runtime = Builder::new_current_thread().build().map_err(failure)?;
-    let outcome = runtime.block_on(execution.execute_search(
-        &input.query,
-        input.kwargs.as_ref(),
-        rich.as_ref(),
-    ));
-    match outcome {
-        Ok((text, response)) => {
-            let output = ExecuteOutput {
-                text,
-                response,
-                calls: fakes::recorded(&execution),
+pub(super) fn run_search(input: &Input) -> crate::helpers::HelperResult {
+    match input.operation {
+        Operation::ShortCircuit => {
+            let request = ShortCircuitRequest {
+                model: &input.model,
+                messages: &input.messages,
+                tools: input.tools.as_deref(),
+                custom_llm_provider: input.custom_llm_provider.as_deref(),
+            };
+            let execution = fakes::build(input);
+            let response = runtime()?
+                .block_on(execution.try_short_circuit_search(&request, input.kwargs.as_ref()));
+            serde_json::to_value(response).map_err(failure)
+        }
+        Operation::ExecuteSearch => {
+            let rich = input
+                .tool_inputs
+                .first()
+                .and_then(|raw| rich_search_input(&ToolInput::from(raw.clone())));
+            let execution = fakes::build(input);
+            let outcome = runtime()?.block_on(execution.execute_search(
+                &input.query,
+                input.kwargs.as_ref(),
+                rich.as_ref(),
+            ));
+            let output = match outcome {
+                Ok((text, response)) => ExecuteOutput {
+                    text,
+                    response,
+                    calls: fakes::recorded(&execution),
+                },
+                Err(error) => return Err(search_failure(error)),
             };
             serde_json::to_value(output).map_err(failure)
         }
-        Err(error) => Err(search_failure(error)),
+        Operation::RichSearchInput | Operation::ProviderSupportsRichSearch => {
+            Err(failure("this operation runs no search"))
+        }
     }
 }
 
@@ -69,12 +71,18 @@ pub(super) fn rich_search_inputs(input: &Input) -> crate::helpers::HelperResult 
 
 pub(super) fn provider_supports(input: &Input) -> crate::helpers::HelperResult {
     let execution = fakes::build(input);
-    let results: Vec<bool> = input
-        .search_providers
-        .iter()
-        .map(|provider| execution.provider_supports_rich_search(provider.as_deref()))
-        .collect();
+    let mut results = Vec::with_capacity(input.search_providers.len());
+    for provider in &input.search_providers {
+        results.push(execution.provider_supports_rich_search(provider.as_deref()));
+    }
     serde_json::to_value(results).map_err(failure)
+}
+
+fn runtime() -> Result<Runtime, Box<crate::helpers::HelperError>> {
+    match Builder::new_current_thread().build() {
+        Ok(runtime) => Ok(runtime),
+        Err(error) => Err(failure(error)),
+    }
 }
 
 fn failure<Source>(error: Source) -> Box<crate::helpers::HelperError>

@@ -176,24 +176,20 @@ async def execute_search(input_value: Input) -> Json:
     return {"text": text, "response": response_value, "calls": RECORDED}
 
 
-def rich_search_inputs(input_value: Input) -> Json:
-    results: list[Json] = []
+def pure_lookup(input_value: Input) -> Json:
     tool_inputs = input_value.get("tool_inputs")
     if tool_inputs is not None:
-        for tool_input in tool_inputs:
-            value = WebSearchInterceptionLogger._rich_search_input(tool_input)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1481-L1507
-            results.append(cast(Json, value))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L31-L48
-    return results
-
-
-def provider_supports(input_value: Input) -> Json:
-    results: list[Json] = []
+        return [
+            cast(Json, WebSearchInterceptionLogger._rich_search_input(tool_input))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1481-L1507
+            for tool_input in tool_inputs
+        ]
     providers = input_value.get("search_providers")
-    if providers is not None:
-        for provider in providers:
-            supported = WebSearchInterceptionLogger._provider_supports_rich_search(provider)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1509-L1521
-            results.append(supported)
-    return results
+    if providers is None:
+        return []
+    return [
+        WebSearchInterceptionLogger._provider_supports_rich_search(provider)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1509-L1521
+        for provider in providers
+    ]
 
 
 def run(input_value: Input) -> Json:
@@ -202,6 +198,4 @@ def run(input_value: Input) -> Json:
         return asyncio.run(short_circuit(input_value))
     if operation == "execute_search":
         return asyncio.run(execute_search(input_value))
-    if operation == "rich_search_input":
-        return rich_search_inputs(input_value)
-    return provider_supports(input_value)
+    return pure_lookup(input_value)

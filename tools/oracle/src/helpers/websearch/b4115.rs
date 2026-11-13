@@ -78,8 +78,7 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.operation {
-            Operation::ShortCircuit => operations::short_circuit(input),
-            Operation::ExecuteSearch => operations::execute_search(input),
+            Operation::ShortCircuit | Operation::ExecuteSearch => operations::run_search(input),
             Operation::RichSearchInput => operations::rich_search_inputs(input),
             Operation::ProviderSupportsRichSearch => operations::provider_supports(input),
         }
