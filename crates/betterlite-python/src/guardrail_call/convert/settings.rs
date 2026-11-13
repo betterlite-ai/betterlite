@@ -159,10 +159,12 @@ pub(crate) fn mode_to_value(mode: &LitellmParamsMode) -> GuardrailValue {
 fn target_to_value(target: ModeTarget) -> GuardrailValue {
     match target {
         ModeTarget::One(name) => GuardrailValue::Text(name),
-        ModeTarget::Many(names) => {
-            GuardrailValue::Array(names.into_iter().map(GuardrailValue::Text).collect())
-        }
+        ModeTarget::Many(names) => names_to_value(names),
     }
+}
+
+fn names_to_value(names: Vec<String>) -> GuardrailValue {
+    GuardrailValue::Array(names.into_iter().map(GuardrailValue::Text).collect())
 }
 
 fn mode_from_value(value: Option<GuardrailValue>) -> Result<Option<LitellmParamsMode>, CallError> {
@@ -200,10 +202,11 @@ fn tags_from_value(value: GuardrailValue) -> Result<BTreeMap<String, ModeTarget>
     let GuardrailValue::Object(entries) = value else {
         return Err(CallError::EventHookShape);
     };
-    entries
-        .into_iter()
-        .map(|(tag, target)| Ok((tag, target_from_value(target)?)))
-        .collect()
+    let mut tags = BTreeMap::new();
+    for (tag, target) in entries {
+        tags.insert(tag, target_from_value(target)?);
+    }
+    Ok(tags)
 }
 
 fn default_target(value: GuardrailValue) -> Result<Option<ModeTarget>, CallError> {
