@@ -1,0 +1,20 @@
+kind: helper
+name: openai-response-input-recursive-tool-namespace
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input: hi
+      params:
+        tools:
+        - type: namespace
+          name: ns
+          parameters: {type: object, anyOf: [{type: string}]}
+          tools:
+          - {type: function, name: inner, parameters: '{"type":"object"}'}
+          - raw-inner
+          - {type: function, name: deep, parameters: {anyOf: [{type: number}], properties: {p: {pattern: '('}}}}
+          unrelated: {keep: true}
+        - {type: function, name: plain, parameters: {type: object}}
+env: {}
+compare: {ignore: []}

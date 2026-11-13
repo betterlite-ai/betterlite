@@ -1,0 +1,13 @@
+kind: helper
+name: openai-response-input-invalid-string-schema
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input: hi
+      params:
+        tools:
+        - {type: function, name: ok}
+        - {type: function, name: bad, parameters: '{bad'}
+env: {}
+compare: {ignore: []}
