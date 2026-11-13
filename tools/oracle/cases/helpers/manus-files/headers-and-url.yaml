@@ -1,0 +1,22 @@
+kind: helper
+name: manus-files-headers-and-url
+env: {}
+compare: {ignore: []}
+call:
+  b8105:
+    op: headers_and_url
+    validation:
+      - {environment: {}, sdk: {api_base: null, api_key: null}, headers: {}, api_key: null}
+      - {environment: {MANUS_API_KEY: env-key}, sdk: {api_base: null, api_key: null}, headers: {x-caller: "1"}, api_key: null}
+      - {environment: {MANUS_API_KEY: env-key}, sdk: {api_base: null, api_key: global-key}, headers: {Authorization: "Bearer caller"}, api_key: null}
+      - {environment: {MANUS_API_KEY: env-key}, sdk: {api_base: null, api_key: global-key}, headers: {}, api_key: explicit-key}
+      - {environment: {MANUS_API_KEY: env-key}, sdk: {api_base: null, api_key: global-key}, headers: {}, api_key: ""}
+      - {environment: {MANUS_API_KEY: ""}, sdk: {api_base: null, api_key: null}, headers: {}, api_key: null}
+    urls:
+      - {environment: {}, sdk: {api_base: null, api_key: null}, api_base: "https://explicit:1"}
+      - {environment: {}, sdk: {api_base: null, api_key: null}, api_base: "https://explicit:1/v1/"}
+      - {environment: {}, sdk: {api_base: null, api_key: null}, api_base: "https://explicit:1/v1beta"}
+      - {environment: {}, sdk: {api_base: "https://sdk:2", api_key: null}, api_base: null}
+      - {environment: {MANUS_API_BASE: "https://env:3/v1"}, sdk: {api_base: null, api_key: null}, api_base: null}
+      - {environment: {MANUS_API_BASE: ""}, sdk: {api_base: null, api_key: null}, api_base: null}
+      - {environment: {}, sdk: {api_base: null, api_key: null}, api_base: null}

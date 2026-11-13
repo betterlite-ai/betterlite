@@ -1,0 +1,6 @@
+kind: helper
+name: scoped-indices-skip-system-and-tool
+call:
+  b3663: {"function": "scope", "messages": [{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}, {"role": "tool", "content": "result", "tool_call_id": "c1"}, {"role": "Assistant", "content": "ok"}], "flags": {"skip_system": null, "skip_tool": true, "scan_only": null, "global_skip_system": true, "global_skip_tool": false}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,175 @@
+id: B8808
+title: Oracle helper group core_ops as its own crate
+description: >-
+  Why. The oracle helper groups become crates one at a time, so an edit in one group lints and builds that group
+  instead of all of betterlite-oracle. B8806 built the shared crate betterlite-oracle-helper-api and moved redact, and
+  B8807 moved server. This task moves core_ops the same way. After server it is the group with the most work still
+  ahead: 342 operations, 288 of them stubs, 13,354 lines (main at 1161d25819). The other 43 groups stay where they are.
+
+
+  The error trait first. `OrHelperError` (`or_config_error` and `or_value_error`) is `pub(crate)` in
+  tools/oracle/src/helpers/mod.rs, and four core_ops modules call it (responses_codex_tools, responses_input_messages,
+  responses_tool_namespaces, responses_tool_results), so the group can't leave the oracle crate without it. Move the
+  trait, its impl for every `Result<T, E>` with `E: Display`, `ErrorClass` and `map_helper_error` into
+  tools/oracle/helper-api/src/error.rs, with the trait `pub` and the bodies unchanged. The shared `helper_group!` macro
+  re-exports it in the `helpers` module it generates, beside HelperError, so `use crate::helpers::OrHelperError` works
+  in a group crate. In helpers/mod.rs the definition gives way to `pub(crate) use
+  betterlite_oracle_helper_api::error::OrHelperError;`, so the groups still in the oracle crate import it as they do
+  now. Two tests in tools/oracle/helper-api/src/error/tests.rs pin the JSON each method writes: ValueError with
+  `type`, `param` and `code` as null, ConfigError without those three keys.
+
+
+  The group crate. Create package betterlite-oracle-core-ops in place, in tools/oracle/src/helpers/core_ops, so no
+  operation file moves: add tools/oracle/src/helpers/core_ops/Cargo.toml with `[lib] path = "lib.rs"`, and move
+  tools/oracle/src/helpers/core_ops.rs to tools/oracle/src/helpers/core_ops/lib.rs with `git mv`. There it calls
+  `betterlite_oracle_helper_api::helper_group!` with the same 342 pairs in the same order. Its dependencies are
+  betterlite-oracle-helper-api, the 14 workspace crates the group's code names (betterlite-auth, betterlite-config,
+  betterlite-context, betterlite-core, betterlite-error, betterlite-http, betterlite-logging, betterlite-mcp,
+  betterlite-models, betterlite-openai, betterlite-provider, betterlite-redact, betterlite-tokenizer,
+  betterlite-transcribe) and the outside crates its files use, never betterlite-oracle. List the package by path in
+  the root Cargo.toml `members` (the `tools/*` glob doesn't reach it), add it to tools/oracle/Cargo.toml, and add it to
+  the crates deny.toml lets depend on reqwest, since runway_tasks.rs names `reqwest::header`. In helpers/mod.rs drop
+  `mod core_ops;` and take the core_ops entry of `GROUPS` from the new crate, in the same position. Every file under
+  the group folder, apart from Cargo.toml, lib.rs and response_id_codecs/tests.rs, stays byte for byte as it is; a
+  check enforces that.
+
+
+  The group's tests stay with the group. b4746/tests.rs and messages_context_clear/tests.rs name only
+  `crate::helpers::Helper` and `super::Op`, so they compile in the group crate as they are.
+  response_id_codecs/tests.rs imports `crate::case::HelperCase` and `crate::case::helper::validate_helper`; it takes
+  `betterlite_oracle::case::helper::{HelperCase, validate_helper}` instead, through a dev-dependency on
+  betterlite-oracle the way the server tests do, with serde-saphyr beside it. It reads the fuzz corpus at
+  `CARGO_MANIFEST_DIR` joined with "fuzz/corpus/helper_case", and that becomes "../../../fuzz/corpus/helper_case". The
+  corpus doesn't move.
+
+
+  Lints. The new crate inherits the workspace lints (`[lints] workspace = true`). The exceptions tools/oracle/src/lib.rs
+  carries for helper code (`clippy::disallowed_types` at the crate root, and `clippy::mod_module_files`,
+  `clippy::disallowed_methods`, `clippy::absolute_paths` and `clippy::map_err_ignore` on `mod helpers`) don't reach a
+  new crate, so lib.rs repeats, with a reason, only the ones that fire in the group, the way
+  tools/oracle/src/helpers/server/lib.rs does. An `#[expect]` that never fires is itself an error.
+
+
+  Nothing a helper case can observe changes: same operations, same inputs, same output, same error JSON, same case
+  files. No test is deleted and no operation is renamed.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/helper-api/src/error.rs
+  - tools/oracle/helper-api/src/error/tests.rs
+  - tools/oracle/helper-api/src/helper_group.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/core_ops.rs
+  - tools/oracle/src/helpers/core_ops/Cargo.toml
+  - tools/oracle/src/helpers/core_ops/lib.rs
+  - tools/oracle/src/helpers/core_ops/response_id_codecs/tests.rs
+  lint_tables: false
+references:
+- url: https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+  why: A workspace member is listed by path, and the tools/* glob matches only direct children of tools.
+- url: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-path-field
+  why: "`[lib] path` lets the group crate keep its files where they are instead of under src/."
+- url: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#development-dependencies
+  why: Dev-dependencies are used only by tests, so the group's tests may depend on the crate that depends on the group.
+- url: https://doc.rust-lang.org/reference/items/implementations.html#orphan-rules
+  why: A crate may implement its own trait for `Result`, so the trait's impl moves with the trait into the shared crate.
+- url: https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html#the-wrappers-field-optional
+  why: Only a crate in a wrappers list may depend on reqwest directly.
+dod:
+- text: >-
+    betterlite-oracle-core-ops is a workspace package at tools/oracle/src/helpers/core_ops, it doesn't depend on
+    betterlite-oracle outside its tests, betterlite-oracle depends on it, tools/oracle/src/helpers/core_ops.rs is gone,
+    helpers/mod.rs takes the core_ops group from the new crate and no longer defines `OrHelperError`, and under the
+    group folder only Cargo.toml, lib.rs and response_id_codecs/tests.rs changed.
+  proof:
+  - crate-layout
+- text: >-
+    `OrHelperError` is a public trait of betterlite-oracle-helper-api, a group crate reaches it as
+    `crate::helpers::OrHelperError`, and `or_value_error` and `or_config_error` write the same error JSON as before.
+  proof:
+  - helper-api-tests
+- text: The core_ops group's three test files run in betterlite-oracle-core-ops and pass.
+  proof:
+  - core-ops-tests
+- text: >-
+    The oracle still decodes and runs every registered operation, the core_ops ones through the new crate, and the
+    cases of the core_ops operations that call the trait, and of two operations in groups still inside the oracle
+    crate that call it, still match LiteLLM.
+  proof:
+  - registry-tests
+  - oracle
+- text: The new crate passes the workspace lints, the dependency policy and the unused-dependency check.
+  proof:
+  - clippy
+  - deny
+  - shear
+  - hooks
+checks:
+  optional: []
+  commands:
+  - id: crate-layout
+    why: the core_ops package is missing or in the wrong folder, it depends on betterlite-oracle, the old group file is still there, mod.rs still declares the group or defines the trait, or a group file outside the allowed list was edited
+    run: >-
+      test ! -e tools/oracle/src/helpers/core_ops.rs &&
+      ! grep -q -x 'mod core_ops;' tools/oracle/src/helpers/mod.rs &&
+      grep -q -F 'betterlite_oracle_core_ops::GROUP,' tools/oracle/src/helpers/mod.rs &&
+      ! grep -q -E 'trait OrHelperError' tools/oracle/src/helpers/mod.rs &&
+      grep -q -E '^pub trait OrHelperError<' tools/oracle/helper-api/src/error.rs &&
+      test -z "$(git diff --name-only --no-renames "$GATE_BASE" -- tools/oracle/src/helpers/core_ops | grep -v -x -E 'tools/oracle/src/helpers/core_ops/(Cargo\.toml|lib\.rs|response_id_codecs/tests\.rs)')" &&
+      cargo metadata --locked --offline --no-deps --format-version 1 | jq -e '
+      (.packages | map(select(.name == "betterlite-oracle-core-ops")) | first) as $group |
+      (.packages | map(select(.name == "betterlite-oracle")) | first) as $oracle |
+      ($group.manifest_path | endswith("/tools/oracle/src/helpers/core_ops/Cargo.toml")) and
+      ([$group.dependencies[] | select(.kind == null) | .name] | (index("betterlite-oracle-helper-api") != null) and (index("betterlite-oracle") == null)) and
+      ([$oracle.dependencies[] | select(.kind == null) | .name] | index("betterlite-oracle-core-ops") != null)'
+  - id: helper-api-tests
+    why: the moved trait writes a different error JSON, or its tests are missing
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-oracle-helper-api -E 'test(/^error::tests::/)' --message-format oneline) &&
+      for name in error::tests::or_value_error_writes_type_param_and_code_as_null error::tests::or_config_error_leaves_type_param_and_code_out; do grep -q "$name" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-oracle-helper-api --no-tests=fail -E 'test(/^error::tests::/)'
+  - id: core-ops-tests
+    why: a test of the core_ops group is missing from its crate or no longer passes there
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-oracle-core-ops -E 'test(/::tests::/)' --message-format oneline) &&
+      for name in b4746::tests::prompts_collect_every_page_in_cursor_order b4746::tests::an_absent_capability_returns_without_fetching b4746::tests::a_first_page_method_not_found_returns_an_empty_list b4746::tests::a_repeated_cursor_returns_the_items_collected_so_far b4746::tests::an_empty_cursor_ends_the_walk b4746::tests::a_single_page_within_the_client_timeout_succeeds b4746::tests::list_items_keep_the_sdk_metadata_fields b4746::tests::a_page_past_the_deadline_returns_the_items_collected_so_far b4746::tests::get_prompt_forwards_the_name_and_arguments b4746::tests::read_resource_forwards_the_url b4746::tests::read_resource_normalizes_the_url b4746::tests::a_failed_prompt_fetch_reports_the_failure messages_context_clear::tests::scripted_editor_clears_and_records_calls messages_context_clear::tests::ignored_knobs_are_reported_in_order messages_context_clear::tests::visible_edits_hide_a_bare_compaction_edit messages_context_clear::tests::context_management_error_carries_its_status messages_context_clear::tests::constants_carry_the_pinned_values response_id_codecs::tests::replays_the_response_id_codecs_helper_cases; do grep -q "$name" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/::tests::/)'
+  - id: registry-tests
+    why: the oracle's registry no longer decodes or runs an operation after the core_ops group left the crate
+    run: >-
+      test -f tools/oracle/src/helpers/core_ops/lib.rs &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::tests::/) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/response-id-codecs
+- tools/oracle/cases/helpers/responses-codex-tools
+- tools/oracle/cases/helpers/responses-input-messages
+- tools/oracle/cases/helpers/responses-tool-namespaces
+- tools/oracle/cases/helpers/responses-tool-results
+- tools/oracle/cases/helpers/deepseek-request-policy
+- tools/oracle/cases/helpers/providers/azure-credentials
+deviations: []
+out_of_scope:
+- The other 43 helper groups stay modules of betterlite-oracle, and redact and server stay as B8806 and B8807 left them. The groups still in the oracle crate keep importing `crate::helpers::OrHelperError`, and none of their files changes.
+- In betterlite-oracle-helper-api only error.rs, its new tests.rs and the macro's re-export change. Helper, HelperResult, HelperError, Group and the serde_json and io conversions stay as they are.
+- The helper runner (run_case, run_pair, invoke, the answer cache and the Python side) and the case loader (load_cases, LoadedCase, HelperCase and its fields) stay in betterlite-oracle with the visibility they have.
+- Case files, the fuzz corpus, the Python adapters under tools/oracle/helpers, dispatch.py and the fuzz crate don't change.
+- The open task files whose commands filter `helpers::core_ops::` (B032, B036, B037, B1339, B1356, B1357, B1365, B1419, B1426, B1430) get their commands rewritten by the architect after this task merges. This task changes nothing under .development/.
+pitfalls:
+- "The shared macro gives a group crate a `crate::helpers` module with Helper, HelperResult, HelperError and, after this task, OrHelperError. `crate::case`, `crate::helpers::run_case` and `crate::helpers::HelperRun` don't resolve there, so the tests name them through `betterlite_oracle::`."
+- "The trait moves as it is: same method names, same impl, same fields per class. Helper cases compare the error JSON with LiteLLM's, so ValueError keeps `type`, `param` and `code` as null (`Some(None)`) and ConfigError leaves them out (`None`)."
+- "Running task branches add `use crate::helpers::{HelperError, OrHelperError as _};` to core_ops modules (B908, B922 and B963 at 1161d25819). The macro's re-export is what keeps those lines compiling after they merge main, so it has to name exactly `OrHelperError`."
+- "`env!(\"CARGO_MANIFEST_DIR\")` starts at the manifest folder of the crate that holds the test, tools/oracle/src/helpers/core_ops, three levels below tools/oracle."
+- "anthropic_beta_config.rs already imports `betterlite_oracle_helper_api::error::HelperError`. It compiles in the group crate as it is, with the shared crate as a normal dependency."
+- "`cargo clippy -p betterlite-oracle-core-ops --lib` builds the group without betterlite-oracle, so a feature its files rely on has to be on in its own manifest. Copy each dependency's version and features from tools/oracle/Cargo.toml (serde_json keeps arbitrary_precision and raw_value, or the JSON a helper prints changes; reqwest keeps default-features off with blocking)."
+- "Every crate the group names is also named elsewhere in betterlite-oracle on main, so tools/oracle/Cargo.toml loses no dependency. Run cargo shear anyway."
+- "deny.toml lists the crates allowed to depend on reqwest directly; the group crate goes on that list. The group names neither betterlite-server nor betterlite-router, so those two entries stay as they are."
+- "helpers/tests.rs reads the operation names from every line of `<group>/lib.rs` that opens with a quote, so lib.rs keeps the pairs on such lines and no other line in it (an expect reason included) opens with a quote."
+- "helpers/mod.rs holds a `GROUPS` array of 46. It stays at 46 entries in the same order, with only the core_ops entry, between context and cost, coming from the new crate."
+- "Packages named betterlite-core and betterlite-oracle already exist. `-p betterlite-oracle-core-ops` selects only the new crate, and a jq or grep test on package names has to compare the whole name."
+- "`cargo nextest run -p betterlite-oracle-core-ops` builds betterlite-oracle as a dev-dependency, so the first run takes as long as an oracle build."
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 4
+review_level: standard

@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-team-modify-guardrails-lock
+call:
+  b3663: {"function": "can_modify", "team": {"metadata": {"guardrails": {"modify_guardrails": false}}}}
+env: {}
+compare: {ignore: []}

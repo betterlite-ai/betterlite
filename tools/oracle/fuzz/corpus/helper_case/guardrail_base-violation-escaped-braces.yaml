@@ -1,0 +1,6 @@
+kind: helper
+name: violation-escaped-braces
+call:
+  b5471: {"function": "violation", "template": "{{kept}} {default_message}", "default": "fallback", "context": {}}
+env: {}
+compare: {ignore: []}

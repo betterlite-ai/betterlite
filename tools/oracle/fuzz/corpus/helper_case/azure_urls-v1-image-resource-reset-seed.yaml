@@ -1,0 +1,10 @@
+kind: helper
+name: azure-urls-v1-image-resource-reset-seed
+call:
+  azure_urls:
+    v1_image_resource_reset:
+      - api_base: "https://seed.example/openai/deployments/seed/images/generations?api-version=seed"
+        api_version: v1
+        route: /openai/v1/images/generations
+env: {}
+compare: {ignore: []}

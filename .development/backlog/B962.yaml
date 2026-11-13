@@ -2,7 +2,7 @@ id: B962
 milestone: M5 api families
 title: Messages thinking
 status: todo
-depends_on: [B171, B1087, B002, B2430, B2436, B323, B2225, B567, B958, B012, B2401]
+depends_on: [B171, B1087, B002, B2430, B2436, B323, B2225, B567, B958, B012, B2401, B9952]
 file: tasks/B962-messages-thinking.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/transformation.py"

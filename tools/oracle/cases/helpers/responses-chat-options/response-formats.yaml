@@ -1,0 +1,27 @@
+kind: helper
+name: response-formats
+call:
+  responses_chat_options:
+    request:
+      model: m
+      input: hi
+      text:
+        format:
+          type: json_schema
+          name: answer
+          schema: {type: object, properties: {value: {type: string}}}
+          strict: true
+    provider: openai
+    stream: null
+    extra_headers: null
+    metadata: null
+    service_tier: null
+    api_base: null
+    supported_openai_params: null
+    bridge_mode: null
+    bridge_failure: null
+    route_all_openai_to_responses: false
+    cache: []
+env: {}
+compare:
+  ignore: []

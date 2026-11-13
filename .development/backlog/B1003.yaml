@@ -2,7 +2,7 @@ id: B1003
 milestone: M5 api families
 title: Speech chat bridge
 status: todo
-depends_on: [B004, B011, B1128, B171, B1087, B2401]
+depends_on: [B004, B011, B1128, B171, B1087, B2401, B9952]
 file: tasks/B1003-speech-chat-bridge.yaml
 covers:
   - "litellm/endpoints/speech/speech_to_completion_bridge/handler.py"
