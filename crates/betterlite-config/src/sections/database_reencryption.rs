@@ -41,7 +41,7 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            max_recurse_depth: max_recurse_depth(lookup)?,
+            max_recurse_depth: depth_from_env(lookup)?,
             migrate_from_master_key: lookup.lookup(PREVIOUS_KEY_VARIABLE).map(SecretString::from),
             salt_key_is_set: lookup.lookup(SALT_KEY_ENV_VAR).is_some(),
         })
@@ -49,16 +49,15 @@ impl Section for Raw {
 }
 
 // LiteLLM calls int() once at import: a bad or empty value stops startup instead of taking the default
-fn max_recurse_depth<L>(lookup: &L) -> Result<i64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn depth_from_env<L: EnvironmentLookup>(lookup: &L) -> Result<i64, ConfigError> {
     let Some(text) = lookup.lookup(RECURSE_DEPTH_VARIABLE) else {
         return Ok(DEFAULT_RECURSE_DEPTH);
     };
-    betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?.ok_or_else(|| {
-        ConfigError::from(betterlite_env::EnvError::Number {
-            name: RECURSE_DEPTH_VARIABLE.to_owned(),
-        })
+    betterlite_env::number::<i64>(RECURSE_DEPTH_VARIABLE, &text)?.ok_or_else(invalid_depth)
+}
+
+fn invalid_depth() -> ConfigError {
+    ConfigError::from(betterlite_env::EnvError::Number {
+        name: RECURSE_DEPTH_VARIABLE.to_owned(),
     })
 }

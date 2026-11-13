@@ -64,30 +64,14 @@ where
     D: SecretStorage + Sync,
     L: Fn(&str) -> Result<(), MigrationError> + Send + Sync,
 {
-    let outcome = migrate_or_failure(plan, database, &log).await;
-    match log(&describe_outcome(&outcome)) {
-        Ok(()) => Ok(outcome),
-        Err(cause) => Err(MigrationFailure::from_cause(
-            cause,
-            &[plan.previous_master_key, plan.master_key],
-        )),
-    }
-}
-
-async fn migrate_or_failure<D, L>(
-    plan: &MigrationPlan<'_>,
-    database: Option<&D>,
-    log: &L,
-) -> MigrationOutcome
-where
-    D: SecretStorage + Sync,
-    L: Fn(&str) -> Result<(), MigrationError> + Sync,
-{
     let secrets = [plan.previous_master_key, plan.master_key];
-    match migrate(plan, database, log).await {
+    let outcome = match migrate(plan, database, &log).await {
         Ok(outcome) => outcome,
         Err(cause) => MigrationOutcome::Failed(MigrationFailure::from_cause(cause, &secrets)),
-    }
+    };
+    log(&describe_outcome(&outcome))
+        .map_err(|cause| MigrationFailure::from_cause(cause, &secrets))?;
+    Ok(outcome)
 }
 
 async fn migrate<D, L>(

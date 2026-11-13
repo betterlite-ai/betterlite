@@ -4,7 +4,7 @@ use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::database_reencryption::outcome::{
     MigrationFailure, MigrationOutcome, NothingToMigrate, describe_outcome,
 };
-use betterlite_db::database_reencryption::traversal::replace_ciphertexts;
+use betterlite_db::database_reencryption::traversal::{as_sql_parameter, replace_ciphertexts};
 use betterlite_db::encryption_scan::decode_migration_json;
 use serde_json::Value;
 
@@ -26,6 +26,7 @@ impl Helper for Op {
             Input::Outcome { outcome } => {
                 Ok(Value::String(describe_outcome(&outcome.to_outcome())))
             }
+            Input::SqlParameter { shapes } => run_sql_parameter(shapes),
         }
     }
 }
@@ -42,6 +43,16 @@ pub(crate) enum Input {
     Outcome {
         outcome: OutcomeInput,
     },
+    SqlParameter {
+        shapes: Vec<ShapeInput>,
+    },
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ShapeInput {
+    value: Value,
+    is_json: bool,
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -116,4 +127,24 @@ fn run_replace(
     let rendered =
         serde_json::to_value(&replaced).map_err(|error| input_error(error.to_string()))?;
     Ok(serde_json::json!({"value": rendered, "count": count}))
+}
+
+fn run_sql_parameter(shapes: &[ShapeInput]) -> HelperResult {
+    let mut rendered = Vec::with_capacity(shapes.len());
+    for shape in shapes {
+        let text =
+            serde_json::to_string(&shape.value).map_err(|error| input_error(error.to_string()))?;
+        let stored = decode_migration_json(text.as_bytes())
+            .map_err(|error| input_error(error.to_string()))?;
+        let parameter = as_sql_parameter(&stored, shape.is_json)
+            .map_err(|error| input_error(error.to_string()))?;
+        let value = if shape.is_json {
+            serde_json::from_str::<Value>(&parameter)
+                .map_err(|error| input_error(error.to_string()))?
+        } else {
+            Value::String(parameter)
+        };
+        rendered.push(value);
+    }
+    Ok(Value::Array(rendered))
 }

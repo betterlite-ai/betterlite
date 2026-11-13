@@ -100,17 +100,21 @@ impl Database {
             .collect()
     }
 
+    async fn single_value(&self, sql: &str, key: &str) -> Option<Option<String>> {
+        let row = self
+            .client
+            .query_opt(sql, &[&key])
+            .await
+            .expect("the fixture query runs");
+        row.map(|record| record.get::<_, Option<String>>(0))
+    }
+
     pub(crate) async fn stored(&self, column: &SecretColumn, key: &str) -> Option<Option<String>> {
         let sql = format!(
             "SELECT \"{}\"::text FROM \"{}\" WHERE \"{}\" = $1",
             column.column, column.table, column.primary_key
         );
-        let row = self
-            .client
-            .query_opt(sql.as_str(), &[&key])
-            .await
-            .expect("the stored row reads");
-        row.map(|record| record.get(0))
+        self.single_value(&sql, key).await
     }
 
     pub(crate) async fn snapshot(&self, column: &SecretColumn) -> Vec<String> {
@@ -134,12 +138,10 @@ impl Database {
             "SELECT xmin::text FROM \"{}\" WHERE \"{}\" = $1",
             column.table, column.primary_key
         );
-        let row = self
-            .client
-            .query_one(sql.as_str(), &[&key])
+        self.single_value(&sql, key)
             .await
-            .expect("the row version reads");
-        row.get(0)
+            .expect("the row exists")
+            .expect("xmin is set")
     }
 }
 

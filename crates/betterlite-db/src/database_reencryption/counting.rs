@@ -16,13 +16,28 @@ pub async fn count_values_encrypted_with<D>(
 where
     D: SecretStorage + Sync,
 {
-    let mut total: usize = 0;
+    let mut counted = Vec::new();
     for column in database.secret_columns().await? {
-        for row in database.rows(&column).await? {
-            total = total.saturating_add(count_row(row.value, signing_key, max_depth)?);
-        }
+        counted.push(count_column(database, &column, signing_key, max_depth).await?);
     }
-    Ok(total)
+    Ok(counted.into_iter().sum())
+}
+
+async fn count_column<D>(
+    database: &D,
+    column: &SecretColumn,
+    signing_key: &SecretString,
+    max_depth: i64,
+) -> Result<usize, MigrationError>
+where
+    D: SecretStorage + Sync,
+{
+    let rows = database.rows(column).await?;
+    let counted = rows
+        .into_iter()
+        .map(|row| count_row(row.value, signing_key, max_depth))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(counted.into_iter().sum())
 }
 
 pub async fn count_encrypted_or_none<D, C>(

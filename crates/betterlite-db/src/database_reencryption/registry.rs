@@ -146,29 +146,28 @@ pub fn registered_columns() -> impl Iterator<Item = SecretColumn> {
 
 #[must_use]
 pub fn rows_sql(column: &SecretColumn) -> String {
-    let name = column.column;
+    let (table, name, primary_key) = (column.table, column.column, column.primary_key);
     let selected = if column.is_json {
         format!("\"{name}\"::text")
     } else {
         format!("\"{name}\"")
     };
-    let marked = if column.marked_only {
-        format!(" AND \"{name}\"::text LIKE '%{CALLBACK_VAR_ENCRYPTED_PREFIX}%'")
-    } else {
-        String::new()
-    };
-    format!(
-        "SELECT \"{}\", {selected} FROM \"{}\" WHERE \"{name}\" IS NOT NULL{marked}",
-        column.primary_key, column.table
-    )
+    let mut sql = format!(
+        "SELECT \"{primary_key}\", {selected} FROM \"{table}\" WHERE \"{name}\" IS NOT NULL"
+    );
+    if column.marked_only {
+        sql.push_str(" AND ");
+        sql.push_str(&format!(
+            "\"{name}\"::text LIKE '%{CALLBACK_VAR_ENCRYPTED_PREFIX}%'"
+        ));
+    }
+    sql
 }
 
-#[must_use]
 pub fn update_sql(column: &SecretColumn) -> String {
-    let name = column.column;
     let cast = if column.is_json { "::jsonb" } else { "" };
+    let (table, name, key) = (column.table, column.column, column.primary_key);
     format!(
-        "UPDATE \"{}\" SET \"{name}\" = $1{cast} WHERE \"{}\" = $2 AND \"{name}\" = $3{cast}",
-        column.table, column.primary_key
+        "UPDATE \"{table}\" SET \"{name}\" = $1{cast} WHERE \"{key}\" = $2 AND \"{name}\" = $3{cast}"
     )
 }

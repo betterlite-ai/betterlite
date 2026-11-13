@@ -18,16 +18,15 @@ struct Builder {
     max_depth: i64,
 }
 
+type Replacement<'a> = &'a mut dyn FnMut(&str) -> Result<Option<String>, MigrationError>;
+
 impl Builder {
-    fn visit<R>(
+    fn visit(
         &mut self,
         value: MigrationJson,
         depth: i64,
-        replacement_for: &mut R,
-    ) -> Result<(), MigrationError>
-    where
-        R: FnMut(&str) -> Result<Option<String>, MigrationError>,
-    {
+        replacement_for: Replacement<'_>,
+    ) -> Result<(), MigrationError> {
         if depth > self.max_depth {
             self.results.push(value);
             return Ok(());
@@ -60,14 +59,11 @@ impl Builder {
         }
     }
 
-    fn visit_text<R>(
+    fn visit_text(
         &mut self,
         text: &SecretText,
-        replacement_for: &mut R,
-    ) -> Result<(), MigrationError>
-    where
-        R: FnMut(&str) -> Result<Option<String>, MigrationError>,
-    {
+        replacement_for: Replacement<'_>,
+    ) -> Result<(), MigrationError> {
         let exposed = text.0.expose_secret().to_owned();
         let (marker, inner) = exposed
             .strip_prefix(CALLBACK_VAR_ENCRYPTED_PREFIX)
@@ -116,7 +112,7 @@ where
     };
     while let Some(stage) = builder.stages.pop() {
         match stage {
-            Stage::Visit(stored, at) => builder.visit(stored, at, replacement_for)?,
+            Stage::Visit(stored, at) => builder.visit(stored, at, &mut *replacement_for)?,
             Stage::CollectArray(start) => {
                 let children = builder.results.split_off(start);
                 builder.results.push(MigrationJson::Array(children));

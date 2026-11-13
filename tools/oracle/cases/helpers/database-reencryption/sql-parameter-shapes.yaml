@@ -1,0 +1,20 @@
+kind: helper
+name: sql-parameter-shapes
+call:
+  database_reencryption:
+    op: sql_parameter
+    shapes:
+      - value:
+          api_key: sk-example
+          retries: 3
+          nested:
+            - true
+            - null
+        is_json: true
+      - value: plain text
+        is_json: true
+      - value: cipher text
+        is_json: false
+env: {}
+compare:
+  ignore: []

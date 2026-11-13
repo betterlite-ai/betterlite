@@ -1,5 +1,6 @@
 from typing import Literal, TypedDict
 
+from litellm.proxy.db import master_key_migration as migration
 from litellm.proxy.db.master_key_migration import (
     Migrated,
     MigrationFailed,
@@ -7,7 +8,9 @@ from litellm.proxy.db.master_key_migration import (
     describe_outcome,
     replace_ciphertexts,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
+
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
 class ReplaceInput(TypedDict):
@@ -29,6 +32,16 @@ class OutcomeInput(TypedDict):
 class OutcomeCall(TypedDict):
     op: Literal["outcome"]
     outcome: OutcomeInput
+
+
+class ShapeInput(TypedDict):
+    value: JsonValue
+    is_json: bool
+
+
+class SqlParameterCall(TypedDict):
+    op: Literal["sql_parameter"]
+    shapes: list[ShapeInput]
 
 
 class Replacements:
@@ -72,7 +85,22 @@ def run_replace(input_value: ReplaceInput) -> JsonValue:
     return {"value": replaced, "count": count}
 
 
-def run(input_value: ReplaceInput | OutcomeCall) -> JsonValue:
+def parameter_shape(spec: ShapeInput) -> JsonValue:
+    parameter = migration._as_sql_parameter(spec["value"], migration._SecretColumn(table="", primary_key="", column="", is_json=spec["is_json"]))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L159-L160
+    if spec["is_json"]:
+        return JSON.validate_json(parameter)
+    return parameter
+
+
+def run_sql_parameter(input_value: SqlParameterCall) -> JsonValue:
+    return [
+        parameter_shape(spec) for spec in input_value["shapes"]
+    ]
+
+
+def run(input_value: ReplaceInput | OutcomeCall | SqlParameterCall) -> JsonValue:
     if input_value["op"] == "replace":
         return run_replace(input_value)
+    if input_value["op"] == "sql_parameter":
+        return run_sql_parameter(input_value)
     return describe_outcome(outcome_of(input_value["outcome"]))
