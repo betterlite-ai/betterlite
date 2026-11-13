@@ -231,7 +231,7 @@ fn sanitize_response_rejects_filter_results_of_another_shape() {
     let parsed = serde_json::from_str::<SanitizeResponse>(
         r#"{"sanitizationResult":{"filterResults":"none"}}"#,
     );
-    assert!(parsed.is_err());
+    parsed.unwrap_err();
 }
 
 #[test]

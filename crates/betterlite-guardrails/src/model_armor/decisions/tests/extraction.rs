@@ -90,5 +90,5 @@ fn extract_content_from_response_returns_empty_for_non_text_responses() {
 #[test]
 fn model_response_rejects_a_choice_of_another_shape() {
     let parsed = serde_json::from_str::<ModelResponse>(r#"{"choices":["text"]}"#);
-    assert!(parsed.is_err());
+    parsed.unwrap_err();
 }
