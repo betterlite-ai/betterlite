@@ -308,6 +308,7 @@ fn pegasus_reply_errors() {
         b"[1,2]".as_slice(),
         br#"{"message":"visible","finishReason":[]}"#.as_slice(),
         br#"{"message":""}"#.as_slice(),
+        br#"{"message":0,"finishReason":"stop"}"#.as_slice(),
         br#"{"finishReason":"stop"}"#.as_slice(),
     ] {
         let mut response = single_choice();
@@ -321,6 +322,15 @@ fn pegasus_reply_errors() {
         assert!(!matches!(failure, PegasusError::ReplyNotObject) || body == b"[1,2]".as_slice());
         assert_eq!(response.choices[0].message.content, None);
     }
+    assert!(matches!(
+        block_on(decode_pegasus_reply(
+            br#"{"message":{"a":1},"finishReason":"stop"}"#,
+            &context(&headers, &given, 10.0),
+            &mut single_choice(),
+            &counter,
+        )),
+        Err(PegasusError::MessageNotString)
+    ));
     let mut without_choices = response(Vec::new());
     assert!(matches!(
         block_on(decode_pegasus_reply(
