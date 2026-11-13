@@ -1,0 +1,74 @@
+kind: helper
+name: rerank-model-arn
+call:
+  bedrock_other_rerank:
+    function: rerank_model_arn
+    probes:
+      - model: arn:aws:bedrock:us-east-1:123456789012:rerank-model/test
+        query: what is rust
+        documents: [first, {title: second}]
+        top_n: null
+        rank_fields: null
+        return_documents: null
+        max_chunks_per_doc: null
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        extra_headers: null
+        api_base: https://bedrock-runtime.us-west-2.amazonaws.com
+        api_key: null
+        credentials:
+          access_key_id: AKIAIOSFODNN7EXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          session_token: null
+        environment:
+          region_name: null
+          region: null
+          session_region: null
+          runtime_endpoint: null
+        now: 1700000000
+        reply:
+          status: 200
+          headers: {}
+          body: '{"id":"resp-1","results":[{"index":1,"relevanceScore":0.5}]}'
+          failure: null
+        supplied: sync
+        is_async: false
+        timeout_ms: null
+        generated_id: "00000000-0000-4000-8000-000000000000"
+      - model: arn:aws:bedrock:us-east-1:123456789012:rerank-model/test
+        query: what is rust
+        documents: [first, {title: second}]
+        top_n: null
+        rank_fields: null
+        return_documents: null
+        max_chunks_per_doc: null
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        extra_headers: null
+        api_base: https://bedrock-runtime.us-west-2.amazonaws.com/
+        api_key: null
+        credentials:
+          access_key_id: AKIAIOSFODNN7EXAMPLE
+          secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          session_token: null
+        environment:
+          region_name: null
+          region: null
+          session_region: null
+          runtime_endpoint: null
+        now: 1700000000
+        reply:
+          status: 200
+          headers: {}
+          body: '{"id":"resp-1","results":[{"index":1,"relevanceScore":0.5}]}'
+          failure: null
+        supplied: sync
+        is_async: false
+        timeout_ms: null
+        generated_id: "00000000-0000-4000-8000-000000000000"
+env: {}
+compare: {ignore: []}

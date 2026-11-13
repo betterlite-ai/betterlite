@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-rerank-results
+call:
+  bedrock_other_rerank:
+    function: results_index_score
+    probes:
+      - model: arn:aws:bedrock:us-east-1:123456789012:rerank-model/test
+        query: q
+        documents: [a, {title: b}]
+        optional_params: {aws_region_name: us-east-1}
+        reply:
+          body: '{"results":[{"index":1,"relevanceScore":0.5}]}'
+env: {}
+compare: {ignore: []}

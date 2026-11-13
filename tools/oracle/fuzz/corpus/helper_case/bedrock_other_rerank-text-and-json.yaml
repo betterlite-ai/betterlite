@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-other-rerank-text-and-json
+call:
+  bedrock_other_rerank:
+    function: text_and_json_document_source
+    probes:
+      - model: arn:aws:bedrock:us-east-1:123456789012:rerank-model/test
+        query: what is rust
+        documents: [first, {title: second}]
+        optional_params: {aws_region_name: us-east-1}
+env: {}
+compare: {ignore: []}

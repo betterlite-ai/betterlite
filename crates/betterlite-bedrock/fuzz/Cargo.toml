@@ -99,3 +99,10 @@ path = "fuzz_targets/bedrock_other_count_call.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_other_rerank"
+path = "fuzz_targets/bedrock_other_rerank.rs"
+test = false
+doc = false
+bench = false
