@@ -113,6 +113,33 @@ fn converts_a_native_tool_when_the_provider_is_nested_in_litellm_params() {
 }
 
 #[test]
+fn converts_the_litellm_standard_tool_by_name() {
+    let request =
+        object(r#"{"custom_llm_provider":"bedrock","tools":[{"name":"litellm_web_search"}]}"#);
+    let converted = logger(&["bedrock"])
+        .async_pre_call_deployment_hook(&request, None)
+        .unwrap()
+        .unwrap();
+    let expected = encode(&openai_web_search_tool()).unwrap();
+    assert_eq!(list(&converted, "tools")[0], expected);
+}
+
+#[test]
+fn converts_a_native_tool_when_an_empty_provider_falls_back_to_the_model() {
+    let request = object(
+        r#"{"model":"bedrock/claude","custom_llm_provider":"","tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,
+    );
+    let converted = logger(&["bedrock"])
+        .async_pre_call_deployment_hook(&request, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        tool_name(&list(&converted, "tools")[0]),
+        Some("litellm_web_search")
+    );
+}
+
+#[test]
 fn converts_the_same_tool_on_an_async_chat_call() {
     let request = object(
         r#"{"custom_llm_provider":"bedrock","tools":[{"type":"web_search_20250305","name":"web_search"}]}"#,

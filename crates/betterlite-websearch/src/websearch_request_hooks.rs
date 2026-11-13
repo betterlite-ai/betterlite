@@ -167,7 +167,6 @@ fn responses_tools(kwargs: &Object, tools: &[Json]) -> Result<Option<Object>, We
 fn request_tools(kwargs: &Object) -> Result<Option<&[Json]>, WebSearchError> {
     match kwargs.get(TOOLS) {
         None | Some(Json::Null) => Ok(None),
-        Some(Json::List(tools)) if tools.is_empty() => Ok(None),
         Some(Json::List(tools)) => Ok(Some(tools.as_slice())),
         Some(_) => Err(WebSearchError::Rewrite(RewriteError::Tools)),
     }

@@ -50,17 +50,31 @@ fn converts_a_native_anthropic_type_on_the_responses_path() {
 }
 
 #[test]
+fn converts_the_litellm_standard_responses_function() {
+    let request = object(
+        r#"{"custom_llm_provider":"openai","tools":[{"type":"function","name":"litellm_web_search"}]}"#,
+    );
+    let converted = logger(&["openai"])
+        .async_pre_call_deployment_hook(&request, Some(CallType::Responses))
+        .unwrap()
+        .unwrap();
+    let expected = encode(&responses_web_search_tool()).unwrap();
+    assert_eq!(list(&converted, "tools")[0], expected);
+}
+
+#[test]
 fn keeps_tools_that_are_not_responses_web_search_tools() {
     let request = object(
-        r#"{"custom_llm_provider":"openai","tools":[{"type":"function","name":"get_weather"},{"type":"web_search_preview"}]}"#,
+        r#"{"custom_llm_provider":"openai","tools":[{"type":"function","name":"get_weather"},{"type":"computer_use"},{"type":"web_search_preview"}]}"#,
     );
     let converted = logger(&["openai"])
         .async_pre_call_deployment_hook(&request, Some(CallType::Responses))
         .unwrap()
         .unwrap();
     assert_eq!(list(&converted, "tools")[0], list(&request, "tools")[0]);
+    assert_eq!(list(&converted, "tools")[1], list(&request, "tools")[1]);
     assert_eq!(
-        tool_name(&list(&converted, "tools")[1]),
+        tool_name(&list(&converted, "tools")[2]),
         Some("litellm_web_search")
     );
 }
