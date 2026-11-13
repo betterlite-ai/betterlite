@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -101,7 +102,7 @@ fn a_missing_guardrail_name_is_refused(#[case] name: Option<&str>) {
 }
 
 #[rstest]
-#[case::single("pre_call", "pre_call")]
+#[case::single(r#""pre_call""#, "pre_call")]
 #[case::list(r#"["pre_call", "post_call"]"#, r#"["pre_call","post_call"]"#)]
 #[case::tagged(
     r#"{"tags": {"default": "pre_call"}}"#,
@@ -314,21 +315,36 @@ fn a_wrong_option_type_names_the_field(#[case] option: &str, #[case] field: &str
 }
 
 #[test]
-fn optional_params_that_is_not_a_mapping_is_refused() {
-    let refused = initialize(&with_params(r#", "optional_params": "issuer""#));
+fn an_option_decode_failure_carries_its_source() {
+    let refused = initialize(&with_params(r#", "ttl_seconds": "300""#));
+    let error = refused.err().expect("the initializer refused");
     assert_eq!(
-        error_text(refused),
-        "MCPJWTSigner option optional_params has an invalid value"
+        error.to_string(),
+        "MCPJWTSigner option ttl_seconds has an invalid value"
     );
+    assert!(error.source().is_some());
 }
 
 #[test]
-fn a_negative_timeout_is_refused() {
-    let refused = initialize(&with_params(r#", "timeout": -1"#));
+fn optional_params_that_is_not_a_mapping_is_refused() {
+    let refused = initialize(&with_params(r#", "optional_params": "issuer""#));
+    let error = refused.err().expect("the initializer refused");
     assert_eq!(
-        error_text(refused),
+        error.to_string(),
+        "MCPJWTSigner option optional_params has an invalid value"
+    );
+    assert!(error.source().is_none());
+}
+
+#[test]
+fn a_negative_timeout_is_refused_with_its_source() {
+    let refused = initialize(&with_params(r#", "timeout": -1"#));
+    let error = refused.err().expect("the initializer refused");
+    assert_eq!(
+        error.to_string(),
         "MCPJWTSigner option timeout has an invalid value"
     );
+    assert!(error.source().is_some());
 }
 
 #[test]

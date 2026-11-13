@@ -75,7 +75,18 @@ pub enum GuardrailInitError {
         mode: String,
     },
     #[error("MCPJWTSigner option {field} has an invalid value")]
-    InvalidOption { field: &'static str },
+    InvalidOption {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("MCPJWTSigner option optional_params has an invalid value")]
+    InvalidOptionalParams,
+    #[error("MCPJWTSigner option timeout has an invalid value")]
+    InvalidTimeout {
+        #[source]
+        source: std::time::TryFromFloatSecsError,
+    },
     #[error(transparent)]
     Signer(#[from] JwtSignerError),
 }
@@ -145,9 +156,7 @@ fn optional_params(
     match params.base.extra.0.get(OPTIONAL_PARAMS) {
         None | Some(GuardrailValue::Null) => Ok(None),
         Some(GuardrailValue::Object(map)) => Ok(Some(map)),
-        Some(_wrong) => Err(GuardrailInitError::InvalidOption {
-            field: OPTIONAL_PARAMS,
-        }),
+        Some(_wrong) => Err(GuardrailInitError::InvalidOptionalParams),
     }
 }
 
@@ -178,10 +187,10 @@ where
     T: DeserializeOwned,
 {
     let encoded = serde_json::to_vec(value)
-        .map_err(|_not_json| GuardrailInitError::InvalidOption { field: key })?;
+        .map_err(|source| GuardrailInitError::InvalidOption { field: key, source })?;
     serde_json::from_slice(&encoded)
         .map(Some)
-        .map_err(|_wrong_type| GuardrailInitError::InvalidOption { field: key })
+        .map_err(|source| GuardrailInitError::InvalidOption { field: key, source })
 }
 
 fn signer_timeout(params: &LitellmParams) -> Result<Option<Duration>, GuardrailInitError> {
@@ -189,7 +198,7 @@ fn signer_timeout(params: &LitellmParams) -> Result<Option<Duration>, GuardrailI
         return Ok(None);
     };
     let timeout = Duration::try_from_secs_f64(seconds)
-        .map_err(|_not_duration| GuardrailInitError::InvalidOption { field: "timeout" })?;
+        .map_err(|source| GuardrailInitError::InvalidTimeout { source })?;
     Ok(Some(timeout))
 }
 
