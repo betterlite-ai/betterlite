@@ -1,7 +1,7 @@
 task: B4656
 deviations:
-  - what: An in-flight refresh is shared by the callers waiting on it, so the refresh future ends when the last caller is cancelled; LiteLLM detaches it with asyncio.ensure_future and a cancelled caller never aborts it.
-    why: betterlite does not spawn detached tasks (async-hygiene), so the shared future is driven by its waiters instead of a task the runtime owns. While any caller still waits the refresh runs to completion; only when every waiter is gone does the refresher stop before it persists, and the next caller refreshes again.
+  - what: The refresh of a key runs inside the first caller's future, so cancelling that caller stops the refresh; LiteLLM detaches it with asyncio.ensure_future and a cancelled caller never aborts it.
+    why: betterlite does not spawn detached tasks (async-hygiene). When the caller driving the refresh is cancelled, its entry is removed and a waiting caller takes over and refreshes again, so no caller waits on a refresh that stopped.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L243-L268
   - what: iso_to_epoch reads RFC 3339 and the extended ISO 8601 forms the credential writer produces (T or space separator, fractional seconds, date-only, with or without an offset); Python's datetime.fromisoformat also accepts compact basic forms and a missing seconds field, which read as no expiry here.
     why: The persisted expires_at is written by the gateway as an extended ISO string; a hand-edited row in a compact form is outside what any writer produces, and reading it as no expiry is a miss rather than a wrong instant.

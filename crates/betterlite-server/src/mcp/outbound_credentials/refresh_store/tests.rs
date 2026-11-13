@@ -1,12 +1,16 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::future::pending;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures_util::FutureExt as _;
 use tokio::task::yield_now;
+use tokio::time::timeout;
 
 use super::{InProcessRefreshCoordinator, RefreshingTokenStore};
 use crate::mcp::outbound_credentials::{
@@ -193,6 +197,31 @@ async fn coordinator_starts_a_new_refresh_after_the_first_finishes() {
         .await
         .unwrap();
     assert_eq!(refreshes.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn coordinator_lets_a_waiter_take_over_when_the_refresh_is_cancelled() {
+    let coordinator: InProcessRefreshCoordinator<Option<OAuthToken>, TokenStoreUnavailable> =
+        InProcessRefreshCoordinator::default();
+    let stalled: Step<'_> = Box::new(|| Box::pin(pending()));
+    let reread: Step<'_> = Box::new(|| Box::pin(async { Ok(None) }));
+    let cancelled = coordinator
+        .run(key("user", "server"), stalled, reread)
+        .now_or_never();
+    assert!(cancelled.is_none());
+    let refreshes = AtomicUsize::new(0);
+    let rereads = AtomicUsize::new(0);
+    let taken_over = timeout(
+        Duration::from_secs(5),
+        coordinator.run(
+            key("user", "server"),
+            scripted_step(&refreshes, Ok(Some(token("two", None)))),
+            scripted_step(&rereads, Ok(None)),
+        ),
+    )
+    .await;
+    assert_eq!(taken_over, Ok(Ok(Some(token("two", None)))));
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

@@ -28,6 +28,22 @@ impl<Output, Error> Default for InProcessRefreshCoordinator<Output, Error> {
     }
 }
 
+struct Registration<'inflight, Output, Error> {
+    inflight: &'inflight Inflight<Output, Error>,
+    key: &'inflight TokenKey,
+}
+
+impl<Output, Error> Drop for Registration<'_, Output, Error> {
+    fn drop(&mut self) {
+        drop(
+            self.inflight
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(self.key),
+        );
+    }
+}
+
 enum Role<Output, Error> {
     Leader(watch::Sender<Option<Result<Output, Error>>>),
     Follower(watch::Receiver<Option<Result<Output, Error>>>),
@@ -62,14 +78,13 @@ where
             };
             match role {
                 Role::Leader(sender) => {
+                    let registration = Registration {
+                        inflight: &self.inflight,
+                        key: &key,
+                    };
                     let result = refresh().await;
                     // Removed before the send, so a caller arriving now starts a fresh refresh.
-                    drop(
-                        self.inflight
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .remove(&key),
-                    );
+                    drop(registration);
                     drop(sender.send_replace(Some(result.clone())));
                     return result;
                 }
