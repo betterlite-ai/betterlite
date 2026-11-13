@@ -400,6 +400,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "huggingface_rerank_response"
+path = "fuzz_targets/huggingface_rerank_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "compatible_reply"
 path = "fuzz_targets/compatible_reply.rs"
 test = false

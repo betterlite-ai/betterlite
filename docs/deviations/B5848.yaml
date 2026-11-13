@@ -1,0 +1,17 @@
+task: B5848
+deviations:
+  - what: A missing query or texts is a typed error that names the field, not a bare ValueError.
+    why: The compatibility rules reject a value the declared type cannot hold at the point it enters; the status follows B2454's mapping of request errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L153-L156
+  - what: A response body that is valid JSON but not a list, or an item that is not an object, is a typed error; LiteLLM raises AttributeError from item.get and answers 500.
+    why: No working setup relies on a crash in the transform, and the malformed body still fails instead of being taken as a match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L224-L227
+  - what: A document object whose text is not a string is a typed DocumentText error naming the position; LiteLLM adds a non-string text into the token string or the result document.
+    why: The declared RerankResponseDocument holds a string, and a number in the document would be a wire format no client can read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L198-L206
+  - what: A response over 1 MiB is refused with a typed ResponseTooLarge error before it is decoded; LiteLLM reads any size with raw_response.json().
+    why: The cap bounds memory for a hostile or broken upstream and sits far above a rerank reply, which holds one index, one score and at most one text per document.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L184-L188
+  - what: Token counting and the response id come from injected TextTokenCounter and RequestIdSource dependencies; LiteLLM calls the module-level token_counter and uuid.uuid4.
+    why: betterlite passes outside dependencies in through the caller so a request runs the same way in a test as in production; the counts, the fallback estimates and the uuid4 text stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L189-L254
