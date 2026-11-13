@@ -9,9 +9,7 @@ from pydantic import JsonValue, TypeAdapter
 
 _MODEL: str = "openai/whisper-1"
 _OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-_FINALS: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(
-    list[dict[str, JsonValue]]
-)
+_FINALS: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, JsonValue]])
 
 Function = Literal[
     "language_cases",
@@ -109,10 +107,10 @@ class FakeCode:
 
 
 class Returns:
-    def __init__(self, value: JsonValue) -> None:
+    def __init__(self, value: JsonValue | FakeCode) -> None:
         self.value = value
 
-    def __call__(self) -> JsonValue:
+    def __call__(self) -> JsonValue | FakeCode:
         return self.value
 
 
@@ -129,7 +127,9 @@ class FakeError(Exception):
     details: JsonValue | Returns | Raises = None
 
 
-def attribute_value(kind: AttributeKind, payload: JsonValue) -> JsonValue | Returns | Raises:
+def attribute_value(
+    kind: AttributeKind, payload: JsonValue | FakeCode
+) -> JsonValue | Returns | Raises:
     if kind == "returns":
         return Returns(payload)
     if kind == "raises":
@@ -143,7 +143,7 @@ def fake_error(spec: ErrorSpec) -> FakeError:
     error = FakeError(spec["text"])
     code = spec["code"]
     details = spec["details"]
-    error.code = attribute_value(code["kind"], code.get("name"))
+    error.code = attribute_value(code["kind"], FakeCode(code.get("name")))
     error.details = attribute_value(details["kind"], details.get("value"))
     return error
 
