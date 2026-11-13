@@ -1,13 +1,13 @@
 id: B9951
 milestone: R1 cleanup and refactoring
 title: Wheel response objects on pydantic BaseModel
-status: todo
+status: done
 depends_on: [B5657, B5658]
 file: tasks/B9951-wheel-objects-on-pydantic.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1520
