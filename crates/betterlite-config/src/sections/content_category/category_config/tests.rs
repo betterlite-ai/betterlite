@@ -34,6 +34,7 @@ fn python_ascii_patterns_are_retained(#[case] source: &str, #[case] text: &str) 
 #[case::scoped_non_ascii("^(?a:\u{e9})$", "\u{e9}", "\u{c9}")]
 #[case::nested_unicode(r"(?a:(?u:^\w+$))", "\u{e9}", "!")]
 #[case::restored_unicode("^(?a:spam)spam$", "SPAM\u{17f}pam", "\u{17f}pamspam")]
+#[case::combined_ascii_case("(?ai)^spam$", "SPAM", "\u{17f}pam")]
 fn python_flags_preserve_character_and_case_semantics(
     #[case] source: &str,
     #[case] matching: &str,
@@ -46,6 +47,17 @@ fn python_flags_preserve_character_and_case_semantics(
     let pattern = &category.phrase_patterns[0];
     assert!(pattern.regex.is_match(matching).unwrap(), "{source}");
     assert!(!pattern.regex.is_match(excluded).unwrap(), "{source}");
+}
+
+#[rstest]
+#[case::turn_off_ascii("(?-a)word")]
+#[case::turn_off_unicode("(?-u)word")]
+#[case::incompatible_ascii_unicode("(?au)word")]
+fn python_flag_removals_python_rejects_are_skipped(#[case] source: &str) {
+    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
+    data.phrase_patterns.push(source.to_owned());
+    let category = super::model::CategoryConfig::from_data(data).unwrap();
+    assert!(category.phrase_patterns.is_empty(), "{source}");
 }
 
 #[test]

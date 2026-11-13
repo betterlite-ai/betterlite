@@ -1,5 +1,4 @@
 use super::pattern::Pattern;
-use pcre2::bytes;
 use std::collections::BTreeMap;
 
 use crate::sections::content_filter_records::{
@@ -79,16 +78,16 @@ fn parse_action(
 }
 
 fn compile_patterns(patterns: Vec<String>, category: &str) -> Vec<CompiledPhrasePattern> {
-    patterns.into_iter().filter_map(|source| {
-        let compiled = fancy_regex::RegexBuilder::new(&source).case_insensitive(true).build()
-            .map(Pattern::Fancy)
-            .or_else(|_| bytes::RegexBuilder::new().caseless(true).ucp(true).build(&source).map(Pattern::Pcre));
-        match compiled {
-            Ok(regex) => Some(CompiledPhrasePattern { source, regex }),
-            Err(error) => {
-                tracing::warn!(category, pattern = source, %error, "invalid category phrase pattern");
-                None
-            }
-        }
-    }).collect()
+    patterns
+        .into_iter()
+        .filter_map(
+            |source| match Pattern::compile(&source) {
+                Ok(regex) => Some(CompiledPhrasePattern { source, regex }),
+                Err(error) => {
+                    tracing::warn!(category, pattern = source, %error, "invalid category phrase pattern");
+                    None
+                }
+            },
+        )
+        .collect()
 }
