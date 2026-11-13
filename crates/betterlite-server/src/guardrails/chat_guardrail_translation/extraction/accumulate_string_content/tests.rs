@@ -1,10 +1,14 @@
 #![cfg(test)]
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_guardrails::guardrail_message_scope::Object;
 use rstest::rstest;
 
 use super::accumulate_by_choice_index;
-use crate::guardrails::chat_guardrail_translation::extraction::fixtures::{json, object};
+use crate::guardrails::chat_guardrail_translation::extraction::fixtures::{
+    guardrail, json, object,
+};
 
 fn accumulate(chunks: Vec<JsonValue>) -> Vec<(i64, String)> {
     let responses: Vec<_> = chunks.into_iter().map(object).collect();
@@ -56,4 +60,19 @@ fn string_content_is_joined_per_choice_index(
     #[case] expected: &[(i64, &str)],
 ) {
     assert_eq!(accumulate(chunks), pairs(expected));
+}
+
+#[rstest]
+#[case::fits_in_a_signed_integer(3, 3)]
+#[case::too_large_falls_back_to_zero(u64::MAX, 0)]
+fn an_unsigned_index_counts_only_when_it_fits(#[case] index: u64, #[case] expected: i64) {
+    let choice = GuardrailValue::Object(Object::from([
+        ("index".to_owned(), GuardrailValue::UnsignedInteger(index)),
+        ("delta".to_owned(), guardrail(json(r#"{"content": "a"}"#))),
+    ]));
+    let response = Object::from([("choices".to_owned(), GuardrailValue::Array(vec![choice]))]);
+    let accumulated: Vec<_> = accumulate_by_choice_index(&[response])
+        .into_iter()
+        .collect();
+    assert_eq!(accumulated, pairs(&[(expected, "a")]));
 }
