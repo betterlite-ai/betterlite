@@ -1,37 +1,14 @@
 use betterlite_models::decisions::Json;
-use serde::Deserialize;
 
 use super::error::StreamError;
 
-#[derive(Debug, Deserialize)]
-struct ErrorProbe {
-    #[serde(default)]
-    error: ErrorField,
-}
-
-#[derive(Debug, Default)]
-enum ErrorField {
-    #[default]
-    Absent,
-    Present(Json),
-}
-
-impl<'de> Deserialize<'de> for ErrorField {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Json::deserialize(deserializer).map(Self::Present)
-    }
-}
-
 pub(super) fn check_embedded_error(value: &[u8]) -> Result<(), StreamError> {
-    let Ok(probe) = serde_json::from_slice::<ErrorProbe>(value) else {
+    let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(value) else {
         return Ok(());
     };
-    match probe.error {
-        ErrorField::Absent => Ok(()),
-        ErrorField::Present(error) => Err(embedded(error)),
+    match fields.get("error") {
+        Some(error) => Err(embedded(error.clone())),
+        None => Ok(()),
     }
 }
 
@@ -42,9 +19,7 @@ fn embedded(error: Json) -> StreamError {
             message: "Unexpected error format in mid-stream chunk".to_owned(),
         };
     };
-    let status = fields
-        .get("code")
-        .map_or(500, |value| coercible_status(value));
+    let status = fields.get("code").map_or(500, coercible_status);
     let label = text_field(fields.get("status"), "UNKNOWN");
     let message = text_field(fields.get("message"), "Unknown error");
     StreamError::Embedded {

@@ -2,10 +2,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use http::header::HeaderMap;
+use uuid::Uuid;
 
 use super::chunk::StreamChunk;
 use super::error::StreamError;
-use super::{GeminiStreamDecoder, IdSource, StreamOptions};
+use super::{GeminiStreamDecoder, StreamOptions};
 
 pub type StreamFuture<'source, Output> = Pin<Box<dyn Future<Output = Output> + Send + 'source>>;
 
@@ -78,12 +79,11 @@ impl<Reader, Response> GeminiStream<Reader, Response> {
         response: Option<Response>,
         options: StreamOptions,
         headers: &HeaderMap,
-        ids: Box<dyn IdSource>,
+        ids: Box<dyn FnMut() -> Uuid + Send>,
     ) -> Self {
-        let decoder = GeminiStreamDecoder::new(options, headers, ids);
         Self {
             pending: Pending {
-                decoder,
+                decoder: GeminiStreamDecoder::new(options, headers, ids),
                 finished: false,
             },
             reader,

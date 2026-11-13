@@ -27,7 +27,7 @@ impl GeminiStreamDecoder {
         // LiteLLM builds the stream response before it reads the chunk, so the chunk id is drawn first
         let id = match decoded.response_id {
             Some(response_id) => response_id,
-            None => format!("{CHAT_COMPLETION_ID_PREFIX}{}", self.ids.next_id()),
+            None => format!("{CHAT_COMPLETION_ID_PREFIX}{}", self.ids()),
         };
         let model = served_model_name(decoded.model_version.as_ref()).map(str::to_owned);
         let (choices, metadata) = self.project_choices(&decoded)?;
@@ -75,24 +75,16 @@ impl GeminiStreamDecoder {
         &mut self,
         candidates: &[Candidate],
     ) -> Result<(Vec<Choice>, MetadataExtension), StreamError> {
-        let processed = {
-            let mut ids = || self.ids.next_id();
-            process_candidates(
-                candidates,
-                Mode::Streaming,
-                PartContext {
-                    cumulative_tool_call_index: self.cumulative_tool_call_index,
-                    call_mode: self.options.call_mode,
-                    now: self.options.now,
-                },
-                &mut ids,
-            )?
+        let context = PartContext {
+            cumulative_tool_call_index: self.cumulative_tool_call_index,
+            call_mode: self.options.call_mode,
+            now: self.options.now,
         };
         let Processed {
             choices: built,
             metadata,
             next_tool_call_index,
-        } = processed;
+        } = process_candidates(candidates, Mode::Streaming, context, &mut *self.ids)?;
         self.cumulative_tool_call_index = next_tool_call_index;
         let mut projected = match built {
             Choices::Streaming(found) => found,

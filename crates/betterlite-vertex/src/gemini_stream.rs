@@ -27,18 +27,6 @@ pub struct StreamOptions {
     pub call_mode: CallMode,
 }
 
-pub trait IdSource: Send + Sync {
-    fn next_id(&self) -> Uuid;
-}
-
-pub struct UuidV4;
-
-impl IdSource for UuidV4 {
-    fn next_id(&self) -> Uuid {
-        Uuid::new_v4()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChunkType {
     ValidJson,
@@ -47,7 +35,7 @@ enum ChunkType {
 
 pub struct GeminiStreamDecoder {
     options: StreamOptions,
-    ids: Box<dyn IdSource>,
+    ids: Box<dyn FnMut() -> Uuid + Send>,
     service_tier: Option<String>,
     chunk_type: ChunkType,
     buffer: FragmentBuffer,
@@ -57,7 +45,11 @@ pub struct GeminiStreamDecoder {
 }
 
 impl GeminiStreamDecoder {
-    pub fn new(options: StreamOptions, headers: &HeaderMap, ids: Box<dyn IdSource>) -> Self {
+    pub fn new(
+        options: StreamOptions,
+        headers: &HeaderMap,
+        ids: Box<dyn FnMut() -> Uuid + Send>,
+    ) -> Self {
         Self {
             options,
             ids,
@@ -82,7 +74,9 @@ impl GeminiStreamDecoder {
         if !self.pending.is_empty() {
             return Err(StreamError::IncompleteUtf8);
         }
-        if self.chunk_type != ChunkType::AccumulatedJson || !self.buffer.has_buffered_content() {
+        let waiting =
+            !self.buffer.fragments.is_empty() || self.buffer.offset < self.buffer.text.len();
+        if self.chunk_type != ChunkType::AccumulatedJson || !waiting {
             return Ok(None);
         }
         self.accumulated("", true)
@@ -112,13 +106,9 @@ impl GeminiStreamDecoder {
         if chunk.is_empty() {
             return Ok(None);
         }
-        match self.chunk_type {
-            ChunkType::ValidJson => self.valid_json(chunk),
-            ChunkType::AccumulatedJson => self.accumulated(chunk, false),
+        if self.chunk_type == ChunkType::AccumulatedJson {
+            return self.accumulated(chunk, false);
         }
-    }
-
-    fn valid_json(&mut self, chunk: &str) -> Result<Option<StreamChunk>, StreamError> {
         let trimmed = chunk.trim();
         match serde_json::from_str::<Box<RawValue>>(trimmed) {
             Ok(value) => self.chunk_parser(value.get().as_bytes()).map(Some),

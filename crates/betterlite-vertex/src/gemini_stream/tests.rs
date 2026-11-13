@@ -16,29 +16,14 @@ use super::adapters::{
 use super::buffer::MAX_RETAINED_BYTES;
 use super::chunk::{Choice, StreamChunk};
 use super::error::StreamError;
-use super::{GeminiStreamDecoder, IdSource, StreamOptions, UuidV4};
+use super::{GeminiStreamDecoder, StreamOptions};
 use crate::gemini_response_parts::projection::CallMode;
 
 const FIXED: &str = "0123456789abcdef0123456789abcdef";
 const NOW: i64 = 1_700_000_000;
 
-struct FixedIds;
-
-impl IdSource for FixedIds {
-    fn next_id(&self) -> Uuid {
-        Uuid::parse_str(FIXED).unwrap()
-    }
-}
-
-struct SequenceIds {
-    next: AtomicUsize,
-}
-
-impl IdSource for SequenceIds {
-    fn next_id(&self) -> Uuid {
-        let position = u128::try_from(self.next.fetch_add(1, Ordering::SeqCst)).unwrap();
-        Uuid::from_u128(position)
-    }
+fn fixed_ids() -> Box<dyn FnMut() -> Uuid + Send> {
+    Box::new(|| Uuid::parse_str(FIXED).unwrap())
 }
 
 fn options() -> StreamOptions {
@@ -66,7 +51,7 @@ fn decoder_with(headers: &[(&str, &str)], call_mode: CallMode) -> GeminiStreamDe
             call_mode,
         },
         &headers_map(headers),
-        Box::new(FixedIds),
+        fixed_ids(),
     )
 }
 
@@ -299,8 +284,10 @@ fn chunks_keep_the_served_model_prefix() {
 
 #[test]
 fn chunks_draw_the_chunk_id_before_the_tool_call_id() {
-    let ids = Box::new(SequenceIds {
-        next: AtomicUsize::new(1),
+    let mut next = 0_u128;
+    let ids = Box::new(move || {
+        next = next.saturating_add(1);
+        Uuid::from_u128(next)
     });
     let mut decoder = GeminiStreamDecoder::new(options(), &HeaderMap::new(), ids);
     let chunk = decoder
@@ -521,7 +508,7 @@ fn counting_stream(fragments: &[&str], reader_fail: bool, response_fail: bool) -
             Some(response),
             options(),
             &HeaderMap::new(),
-            Box::new(FixedIds),
+            fixed_ids(),
         ),
         reader_closed,
         response_closed,
@@ -596,7 +583,7 @@ async fn ownership_the_async_adapter_yields_chunks_and_drains_at_eof() {
         None::<AsyncResponse>,
         options(),
         &HeaderMap::new(),
-        Box::new(FixedIds),
+        fixed_ids(),
     );
     let first = stream.next_chunk().await.unwrap().unwrap().unwrap();
     assert_eq!(first.id, "r1");
@@ -621,7 +608,7 @@ async fn ownership_async_close_shuts_the_reader_and_the_response() {
         Some(response),
         options(),
         &HeaderMap::new(),
-        Box::new(FixedIds),
+        fixed_ids(),
     );
     assert!(stream.next_chunk().await.unwrap().unwrap().is_some());
     stream.aclose().await;
@@ -657,8 +644,8 @@ fn ownership_a_truncated_utf8_sequence_at_eof_is_an_error() {
 
 #[test]
 fn ownership_a_random_id_source_produces_distinct_ids() {
-    let source = UuidV4;
-    assert_ne!(source.next_id(), source.next_id());
+    let mut source = || Uuid::new_v4();
+    assert_ne!(source(), source());
 }
 
 #[rstest]

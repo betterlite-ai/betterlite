@@ -18,27 +18,12 @@ class Logging:
 
 
 @dataclass
-class FunctionView:
-    name: str
-    arguments: str
-
-
-@dataclass
-class ToolCallView:
-    id: str
-    type: str
-    index: int
-    function: FunctionView
-    provider_specific_fields: JsonValue = None
-
-
-@dataclass
 class DeltaView:
     role: str | None = None
     content: str | None = None
     reasoning_content: str | None = None
-    tool_calls: list[ToolCallView] | None = None
-    function_call: FunctionView | None = None
+    tool_calls: JsonValue = None
+    function_call: JsonValue = None
     images: JsonValue = None
     annotations: JsonValue = None
     provider_specific_fields: JsonValue = None
@@ -52,9 +37,8 @@ class ChoiceView:
     logprobs: JsonValue = None
 
 
-@dataclass
-class PromptDetailsView:
-    web_search_requests: int | None = None
+class PromptDetails(TypedDict, total=False):
+    web_search_requests: int
 
 
 @dataclass
@@ -62,7 +46,7 @@ class UsageView:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    prompt_tokens_details: PromptDetailsView | None = None
+    prompt_tokens_details: PromptDetails | None = None
     completion_tokens_details: JsonValue = None
 
 
@@ -81,6 +65,8 @@ class ChunkView:
 
 
 CHUNK: Final = TypeAdapter(ChunkView)
+DELTA: Final = TypeAdapter(DeltaView)
+JSON_VALUE: Final = TypeAdapter(JsonValue)
 
 
 def _usage(usage: UsageView) -> JsonValue:
@@ -91,42 +77,7 @@ def _usage(usage: UsageView) -> JsonValue:
         "total_tokens": usage.total_tokens,
         "prompt_details": details is not None,
         "completion_details": usage.completion_tokens_details is not None,
-        "web_search_requests": None if details is None else details.web_search_requests,
-    }
-
-
-def _tool_call(call: ToolCallView) -> JsonValue:
-    return {
-        "id": call.id,
-        "type": call.type,
-        "index": call.index,
-        "function": {"name": call.function.name, "arguments": call.function.arguments},
-        "provider_specific_fields": call.provider_specific_fields,
-    }
-
-
-def _tool_calls(calls: list[ToolCallView] | None) -> JsonValue:
-    if calls is None:
-        return None
-    return [_tool_call(call) for call in calls]
-
-
-def _function_call(function: FunctionView | None) -> JsonValue:
-    if function is None:
-        return None
-    return {"name": function.name, "arguments": function.arguments}
-
-
-def _delta(delta: DeltaView) -> JsonValue:
-    return {
-        "role": delta.role,
-        "content": delta.content,
-        "reasoning_content": delta.reasoning_content,
-        "tool_calls": _tool_calls(delta.tool_calls),
-        "function_call": _function_call(delta.function_call),
-        "images": delta.images,
-        "annotations": delta.annotations,
-        "provider_specific_fields": delta.provider_specific_fields,
+        "web_search_requests": None if details is None else details.get("web_search_requests"),
     }
 
 
@@ -134,18 +85,8 @@ def _choice(choice: ChoiceView) -> JsonValue:
     return {
         "index": choice.index,
         "finish_reason": choice.finish_reason,
-        "delta": _delta(choice.delta),
+        "delta": JSON_VALUE.validate_json(DELTA.dump_json(choice.delta)),
         "logprobs": choice.logprobs,
-    }
-
-
-def _metadata(chunk: ChunkView) -> JsonValue:
-    return {
-        "grounding_metadata": chunk.vertex_ai_grounding_metadata,
-        "url_context_metadata": chunk.vertex_ai_url_context_metadata,
-        "safety_ratings": chunk.vertex_ai_safety_ratings,
-        "safety_results": chunk.vertex_ai_safety_results,
-        "citation_metadata": chunk.vertex_ai_citation_metadata,
     }
 
 
@@ -157,7 +98,13 @@ def _state(chunk: ModelResponseStream) -> JsonValue:
         "choices": [_choice(choice) for choice in view.choices],
         "usage": None if view.usage is None else _usage(view.usage),
         "service_tier": view.service_tier,
-        "metadata": _metadata(view),
+        "metadata": [
+            view.vertex_ai_grounding_metadata,
+            view.vertex_ai_url_context_metadata,
+            view.vertex_ai_safety_ratings,
+            view.vertex_ai_safety_results,
+            view.vertex_ai_citation_metadata,
+        ],
     }
 
 
@@ -190,8 +137,6 @@ def _chunks(
 
 
 def run(input_value: Input) -> JsonValue:
-    optional_params: dict[str, JsonValue] = (
-        {"functions": [{}]} if input_value["legacy_function"] else {}
-    )
+    optional_params: dict[str, JsonValue] = {"functions": [{}]} if input_value["legacy_function"] else {}
     chunks, drained = _chunks(input_value, optional_params)
     return {"chunks": chunks, "drained": drained}
