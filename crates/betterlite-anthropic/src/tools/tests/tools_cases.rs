@@ -236,9 +236,14 @@ const CHOICE_OBJECT_NONE: [(&str, Option<bool>); 2] = [
     (r#"{"type":"unknown","name":"lookup"}"#, None),
 ];
 
-const CHOICE_NAMED: [ChoiceCase; 3] = [
+const CHOICE_NAMED: [ChoiceCase; 4] = [
     (
         r#"{"function":{"name":"lookup"}}"#,
+        None,
+        r#"{"type":"tool","name":"lookup"}"#,
+    ),
+    (
+        r#"{"type":"auto","function":{"name":"lookup"}}"#,
         None,
         r#"{"type":"tool","name":"lookup"}"#,
     ),
