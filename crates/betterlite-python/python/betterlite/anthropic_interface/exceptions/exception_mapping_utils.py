@@ -2,7 +2,7 @@ import json
 import typing
 from typing import Final, TypeGuard
 
-from betterlite.types.utils.values import JsonValue
+from betterlite.types.utils import JsonValue
 
 from .exceptions import AnthropicErrorDetail, AnthropicErrorResponse, AnthropicErrorType
 
