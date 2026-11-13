@@ -5,12 +5,16 @@ use std::sync::{Arc, Mutex};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_core::skills::content::files::extract_all_files;
+// ast-grep-ignore: no-long-names
 use betterlite_core::skills::content::inject::inject_skill_content_to_messages;
 use betterlite_core::skills::content::prompt::extract_skill_content;
-use betterlite_core::skills::content::tools::{
-    convert_skill_to_anthropic_tool, convert_skill_to_tool, get_litellm_code_execution_tool,
-    get_litellm_code_execution_tool_anthropic,
-};
+// ast-grep-ignore: no-long-names
+use betterlite_core::skills::content::tools::convert_skill_to_anthropic_tool;
+use betterlite_core::skills::content::tools::convert_skill_to_tool;
+// ast-grep-ignore: no-long-names
+use betterlite_core::skills::content::tools::get_litellm_code_execution_tool;
+// ast-grep-ignore: no-long-names
+use betterlite_core::skills::content::tools::get_litellm_code_execution_tool_anthropic;
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
@@ -25,10 +29,18 @@ use crate::helpers::{Helper, HelperResult, OrHelperError};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    ExtractContent { skill: SkillTable },
-    ExtractFiles { skill: SkillTable },
-    ConvertTool { skill: SkillTable },
-    ConvertAnthropicTool { skill: SkillTable },
+    ExtractContent {
+        skill: SkillTable,
+    },
+    ExtractFiles {
+        skill: SkillTable,
+    },
+    ConvertTool {
+        skill: SkillTable,
+    },
+    ConvertAnthropicTool {
+        skill: SkillTable,
+    },
     Inject {
         data: Object,
         contents: Vec<String>,
@@ -67,7 +79,8 @@ fn answer(input: &Input) -> HelperResult {
         }
         Input::ConvertAnthropicTool { skill } => {
             // ast-grep-ignore: no-long-names
-            let tool = serde_json::to_value(convert_skill_to_anthropic_tool(skill)).or_value_error()?;
+            let converted = convert_skill_to_anthropic_tool(skill);
+            let tool = serde_json::to_value(converted).or_value_error()?;
             Ok(json!({"tool": tool}))
         }
         Input::Inject {
@@ -76,6 +89,7 @@ fn answer(input: &Input) -> HelperResult {
             use_anthropic_format,
         } => {
             let mut edited = data.clone();
+            // ast-grep-ignore: no-long-names
             inject_skill_content_to_messages(&mut edited, contents, *use_anthropic_format)
                 .or_value_error()?;
             Ok(json!({"data": edited}))
@@ -87,8 +101,8 @@ fn answer(input: &Input) -> HelperResult {
         }
         Input::ExecutionToolAnthropic => {
             // ast-grep-ignore: no-long-names
-            let tool =
-                serde_json::to_value(get_litellm_code_execution_tool_anthropic()).or_value_error()?;
+            let tool = serde_json::to_value(get_litellm_code_execution_tool_anthropic())
+                .or_value_error()?;
             Ok(json!({"tool": tool}))
         }
     }

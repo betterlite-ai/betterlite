@@ -14,6 +14,7 @@ pub enum SkillContentError {
     SystemContentNotText,
 }
 
+// ast-grep-ignore: no-long-names
 pub fn inject_skill_content_to_messages(
     data: &mut Object,
     skill_contents: &[String],
