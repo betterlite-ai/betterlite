@@ -145,9 +145,15 @@ fn apply_request_guardrails(
     name: &str,
     value: Json,
 ) -> Result<(), RequestGuardrailPolicyError> {
+    let bucket = bucket_mut(data, name)?;
     let additions = match value {
-        Json::Null => None,
-        Json::List(items) => Some(texts(items, GUARDRAILS)?),
+        Json::Null => {
+            if !matches!(bucket.get(GUARDRAILS), Some(Json::List(_))) {
+                bucket.insert(GUARDRAILS.to_owned(), Json::Null);
+            }
+            return Ok(());
+        }
+        Json::List(items) => texts(items, GUARDRAILS)?,
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
             return Err(RequestGuardrailPolicyError::NotTyped {
                 field: GUARDRAILS,
@@ -155,22 +161,12 @@ fn apply_request_guardrails(
             });
         }
     };
-    let bucket = bucket_mut(data, name)?;
-    match (additions, bucket.get_mut(GUARDRAILS)) {
-        (Some(names), Some(Json::List(existing))) => {
-            existing.extend(names.into_iter().map(Json::Text));
-        }
-        (Some(names), _) => {
-            bucket.insert(
-                GUARDRAILS.to_owned(),
-                Json::List(names.into_iter().map(Json::Text).collect()),
-            );
-        }
-        (None, Some(Json::List(_))) => {}
-        (None, _) => {
-            bucket.insert(GUARDRAILS.to_owned(), Json::Null);
-        }
-    }
+    let mut stored = match bucket.get(GUARDRAILS) {
+        Some(Json::List(existing)) => existing.clone(),
+        _ => Vec::new(),
+    };
+    stored.extend(additions.into_iter().map(Json::Text));
+    bucket.insert(GUARDRAILS.to_owned(), Json::List(stored));
     Ok(())
 }
 
@@ -179,9 +175,15 @@ fn apply_request_guardrail_config(
     name: &str,
     value: Json,
 ) -> Result<(), RequestGuardrailPolicyError> {
-    let config = match value {
-        Json::Null => None,
-        Json::Object(fields) => Some(fields),
+    let fields = match value {
+        Json::Object(fields) => fields,
+        Json::Null => {
+            let bucket = bucket_mut(data, name)?;
+            if !matches!(bucket.get(GUARDRAIL_CONFIG), Some(Json::Object(_))) {
+                bucket.insert(GUARDRAIL_CONFIG.to_owned(), Json::Null);
+            }
+            return Ok(());
+        }
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             return Err(RequestGuardrailPolicyError::NotTyped {
                 field: GUARDRAIL_CONFIG,
@@ -190,17 +192,11 @@ fn apply_request_guardrail_config(
         }
     };
     let bucket = bucket_mut(data, name)?;
-    match (config, bucket.get_mut(GUARDRAIL_CONFIG)) {
-        (Some(fields), Some(Json::Object(existing))) => {
-            existing.extend(fields);
-        }
-        (Some(fields), _) => {
-            bucket.insert(GUARDRAIL_CONFIG.to_owned(), Json::Object(fields));
-        }
-        (None, Some(Json::Object(_))) => {}
-        (None, _) => {
-            bucket.insert(GUARDRAIL_CONFIG.to_owned(), Json::Null);
-        }
-    }
+    let mut stored = match bucket.shift_remove(GUARDRAIL_CONFIG) {
+        Some(Json::Object(existing)) => existing,
+        _ => IndexMap::new(),
+    };
+    stored.extend(fields);
+    bucket.insert(GUARDRAIL_CONFIG.to_owned(), Json::Object(stored));
     Ok(())
 }

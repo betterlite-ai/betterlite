@@ -1,5 +1,7 @@
+mod engine;
 pub mod error;
 mod metadata;
+mod pipelines;
 mod policies;
 
 mod tests;
@@ -70,7 +72,7 @@ impl GuardrailPolicyService<'_> {
             metadata_name,
             &self.settings,
         )?;
-        policies::add_policy_engine_guardrails(self, input, &mut data)?;
+        engine::add_policy_engine_guardrails(self, input, &mut data)?;
         metadata::move_request_guardrails(&mut data, metadata_name)?;
         Ok(RequestGuardrailPolicyResult {
             data,
