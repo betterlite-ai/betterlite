@@ -1,3 +1,4 @@
+mod eligible;
 pub mod error;
 mod key;
 pub mod orchestration;

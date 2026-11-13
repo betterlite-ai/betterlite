@@ -2,9 +2,6 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
-use betterlite_core::message_utilities::prompt_cache_checks::{
-    PromptCacheRequest, PromptCacheSettings, is_prompt_caching_valid_prompt,
-};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_models::catalog::ModelCatalog;
@@ -25,6 +22,7 @@ use crate::cache_prefix::transform::{
 use crate::endpoint_target::target::EndpointTarget;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
 
+use super::eligible::is_cacheable;
 use super::error::CacheCreateError;
 use super::key::context_cache_key;
 use super::records::{CREATED_CACHE_LIMIT, CreatedCache, decode_created_cache};
@@ -149,37 +147,6 @@ where
     })
 }
 
-async fn is_cacheable<F>(
-    request: &CacheCreateRequest<'_, F>,
-    options: &CacheCreateOptions,
-    cached: &[Message],
-) -> bool
-where
-    F: RemoteMediaFetcher + Sync,
-{
-    let Ok(encoded) = serde_json::to_vec(cached) else {
-        return false;
-    };
-    let Ok(messages) = serde_json::from_slice::<Vec<Json>>(&encoded) else {
-        return false;
-    };
-    is_prompt_caching_valid_prompt(
-        &PromptCacheRequest {
-            model: request.model,
-            messages: Some(&messages),
-            tools: options.tools.as_deref(),
-            custom_llm_provider: Some(provider_name(request.provider)),
-            min_token_count: None,
-        },
-        PromptCacheSettings {
-            minimum_token_override: request.minimum_token_override,
-        },
-        request.counter,
-        request.catalog,
-    )
-    .await
-}
-
 fn plan_cache<'plan, F, L, C>(
     request: &CacheCreateRequest<'_, F>,
     options: &mut CacheCreateOptions,
@@ -290,14 +257,6 @@ fn created_cache(reply: &UpstreamResponse) -> Result<CreatedCache, CacheCreateEr
         });
     }
     decode_created_cache(&reply.body)
-}
-
-const fn provider_name(provider: CacheProvider) -> &'static str {
-    match provider {
-        CacheProvider::Vertex => "vertex_ai",
-        CacheProvider::VertexBeta => "vertex_ai_beta",
-        CacheProvider::Gemini => "gemini",
-    }
 }
 
 const fn capability_provider(provider: CacheProvider) -> VertexCapabilityProvider {
