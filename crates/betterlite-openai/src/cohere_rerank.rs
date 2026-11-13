@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::str;
 
 use betterlite_config::sections::cohere_rerank_settings::Settings;
 use betterlite_models::decisions::Json;
@@ -144,7 +145,7 @@ pub fn map_rerank_params(
     };
     mapped.insert(
         name.to_owned(),
-        limit.map_or(Json::Null, |limit| Json::Number(Number::from(limit))),
+        limit.map_or(Json::Null, |number| Json::Number(Number::from(number))),
     );
     mapped
 }
@@ -218,7 +219,7 @@ pub fn get_error_class(
 }
 
 fn response_text(body: &[u8]) -> String {
-    std::str::from_utf8(body).map_or_else(
+    str::from_utf8(body).map_or_else(
         |_| "the Cohere response is not valid UTF-8".to_owned(),
         str::to_owned,
     )
