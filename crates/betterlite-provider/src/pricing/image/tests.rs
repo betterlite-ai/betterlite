@@ -154,6 +154,17 @@ fn a_gpt_image_model_without_deployment_prices_costs_zero() {
 }
 
 #[test]
+fn a_gpt_image_route_rejects_a_response_that_is_not_an_image_response() {
+    let call = image_call("openai", "gpt-image-1", ImageResponseView::Other);
+    assert!(matches!(
+        price(&call, &empty()),
+        Err(ImageDispatchError::Policy(ImagePolicyError::Image(
+            ImageCostError::NotImageResponse
+        )))
+    ));
+}
+
+#[test]
 fn azure_ai_rejects_a_response_that_is_not_an_image_response() {
     let info = deployment("0.04");
     let mut call = image_call("azure_ai", "flux", ImageResponseView::Other);
