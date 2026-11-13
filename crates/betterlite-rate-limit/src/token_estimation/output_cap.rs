@@ -135,20 +135,26 @@ fn google_config_fields(data: &RequestData) -> Option<&IndexMap<String, Json>> {
 
 #[must_use]
 pub fn output_candidate_count(data: &RequestData, call_type: Option<&str>) -> i64 {
-    let fields = if matches!(call_family(call_type), CallFamily::Google) {
-        google_config_fields(data)
-    } else {
-        None
+    let config_fields = match call_family(call_type) {
+        CallFamily::Google => google_config_fields(data),
+        CallFamily::Responses
+        | CallFamily::Embedding
+        | CallFamily::TextCompletion
+        | CallFamily::Rerank
+        | CallFamily::Other => None,
     };
     let mut count: i64 = 1;
-    for value in [
-        data.get("n"),
-        data.get("best_of"),
-        fields.and_then(|fields| fields.get("candidateCount")),
-        fields.and_then(|fields| fields.get("candidate_count")),
-    ] {
-        if let Some(parsed) = value.and_then(candidate_count_value) {
-            count = count.max(parsed);
+    for value in [data.get("n"), data.get("best_of")] {
+        count = count.max(value.and_then(candidate_count_value).unwrap_or(1));
+    }
+    if let Some(fields) = config_fields {
+        for name in ["candidateCount", "candidate_count"] {
+            count = count.max(
+                fields
+                    .get(name)
+                    .and_then(candidate_count_value)
+                    .unwrap_or(1),
+            );
         }
     }
     count
