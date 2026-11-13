@@ -1,9 +1,11 @@
+import datetime as dt
 import json
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 from unittest.mock import patch
 
 import httpx
 import litellm
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.prompt_templates import huggingface_template_handler
 from litellm.llms.sagemaker.chat.transformation import SagemakerChatConfig
 from litellm.llms.sagemaker.completion import transformation as completion
@@ -23,6 +25,7 @@ CHAT_PROVIDER: Final = "sagemaker_chat"
 NOVA_PROVIDER: Final = "sagemaker_nova"
 DROP_PARAMS: Final = False
 UNREACHABLE: Final = {"status": "failure"}
+LOG_START: Final = dt.datetime.fromtimestamp(FIXED_NOW, dt.UTC)
 
 
 class ParamsStep(TypedDict):
@@ -81,15 +84,6 @@ Step: TypeAlias = (
 
 class Input(TypedDict):
     steps: list[Step]
-
-
-class PostCallLog:
-    def __init__(self) -> None:
-        self.calls: list[Object] = []
-
-    def post_call(self, **params: JsonValue) -> None:
-        recorded: Object = {"input": params.get("input")}
-        self.calls.append(recorded)
 
 
 def unreachable(hf_model_name: str) -> Object:
@@ -165,7 +159,15 @@ def completion_response_step(step: CompletionResponseStep) -> Object:
             step["model"],
             raw,
             model_response,
-            PostCallLog(),  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/transformation.py#L197-L258
+            Logging(
+                model=MODEL,
+                messages=None,
+                stream=False,
+                call_type="text_completion",
+                start_time=LOG_START,
+                litellm_call_id="call-1",
+                function_id="fn-1",
+            ),
             {"inputs": step.get("prompt", "")},
             [],
             {},
