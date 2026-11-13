@@ -8,15 +8,14 @@ use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 
 use super::decode::decode_rerank_reply;
 use super::error::RerankCallError;
-use super::plan::{
-    CredentialSource, LogContext, PreparedRequest, RerankCall, prepare_request, resolve_target,
-};
+use super::plan::{CredentialSource, LogContext, PreparedRequest, RerankCall, prepare_request};
 use super::transport::{
     ClientFactory, ClientKind, RerankHttpReply, RerankHttpRequest, SuppliedClient, TransferError,
 };
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
 };
+use crate::signing::target::{RegionInputs, TargetRequest, request_target};
 
 pub async fn resolve_and_prepare<Source>(
     call: &mut RerankCall<'_>,
@@ -26,11 +25,25 @@ pub async fn resolve_and_prepare<Source>(
 where
     Source: CredentialSource + Sync,
 {
-    let target = resolve_target(call, source).await?;
+    // no bearer shortcut: LiteLLM prepares rerank with supports_bearer_token=False
+    let target = request_target(
+        TargetRequest {
+            optional_params: &mut call.optional_params,
+            model: Some(&call.request.model),
+            region_inputs: RegionInputs {
+                environment_region_name: call.environment.region_name,
+                environment_region: call.environment.region,
+                session_region: call.environment.session_region,
+            },
+            bearer_token: None,
+        },
+        |settings, region| source.resolve(settings.clone(), region.to_owned()),
+    )
+    .await?;
     prepare_request(call, &target, log)
 }
 
-// the transport is chosen only after signing, so both paths send one prepared request
+// the transport is chosen only after signing, so both paths send the one prepared request
 pub async fn dispatch_request<Factory>(
     call: &RerankCall<'_>,
     prepared: &PreparedRequest,
@@ -41,36 +54,13 @@ pub async fn dispatch_request<Factory>(
 where
     Factory: ClientFactory + Sync,
 {
-    let sent = post(call, prepared, supplied, factory, log).await;
-    let reply = match sent {
-        Ok(reply) => reply,
-        Err(TransferError::Timeout) => return Err(timeout_error()?),
-        Err(error) => return Err(RerankCallError::Transport(error)),
-    };
-    // LiteLLM calls raise_for_status, which raises only for 4xx and 5xx
-    if (400..=599).contains(&reply.status) {
-        return Err(provider_error(&prepared.endpoint_url, &reply)?);
-    }
-    Ok(reply)
-}
-
-async fn post<Factory>(
-    call: &RerankCall<'_>,
-    prepared: &PreparedRequest,
-    supplied: Option<SuppliedClient<'_, Factory::Client>>,
-    factory: &Factory,
-    log: &mut LogContext<'_, '_>,
-) -> Result<RerankHttpReply, TransferError>
-where
-    Factory: ClientFactory + Sync,
-{
     let request = RerankHttpRequest {
         url: prepared.endpoint_url.clone(),
         headers: prepared.signed.headers.clone(),
         body: prepared.signed.body.clone(),
         timeout: call.timeout,
     };
-    match (call.is_async, supplied) {
+    let sent = match (call.is_async, supplied) {
         (true, Some(client)) if client.kind == ClientKind::Async => {
             client.transport.post_with_logging(request, log.state).await
         }
@@ -84,7 +74,17 @@ where
             client.transport.post(request).await
         }
         (false, _) => factory.sync_client().post(request).await,
+    };
+    let reply = match sent {
+        Ok(reply) => reply,
+        Err(TransferError::Timeout) => return Err(timeout_error()?),
+        Err(error) => return Err(RerankCallError::Transport(error)),
+    };
+    // LiteLLM calls raise_for_status, which raises only for 4xx and 5xx
+    if (400..=599).contains(&reply.status) {
+        return Err(provider_error(&prepared.endpoint_url, &reply)?);
     }
+    Ok(reply)
 }
 
 pub fn transform_response(
@@ -93,29 +93,25 @@ pub fn transform_response(
     generated_id: &str,
     log: &mut LogContext<'_, '_>,
 ) -> Result<RerankResponse, RerankCallError> {
+    // LiteLLM logs the raw text before it decodes the JSON, and only on the sync path
     if !call.is_async {
-        log_post_call(reply, log);
+        post_call(
+            log.state,
+            &PostCall {
+                original_response: Json::Text(response_text(&reply.body)),
+                input: Json::Null,
+                additional_args: AdditionalArgs::default(),
+            },
+            log.env,
+        );
     }
     Ok(decode_rerank_reply(&reply.body, generated_id)?)
-}
-
-// LiteLLM logs the raw text before it decodes the JSON, and only on the sync path
-fn log_post_call(reply: &RerankHttpReply, log: &mut LogContext<'_, '_>) {
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: Json::Text(response_text(&reply.body)),
-            input: Json::Null,
-            additional_args: AdditionalArgs::default(),
-        },
-        log.env,
-    );
 }
 
 fn timeout_error() -> Result<RerankCallError, HeaderError> {
     let error = BedrockError::try_from(ErrorInput {
         status_code: 408,
-        message: "the provider request timed out".to_owned(),
+        message: "Timeout error occurred.".to_owned(),
         request: None,
         body: None,
         status_code_is_synthesized: false,

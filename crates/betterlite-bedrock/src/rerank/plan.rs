@@ -22,7 +22,7 @@ use crate::credentials::error::CredentialError;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::request::AwsSignedRequest;
-use crate::signing::target::{RegionInputs, RequestTarget, TargetRequest, request_target};
+use crate::signing::target::RequestTarget;
 
 pub type ParamMap = BTreeMap<String, Box<RawValue>>;
 
@@ -49,7 +49,6 @@ pub struct RerankCall<'text> {
 pub struct PreparedRequest {
     pub endpoint_url: String,
     pub signed: AwsSignedRequest,
-    pub data: IndexMap<String, Json>,
 }
 
 pub struct LogContext<'borrow, 'env> {
@@ -65,31 +64,6 @@ pub trait CredentialSource {
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
 }
 
-pub async fn resolve_target<Source>(
-    call: &mut RerankCall<'_>,
-    source: &Source,
-) -> Result<RequestTarget, RerankCallError>
-where
-    Source: CredentialSource + Sync,
-{
-    // no bearer shortcut: LiteLLM prepares rerank with supports_bearer_token=False
-    let target = request_target(
-        TargetRequest {
-            optional_params: &mut call.optional_params,
-            model: Some(&call.request.model),
-            region_inputs: RegionInputs {
-                environment_region_name: call.environment.region_name,
-                environment_region: call.environment.region,
-                session_region: call.environment.session_region,
-            },
-            bearer_token: None,
-        },
-        |settings, region| source.resolve(settings.clone(), region.to_owned()),
-    )
-    .await?;
-    Ok(target)
-}
-
 pub fn prepare_request(
     call: &RerankCall<'_>,
     target: &RequestTarget,
@@ -103,7 +77,6 @@ pub fn prepare_request(
     Ok(PreparedRequest {
         endpoint_url,
         signed,
-        data,
     })
 }
 
@@ -130,7 +103,16 @@ fn sign_payload(
     endpoint_url: &str,
     body: &[u8],
 ) -> Result<AwsSignedRequest, RerankCallError> {
-    let headers = content_headers(call.extra_headers);
+    let mut headers = vec![(
+        "Content-Type".to_owned(),
+        Some("application/json".to_owned()),
+    )];
+    for (name, value) in call.extra_headers.unwrap_or_default() {
+        match headers.iter_mut().find(|entry| entry.0 == *name) {
+            Some((_, stored)) => *stored = Some(value.clone()),
+            None => headers.push((name.clone(), Some(value.clone()))),
+        }
+    }
     Ok(request_headers(RequestHeaders {
         credentials: target.credentials.as_ref(),
         region: &target.region,
@@ -145,30 +127,17 @@ fn sign_payload(
     })?)
 }
 
-fn content_headers(extra: Option<&[(String, String)]>) -> Vec<(String, Option<String>)> {
-    let mut headers = vec![(
-        "Content-Type".to_owned(),
-        Some("application/json".to_owned()),
-    )];
-    for (name, value) in extra.unwrap_or_default() {
-        match headers.iter_mut().find(|(existing, _)| existing == name) {
-            Some((_, stored)) => *stored = Some(value.clone()),
-            None => headers.push((name.clone(), Some(value.clone()))),
-        }
-    }
-    headers
-}
-
 fn log_pre_call(
     data: &IndexMap<String, Json>,
     endpoint_url: &str,
     signed: &AwsSignedRequest,
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), RerankCallError> {
-    let mut headers = IndexMap::new();
-    for (name, value) in &signed.headers {
-        headers.insert(name.clone(), Json::Text(value.clone()));
-    }
+    let headers = signed
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+        .collect();
     pre_call(
         log.state,
         &PreCall {

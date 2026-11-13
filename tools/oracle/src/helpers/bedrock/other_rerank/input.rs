@@ -23,13 +23,11 @@ pub(crate) struct Input {
     pub(crate) probes: Vec<Probe>,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Supplied {
     Sync,
     Async,
-    #[default]
-    None,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -39,25 +37,16 @@ pub(crate) enum ReplyFailure {
     Failed,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Credentials {
     pub(crate) access_key_id: String,
     pub(crate) secret_access_key: String,
     pub(crate) session_token: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub(crate) struct Environment {
-    pub(crate) region_name: Option<String>,
-    pub(crate) region: Option<String>,
-    pub(crate) session_region: Option<String>,
-    pub(crate) runtime_endpoint: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Reply {
     pub(crate) status: u16,
     pub(crate) headers: BTreeMap<String, String>,
@@ -66,7 +55,7 @@ pub(crate) struct Reply {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct Probe {
     pub(crate) model: String,
     pub(crate) query: String,
@@ -78,42 +67,9 @@ pub(crate) struct Probe {
     pub(crate) optional_params: Map<String, Value>,
     pub(crate) extra_headers: Option<BTreeMap<String, String>>,
     pub(crate) api_base: Option<String>,
-    pub(crate) api_key: Option<String>,
     pub(crate) credentials: Credentials,
-    pub(crate) environment: Environment,
-    pub(crate) now: u64,
     pub(crate) reply: Reply,
     pub(crate) supplied: Supplied,
     pub(crate) is_async: bool,
     pub(crate) timeout_ms: Option<u64>,
-    pub(crate) generated_id: String,
-}
-
-impl Default for Probe {
-    fn default() -> Self {
-        Self {
-            model: "arn:aws:bedrock:us-east-1:123456789012:rerank-model/test".to_owned(),
-            query: "query".to_owned(),
-            documents: Vec::new(),
-            top_n: None,
-            rank_fields: None,
-            return_documents: None,
-            max_chunks_per_doc: None,
-            optional_params: Map::new(),
-            extra_headers: None,
-            api_base: None,
-            api_key: None,
-            credentials: Credentials::default(),
-            environment: Environment::default(),
-            now: 1_700_000_000,
-            reply: Reply {
-                status: 200,
-                ..Reply::default()
-            },
-            supplied: Supplied::default(),
-            is_async: false,
-            timeout_ms: None,
-            generated_id: "00000000-0000-4000-8000-000000000000".to_owned(),
-        }
-    }
 }

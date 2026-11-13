@@ -7,7 +7,7 @@ use std::time::Duration;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{
-    RerankDocument, RerankRequest, RerankResponse,
+    RerankBilledUnits, RerankDocument, RerankRequest, RerankResponse, RerankTokens,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -16,7 +16,6 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{
     DiscardingSink, Factory, FixtureClient, Reply, Source, logging_state, now, prepost_env,
-    redactor,
 };
 use crate::rerank::error::RerankCallError;
 use crate::rerank::execute::{dispatch_request, resolve_and_prepare, transform_response};
@@ -25,6 +24,8 @@ use crate::rerank::transport::{ClientKind, RerankHttpRequest, SuppliedClient};
 
 pub(super) const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
 const MODEL_ARN: &str = "arn:aws:bedrock:us-east-1:123456789012:rerank-model/test";
+const FIRST_ACCESS: &str = "AKIAIOSFODNN7EXAMPLE";
+const FIRST_SECRET: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 
 pub(super) fn request(model: &str, query: &str, documents: Vec<RerankDocument>) -> RerankRequest {
     RerankRequest {
@@ -48,37 +49,29 @@ pub(super) fn text(value: &str) -> RerankDocument {
 }
 
 pub(super) fn object(pairs: &[(&str, &str)]) -> RerankDocument {
-    RerankDocument::Object(
-        pairs
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), Json::Text((*value).to_owned())))
-            .collect(),
-    )
+    let mut fields = IndexMap::new();
+    for (name, value) in pairs {
+        fields.insert((*name).to_owned(), Json::Text((*value).to_owned()));
+    }
+    RerankDocument::Object(fields)
 }
 
 pub(super) fn params(pairs: &[(&str, Json)]) -> ParamMap {
-    pairs
-        .iter()
-        .map(|(key, value)| {
-            let text = serde_json::to_string(value).unwrap();
-            (
-                (*key).to_owned(),
-                RawValue::from_string(text).expect("the param is valid JSON"),
-            )
-        })
-        .collect()
+    let mut map = ParamMap::new();
+    for (key, value) in pairs {
+        let encoded = serde_json::to_string(value).unwrap();
+        map.insert(
+            (*key).to_owned(),
+            RawValue::from_string(encoded).expect("the param is valid JSON"),
+        );
+    }
+    map
 }
 
 pub(super) fn auth_params() -> ParamMap {
     params(&[
-        (
-            "aws_access_key_id",
-            Json::Text("AKIAIOSFODNN7EXAMPLE".to_owned()),
-        ),
-        (
-            "aws_secret_access_key",
-            Json::Text("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned()),
-        ),
+        ("aws_access_key_id", Json::Text(FIRST_ACCESS.to_owned())),
+        ("aws_secret_access_key", Json::Text(FIRST_SECRET.to_owned())),
         ("aws_region_name", Json::Text("us-east-1".to_owned())),
     ])
 }
@@ -123,6 +116,13 @@ fn list_field<'json>(fields: &'json IndexMap<String, Json>, name: &str) -> &'jso
     items
 }
 
+fn number_field(fields: &IndexMap<String, Json>, name: &str) -> i64 {
+    let Json::Number(number) = field(fields, name) else {
+        panic!("`{name}` is a number");
+    };
+    number.as_i64().expect("the number is an integer")
+}
+
 pub(super) struct Run {
     pub(super) result: Result<RerankResponse, RerankCallError>,
     pub(super) supplied_seen: Vec<(RerankHttpRequest, bool)>,
@@ -133,23 +133,22 @@ pub(super) struct Run {
 }
 
 impl Run {
-    pub(super) fn posted(&self) -> &RerankHttpRequest {
-        let requests = if self.supplied_seen.is_empty() {
+    fn seen(&self) -> &Vec<(RerankHttpRequest, bool)> {
+        if self.supplied_seen.is_empty() {
             &self.factory_seen
         } else {
             &self.supplied_seen
-        };
+        }
+    }
+
+    pub(super) fn posted(&self) -> &RerankHttpRequest {
+        let requests = self.seen();
         assert_eq!(requests.len(), 1, "one request reaches the provider");
         &requests[0].0
     }
 
     pub(super) fn with_logging(&self) -> bool {
-        let requests = if self.supplied_seen.is_empty() {
-            &self.factory_seen
-        } else {
-            &self.supplied_seen
-        };
-        requests[0].1
+        self.seen()[0].1
     }
 
     pub(super) fn headers(&self) -> BTreeMap<String, String> {
@@ -200,7 +199,7 @@ pub(super) fn run_with_source(
     let client = FixtureClient::new(reply.clone());
     let factory = Factory::new(reply);
     let mut state = logging_state();
-    let redactor = redactor();
+    let redactor = super::fixture::redactor();
     let sink = DiscardingSink;
     let env = prepost_env(&state, &redactor, &sink);
     let runtime = Builder::new_current_thread().build().unwrap();
@@ -299,7 +298,15 @@ fn document_sources() {
         )
     );
     let body = run.body();
-    let sources = list_field(&body, "sources");
+    assert_eq!(
+        body.keys().cloned().collect::<Vec<_>>(),
+        vec!["queries", "rerankingConfiguration", "sources"]
+    );
+    assert_source_shapes(&body);
+}
+
+fn assert_source_shapes(body: &IndexMap<String, Json>) {
+    let sources = list_field(body, "sources");
     assert_eq!(sources.len(), 2);
     let Json::Object(first) = &sources[0] else {
         panic!("a source is an object");
@@ -307,18 +314,30 @@ fn document_sources() {
     assert_eq!(field(first, "type"), &Json::Text("INLINE".to_owned()));
     let inline = object_field(first, "inlineDocumentSource");
     assert_eq!(field(inline, "type"), &Json::Text("TEXT".to_owned()));
+    let text_document = object_field(inline, "textDocument");
+    assert_eq!(
+        field(text_document, "text"),
+        &Json::Text("first".to_owned())
+    );
     let Json::Object(second) = &sources[1] else {
         panic!("a source is an object");
     };
     let inline = object_field(second, "inlineDocumentSource");
+    assert_eq!(field(inline, "type"), &Json::Text("JSON".to_owned()));
     let document = object_field(inline, "jsonDocument");
     assert_eq!(field(document, "title"), &Json::Text("second".to_owned()));
-    assert!(!body.contains_key("max_chunks_per_doc"));
-    assert!(!body.contains_key("rank_fields"));
-    assert!(!body.contains_key("return_documents"));
 }
 
 fn model_arn() {
+    model_arn_payload();
+    model_arn_endpoint_rewrites();
+    model_arn_environment_region();
+    model_arn_session_region_and_endpoint();
+    model_arn_bearer_api_key();
+    model_arn_extra_headers();
+}
+
+fn model_arn_payload() {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let mut prepared = call(&documented, auth_params());
     prepared.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com");
@@ -341,7 +360,10 @@ fn model_arn() {
     assert!(authorization.starts_with("AWS4-HMAC-SHA256"));
     assert!(authorization.contains("/bedrock/aws4_request"));
     assert!(headers.contains_key("X-Amz-Date"));
+}
 
+fn model_arn_endpoint_rewrites() {
+    let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let mut trailing = call(&documented, auth_params());
     trailing.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com/");
     let run = run(trailing, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
@@ -351,14 +373,8 @@ fn model_arn() {
     );
 
     let configured = params(&[
-        (
-            "aws_access_key_id",
-            Json::Text("AKIAIOSFODNN7EXAMPLE".to_owned()),
-        ),
-        (
-            "aws_secret_access_key",
-            Json::Text("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_owned()),
-        ),
+        ("aws_access_key_id", Json::Text(FIRST_ACCESS.to_owned())),
+        ("aws_secret_access_key", Json::Text(FIRST_SECRET.to_owned())),
         (
             "aws_bedrock_runtime_endpoint",
             Json::Text("https://bedrock-runtime.eu-west-1.amazonaws.com".to_owned()),
@@ -374,10 +390,14 @@ fn model_arn() {
         run.posted().url,
         "https://bedrock-agent-runtime.eu-west-1.amazonaws.com/rerank"
     );
+}
 
+fn model_arn_environment_region() {
+    let documented = request("rerank-model", "q", vec![text("doc")]);
     let source = Source::new();
-    let mut environment = call(&documented, auth_params());
-    environment.environment.region_name = Some("us-east-1");
+    let mut environment = call(&documented, ParamMap::new());
+    environment.environment.region_name = Some("eu-central-1");
+    environment.environment.region = Some("us-east-2");
     let run = run_with_source(
         environment,
         Reply::ok(VALID_REPLY),
@@ -386,28 +406,74 @@ fn model_arn() {
     );
     assert_eq!(
         run.posted().url,
-        "https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank"
+        "https://bedrock-agent-runtime.eu-central-1.amazonaws.com/rerank"
     );
     let calls = source.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].1, "us-east-1");
+    assert_eq!(calls[0].1, "eu-central-1");
+}
 
+fn model_arn_session_region_and_endpoint() {
+    let documented = request("rerank-model", "q", vec![text("doc")]);
+    let mut environment = call(&documented, ParamMap::new());
+    environment.environment.session_region = Some("ap-south-1");
+    let run = run(environment, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    assert_eq!(
+        run.posted().url,
+        "https://bedrock-agent-runtime.ap-south-1.amazonaws.com/rerank"
+    );
+
+    let mut endpoint = call(&documented, ParamMap::new());
+    endpoint.environment.runtime_endpoint =
+        Some("https://bedrock-runtime.ca-central-1.amazonaws.com");
+    let run = run(endpoint, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    assert_eq!(
+        run.posted().url,
+        "https://bedrock-agent-runtime.ca-central-1.amazonaws.com/rerank"
+    );
+}
+
+fn model_arn_bearer_api_key() {
+    let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let token = secrecy::SecretString::from("bearer-token".to_owned());
     let mut bearer_like = call(&documented, auth_params());
     bearer_like.api_key = Some(&token);
     let run = run(bearer_like, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
-    let authorization = run.headers()["Authorization"].clone();
+    let authorization = &run.headers()["Authorization"];
     assert!(authorization.starts_with("AWS4-HMAC-SHA256"));
     assert!(!authorization.starts_with("Bearer"));
 }
 
+fn model_arn_extra_headers() {
+    let documented = request(MODEL_ARN, "q", vec![text("doc")]);
+    let headers = vec![
+        (
+            "Content-Type".to_owned(),
+            "application/vnd.bedrock+json".to_owned(),
+        ),
+        (
+            "Authorization".to_owned(),
+            "Bearer explicit-token".to_owned(),
+        ),
+        ("x-custom".to_owned(), "value".to_owned()),
+    ];
+    let mut prepared = call(&documented, auth_params());
+    prepared.extra_headers = Some(&headers);
+    let run = run(prepared, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let posted = run.headers();
+    assert_eq!(
+        posted.get("Content-Type"),
+        Some(&"application/vnd.bedrock+json".to_owned())
+    );
+    assert_eq!(
+        posted.get("Authorization"),
+        Some(&"Bearer explicit-token".to_owned())
+    );
+    assert_eq!(posted.get("x-custom"), Some(&"value".to_owned()));
+}
+
 fn top_n() {
-    for (top_n, expected) in [
-        (None, Json::Number(serde_json::Number::from(3))),
-        (Some(0), Json::Number(serde_json::Number::from(3))),
-        (Some(-2), Json::Number(serde_json::Number::from(-2))),
-        (Some(7), Json::Number(serde_json::Number::from(7))),
-    ] {
+    for (top_n, expected) in [(None, 3), (Some(0), 3), (Some(-2), -2), (Some(7), 7)] {
         let mut documented = request(MODEL_ARN, "q", vec![text("a"), text("b"), text("c")]);
         documented.top_n = top_n;
         let run = run(
@@ -419,8 +485,8 @@ fn top_n() {
         let configuration = object_field(&body, "rerankingConfiguration");
         let bedrock = object_field(configuration, "bedrockRerankingConfiguration");
         assert_eq!(
-            field(bedrock, "numberOfResults"),
-            &expected,
+            number_field(bedrock, "numberOfResults"),
+            expected,
             "top_n {top_n:?}"
         );
         assert_eq!(
@@ -432,7 +498,32 @@ fn top_n() {
     }
 }
 
+fn billed_units(response: &RerankResponse) -> &RerankBilledUnits {
+    let meta = response.meta.as_ref().expect("the reply carries meta");
+    meta.billed_units
+        .as_ref()
+        .expect("billed units are present")
+        .as_ref()
+        .expect("billed units are not null")
+}
+
+fn tokens(response: &RerankResponse) -> &RerankTokens {
+    let meta = response.meta.as_ref().expect("the reply carries meta");
+    meta.tokens
+        .as_ref()
+        .expect("tokens are present")
+        .as_ref()
+        .expect("tokens are not null")
+}
+
 fn results_index_score() {
+    results_index_score_values();
+    results_index_score_ids();
+    results_index_score_usage();
+    results_index_score_failures();
+}
+
+fn results_index_score_values() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run(
         call(&documented, auth_params()),
@@ -447,28 +538,41 @@ fn results_index_score() {
     assert_eq!(results[0].index, 2);
     assert_eq!(results[1].index, 0);
     assert!(results[0].relevance_score > results[1].relevance_score);
-    let meta = response.meta.as_ref().unwrap();
-    let units = meta.billed_units.as_ref().unwrap().as_ref().unwrap();
-    assert_eq!(units.search_units, Some(Some(1)));
-    assert_eq!(
-        meta.tokens.as_ref().unwrap().as_ref().unwrap().input_tokens,
-        None
-    );
+    assert_eq!(billed_units(response).search_units, Some(Some(1)));
+    assert_eq!(tokens(response).input_tokens, None);
+}
 
-    let run = run(
-        call(&documented, auth_params()),
-        Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}]}"#),
-        Some(ClientKind::Sync),
-    );
-    assert_eq!(run.response().id.as_deref(), Some(GENERATED_ID));
+fn results_index_score_ids() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    for (body, expected) in [
+        (
+            r#"{"results":[{"index":0,"relevanceScore":0.5}]}"#,
+            GENERATED_ID,
+        ),
+        (
+            r#"{"id":"explicit","results":[{"index":0,"relevanceScore":0.5}]}"#,
+            "explicit",
+        ),
+        (
+            r#"{"id":"","results":[{"index":0,"relevanceScore":0.5}]}"#,
+            "",
+        ),
+        (
+            r#"{"id":null,"results":[{"index":0,"relevanceScore":0.5}]}"#,
+            GENERATED_ID,
+        ),
+    ] {
+        let run = run(
+            call(&documented, auth_params()),
+            Reply::ok(body),
+            Some(ClientKind::Sync),
+        );
+        assert_eq!(run.response().id.as_deref(), Some(expected), "{body}");
+    }
+}
 
-    let run = run(
-        call(&documented, auth_params()),
-        Reply::ok(r#"{"id":"","results":[{"index":0,"relevanceScore":0.5}]}"#),
-        Some(ClientKind::Sync),
-    );
-    assert_eq!(run.response().id.as_deref(), Some(GENERATED_ID));
-
+fn results_index_score_usage() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run(
         call(&documented, auth_params()),
         Reply::ok(
@@ -476,30 +580,35 @@ fn results_index_score() {
         ),
         Some(ClientKind::Sync),
     );
-    let meta = run.response().meta.as_ref().unwrap();
-    let units = meta.billed_units.as_ref().unwrap().as_ref().unwrap();
-    assert_eq!(units.search_units, Some(Some(5)));
-    assert_eq!(units.total_tokens, Some(Some(9)));
-    let tokens = meta.tokens.as_ref().unwrap().as_ref().unwrap();
-    assert_eq!(tokens.input_tokens, Some(Some(1)));
-    assert_eq!(tokens.output_tokens, Some(Some(2)));
+    let response = run.response();
+    assert_eq!(billed_units(response).search_units, Some(Some(5)));
+    assert_eq!(billed_units(response).total_tokens, Some(Some(9)));
+    assert_eq!(tokens(response).input_tokens, Some(Some(1)));
+    assert_eq!(tokens(response).output_tokens, Some(Some(2)));
 
     let run = run(
         call(&documented, auth_params()),
         Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{}}"#),
         Some(ClientKind::Sync),
     );
-    let meta = run.response().meta.as_ref().unwrap();
-    let units = meta.billed_units.as_ref().unwrap().as_ref().unwrap();
     assert_eq!(
-        units.search_units, None,
+        billed_units(run.response()).search_units,
+        None,
         "an empty usage keeps no search unit"
     );
+}
 
+fn results_index_score_failures() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     for body in [
         r#"{"usage":{}}"#,
         r#"{"results":[]}"#,
         r#"{"results":null}"#,
+        r#"{"results":[{"relevanceScore":0.5}]}"#,
+        r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#,
+        r#"{"results":[{"index":null,"relevanceScore":0.5}]}"#,
+        r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":"none"}"#,
+        r#"{"id":7,"results":[{"index":0,"relevanceScore":0.5}]}"#,
     ] {
         let run = run(
             call(&documented, auth_params()),
@@ -510,18 +619,6 @@ fn results_index_score() {
             matches!(run.result, Err(RerankCallError::Decode(_))),
             "{body}"
         );
-    }
-    for body in [
-        r#"{"results":[{"relevanceScore":0.5}]}"#,
-        r#"{"results":[{"index":0,"relevanceScore":"half"}]}"#,
-        r#"{"results":[{"index":null,"relevanceScore":0.5}]}"#,
-    ] {
-        let run = run(
-            call(&documented, auth_params()),
-            Reply::ok(body),
-            Some(ClientKind::Sync),
-        );
-        assert!(run.result.is_err(), "{body}");
     }
 }
 
@@ -558,6 +655,12 @@ fn return_document_content() {
 }
 
 fn rerank_error() {
+    rerank_error_status();
+    rerank_error_transport();
+    rerank_error_decode();
+}
+
+fn rerank_error_status() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run(
         call(&documented, auth_params()),
@@ -585,13 +688,20 @@ fn rerank_error() {
         run.post_call().is_none(),
         "a failed status logs no post_call"
     );
+}
 
+fn rerank_error_transport() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run(
         call(&documented, auth_params()),
         Reply::Timeout,
         Some(ClientKind::Sync),
     );
-    assert_eq!(run.result.as_ref().unwrap_err().status(), Some(408));
+    let Err(RerankCallError::Provider { status, error }) = &run.result else {
+        panic!("a timeout is a provider error");
+    };
+    assert_eq!(*status, 408);
+    assert_eq!(error.error.message, "Timeout error occurred.");
 
     let run = run(
         call(&documented, auth_params()),
@@ -600,6 +710,16 @@ fn rerank_error() {
     );
     assert!(matches!(run.result, Err(RerankCallError::Transport(_))));
 
+    let run = run(
+        call(&documented, auth_params()),
+        Reply::status(302, &[], VALID_REPLY),
+        Some(ClientKind::Sync),
+    );
+    assert!(run.result.is_ok(), "raise_for_status ignores a redirect");
+}
+
+fn rerank_error_decode() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let run = run(
         call(&documented, auth_params()),
         Reply::ok("{not json"),
@@ -620,18 +740,16 @@ fn rerank_error() {
     );
     assert!(matches!(run.result, Err(RerankCallError::Decode(_))));
     assert!(run.post_call().is_none(), "the async path has no post_call");
-
-    let run = run(
-        call(&documented, auth_params()),
-        Reply::status(302, &[], VALID_REPLY),
-        Some(ClientKind::Sync),
-    );
-    assert!(run.result.is_ok(), "raise_for_status ignores a redirect");
 }
 
 fn transport_logging() {
-    let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    transport_logging_sync();
+    transport_logging_async();
+    transport_logging_fallback();
+}
 
+fn transport_logging_sync() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut synchronous = call(&documented, auth_params());
     synchronous.timeout = Some(Duration::from_millis(2500));
     let run = run(synchronous, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
@@ -654,7 +772,10 @@ fn transport_logging() {
     );
     assert_eq!(arguments["complete_input_dict"], Json::Object(run.body()));
     assert!(run.post_call().is_some());
+}
 
+fn transport_logging_async() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut asynchronous = call(&documented, auth_params());
     asynchronous.is_async = true;
     let run = run(
@@ -669,7 +790,10 @@ fn transport_logging() {
     );
     assert_eq!(run.async_calls, 0);
     assert!(run.post_call().is_none());
+}
 
+fn transport_logging_fallback() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
     let mut mismatched = call(&documented, auth_params());
     mismatched.is_async = true;
     let run = run(mismatched, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));

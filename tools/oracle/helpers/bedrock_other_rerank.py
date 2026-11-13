@@ -55,13 +55,6 @@ class Credentials(TypedDict):
     session_token: str | None
 
 
-class Environment(TypedDict):
-    region_name: str | None
-    region: str | None
-    session_region: str | None
-    runtime_endpoint: str | None
-
-
 class Reply(TypedDict):
     status: int
     headers: dict[str, str]
@@ -80,15 +73,11 @@ class Probe(TypedDict):
     optional_params: JsonObject
     extra_headers: dict[str, str] | None
     api_base: str | None
-    api_key: str | None
     credentials: Credentials
-    environment: Environment
-    now: int
     reply: Reply
-    supplied: Literal["sync", "async", "none"]
+    supplied: Literal["sync", "async"]
     is_async: bool
     timeout_ms: int | None
-    generated_id: str
 
 
 class Input(TypedDict):
@@ -98,17 +87,10 @@ class Input(TypedDict):
 
 class RecordingLogging(Logging):
     def __init__(self) -> None:
-        self.pre_called = False
         self.pre_input: JsonValue = None
-        self.pre_api_key = ""
-        self.pre_model: str | None = None
         self.pre_api_base: JsonValue = None
         self.pre_complete_input_dict: JsonValue = None
         self.post_called = False
-        self.post_original_response: JsonValue = None
-        self.post_input: JsonValue = None
-        self.post_api_key: str | None = None
-        self.post_additional_args: JsonObject | None = None
 
     @override
     def pre_call(
@@ -119,10 +101,7 @@ class RecordingLogging(Logging):
         additional_args: JsonObject | None = None,
     ) -> None:
         args: JsonObject = {} if additional_args is None else additional_args
-        self.pre_called = True
         self.pre_input = input
-        self.pre_api_key = api_key
-        self.pre_model = model
         self.pre_api_base = args["api_base"]
         self.pre_complete_input_dict = args["complete_input_dict"]
 
@@ -135,10 +114,6 @@ class RecordingLogging(Logging):
         additional_args: JsonObject | None = None,
     ) -> None:
         self.post_called = True
-        self.post_original_response = original_response
-        self.post_input = input
-        self.post_api_key = api_key
-        self.post_additional_args = additional_args
 
 
 class Transport:
@@ -169,21 +144,17 @@ def call_value(
     handler: Handler, probe: Probe, logging: RecordingLogging, transport: Transport
 ) -> RerankResponse:
     supplied = probe["supplied"]
-    client: HTTPHandler | AsyncHTTPHandler | None = None
+    client: HTTPHandler | AsyncHTTPHandler
     if supplied == "sync":
         client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(transport)))
-    elif supplied == "async":
-        client = AsyncHTTPHandler(transport=httpx.MockTransport(transport))
     else:
-        raise ValueError("the helper needs a supplied client")
+        client = AsyncHTTPHandler(transport=httpx.MockTransport(transport))
     extra_headers: JsonObject | None = (
         None
         if probe["extra_headers"] is None
         else dict[str, JsonValue](probe["extra_headers"])
     )
     timeout: float | None = None if probe["timeout_ms"] is None else probe["timeout_ms"] / 1000
-    return_documents = probe["return_documents"]
-    is_async = probe["is_async"]
     return settle(
         handler.rerank(
             probe["model"],
@@ -193,9 +164,9 @@ def call_value(
             logging,
             probe["top_n"],
             probe["rank_fields"],
-            return_documents,
+            probe["return_documents"],
             probe["max_chunks_per_doc"],
-            is_async,
+            probe["is_async"],
             timeout,
             probe["api_base"],
             extra_headers,
@@ -206,31 +177,11 @@ def call_value(
 
 def use_environment() -> None:
     os.environ.clear()
-    os.environ.update(
-        {
-            "AWS_CONFIG_FILE": os.devnull,
-            "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
-        }
-    )
-
-
-def head(request: httpx.Request, name: str) -> str | None:
-    if name in request.headers:
-        return request.headers[name]
-    return None
-
-
-def pre_call_value(logging: RecordingLogging) -> JsonValue:
-    payload: JsonObject = {
-        "input": logging.pre_input,
-        "api_base": logging.pre_api_base,
-        "complete_input_dict": logging.pre_complete_input_dict,
-    }
-    return TypeAdapter(JsonValue).validate_python(payload)
+    os.environ["AWS_CONFIG_FILE"] = os.devnull
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = os.devnull
 
 
 def prepare_value(probe: Probe) -> JsonValue:
-    use_environment()
     logging = RecordingLogging()
     transport = Transport(probe)
     call_value(BedrockRerankHandler(), probe, logging, transport)
@@ -240,24 +191,26 @@ def prepare_value(probe: Probe) -> JsonValue:
         "posted_url": str(request.url),
         "posted_text": text,
         "posted_body": TypeAdapter(JsonValue).validate_json(text),
-        "content_type": head(request, "content-type"),
+        "content_type": request.headers.get("content-type"),
         "signed_headers": {
-            "authorization": head(request, "authorization") is not None,
-            "amz_date": head(request, "x-amz-date") is not None,
+            "authorization": "authorization" in request.headers,
+            "amz_date": "x-amz-date" in request.headers,
         },
-        "pre_call": pre_call_value(logging),
+        "pre_call": {
+            "input": logging.pre_input,
+            "api_base": logging.pre_api_base,
+            "complete_input_dict": logging.pre_complete_input_dict,
+        },
     }
     return TypeAdapter(JsonValue).validate_python(payload)
 
 
 def result_value(probe: Probe) -> JsonValue:
-    use_environment()
     response = call_value(BedrockRerankHandler(), probe, RecordingLogging(), Transport(probe))
     return TypeAdapter(JsonValue).validate_json(response.model_dump_json())
 
 
 def error_value(probe: Probe) -> JsonValue:
-    use_environment()
     logging = RecordingLogging()
     status: int | None = None
     try:
@@ -274,20 +227,19 @@ def error_value(probe: Probe) -> JsonValue:
 
 
 def transport_value(probe: Probe) -> JsonValue:
-    use_environment()
     logging = RecordingLogging()
     transport = Transport(probe)
     call_value(BedrockRerankHandler(), probe, logging, transport)
     payload: JsonObject = {
         "posted_url": str(transport.requests[0].url),
         "timeout_ms": probe["timeout_ms"],
-        "pre_call": logging.pre_called,
+        "pre_call": logging.pre_input is not None,
         "post_call": logging.post_called,
     }
     return TypeAdapter(JsonValue).validate_python(payload)
 
 
-HANDLERS: dict[str, Callable[[Probe], JsonValue]] = {
+HANDLERS: dict[Function, Callable[[Probe], JsonValue]] = {
     "text_and_json_document_source": prepare_value,
     "rerank_model_arn": prepare_value,
     "top_n": prepare_value,
@@ -299,6 +251,7 @@ HANDLERS: dict[str, Callable[[Probe], JsonValue]] = {
 
 
 def run(input_value: Input) -> JsonValue:
+    use_environment()
     handler_for = HANDLERS[input_value["function"]]
     values: list[JsonValue] = [handler_for(probe) for probe in input_value["probes"]]
     return TypeAdapter(JsonValue).validate_python(values)

@@ -9,16 +9,18 @@ use betterlite_bedrock::rerank::transport::{ClientKind, RerankHttpRequest, Suppl
 use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_openai::api::rerank_contracts::records::{RerankRequest, RerankResponse};
 use betterlite_redact::error::RedactionError;
-use secrecy::SecretString;
+use serde::Serialize;
 use serde_json::{Map, Value, json, value::RawValue};
 use thiserror::Error;
+use tokio::runtime::Runtime;
 
 use crate::helpers::HelperError;
 
-use super::fixtures::{
-    Client, DiscardingSink, Factory, Source, logging_state, prepost_env, redactor,
-};
+use super::fixtures::{Client, DiscardingSink, Source, logging_state, prepost_env, redactor};
 use super::input::{Function, Probe, Supplied};
+
+const SIGNING_SECONDS: u64 = 1_700_000_000;
+const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
 
 #[derive(Debug, Error)]
 pub(super) enum Failure {
@@ -31,8 +33,8 @@ pub(super) enum Failure {
     #[error(transparent)]
     Redact(#[from] RedactionError),
     #[error("the probe body is not UTF-8")]
-    Body(#[from] str::Utf8Error),
-    #[error("the probe needs credentials or a bearer token")]
+    Body(#[from] std::str::Utf8Error),
+    #[error("the probe needs credentials")]
     MissingCredentials,
     #[error("the probe prepared no request")]
     Shape,
@@ -68,18 +70,6 @@ impl From<Failure> for Box<HelperError> {
     }
 }
 
-impl Helper for Op {
-    type Input = Input;
-
-    fn run(input: &Self::Input) -> HelperResult {
-        let mut results = Vec::with_capacity(input.probes.len());
-        for probe in &input.probes {
-            results.push(observe(probe, input.function)?);
-        }
-        Ok(Value::Array(results))
-    }
-}
-
 fn request(probe: &Probe) -> RerankRequest {
     RerankRequest {
         model: probe.model.clone(),
@@ -109,69 +99,43 @@ fn param_map(params: &Map<String, Value>) -> Result<ParamMap, Failure> {
 struct Harness<'probe> {
     probe: &'probe Probe,
     params: ParamMap,
-    api_key: Option<SecretString>,
     extra_headers: Option<Vec<(String, String)>>,
     now: SystemTime,
     source: Source,
-    factory: Factory,
-    supplied: Option<Client>,
+    factory: Client,
+    supplied: Client,
 }
 
 impl<'probe> Harness<'probe> {
     fn new(probe: &'probe Probe) -> Result<Self, Failure> {
-        if probe.credentials.access_key_id.is_empty() && probe.api_key.is_none() {
+        if probe.credentials.access_key_id.is_empty() {
             return Err(Failure::MissingCredentials);
         }
         let now = UNIX_EPOCH
-            .checked_add(Duration::from_secs(probe.now))
+            .checked_add(Duration::from_secs(SIGNING_SECONDS))
             .ok_or(Failure::Shape)?;
         Ok(Self {
             probe,
             params: param_map(&probe.optional_params)?,
-            api_key: probe
-                .api_key
+            extra_headers: probe
+                .extra_headers
                 .as_ref()
-                .map(|key| SecretString::from(key.clone())),
-            extra_headers: probe.extra_headers.as_ref().map(|headers| {
-                headers
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect()
-            }),
+                .map(|headers| headers.clone().into_iter().collect()),
             now,
             source: Source::new(probe),
-            factory: Factory::new(&probe.reply),
-            supplied: (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply)),
+            factory: Client::new(&probe.reply),
+            supplied: Client::new(&probe.reply),
         })
     }
 
-    fn call(&self, request: &'probe RerankRequest) -> RerankCall<'probe> {
-        RerankCall {
-            request,
-            optional_params: self.params.clone(),
-            api_base: self.probe.api_base.as_deref(),
-            extra_headers: self.extra_headers.as_deref(),
-            api_key: self.api_key.as_ref(),
-            timeout: self.probe.timeout_ms.map(Duration::from_millis),
-            is_async: self.probe.is_async,
-            environment: RerankEnvironment {
-                region_name: self.probe.environment.region_name.as_deref(),
-                region: self.probe.environment.region.as_deref(),
-                session_region: self.probe.environment.session_region.as_deref(),
-                runtime_endpoint: self.probe.environment.runtime_endpoint.as_deref(),
-            },
-            now: self.now,
-        }
-    }
-
-    fn supplied(&self) -> Option<SuppliedClient<'_, Client>> {
-        self.supplied.as_ref().map(|client| SuppliedClient {
+    fn supplied(&self) -> SuppliedClient<'_, Client> {
+        SuppliedClient {
             kind: match self.probe.supplied {
                 Supplied::Async => ClientKind::Async,
-                Supplied::None | Supplied::Sync => ClientKind::Sync,
+                Supplied::Sync => ClientKind::Sync,
             },
-            transport: client,
-        })
+            transport: &self.supplied,
+        }
     }
 }
 
@@ -183,13 +147,32 @@ struct Run {
 
 impl Run {
     fn posted(&self) -> Option<&RerankHttpRequest> {
-        let requests = if self.supplied_seen.is_empty() {
-            &self.factory_seen
-        } else {
-            &self.supplied_seen
-        };
-        requests.first().map(|(request, _)| request)
+        let seen = self
+            .supplied_seen
+            .first()
+            .or_else(|| self.factory_seen.first());
+        seen.map(|(request, _)| request)
     }
+}
+
+fn measure(
+    call: &mut RerankCall<'_>,
+    harness: &Harness<'_>,
+    runtime: &Runtime,
+    log: &mut LogContext<'_, '_>,
+) -> Result<RerankResponse, Failure> {
+    runtime.block_on(async {
+        let prepared = resolve_and_prepare(call, &harness.source, log).await?;
+        let reply = dispatch_request(
+            call,
+            &prepared,
+            Some(harness.supplied()),
+            &harness.factory,
+            log,
+        )
+        .await?;
+        transform_response(call, &reply, GENERATED_ID, log).map_err(Failure::from)
+    })
 }
 
 fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure> {
@@ -200,30 +183,26 @@ fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure>
     let env = prepost_env(&state, &redactor, &sink);
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let request = request(probe);
-    let mut call = harness.call(&request);
+    let mut call = RerankCall {
+        request: &request,
+        optional_params: harness.params.clone(),
+        api_base: probe.api_base.as_deref(),
+        extra_headers: harness.extra_headers.as_deref(),
+        api_key: None,
+        timeout: probe.timeout_ms.map(Duration::from_millis),
+        is_async: probe.is_async,
+        environment: RerankEnvironment::default(),
+        now: harness.now,
+    };
     let outcome = {
         let mut log = LogContext {
             state: &mut state,
             env: &env,
         };
-        runtime.block_on(async {
-            let prepared = resolve_and_prepare(&mut call, &harness.source, &mut log).await?;
-            let reply = dispatch_request(
-                &call,
-                &prepared,
-                harness.supplied(),
-                &harness.factory,
-                &mut log,
-            )
-            .await?;
-            transform_response(&call, &reply, &probe.generated_id, &mut log).map_err(Failure::from)
-        })
+        measure(&mut call, &harness, &runtime, &mut log)
     };
     let run = Run {
-        supplied_seen: harness
-            .supplied
-            .as_ref()
-            .map_or_else(Vec::new, Client::requests),
+        supplied_seen: harness.supplied.requests(),
         factory_seen: harness.factory.requests(),
         state,
     };
@@ -250,7 +229,7 @@ fn prepare_json(run: &Run, outcome: Result<RerankResponse, Failure>) -> Result<V
     outcome?;
     let request = run.posted().ok_or(Failure::Shape)?;
     Ok(json!({
-        "posted_url": request.url,
+        "posted_url": &request.url,
         "posted_text": std::str::from_utf8(&request.body)?,
         "posted_body": serde_json::from_slice::<Value>(&request.body)?,
         "content_type": header(&request.headers, "Content-Type"),
@@ -270,14 +249,25 @@ fn error_json(run: &Run, outcome: &Result<RerankResponse, Failure>) -> Result<Va
     }))
 }
 
+#[derive(Serialize)]
+struct TransportFields<'request> {
+    posted_url: &'request str,
+    timeout_ms: Option<u64>,
+    pre_call: bool,
+    post_call: bool,
+}
+
 fn transport_json(run: &Run) -> Result<Value, Failure> {
     let request = run.posted().ok_or(Failure::Shape)?;
-    Ok(json!({
-        "posted_url": request.url,
-        "timeout_ms": request.timeout.and_then(|timeout| u64::try_from(timeout.as_millis()).ok()),
-        "pre_call": run.state.model_call_details.get("input").is_some(),
-        "post_call": run.state.model_call_details.get("original_response").is_some(),
-    }))
+    let details = &run.state.model_call_details;
+    Ok(serde_json::to_value(TransportFields {
+        posted_url: &request.url,
+        timeout_ms: request
+            .timeout
+            .and_then(|timeout| u64::try_from(timeout.as_millis()).ok()),
+        pre_call: details.get("input").is_some(),
+        post_call: details.get("original_response").is_some(),
+    })?)
 }
 
 fn pre_call_json(state: &LoggingState) -> Result<Value, Failure> {

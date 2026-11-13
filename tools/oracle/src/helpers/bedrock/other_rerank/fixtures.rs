@@ -21,40 +21,12 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 
-use super::input::{Probe, Reply, ReplyFailure};
 use super::driver::Failure;
+use super::input::{Probe, Reply, ReplyFailure};
 
-#[derive(Clone, Default)]
-pub(super) struct Seen(Arc<Mutex<Vec<(RerankHttpRequest, bool)>>>);
+type Seen = Arc<Mutex<Vec<(RerankHttpRequest, bool)>>>;
 
-impl Seen {
-    pub(super) fn requests(&self) -> Vec<(RerankHttpRequest, bool)> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn record(&self, request: RerankHttpRequest, with_logging: bool) {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((request, with_logging));
-    }
-}
-
-fn http_reply(reply: &Reply) -> RerankHttpReply {
-    RerankHttpReply {
-        status: reply.status,
-        headers: reply
-            .headers
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect(),
-        body: reply.body.as_bytes().to_vec(),
-    }
-}
-
+#[derive(Clone)]
 pub(super) struct Client {
     reply: Reply,
     seen: Seen,
@@ -69,13 +41,27 @@ impl Client {
     }
 
     pub(super) fn requests(&self) -> Vec<(RerankHttpRequest, bool)> {
-        self.seen.requests()
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
-    fn answer(&self, request: RerankHttpRequest, with_logging: bool) -> Result<RerankHttpReply, TransferError> {
-        self.seen.record(request, with_logging);
+    fn answer(
+        &self,
+        request: RerankHttpRequest,
+        with_logging: bool,
+    ) -> Result<RerankHttpReply, TransferError> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((request, with_logging));
         match self.reply.failure {
-            None => Ok(http_reply(&self.reply)),
+            None => Ok(RerankHttpReply {
+                status: self.reply.status,
+                headers: self.reply.headers.clone().into_iter().collect(),
+                body: self.reply.body.as_bytes().to_vec(),
+            }),
             Some(ReplyFailure::Timeout) => Err(TransferError::Timeout),
             Some(ReplyFailure::Failed) => Err(TransferError::Failed(TransportError::Closed)),
         }
@@ -99,56 +85,15 @@ impl RerankTransport for Client {
     }
 }
 
-pub(super) struct Factory {
-    reply: Reply,
-    pub(super) sync_calls: Mutex<u32>,
-    pub(super) async_calls: Mutex<u32>,
-    seen: Seen,
-}
-
-impl Factory {
-    pub(super) fn new(reply: &Reply) -> Self {
-        Self {
-            reply: reply.clone(),
-            sync_calls: Mutex::new(0),
-            async_calls: Mutex::new(0),
-            seen: Seen::default(),
-        }
-    }
-
-    pub(super) fn requests(&self) -> Vec<(RerankHttpRequest, bool)> {
-        self.seen.requests()
-    }
-
-    fn client(&self) -> Client {
-        Client {
-            reply: self.reply.clone(),
-            seen: self.seen.clone(),
-        }
-    }
-}
-
-impl ClientFactory for Factory {
-    type Client = Client;
+impl ClientFactory for Client {
+    type Client = Self;
 
     fn sync_client(&self) -> Self::Client {
-        let mut calls = self
-            .sync_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        *calls = calls.saturating_add(1);
-        drop(calls);
-        self.client()
+        self.clone()
     }
 
     fn async_client(&self) -> Self::Client {
-        let mut calls = self
-            .async_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        *calls = calls.saturating_add(1);
-        drop(calls);
-        self.client()
+        self.clone()
     }
 }
 

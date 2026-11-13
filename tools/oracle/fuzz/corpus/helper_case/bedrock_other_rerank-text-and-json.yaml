@@ -7,6 +7,17 @@ call:
       - model: arn:aws:bedrock:us-east-1:123456789012:rerank-model/test
         query: what is rust
         documents: [first, {title: second}]
+        top_n: null
+        rank_fields: null
+        return_documents: null
+        max_chunks_per_doc: null
         optional_params: {aws_region_name: us-east-1}
+        extra_headers: null
+        api_base: null
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, session_token: null}
+        reply: {status: 200, headers: {}, body: '{"results":[{"index":0,"relevanceScore":0.5}]}', failure: null}
+        supplied: sync
+        is_async: false
+        timeout_ms: null
 env: {}
 compare: {ignore: []}

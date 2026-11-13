@@ -17,17 +17,10 @@ call:
           aws_region_name: us-east-1
         extra_headers: null
         api_base: null
-        api_key: null
         credentials:
           access_key_id: AKIAIOSFODNN7EXAMPLE
           secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
           session_token: null
-        environment:
-          region_name: null
-          region: null
-          session_region: null
-          runtime_endpoint: null
-        now: 1700000000
         reply:
           status: 200
           headers: {}
@@ -36,6 +29,5 @@ call:
         supplied: sync
         is_async: false
         timeout_ms: null
-        generated_id: "00000000-0000-4000-8000-000000000000"
 env: {}
 compare: {ignore: []}
