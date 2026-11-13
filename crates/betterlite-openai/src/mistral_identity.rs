@@ -21,7 +21,6 @@ pub fn base_url(api_base: Option<&str>, settings: &Settings) -> String {
         .unwrap_or_else(|| resolved.trim_end_matches('/'))
         .to_owned()
 }
-
 pub fn auth_headers(
     headers: &Headers,
     api_key: Option<&SecretString>,

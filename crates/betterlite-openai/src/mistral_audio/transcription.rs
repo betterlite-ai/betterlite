@@ -17,7 +17,6 @@ pub const OPENAI_PARAMS: [&str; 4] = [
     "timestamp_granularities",
     "response_format",
 ];
-
 // LiteLLM keeps these names out of the provider extras because they were handled already or are internal
 const RESERVED_PARAMS: [&str; 2] = ["model", "OPENAI_TRANSCRIPTION_PARAMS"];
 
@@ -26,13 +25,11 @@ pub struct TranscriptionRequest {
     pub form: Object,
     pub file: ProcessedAudioFile,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoxtralTranscription {
     pub response: TranscriptionResponse,
     pub hidden: Object,
 }
-
 pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Object) {
     for (name, value) in non_default_params {
         if OPENAI_PARAMS.contains(&name.as_str()) {
@@ -40,7 +37,6 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
         }
     }
 }
-
 #[must_use]
 pub fn validate_environment(
     headers: &IndexMap<String, String>,
@@ -63,7 +59,6 @@ pub fn validate_environment(
     );
     merged
 }
-
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     format!(
@@ -71,7 +66,6 @@ pub fn complete_url(api_base: Option<&str>) -> String {
         api_base.map_or(DEFAULT_BASE, |base| base.trim_end_matches('/'))
     )
 }
-
 pub fn transcription_request(
     model: &str,
     audio: &ProcessedAudioFile,
@@ -91,27 +85,25 @@ pub fn transcription_request(
         {
             continue;
         }
-        form.insert(name.clone(), Value::String(form_value(name, value)?));
+        // a boolean is lowercased before it is sent; only a scalar keeps Python's str() spelling
+        let text = match value {
+            Value::Bool(true) => String::from("true"),
+            Value::Bool(false) => String::from("false"),
+            Value::String(text) => text.clone(),
+            Value::Number(number) => number.to_string(),
+            Value::Null | Value::Array(_) | Value::Object(_) => {
+                return Err(MistralAudioError::FormValue {
+                    field: name.to_owned(),
+                });
+            }
+        };
+        form.insert(name.clone(), Value::String(text));
     }
     Ok(TranscriptionRequest {
         form,
         file: audio.clone(),
     })
 }
-
-// Python lowercases a boolean before sending it and str()s every other extra, which only a scalar keeps
-fn form_value(field: &str, value: &Value) -> Result<String, MistralAudioError> {
-    match value {
-        Value::Bool(true) => Ok(String::from("true")),
-        Value::Bool(false) => Ok(String::from("false")),
-        Value::String(text) => Ok(text.clone()),
-        Value::Number(number) => Ok(number.to_string()),
-        Value::Null | Value::Array(_) | Value::Object(_) => Err(MistralAudioError::FormValue {
-            field: field.to_owned(),
-        }),
-    }
-}
-
 pub fn decode_voxtral_transcript(
     response: &UpstreamResponse,
 ) -> Result<VoxtralTranscription, MistralAudioError> {

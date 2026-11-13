@@ -1,3 +1,9 @@
+use super::error::MistralAudioError;
+use super::reply::reply_fields;
+use crate::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
+use crate::files::records::BinaryContent;
+use crate::files::stream::flatten_headers;
+use crate::openai_base_config::Object;
 use base64::Engine as _;
 use base64::alphabet;
 use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
@@ -8,36 +14,28 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize as _;
 use serde_json::Value;
 
-use super::error::MistralAudioError;
-use super::reply::reply_fields;
-use crate::api::speech_provider_contract::{SpeechVoice, TextToSpeechRequestData};
-use crate::files::records::BinaryContent;
-use crate::files::stream::flatten_headers;
-use crate::openai_base_config::Object;
-
 pub const DEFAULT_BASE: &str = "https://api.mistral.ai/v1";
 pub const OPENAI_PARAMS: [&str; 2] = ["voice", "response_format"];
-
-const AUDIO_CONTENT_TYPES: [(&str, &str); 5] = [
-    ("mp3", "audio/mpeg"),
-    ("wav", "audio/wav"),
-    ("pcm", "audio/pcm"),
-    ("flac", "audio/flac"),
-    ("opus", "audio/ogg"),
-];
-const DROPPED_RESPONSE_HEADERS: [&str; 4] = [
-    "content-encoding",
-    "transfer-encoding",
-    "content-length",
-    "content-type",
-];
-const OPENAI_VOICE_ALIASES: [(&str, &str); 6] = [
+const ALIASES: [(&str, &str); 6] = [
     ("alloy", "en_paul_neutral"),
     ("echo", "gb_oliver_neutral"),
     ("fable", "en_paul_cheerful"),
     ("onyx", "en_paul_confident"),
     ("nova", "gb_jane_sarcasm"),
     ("shimmer", "gb_jane_sarcasm"),
+];
+const MIME_TYPES: [(&str, &str); 5] = [
+    ("mp3", "audio/mpeg"),
+    ("wav", "audio/wav"),
+    ("pcm", "audio/pcm"),
+    ("flac", "audio/flac"),
+    ("opus", "audio/ogg"),
+];
+const DROPPED_HEADERS: [&str; 4] = [
+    "content-encoding",
+    "transfer-encoding",
+    "content-length",
+    "content-type",
 ];
 // Python's b64decode(validate=True) rejects stray characters and bad padding but keeps nonzero trailing bits
 const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
@@ -63,36 +61,35 @@ pub fn map_openai_params(
     }
     (mapped_voice, mapped_params)
 }
-
 fn resolve_voice(voice: Option<&SpeechVoice>) -> Option<String> {
     let text = match voice? {
         SpeechVoice::Name(name) => name.trim(),
-        SpeechVoice::Options(options) => option_voice(options)?,
+        SpeechVoice::Options(options) => {
+            let mut found = None;
+            for name in ["voice_id", "id", "name"] {
+                let Some(candidate) = options.get(name).and_then(Value::as_str).map(str::trim)
+                else {
+                    continue;
+                };
+                if !candidate.is_empty() {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+            found?
+        }
     };
     if text.is_empty() {
         return None;
     }
     let lowered = text.to_lowercase();
     Some(
-        OPENAI_VOICE_ALIASES
+        ALIASES
             .iter()
             .find(|(alias, _)| *alias == lowered)
             .map_or_else(|| text.to_owned(), |(_, mapped)| (*mapped).to_owned()),
     )
 }
-
-fn option_voice(options: &Object) -> Option<&str> {
-    for name in ["voice_id", "id", "name"] {
-        let Some(text) = options.get(name).and_then(Value::as_str).map(str::trim) else {
-            continue;
-        };
-        if !text.is_empty() {
-            return Some(text);
-        }
-    }
-    None
-}
-
 pub fn validate_environment(
     headers: &IndexMap<String, String>,
     api_key: Option<&SecretString>,
@@ -102,17 +99,14 @@ pub fn validate_environment(
         .or(settings.api_key.as_ref())
         .ok_or(MistralAudioError::MissingApiKey)?;
     let mut merged = headers.clone();
-    merged.insert(
-        String::from("Authorization"),
-        format!("Bearer {}", key.expose_secret()),
-    );
+    let bearer = format!("Bearer {}", key.expose_secret());
+    merged.insert(String::from("Authorization"), bearer);
     merged.insert(
         String::from("Content-Type"),
         String::from("application/json"),
     );
     Ok(merged)
 }
-
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     let base = api_base.unwrap_or(DEFAULT_BASE).trim_end_matches('/');
@@ -122,7 +116,6 @@ pub fn complete_url(api_base: Option<&str>) -> String {
         format!("{base}/v1/audio/speech")
     }
 }
-
 #[must_use]
 pub fn request_body(
     model: &str,
@@ -150,7 +143,6 @@ pub fn request_body(
         )])),
     }
 }
-
 pub fn decode_voxtral_reply(
     request: &TextToSpeechRequestData,
     response: &UpstreamResponse,
@@ -174,7 +166,6 @@ pub fn decode_voxtral_reply(
         body: decoded,
     })
 }
-
 fn audio_headers(
     headers: &http::HeaderMap,
     requested_format: Option<&str>,
@@ -182,23 +173,17 @@ fn audio_headers(
 ) -> IndexMap<String, String> {
     let mut rebuilt: IndexMap<String, String> = flatten_headers(headers)
         .into_iter()
-        .filter(|(name, _)| !DROPPED_RESPONSE_HEADERS.contains(&name.as_str()))
+        .filter(|(name, _)| !DROPPED_HEADERS.contains(&name.as_str()))
         .collect();
-    rebuilt.insert(String::from("content-length"), length.to_string());
-    rebuilt.insert(
-        String::from("content-type"),
-        String::from(requested_content_type(requested_format)),
-    );
-    rebuilt
-}
-
-fn requested_content_type(requested_format: Option<&str>) -> &'static str {
-    requested_format
+    let content_type = requested_format
         .and_then(|format| {
-            AUDIO_CONTENT_TYPES
+            MIME_TYPES
                 .iter()
                 .find(|(name, _)| *name == format)
                 .map(|(_, mime)| *mime)
         })
-        .unwrap_or("audio/mpeg")
+        .unwrap_or("audio/mpeg");
+    rebuilt.insert(String::from("content-length"), length.to_string());
+    rebuilt.insert(String::from("content-type"), String::from(content_type));
+    rebuilt
 }
