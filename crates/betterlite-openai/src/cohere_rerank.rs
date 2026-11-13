@@ -121,7 +121,12 @@ pub fn map_rerank_params(
         ),
         (
             "documents".to_owned(),
-            optional_documents(options.documents.as_deref()),
+            options
+                .documents
+                .as_deref()
+                .map_or(Json::Null, |documents| {
+                    Json::List(documents.iter().map(RerankDocument::as_json).collect())
+                }),
         ),
         (
             "top_n".to_owned(),
@@ -131,7 +136,9 @@ pub fn map_rerank_params(
         ),
         (
             "rank_fields".to_owned(),
-            optional_texts(options.rank_fields.as_deref()),
+            options.rank_fields.as_deref().map_or(Json::Null, |fields| {
+                Json::List(fields.iter().cloned().map(Json::Text).collect())
+            }),
         ),
         // an absent or null return_documents takes the mapper's default of true
         (
@@ -267,22 +274,8 @@ fn optional<T>(name: &'static str, value: Option<&Json>) -> Result<Option<T>, Co
 where
     T: DeserializeOwned,
 {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(present) => field(name, present).map(Some),
-    }
-}
-
-fn optional_texts(value: Option<&[String]>) -> Json {
-    value.map_or_else(
-        || Json::Null,
-        |items| Json::List(items.iter().cloned().map(Json::Text).collect()),
-    )
-}
-
-fn optional_documents(value: Option<&[RerankDocument]>) -> Json {
-    value.map_or_else(
-        || Json::Null,
-        |documents| Json::List(documents.iter().map(RerankDocument::as_json).collect()),
-    )
+    value
+        .filter(|present| **present != Json::Null)
+        .map(|present| field(name, present))
+        .transpose()
 }
