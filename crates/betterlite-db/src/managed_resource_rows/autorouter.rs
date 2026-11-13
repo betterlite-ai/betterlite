@@ -20,19 +20,16 @@ pub struct AutoRouterSession {
     pub spend: Decimal,
     #[serde(with = "rust_decimal::serde::float")]
     pub saved_spend: Decimal,
-    #[serde(
-        default = "default_estimated_turns",
-        rename = "savings_estimated_turns"
-    )]
+    #[serde(default, rename = "savings_estimated_turns")]
     pub estimated_turns: i64,
     #[serde(
-        default = "default_estimated_actual_spend",
+        default,
         rename = "savings_estimated_actual_spend",
         with = "rust_decimal::serde::float"
     )]
     pub estimated_actual_spend: Decimal,
     #[serde(
-        default = "default_estimated_saved_spend",
+        default,
         rename = "savings_estimated_saved_spend",
         with = "rust_decimal::serde::float"
     )]
@@ -43,21 +40,6 @@ pub struct AutoRouterSession {
     pub classifier_cost: Decimal,
     pub tier_turns: BTreeMap<String, i64>,
     pub baseline_models: BTreeMap<String, i64>,
-}
-
-#[must_use]
-pub const fn default_estimated_turns() -> i64 {
-    0
-}
-
-#[must_use]
-pub const fn default_estimated_actual_spend() -> Decimal {
-    Decimal::ZERO
-}
-
-#[must_use]
-pub const fn default_estimated_saved_spend() -> Decimal {
-    Decimal::ZERO
 }
 
 impl AutoRouterSession {

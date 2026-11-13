@@ -160,12 +160,9 @@ pub(crate) fn decode_row<T>(row: &JsonData) -> Result<T, ManagedRowsDecodeError>
 where
     T: DeserializeOwned,
 {
-    let text = serde_json::to_string(row).map_err(ManagedRowsDecodeError::Json)?;
-    if text.len() > MAX_ROW_BYTES {
-        return Err(ManagedRowsDecodeError::TooLarge { len: text.len() });
-    }
-    check_depth(&text)?;
-    serde_json::from_str(&text).map_err(ManagedRowsDecodeError::Json)
+    serde_json::to_value(row)
+        .and_then(serde_json::from_value)
+        .map_err(ManagedRowsDecodeError::Json)
 }
 
 pub(crate) const fn object_fields(

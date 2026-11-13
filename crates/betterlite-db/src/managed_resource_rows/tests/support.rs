@@ -157,22 +157,39 @@ pub(crate) fn assert_secret_map_redacted() {
     assert!(!format!("{decoded:?}").contains(PLAINTEXT));
 }
 
+pub(crate) fn assert_byte_and_depth_limits() {
+    let cipher = cipher_with("managed-row-key");
+    let tag = r#"{"kind":"tag","row":{"tag_name":"t"}}"#;
+    let padding = " ".repeat(0x0010_0000_usize.saturating_sub(tag.len()));
+    let at_limit = format!("{tag}{padding}");
+    decode_with(&at_limit, &cipher).unwrap();
+    let oversized = format!("{at_limit} ");
+    assert!(matches!(
+        decode_with(&oversized, &cipher),
+        Err(ManagedRowsDecodeError::TooLarge { len: 0x0010_0001 })
+    ));
+    for (levels, fits) in [(62_usize, true), (63, false)] {
+        let nested = format!(
+            r#"{{"kind":"tag","row":{{"tag_name":"t","model_info":{}0{}}}}}"#,
+            "[".repeat(levels),
+            "]".repeat(levels)
+        );
+        let result = decode_with(&nested, &cipher);
+        if fits {
+            result.unwrap();
+        } else {
+            assert!(matches!(result, Err(ManagedRowsDecodeError::TooDeep)));
+        }
+    }
+}
+
 pub(crate) fn assert_input_limits() {
+    assert_byte_and_depth_limits();
     let cipher = cipher_with("managed-row-key");
     let dependencies = ManagedRowDependencies {
         cipher: &cipher,
         error_request_id: Uuid::from_u128(INJECTED_REQUEST_ID),
     };
-    let oversized = " ".repeat(0x0010_0000_usize + 1);
-    assert!(matches!(
-        decode_with(&oversized, &cipher),
-        Err(ManagedRowsDecodeError::TooLarge { .. })
-    ));
-    let deep = format!("{}{}", "[".repeat(65), "]".repeat(65));
-    assert!(matches!(
-        decode_with(&deep, &cipher),
-        Err(ManagedRowsDecodeError::TooDeep)
-    ));
     assert!(matches!(
         decode_managed_resource_rows::<FileObject, BatchObject, FineTuneJob, ResponsesApiResponse>(
             &[0xff],
@@ -185,9 +202,9 @@ pub(crate) fn assert_input_limits() {
         Err(ManagedRowsDecodeError::UnknownKind { .. })
     ));
     let wrapped = format!(
-        "{{\"kind\":\"mcp_server\",\"row\":[{} {{\"server_id\":\"s\",\"transport\":\"sse\",\"static_headers\":\"{CIPHERTEXT}\"}} {}]}}",
-        "[".repeat(32),
-        "]".repeat(32)
+        r#"{{"kind":"mcp_server","row":{{"server_id":"s","transport":"sse","static_headers":"{CIPHERTEXT}","extra":{}0{}}}}}"#,
+        "[".repeat(63),
+        "]".repeat(63)
     );
     let error = decode_with(&wrapped, &cipher).unwrap_err();
     assert!(matches!(&error, ManagedRowsDecodeError::TooDeep));
