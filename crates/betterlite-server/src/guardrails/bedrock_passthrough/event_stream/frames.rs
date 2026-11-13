@@ -50,6 +50,10 @@ pub fn rebuild_event_stream(
 ) -> Vec<u8> {
     let mut rebuilt = Vec::new();
     for (frame_index, frame) in parsed.frames.iter().enumerate() {
+        if frame.texts.is_empty() {
+            rebuilt.extend_from_slice(&frame.raw);
+            continue;
+        }
         let replacement = rebuild_frame(frame_index, frame, new_texts);
         rebuilt.extend_from_slice(replacement.as_deref().unwrap_or(&frame.raw));
     }
