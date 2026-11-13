@@ -61,3 +61,20 @@ fn a_yearless_january_reset_uses_the_recorded_december_marker() {
         .unwrap();
     assert_eq!(reset("resets Jan 2, 7am (UTC)", observed), Some(expected));
 }
+
+#[test]
+fn the_watchdogs_daily_ceiling_mark_holds_deepseek_until_midnight() {
+    let message = "DeepSeek spent 301.20 USD today at list price, the 300 USD daily ceiling; resets 12am (Europe/Berlin)";
+    let observed = super::date("2026-11-13 14:00", "%s", Some("Europe/Berlin"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    let midnight = super::date("2026-11-14 00:00", "%s", Some("Europe/Berlin"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(reset(message, observed), Some(midnight));
+    let fallback = Duration::from_mins(30);
+    assert!(waiting(message, Duration::ZERO, fallback, midnight - 1));
+    assert!(!waiting(message, Duration::ZERO, fallback, midnight));
+}

@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-tools-seed-tool-choice
+call:
+  anthropic_tools:
+    calls:
+      - {function: tool_choice, tool_choice: required, parallel_tool_calls: false}
+      - {function: tool_choice, tool_choice: {function: {name: lookup}}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: none}, parallel_tool_calls: true}
+env: {}
+compare: {ignore: []}
