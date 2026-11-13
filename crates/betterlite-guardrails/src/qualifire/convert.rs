@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use super::error::QualifireError;
 use crate::generic_guardrail_contracts::GuardrailMessage;
@@ -49,19 +50,31 @@ pub fn message_rows(messages: &[GuardrailMessage]) -> Vec<MessageRow> {
 
 pub(super) fn api_message(row: &MessageRow) -> Result<ApiMessage, QualifireError> {
     Ok(ApiMessage {
-        role: text_field(row, "role")?.unwrap_or_else(|| "user".to_owned()),
+        role: value_or(row.get("role"), "role")?.unwrap_or_else(|| "user".to_owned()),
         content: content(row.get("content"))?,
-        tool_call_id: text_field(row, "tool_call_id")?,
+        tool_call_id: value_or(row.get("tool_call_id"), "tool_call_id")?,
         tool_calls: tool_calls(row.get("tool_calls"))?,
     })
 }
 
-fn text_field(row: &MessageRow, field: &'static str) -> Result<Option<String>, QualifireError> {
-    match row.get(field) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
-        Some(_wrong) => Err(QualifireError::InvalidField { field }),
+fn value_or<T>(
+    value: Option<&GuardrailValue>,
+    field: &'static str,
+) -> Result<Option<T>, QualifireError>
+where
+    T: DeserializeOwned,
+{
+    let Some(present) = value else {
+        return Ok(None);
+    };
+    if matches!(present, GuardrailValue::Null) {
+        return Ok(None);
     }
+    let encoded =
+        serde_json::to_vec(present).map_err(|source| QualifireError::Encode { source })?;
+    serde_json::from_slice(&encoded)
+        .map(Some)
+        .map_err(|_wrong_type| QualifireError::InvalidField { field })
 }
 
 fn content(value: Option<&GuardrailValue>) -> Result<String, QualifireError> {
@@ -107,53 +120,47 @@ fn text_parts(items: &[GuardrailValue]) -> Result<String, QualifireError> {
 }
 
 fn tool_calls(value: Option<&GuardrailValue>) -> Result<Option<Vec<ApiToolCall>>, QualifireError> {
-    match value {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Array(calls)) => {
-            let converted = calls
-                .iter()
-                .map(api_tool_call)
-                .collect::<Result<Vec<ApiToolCall>, QualifireError>>()?;
-            Ok((!converted.is_empty()).then_some(converted))
-        }
-        Some(_wrong) => Err(QualifireError::InvalidField {
-            field: "tool_calls",
-        }),
-    }
+    let Some(calls) = value_or::<Vec<GuardrailValue>>(value, "tool_calls")? else {
+        return Ok(None);
+    };
+    let converted = calls
+        .iter()
+        .map(api_tool_call)
+        .collect::<Result<Vec<ApiToolCall>, QualifireError>>()?;
+    Ok((!converted.is_empty()).then_some(converted))
+}
+
+fn object<'value>(
+    value: &'value GuardrailValue,
+    field: &'static str,
+) -> Result<&'value BTreeMap<String, GuardrailValue>, QualifireError> {
+    let GuardrailValue::Object(fields) = value else {
+        return Err(QualifireError::InvalidField { field });
+    };
+    Ok(fields)
 }
 
 fn api_tool_call(value: &GuardrailValue) -> Result<ApiToolCall, QualifireError> {
-    let GuardrailValue::Object(call) = value else {
-        return Err(QualifireError::InvalidField {
-            field: "tool_calls",
-        });
-    };
-    let function = match call.get("function") {
-        None | Some(GuardrailValue::Null) => None,
-        Some(GuardrailValue::Object(fields)) => Some(fields),
-        Some(_wrong) => return Err(QualifireError::InvalidField { field: "function" }),
-    };
-    let arguments = match function.and_then(|fields| fields.get("arguments")) {
-        None | Some(GuardrailValue::Null) => BTreeMap::new(),
-        Some(GuardrailValue::Text(text)) => serde_json::from_str(text).unwrap_or_default(),
-        Some(GuardrailValue::Object(fields)) => fields.clone(),
-        Some(_wrong) => BTreeMap::new(),
-    };
+    let call = object(value, "tool_calls")?;
+    let function = value_or::<BTreeMap<String, GuardrailValue>>(call.get("function"), "function")?;
+    let definition = function.as_ref();
+    let id = value_or(call.get("id"), "id")?.unwrap_or_default();
+    let name =
+        value_or(definition.and_then(|fields| fields.get("name")), "name")?.unwrap_or_default();
+    let arguments = arguments(definition.and_then(|fields| fields.get("arguments")));
     Ok(ApiToolCall {
-        id: plain_field(call.get("id"), "id")?,
-        name: plain_field(function.and_then(|fields| fields.get("name")), "name")?,
+        id,
+        name,
         arguments,
     })
 }
 
-fn plain_field(
-    value: Option<&GuardrailValue>,
-    field: &'static str,
-) -> Result<String, QualifireError> {
+// LiteLLM reads an absent or non-object arguments value as {}, and a string is parsed as JSON
+fn arguments(value: Option<&GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
     match value {
-        None | Some(GuardrailValue::Null) => Ok(String::new()),
-        Some(GuardrailValue::Text(text)) => Ok(text.clone()),
-        Some(_wrong) => Err(QualifireError::InvalidField { field }),
+        Some(GuardrailValue::Text(text)) => serde_json::from_str(text).unwrap_or_default(),
+        Some(GuardrailValue::Object(fields)) => fields.clone(),
+        None | Some(GuardrailValue::Null) | Some(_wrong) => BTreeMap::new(),
     }
 }
 
@@ -174,41 +181,44 @@ pub fn api_tools(value: Option<&GuardrailValue>) -> Result<Option<Vec<ApiTool>>,
 }
 
 fn api_tool(value: &GuardrailValue) -> Result<Option<ApiTool>, QualifireError> {
-    let GuardrailValue::Object(fields) = value else {
-        return Err(QualifireError::InvalidField { field: "tools" });
+    let fields = object(value, "tools")?;
+    let Some(definition) = definition_fields(fields)? else {
+        return Ok(None);
     };
+    let encoded =
+        serde_json::to_vec(definition).map_err(|source| QualifireError::Encode { source })?;
+    let parsed: ToolDefinition = serde_json::from_slice(&encoded)
+        .map_err(|_wrong_type| QualifireError::InvalidField { field: "tools" })?;
+    Ok(Some(ApiTool {
+        name: parsed.name.unwrap_or_default(),
+        description: parsed.description.unwrap_or_default(),
+        parameters: parsed.parameters.unwrap_or_default(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolDefinition {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    parameters: Option<BTreeMap<String, GuardrailValue>>,
+}
+
+fn definition_fields(
+    fields: &BTreeMap<String, GuardrailValue>,
+) -> Result<Option<&BTreeMap<String, GuardrailValue>>, QualifireError> {
     let is_function_tool = matches!(
         fields.get("type"),
         Some(GuardrailValue::Text(kind)) if kind == "function"
     );
-    let resolved = if is_function_tool {
-        match fields.get("function") {
-            None | Some(GuardrailValue::Null) => None,
-            Some(GuardrailValue::Object(function)) => Some(function),
-            Some(_wrong) => return Err(QualifireError::InvalidField { field: "function" }),
-        }
-    } else if fields.contains_key("name") {
-        Some(fields)
-    } else {
-        None
-    };
-    let Some(definition) = resolved else {
-        return Ok(None);
-    };
-    Ok(Some(ApiTool {
-        name: plain_field(definition.get("name"), "name")?,
-        description: plain_field(definition.get("description"), "description")?,
-        parameters: object_field(definition.get("parameters"), "parameters")?,
-    }))
-}
-
-fn object_field(
-    value: Option<&GuardrailValue>,
-    field: &'static str,
-) -> Result<BTreeMap<String, GuardrailValue>, QualifireError> {
-    match value {
-        None | Some(GuardrailValue::Null) => Ok(BTreeMap::new()),
-        Some(GuardrailValue::Object(fields)) => Ok(fields.clone()),
-        Some(_wrong) => Err(QualifireError::InvalidField { field }),
+    if is_function_tool {
+        return match fields.get("function") {
+            None | Some(GuardrailValue::Null) => Ok(None),
+            Some(GuardrailValue::Object(function)) => Ok(Some(function)),
+            Some(_wrong) => Err(QualifireError::InvalidField { field: "function" }),
+        };
     }
+    Ok(fields.contains_key("name").then_some(fields))
 }

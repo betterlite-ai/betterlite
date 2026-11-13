@@ -56,19 +56,14 @@ pub fn resolve(
     secrets: &dyn SecretLookup,
     environment: &dyn EnvironmentLookup,
 ) -> Result<QualifireSettings, QualifireError> {
-    let api_key = secret_value(
-        args.api_key.clone(),
-        "QUALIFIRE_API_KEY",
-        secrets,
-        environment,
-    );
-    let api_base = text_value(
-        args.api_base.clone(),
-        "QUALIFIRE_BASE_URL",
-        secrets,
-        environment,
-    )
-    .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+    let api_key = args.api_key.clone().or_else(|| {
+        fallback_value("QUALIFIRE_API_KEY", secrets, environment).map(SecretString::from)
+    });
+    let api_base = args
+        .api_base
+        .clone()
+        .or_else(|| fallback_value("QUALIFIRE_BASE_URL", secrets, environment))
+        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
     let evaluation_id = args.evaluation_id.clone().filter(|id| !id.is_empty());
     let assertions = args.assertions.clone().unwrap_or_default();
     let mut checks = checks_from_args(args);
@@ -125,39 +120,15 @@ pub(super) fn insert_flag(checks: &mut BTreeSet<Check>, check: Check, enabled: O
     }
 }
 
-// an unset, empty or null value falls through to the next source, and the last one is None
-fn secret_value(
-    configured: Option<SecretString>,
-    name: &str,
-    secrets: &dyn SecretLookup,
-    environment: &dyn EnvironmentLookup,
-) -> Option<SecretString> {
-    configured
-        .or_else(|| {
-            secrets
-                .secret(name)
-                .filter(|secret| !secret.expose_secret().is_empty())
-        })
-        .or_else(|| {
-            environment
-                .lookup(name)
-                .filter(|text| !text.is_empty())
-                .map(SecretString::from)
-        })
-}
-
-fn text_value(
-    configured: Option<String>,
+// an unset or empty secret falls through to the environment, and an empty variable counts as unset
+fn fallback_value(
     name: &str,
     secrets: &dyn SecretLookup,
     environment: &dyn EnvironmentLookup,
 ) -> Option<String> {
-    configured
-        .or_else(|| {
-            secrets
-                .secret(name)
-                .map(|secret| secret.expose_secret().to_owned())
-                .filter(|text| !text.is_empty())
-        })
+    secrets
+        .secret(name)
+        .map(|secret| secret.expose_secret().to_owned())
+        .filter(|text| !text.is_empty())
         .or_else(|| environment.lookup(name).filter(|text| !text.is_empty()))
 }
