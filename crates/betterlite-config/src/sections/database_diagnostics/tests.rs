@@ -32,6 +32,10 @@ fn tool_level_default_info() {
 #[case::capitalized(&[("LITELLM_LOG", "Warn")], LogLevel::Warning)]
 #[case::fatal(&[("LITELLM_LOG", "fatal")], LogLevel::Critical)]
 #[case::notset(&[("LITELLM_LOG", "NoTsEt")], LogLevel::NotSet)]
+#[case::info(&[("LITELLM_LOG", "info")], LogLevel::Info)]
+#[case::warning(&[("LITELLM_LOG", "warning")], LogLevel::Warning)]
+#[case::error(&[("LITELLM_LOG", "error")], LogLevel::Error)]
+#[case::critical(&[("LITELLM_LOG", "critical")], LogLevel::Critical)]
 fn tool_level_casefold_aliases(#[case] environment: &[(&str, &str)], #[case] expected: LogLevel) {
     let settings = convert(environment);
     assert_eq!(parse_level(&settings.level).unwrap(), expected);

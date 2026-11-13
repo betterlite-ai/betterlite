@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use rstest::rstest;
 
 use crate::database_diagnostics::json_enabled::{
@@ -13,6 +15,18 @@ use crate::database_diagnostics::message::LogValue;
 #[case::text_false_is_truthy(LogValue::Text("false".to_owned()), Some("false"), true)]
 #[case::zero_is_false(LogValue::Integer(0), Some("true"), false)]
 #[case::empty_list_is_false(LogValue::List(Vec::new()), None, false)]
+#[case::float_zero_is_false(LogValue::Float(0.0), Some("true"), false)]
+#[case::negative_float_zero_is_false(LogValue::Float(-0.0), Some("true"), false)]
+#[case::float_nonzero_is_true(LogValue::Float(0.5), Some("false"), true)]
+#[case::null_is_false(LogValue::Null, Some("true"), false)]
+#[case::empty_text_is_false(LogValue::Text(String::new()), Some("true"), false)]
+#[case::nonempty_list_is_true(LogValue::List(vec![LogValue::Null]), Some("false"), true)]
+#[case::empty_object_is_false(LogValue::Object(BTreeMap::new()), Some("true"), false)]
+#[case::object_is_true(
+    LogValue::Object(BTreeMap::from([("k".to_owned(), LogValue::Null)])),
+    Some("false"),
+    true
+)]
 fn global_flag_precedes_env(
     #[case] global: LogValue,
     #[case] environment: Option<&str>,

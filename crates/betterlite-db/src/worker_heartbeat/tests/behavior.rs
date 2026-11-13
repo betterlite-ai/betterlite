@@ -8,7 +8,10 @@ use uuid::Uuid;
 
 use super::support::{Call, FakeDatabase, RecordingIdentity, Step, capture_logs};
 use crate::database_replica::pinned::WriterPinnedClient;
-use crate::worker_heartbeat::{HostnameError, ProxyWorkerHeartbeat, count_live_proxy_workers};
+use crate::worker_heartbeat::{
+    HostnameError, ProxyWorkerHeartbeat, SystemWorkerIdentity, WorkerIdentity,
+    count_live_proxy_workers,
+};
 
 #[rstest]
 #[case::verbatim("worker-a")]
@@ -192,4 +195,14 @@ async fn count_failure_debug_unknown() {
             .logs
             .has("DEBUG", "Live proxy worker count unavailable: count failed")
     );
+}
+
+#[test]
+fn system_identity_reads_hostname_and_generates_uuid4() {
+    let identity = SystemWorkerIdentity;
+    assert_eq!(identity.hostname().unwrap(), whoami::hostname().unwrap());
+    let first = Uuid::parse_str(&identity.generate_worker_id()).unwrap();
+    let second = Uuid::parse_str(&identity.generate_worker_id()).unwrap();
+    assert_eq!(first.get_version_num(), 4);
+    assert_ne!(first, second);
 }

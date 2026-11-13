@@ -229,5 +229,5 @@ fn integer_value(value: &LogValue) -> Result<String, MessageError> {
 }
 
 fn float_value(value: &LogValue) -> Result<String, MessageError> {
-    Ok(format!("{}", decimal_of(value)?.round_dp(6)))
+    Ok(format!("{:.6}", decimal_of(value)?.round_dp(6)))
 }

@@ -9,7 +9,7 @@ use crate::database_diagnostics::json_formatter::JsonFormatter;
 use crate::database_diagnostics::legacy::TextFormatter;
 use crate::database_diagnostics::message::{LogArguments, LogValue};
 use crate::database_diagnostics::record::{ExceptionRecord, LogRecord};
-use crate::database_diagnostics::timestamp::format_time;
+use crate::database_diagnostics::timestamp::{LocalTime, SystemLocalTime, format_time};
 
 fn json_output(record: &LogRecord<'_>) -> JsonOutput {
     let local = utc();
@@ -194,4 +194,12 @@ fn native_gateway_stderr_stays_json() {
     assert!(json.starts_with('{'));
     let parsed: JsonOutput = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.message, "beat");
+}
+
+#[test]
+fn system_local_time_stays_near_utc() {
+    let instant = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let local = SystemLocalTime.local(instant);
+    let shift = local.and_utc().signed_duration_since(instant);
+    assert!(shift.num_hours().abs() <= 14);
 }
