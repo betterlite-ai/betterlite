@@ -1,0 +1,17 @@
+task: B1367
+deviations:
+  - what: A create or retrieve reply body larger than 1 MiB is refused with a ResponseTooLarge error.
+    why: LiteLLM reads any body into memory, and betterlite bounds every upstream JSON read; file metadata is a few hundred bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L187
+  - what: A delete reply body that is not valid UTF-8 is reported by its byte count instead of decoding it with replacement characters.
+    why: Python's httpx decodes error text lossily, and betterlite refuses to put lossy text into an error that callers match on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L381
+  - what: A successful delete reply with no request URL returns the id "deleted"; LiteLLM raises a ValueError because httpx raises when the request attribute it probes has no value.
+    why: The task text says a reply with no /files/ segment deletes as "deleted", and httpx refusing to read an unset request is a Python accident no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L371
+  - what: A createTime whose seconds field is 60 is rejected; LiteLLM's mktime normalizes it to the first second of the next minute.
+    why: The shared Vertex timestamp decoder validates the calendar instead of normalizing out-of-range fields, and no Google reply carries a leap second.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L196-L203
+  - what: A createTime whose numeric timezone offset uses non-ASCII digits is rejected; Python's strptime accepts them through Unicode-aware \\d.
+    why: The offset is only read to be ignored, and a non-ASCII digit is not a working Gemini timestamp.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L197-L203

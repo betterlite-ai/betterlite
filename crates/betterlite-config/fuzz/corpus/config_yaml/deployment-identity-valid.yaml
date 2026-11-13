@@ -1,0 +1,14 @@
+router_settings:
+  ignore_invalid_deployments: true
+
+model_list:
+  - model_name: identity-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-identity
+    model_info:
+      id: identity-explicit-id
+  - model_name: identity-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/IDENTITY_SECOND_KEY

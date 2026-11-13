@@ -1,0 +1,54 @@
+kind: probe
+name: invalid-deployment-warning
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {api_key: sk-1}
+        ignore_invalid_deployments: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {api_key: sk-1}
+        ignore_invalid_deployments: false
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {model: openai/gpt-4o, max_retries: three}
+        ignore_invalid_deployments: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {model: openai/gpt-4o, max_retries: three}
+        ignore_invalid_deployments: false
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {model: openai/gpt-4o, tag_regex: ["("]}
+        ignore_invalid_deployments: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {model: openai/gpt-4o, tag_regex: ["("]}
+        ignore_invalid_deployments: false
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      deployment_identity:
+        model_name: gpt
+        litellm_params: {model: openai/gpt-4o, tag_regex: ["^team-.*$"]}
+        ignore_invalid_deployments: false
+compare:
+  ignore: []

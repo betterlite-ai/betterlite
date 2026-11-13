@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "refresh-coordinator-singleflight",
+  "call": {
+    "b4656": {
+      "function": "coordinator",
+      "refresh": {
+        "kind": "token",
+        "token": {
+          "access_token": "fresh-access",
+          "expires_at_ms": null,
+          "refresh_token": null,
+          "scopes": [],
+          "identity_binding_proof": null
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
