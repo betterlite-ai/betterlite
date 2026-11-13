@@ -38,8 +38,10 @@ fn span_detail() -> SpanDetail {
 }
 
 fn span_error_page() -> SpanErrorPage {
-    serde_json::from_str(r#"{"span_id":"span-1","message":"boom","total_chars":4,"next_cursor":null}"#)
-        .expect("span error page")
+    serde_json::from_str(
+        r#"{"span_id":"span-1","message":"boom","total_chars":4,"next_cursor":null}"#,
+    )
+    .expect("span error page")
 }
 
 fn admin() -> Principal {
@@ -47,7 +49,13 @@ fn admin() -> Principal {
 }
 
 fn team_member() -> Principal {
-    principal(vec![Role::TeamMember], Some("team-1"), Some("hash-1"), None, None)
+    principal(
+        vec![Role::TeamMember],
+        Some("team-1"),
+        Some("hash-1"),
+        None,
+        None,
+    )
 }
 
 fn viewer() -> Principal {
@@ -59,7 +67,12 @@ fn app(runtime: &Arc<FakeRuntime>, master_key: Option<&str>) -> Router {
     application(Some(receiver), master_key)
 }
 
-async fn post_traces(runtime: &Arc<FakeRuntime>, caller: Option<&Principal>, content_type: &str, body: &[u8]) -> Answer {
+async fn post_traces(
+    runtime: &Arc<FakeRuntime>,
+    caller: Option<&Principal>,
+    content_type: &str,
+    body: &[u8],
+) -> Answer {
     let headers = [("content-type", content_type)];
     send(
         app(runtime, None),
@@ -82,7 +95,12 @@ async fn ingest_success_returns_an_empty_object() {
         answer.headers.get(header::CONTENT_TYPE),
         Some(&header_value("application/json"))
     );
-    let seen = runtime.seen_ingest.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_ingest
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.content_type.as_deref(), Some("application/json"));
     assert_eq!(seen.body_len, 2);
     assert_eq!(
@@ -166,7 +184,10 @@ async fn ingest_failures_keep_their_status(#[case] status: StatusCode, #[case] m
     let runtime = Arc::new(runtime);
     let answer = post_traces(&runtime, Some(&admin()), "application/json", b"{}").await;
     assert_eq!(answer.status, status);
-    assert_eq!(body_text(&answer), format!("{{\"message\": \"{message}\"}}"));
+    assert_eq!(
+        body_text(&answer),
+        format!("{{\"message\": \"{message}\"}}")
+    );
 }
 
 #[tokio::test]
@@ -202,7 +223,12 @@ async fn list_success_returns_the_page() {
     .await;
     assert_eq!(answer.status, StatusCode::OK);
     assert!(body_text(&answer).contains("\"next_cursor\":\"next\""));
-    let seen = runtime.seen_list.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_list
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.start_ms, 100);
     assert_eq!(seen.end_ms, 200);
     assert_eq!(seen.cursor.as_deref(), Some("abc"));
@@ -222,7 +248,12 @@ async fn list_defaults_the_window_to_the_last_day() {
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
-    let seen = runtime.seen_list.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_list
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.start_ms, NOW_MS - DAY_MS);
     assert_eq!(seen.end_ms, NOW_MS);
     assert!(seen.scope.team_ids.is_empty());
@@ -243,7 +274,12 @@ async fn list_token_scope_reaches_the_receiver() {
     )
     .await;
     assert_eq!(answer.status, StatusCode::OK);
-    let seen = runtime.seen_list.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_list
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.scope.team_ids, vec![String::new()]);
     assert_eq!(seen.scope.api_key_hash, "hash-1");
 }
@@ -298,10 +334,7 @@ async fn list_with_an_invalid_cursor_is_a_bad_request() {
     )
     .await;
     assert_eq!(answer.status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        body_text(&answer),
-        r#"{"detail":"Invalid trace cursor"}"#
-    );
+    assert_eq!(body_text(&answer), r#"{"detail":"Invalid trace cursor"}"#);
 }
 
 #[tokio::test]
@@ -320,7 +353,12 @@ async fn get_trace_found_is_200_and_passes_the_ref() {
     .await;
     assert_eq!(answer.status, StatusCode::OK);
     assert!(body_text(&answer).contains("\"trace_id\":\"trace-1\""));
-    let seen = runtime.seen_trace.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_trace
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen, ("trace-1".to_owned(), "env-a".to_owned()));
 }
 
@@ -359,7 +397,12 @@ async fn get_span_found_is_200() {
     .await;
     assert_eq!(answer.status, StatusCode::OK);
     assert!(body_text(&answer).contains("\"span_id\":\"span-1\""));
-    let seen = runtime.seen_span.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_span
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.trace_id, "trace-1");
     assert_eq!(seen.span_id, "span-1");
     assert_eq!(seen.trace_ref, "env-a");
@@ -397,7 +440,12 @@ async fn get_span_error_found_is_200_and_passes_the_cursor() {
     .await;
     assert_eq!(answer.status, StatusCode::OK);
     assert!(body_text(&answer).contains("\"message\":\"boom\""));
-    let seen = runtime.seen_error.lock().expect("lock").clone().expect("seen");
+    let seen = runtime
+        .seen_error
+        .lock()
+        .expect("lock")
+        .clone()
+        .expect("seen");
     assert_eq!(seen.cursor.as_deref(), Some("abc"));
     assert_eq!(seen.trace_ref, "env-a");
     assert_eq!(seen.span_id, "span-1");
@@ -427,7 +475,15 @@ async fn get_span_error_rejects_an_overlong_cursor() {
     let runtime = Arc::new(FakeRuntime::new());
     let cursor = "a".repeat(513);
     let uri = format!("/v1/traces/trace-1/spans/span-1/error?cursor={cursor}");
-    let answer = send(app(&runtime, None), Method::GET, &uri, Some(&admin()), &[], b"").await;
+    let answer = send(
+        app(&runtime, None),
+        Method::GET,
+        &uri,
+        Some(&admin()),
+        &[],
+        b"",
+    )
+    .await;
     assert_eq!(answer.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body_text(&answer).contains("string_too_long"));
 }
@@ -702,10 +758,7 @@ async fn query_invalid_sql_is_400() {
     )
     .await;
     assert_eq!(answer.status, StatusCode::BAD_REQUEST);
-    assert_eq!(
-        body_text(&answer),
-        r#"{"detail":"only SELECT is allowed"}"#
-    );
+    assert_eq!(body_text(&answer), r#"{"detail":"only SELECT is allowed"}"#);
 }
 
 #[tokio::test]

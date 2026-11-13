@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::auth_identity::AuthContext;
 use crate::error_body::json_error;
 use crate::tracing_routes::TraceRoutesState;
-use crate::tracing_routes::access::{
-    AccessError, TraceAuth, provide_trace_access,
-};
+use crate::tracing_routes::access::{AccessError, TraceAuth, provide_trace_access};
 use crate::tracing_routes::otlp::{otlp_encoded_response, otlp_retry_response};
 use crate::tracing_routes::receiver::{IngestError, TraceReadError};
 
@@ -44,7 +42,10 @@ pub(crate) fn router(state: TraceRoutesState) -> Router {
         .route("/v1/traces/query", post(queries::query_traces))
         .route("/v1/traces/query/help", get(queries::query_help))
         .route("/v1/traces/{trace_id}", get(reads::get_trace))
-        .route("/v1/traces/{trace_id}/spans/{span_id}", get(reads::get_span))
+        .route(
+            "/v1/traces/{trace_id}/spans/{span_id}",
+            get(reads::get_span),
+        )
         .route(
             "/v1/traces/{trace_id}/spans/{span_id}/error",
             get(reads::get_span_error),
@@ -107,7 +108,9 @@ async fn list_traces(
         return (StatusCode::BAD_REQUEST, Json(body)).into_response();
     };
     let now_ms = state.clock.now_ms();
-    let start_ms = params.start_ms.unwrap_or_else(|| now_ms.saturating_sub(MS_PER_DAY));
+    let start_ms = params
+        .start_ms
+        .unwrap_or_else(|| now_ms.saturating_sub(MS_PER_DAY));
     let end_ms = params.end_ms.unwrap_or(now_ms);
     let auth = TraceAuth::from_principal(&context.principal);
     let access = provide_trace_access(&auth, state.receiver.clone());
@@ -116,7 +119,10 @@ async fn list_traces(
         Err(error) => return access_failure(&error),
     };
     let cursor = params.cursor.as_deref();
-    match receiver.list_traces(scope, (start_ms, end_ms), cursor).await {
+    match receiver
+        .list_traces(scope, (start_ms, end_ms), cursor)
+        .await
+    {
         Ok(page) => Json(page).into_response(),
         Err(error) => read_failure(&error),
     }

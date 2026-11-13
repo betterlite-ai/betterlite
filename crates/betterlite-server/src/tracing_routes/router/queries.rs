@@ -1,17 +1,15 @@
+use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::{Extension, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse as _, Response};
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::error_body::json_error;
 use crate::tracing_routes::TraceRoutesState;
 use crate::tracing_routes::access::TraceAuth;
-use crate::tracing_routes::query::{
-    QueryAccessError, QueryRunError, provide_trace_query_access,
-};
+use crate::tracing_routes::query::{QueryAccessError, QueryRunError, provide_trace_query_access};
 use crate::tracing_routes::router::DetailBody;
 
 #[derive(Debug, Deserialize)]
@@ -47,14 +45,12 @@ pub(super) async fn query_traces(
         );
     };
     let auth = TraceAuth::from_principal(&context.principal);
-    let access = match provide_trace_query_access(
-        &auth,
-        state.receiver.as_ref(),
-        state.master_key.as_ref(),
-    ) {
-        Ok(access) => access,
-        Err(error) => return query_access_failure(&error),
-    };
+    let access =
+        match provide_trace_query_access(&auth, state.receiver.as_ref(), state.master_key.as_ref())
+        {
+            Ok(access) => access,
+            Err(error) => return query_access_failure(&error),
+        };
     let Ok(request) = serde_json::from_slice::<TraceQueryRequest>(&body) else {
         let issue = ValidationIssue {
             kind: "value_error",
@@ -89,14 +85,12 @@ pub(super) async fn query_help(
         );
     };
     let auth = TraceAuth::from_principal(&context.principal);
-    let access = match provide_trace_query_access(
-        &auth,
-        state.receiver.as_ref(),
-        state.master_key.as_ref(),
-    ) {
-        Ok(access) => access,
-        Err(error) => return query_access_failure(&error),
-    };
+    let access =
+        match provide_trace_query_access(&auth, state.receiver.as_ref(), state.master_key.as_ref())
+        {
+            Ok(access) => access,
+            Err(error) => return query_access_failure(&error),
+        };
     match access.store.query_help(&access.scope, &access.secret).await {
         Ok(result) => raw_json_response(result),
         Err(QueryRunError::Unavailable(message)) => {
@@ -117,9 +111,10 @@ pub(super) async fn query_help(
 
 fn raw_json_response(body: String) -> Response {
     let mut response = Response::new(Body::from(body));
-    response
-        .headers_mut()
-        .insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
     response
 }
 

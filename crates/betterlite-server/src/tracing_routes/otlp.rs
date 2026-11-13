@@ -35,11 +35,16 @@ pub fn otlp_encoded_response(
 }
 
 #[must_use]
-pub fn otlp_retry_response(content_type: Option<&str>, status: StatusCode, message: &str) -> Response {
+pub fn otlp_retry_response(
+    content_type: Option<&str>,
+    status: StatusCode,
+    message: &str,
+) -> Response {
     let mut response = otlp_encoded_response(content_type, status, Some(message));
-    response
-        .headers_mut()
-        .insert(header::RETRY_AFTER, HeaderValue::from_static(OTLP_RETRY_AFTER));
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from_static(OTLP_RETRY_AFTER),
+    );
     response
 }
 

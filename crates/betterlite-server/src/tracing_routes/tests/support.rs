@@ -16,7 +16,7 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use crate::tracing_routes::TraceRoutesState;
-use crate::tracing_routes::access::{TraceClock, Tenant};
+use crate::tracing_routes::access::{Tenant, TraceClock};
 use crate::tracing_routes::query::{QueryRunError, QueryScope, TraceQueryStore};
 use crate::tracing_routes::receiver::{IngestError, TraceReadError, TraceRuntime};
 use crate::tracing_routes::router;
@@ -286,7 +286,10 @@ fn read_answer<T: Clone>(answer: &ReadAnswer<T>) -> Result<T, TraceReadError> {
     }
 }
 
-pub(super) fn application(receiver: Option<Arc<dyn TraceRuntime>>, master_key: Option<&str>) -> Router {
+pub(super) fn application(
+    receiver: Option<Arc<dyn TraceRuntime>>,
+    master_key: Option<&str>,
+) -> Router {
     router::router(TraceRoutesState {
         receiver,
         master_key: master_key.map(|key| SecretString::from(key.to_owned())),

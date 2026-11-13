@@ -15,7 +15,7 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role, Tea
 use betterlite_logging::otlp_normalize::SpanRow;
 use betterlite_logging::trace_types::{SpanDetail, SpanErrorPage, Trace, TracePage, TraceScope};
 use betterlite_server::tracing_routes::TraceRoutesState;
-use betterlite_server::tracing_routes::access::{TraceClock, Tenant};
+use betterlite_server::tracing_routes::access::{Tenant, TraceClock};
 use betterlite_server::tracing_routes::query::{QueryRunError, QueryScope, TraceQueryStore};
 use betterlite_server::tracing_routes::receiver::{IngestError, TraceReadError, TraceRuntime};
 use betterlite_server::tracing_routes::router;
@@ -422,9 +422,7 @@ fn read_error(error: &ErrorScript) -> TraceReadError {
         .unwrap_or_else(|| DEFAULT_READ_FAILURE.to_owned());
     match error.kind {
         ErrorKind::InvalidCursor => TraceReadError::InvalidCursor(message),
-        ErrorKind::Storage | ErrorKind::Invalid | ErrorKind::Unavailable => {
-            TraceReadError::Storage
-        }
+        ErrorKind::Storage | ErrorKind::Invalid | ErrorKind::Unavailable => TraceReadError::Storage,
     }
 }
 
@@ -513,11 +511,7 @@ async fn answer(input: &Input) -> HelperResult {
         queries,
     });
     let erased: Arc<dyn TraceRuntime> = runtime;
-    let receiver: Option<Arc<dyn TraceRuntime>> = if input.tracing {
-        Some(erased)
-    } else {
-        None
-    };
+    let receiver: Option<Arc<dyn TraceRuntime>> = if input.tracing { Some(erased) } else { None };
     let state = TraceRoutesState {
         receiver,
         master_key: input.master_key.clone().map(SecretString::from),
@@ -568,7 +562,12 @@ fn route_error(input: &Input, status: StatusCode, body: &[u8]) -> Option<HelperE
 fn detail_text(body: &[u8]) -> String {
     serde_json::from_slice::<Value>(body)
         .ok()
-        .and_then(|value| value.get("detail").and_then(Value::as_str).map(str::to_owned))
+        .and_then(|value| {
+            value
+                .get("detail")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
         .unwrap_or_default()
 }
 
@@ -598,15 +597,18 @@ fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
 
 fn build_request(input: &Input) -> Result<Request<Body>, Box<HelperError>> {
     let mut builder = Request::builder()
-        .method(Method::from_bytes(input.request.method.as_bytes()).map_err(|error| {
-            failure("ValueError", error)
-        })?)
+        .method(
+            Method::from_bytes(input.request.method.as_bytes())
+                .map_err(|error| failure("ValueError", error))?,
+        )
         .uri(uri_text(input));
     for (name, value) in &input.request.headers {
         builder = builder.header(name.as_str(), value.as_str());
     }
     let body = request_body(input)?;
-    builder.body(Body::from(body)).map_err(|error| failure("ValueError", error))
+    builder
+        .body(Body::from(body))
+        .map_err(|error| failure("ValueError", error))
 }
 
 fn request_body(input: &Input) -> Result<Bytes, Box<HelperError>> {

@@ -49,7 +49,13 @@ fn token_falls_back_to_the_key_id() {
 
 #[test]
 fn admin_reads_every_team_and_writes_with_its_identity() {
-    let caller = principal(vec![Role::PlatformAdmin], Some("team-1"), Some("hash-1"), None, None);
+    let caller = principal(
+        vec![Role::PlatformAdmin],
+        Some("team-1"),
+        Some("hash-1"),
+        None,
+        None,
+    );
     let auth = TraceAuth::from_principal(&caller);
     let access = provide_trace_access(&auth, None);
     let scope = access.read_scope.expect("read scope");
@@ -76,7 +82,13 @@ fn admin_view_only_cannot_ingest() {
 
 #[test]
 fn team_identity_scopes_reads_to_that_team() {
-    let caller = principal(vec![Role::TeamMember], Some("team-1"), Some("hash-1"), None, None);
+    let caller = principal(
+        vec![Role::TeamMember],
+        Some("team-1"),
+        Some("hash-1"),
+        None,
+        None,
+    );
     let auth = TraceAuth::from_principal(&caller);
     let access = provide_trace_access(&auth, None);
     assert_eq!(

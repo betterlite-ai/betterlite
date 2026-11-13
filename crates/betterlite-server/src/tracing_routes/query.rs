@@ -12,8 +12,13 @@ use crate::tracing_routes::receiver::TraceRuntime;
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum QueryScope {
     Admin,
-    Team { team_id: String },
-    Key { team_id: String, api_key_hash: String },
+    Team {
+        team_id: String,
+    },
+    Key {
+        team_id: String,
+        api_key_hash: String,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -76,15 +81,14 @@ pub fn trace_query_scope(auth: &TraceAuth) -> Result<QueryScope, QueryAccessErro
             team_id: team_id.clone(),
         });
     }
-    auth.token.as_ref().map_or(
-        Err(QueryAccessError::ScopeRequired),
-        |token| {
+    auth.token
+        .as_ref()
+        .map_or(Err(QueryAccessError::ScopeRequired), |token| {
             Ok(QueryScope::Key {
                 team_id: String::new(),
                 api_key_hash: token.clone(),
             })
-        },
-    )
+        })
 }
 
 pub fn provide_trace_query_secret(

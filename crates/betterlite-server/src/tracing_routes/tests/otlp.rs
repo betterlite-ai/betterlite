@@ -23,8 +23,19 @@ fn reason_phrases_match_python(#[case] code: u16, #[case] expected: &str) {
 #[test]
 fn a_non_trace_request_gets_no_otlp_response() {
     let headers = HeaderMap::new();
-    assert!(otlp_error_response("GET", "/v1/traces", None, StatusCode::NOT_FOUND, &headers).is_none());
-    assert!(otlp_error_response("POST", "/v1/traces/x", None, StatusCode::NOT_FOUND, &headers).is_none());
+    assert!(
+        otlp_error_response("GET", "/v1/traces", None, StatusCode::NOT_FOUND, &headers).is_none()
+    );
+    assert!(
+        otlp_error_response(
+            "POST",
+            "/v1/traces/x",
+            None,
+            StatusCode::NOT_FOUND,
+            &headers
+        )
+        .is_none()
+    );
 }
 
 #[tokio::test]
@@ -48,7 +59,9 @@ async fn a_json_error_carries_the_reason_phrase_and_the_caller_headers() {
         response.headers().get("x-request-id"),
         Some(&HeaderValue::from_static("req-1"))
     );
-    let body = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
     assert_eq!(body.as_ref(), b"{\"message\": \"Unprocessable Content\"}");
 }
 
@@ -66,14 +79,22 @@ async fn a_protobuf_error_uses_the_protobuf_media_type() {
         response.headers().get(header::CONTENT_TYPE),
         Some(&HeaderValue::from_static("application/x-protobuf"))
     );
-    let body = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
     assert!(!body.is_empty());
 }
 
 #[tokio::test]
 async fn a_successful_json_response_is_an_empty_object() {
-    let response = otlp_encoded_response(Some("application/json; charset=utf-8"), StatusCode::OK, None);
-    let body = to_bytes(response.into_body(), usize::MAX).await.expect("body");
+    let response = otlp_encoded_response(
+        Some("application/json; charset=utf-8"),
+        StatusCode::OK,
+        None,
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
     assert_eq!(body.as_ref(), b"{}");
 }
 

@@ -53,8 +53,7 @@ fn project_without_a_token_is_rejected() {
 
 #[test]
 fn no_identity_is_rejected() {
-    let error =
-        trace_query_scope(&auth(TraceRole::Other, None, None, None)).expect_err("no scope");
+    let error = trace_query_scope(&auth(TraceRole::Other, None, None, None)).expect_err("no scope");
     assert!(matches!(error, QueryAccessError::ScopeRequired));
 }
 
@@ -76,18 +75,15 @@ fn the_master_key_must_be_configured_and_non_empty() {
 
 #[test]
 fn the_secret_is_checked_before_the_receiver_and_the_scope() {
-    let unconfigured = provide_trace_query_access(
+    let unconfigured =
+        provide_trace_query_access(&auth(TraceRole::Other, None, None, None), None, None);
+    assert!(matches!(unconfigured, Err(QueryAccessError::SecretMissing)));
+    let configured = SecretString::from("sk-master".to_owned());
+    let unavailable = provide_trace_query_access(
         &auth(TraceRole::Other, None, None, None),
         None,
-        None,
+        Some(&configured),
     );
-    assert!(matches!(
-        unconfigured,
-        Err(QueryAccessError::SecretMissing)
-    ));
-    let configured = SecretString::from("sk-master".to_owned());
-    let unavailable =
-        provide_trace_query_access(&auth(TraceRole::Other, None, None, None), None, Some(&configured));
     assert!(matches!(unavailable, Err(QueryAccessError::Unavailable)));
 }
 

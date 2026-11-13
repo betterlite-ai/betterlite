@@ -4,17 +4,13 @@ use std::time::Duration;
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use betterlite_logging::otlp_errors::CodecError;
-use betterlite_logging::otlp_normalize::{
-    DecodedSpan, OTLP_MAX_BODY_BYTES, SpanCodec, SpanRow,
-};
+use betterlite_logging::otlp_normalize::{DecodedSpan, OTLP_MAX_BODY_BYTES, SpanCodec, SpanRow};
 use betterlite_logging::trace_types::TraceScope;
 use betterlite_tracing::storage::error::StorageError;
 use betterlite_tracing::storage::query::{
     ListTracesQuery, SpanDetailQuery, SpanErrorQuery, SpendByRequestIdsQuery, TraceSpansQuery,
 };
-use betterlite_tracing::storage::rows::{
-    SpanDetailRow, SpanErrorRow, SpanQueryRow, TraceListRow,
-};
+use betterlite_tracing::storage::rows::{SpanDetailRow, SpanErrorRow, SpanQueryRow, TraceListRow};
 use betterlite_tracing::storage::trace_store::TraceStorage;
 use futures_util::stream;
 use thiserror::Error;
@@ -172,12 +168,7 @@ fn tenant() -> Tenant {
 
 async fn ingest(receiver: &Receiver, body: Vec<u8>) -> Result<usize, IngestError> {
     receiver
-        .ingest(
-            Body::from(body),
-            Some("application/json"),
-            None,
-            &tenant(),
-        )
+        .ingest(Body::from(body), Some("application/json"), None, &tenant())
         .await
 }
 
@@ -210,7 +201,10 @@ async fn ingest_rejects_a_body_over_the_limit() {
     let body = vec![0_u8; OTLP_MAX_BODY_BYTES.saturating_add(1)];
     match ingest(&receiver, body).await {
         Err(IngestError::TooLarge(message)) => {
-            assert_eq!(message, format!("OTLP body exceeds {OTLP_MAX_BODY_BYTES} bytes"));
+            assert_eq!(
+                message,
+                format!("OTLP body exceeds {OTLP_MAX_BODY_BYTES} bytes")
+            );
         }
         _ => panic!("an oversized body must be rejected"),
     }
@@ -245,7 +239,10 @@ async fn ingest_maps_a_malformed_payload_to_the_invalid_message() {
 #[tokio::test]
 async fn ingest_maps_a_sink_overflow_to_the_too_large_message() {
     let receiver = receiver(
-        FakeStorage::new(SinkMode::Overflow("rows too large".to_owned()), ReadMode::Ok),
+        FakeStorage::new(
+            SinkMode::Overflow("rows too large".to_owned()),
+            ReadMode::Ok,
+        ),
         CodecAnswer::Ok(vec![decoded_span()]),
         Duration::from_secs(30),
     );

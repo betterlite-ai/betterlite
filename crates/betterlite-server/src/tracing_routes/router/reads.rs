@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse as _, Response};
-use axum::Json;
 use betterlite_logging::trace_types::TraceScope;
 use betterlite_tracing::storage::trace_store::SpanErrorTarget;
 use serde::{Deserialize, Serialize};
@@ -67,10 +67,8 @@ pub(super) async fn get_trace(
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri).map_or_else(
-        |_rejection| String::new(),
-        |Query(params)| params.trace_ref,
-    );
+    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri)
+        .map_or_else(|_rejection| String::new(), |Query(params)| params.trace_ref);
     match receiver.get_trace(&trace_id, &scope, &trace_ref).await {
         Ok(Some(trace)) => Json(trace).into_response(),
         Ok(None) => {
@@ -93,11 +91,12 @@ pub(super) async fn get_span(
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri).map_or_else(
-        |_rejection| String::new(),
-        |Query(params)| params.trace_ref,
-    );
-    match receiver.get_span(&trace_id, &span_id, &scope, &trace_ref).await {
+    let trace_ref = Query::<TraceRefQuery>::try_from_uri(&uri)
+        .map_or_else(|_rejection| String::new(), |Query(params)| params.trace_ref);
+    match receiver
+        .get_span(&trace_id, &span_id, &scope, &trace_ref)
+        .await
+    {
         Ok(Some(span)) => Json(span).into_response(),
         Ok(None) => {
             let body = DetailBody {
