@@ -229,8 +229,9 @@ pub fn write_queue_time(data: &mut Map<String, Value>, bucket: &str, start: f64)
         .and_then(|request| request.get("arrival_time"))
         .and_then(Value::as_f64);
     #[expect(
+        clippy::arithmetic_side_effects,
         clippy::float_arithmetic,
-        reason = "LiteLLM's queue time is the f64 timestamp difference start - arrival_time"
+        reason = "LiteLLM's queue time is the f64 timestamp difference start - arrival_time, and both checks deny that subtraction"
     )]
     let difference = arrival.and_then(|arrival_time| Number::from_f64(start - arrival_time));
     let Some(queue_time) = difference else {
