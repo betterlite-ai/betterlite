@@ -39,6 +39,16 @@ fn leaves_a_forced_choice_naming_an_unchanged_function_tool() {
 }
 
 #[test]
+fn leaves_a_choice_naming_a_tool_with_a_function_field_of_another_type() {
+    let choice = Json::Object(object(r#"{"type":"tool","name":"outer"}"#));
+    let tools = vec![Json::Object(object(
+        r#"{"type":"custom","name":"outer","function":{"name":"other_tool"}}"#,
+    ))];
+    let synced = sync_forced_tool_choice(&choice, &tools).unwrap();
+    assert_eq!(synced, choice);
+}
+
+#[test]
 fn preserves_the_other_tool_choice_fields() {
     let choice = object(r#"{"type":"tool","name":"web_search","disable_parallel_tool_use":true}"#);
     let synced = sync_forced_tool_choice(&Json::Object(choice), &converted_tools()).unwrap();

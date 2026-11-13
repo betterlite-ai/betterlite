@@ -113,6 +113,22 @@ fn converts_a_native_tool_when_the_provider_is_nested_in_litellm_params() {
 }
 
 #[test]
+fn leaves_a_non_function_tool_with_a_litellm_function_field_alone() {
+    let request = object(
+        r#"{"custom_llm_provider":"bedrock","tools":[{"type":"custom","name":"calculator","function":{"name":"litellm_web_search"}},{"type":"web_search_20250305","name":"web_search"}]}"#,
+    );
+    let converted = logger(&["bedrock"])
+        .async_pre_call_deployment_hook(&request, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(list(&converted, "tools")[0], list(&request, "tools")[0]);
+    assert_eq!(
+        tool_name(&list(&converted, "tools")[1]),
+        Some("litellm_web_search")
+    );
+}
+
+#[test]
 fn converts_the_litellm_standard_tool_by_name() {
     let request =
         object(r#"{"custom_llm_provider":"bedrock","tools":[{"name":"litellm_web_search"}]}"#);
