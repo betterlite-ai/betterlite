@@ -1,6 +1,5 @@
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::definitions::error::DefinitionsError;
-use secrecy::ExposeSecret as _;
 
 use crate::feature_flags::FeatureFlagsError;
 
@@ -140,11 +139,12 @@ pub fn map_tool_helper(
         .iter()
         .any(|prefix| kind.starts_with(prefix))
     {
+        let mut sent = sent_fields(fields);
+        collect_options(fields, kind)?.apply(&mut sent);
         let hosted = HostedTool {
             kind: kind.to_owned(),
             name: hosted_name(fields)?,
-            fields: sent_fields(fields),
-            options: collect_options(fields, kind)?,
+            fields: sent,
         };
         return Ok((Some(ToolDefinition::Hosted(hosted)), None));
     }
@@ -171,9 +171,7 @@ pub fn map_openai_mcp_server_tool(tool: &Json) -> Result<McpServerTool, ToolsErr
         url: url.to_owned(),
         name: name.to_owned(),
         tool_configuration: tool_configuration(fields)?,
-        // the token leaves the layer only as the descriptor's wire value
-        authorization_token: authorization_token(fields)?
-            .map(|secret| secret.expose_secret().to_owned()),
+        authorization_token: authorization_token(fields)?,
     }))
 }
 

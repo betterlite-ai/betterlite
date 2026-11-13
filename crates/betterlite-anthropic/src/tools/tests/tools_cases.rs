@@ -430,7 +430,7 @@ fn case_6_advisor_tool() {
     check_errors(&ADVISOR_FAILURES);
 }
 
-const CACHE_PRECEDENCE: [Pair; 3] = [
+const CACHE_PRECEDENCE: [Pair; 4] = [
     (
         r#"{"type":"function","function":{"name":"cached","cache_control":{"ttl":"1h"}},"cache_control":{"type":"ephemeral"}}"#,
         r#"[{"name":"cached","input_schema":{"type":"object","properties":{}},"type":"custom","cache_control":{"type":"ephemeral"}}]"#,
@@ -442,6 +442,10 @@ const CACHE_PRECEDENCE: [Pair; 3] = [
     (
         r#"{"type":"web_search_20250305","name":"s","function":{"cache_control":{"type":"ephemeral"}}}"#,
         r#"[{"type":"web_search_20250305","name":"s","function":{"cache_control":{"type":"ephemeral"}},"cache_control":{"type":"ephemeral"}}]"#,
+    ),
+    (
+        r#"{"type":"computer_20241022","cache_control":{"type":"ephemeral"},"function":{"parameters":{"display_width_px":1,"display_height_px":2},"defer_loading":true}}"#,
+        r#"[{"type":"computer_20241022","name":"computer","display_width_px":1,"display_height_px":2,"cache_control":{"type":"ephemeral"}}]"#,
     ),
 ];
 
@@ -575,7 +579,7 @@ fn case_9_namespace_and_native_tools() {
     check_tools(&NAMESPACE_EXPANSION);
     check_tools(&NATIVE_PASSTHROUGH);
     check_tools_errors(&NAMESPACE_FAILURES);
-    namespace_members_keep_their_own_order();
+    namespace_member_order();
 }
 
 // one pass over each list, so the test reads the two orders a caller sees
@@ -603,7 +607,7 @@ fn mapped_names(mapping: &ToolMapping) -> (Vec<String>, Vec<String>) {
     (tools, servers)
 }
 
-fn namespace_members_keep_their_own_order() {
+fn namespace_member_order() {
     // a nested MCP descriptor has no name and no function, so the namespace loop skips it
     let skipped = mapping(r#"{"type":"namespace","tools":[{"name":"flat"},{"type":"mcp"}]}"#);
     assert_eq!(skipped.tools.len(), 1);
@@ -646,6 +650,20 @@ const SEARCH_FAILURES: [Pair; 2] = [
         "Missing required parameter: name",
     ),
 ];
+
+#[test]
+fn hosted_keys_appear_once() {
+    let source = r#"{"type":"web_search_20250305","name":"s","cache_control":null,"function":{"cache_control":{"type":"ephemeral"}},"defer_loading":true}"#;
+    let text = serde_json::to_string(&mapping(source).tools).unwrap();
+    assert_eq!(text.matches("\"cache_control\"").count(), 1);
+    assert_eq!(text.matches("\"defer_loading\"").count(), 1);
+    assert_eq!(
+        as_json(&mapping(source).tools),
+        json(
+            r#"[{"type":"web_search_20250305","name":"s","cache_control":{"type":"ephemeral"},"function":{"cache_control":{"type":"ephemeral"}},"defer_loading":true}]"#
+        )
+    );
+}
 
 #[test]
 fn case_10_search_tool_branch_shadowing() {

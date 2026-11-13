@@ -5,6 +5,7 @@ mod tools_cases;
 use std::slice;
 
 use betterlite_prompts::arguments::json::Json;
+use secrecy::ExposeSecret as _;
 
 use super::map_tools;
 use super::wire::McpServerTool;
@@ -20,7 +21,11 @@ fn first_server(tool: &Json) -> McpServerTool {
 
 fn mcp_token(server: &McpServerTool) -> Option<String> {
     match server {
-        McpServerTool::Mapped(mapped) => mapped.authorization_token.clone(),
+        McpServerTool::Mapped(mapped) => mapped
+            .authorization_token
+            .0
+            .as_ref()
+            .map(|token| token.expose_secret().to_owned()),
         McpServerTool::Descriptor(fields) => fields
             .get("authorization_token")
             .and_then(Json::as_str)
@@ -78,16 +83,15 @@ fn assert_error_hides_secret(tool: &Json) {
 
 #[test]
 fn tools_secret_safe_failure() {
-    // the owned credential redacts itself, and no Debug of the wire descriptor exists to print it
+    // the descriptor keeps the token as a secret, so its Debug redacts and only serialization writes it
     let tool = secret_tool();
-    let fields = tool.as_object().unwrap();
-    let token = super::mcp::authorization_token(fields)
-        .unwrap()
-        .expect("the fixture carries a token");
-    let debug = format!("{token:?}");
+    let server = first_server(&tool);
+    let McpServerTool::Mapped(mapped) = &server else {
+        panic!("the fixture maps to a server");
+    };
+    let debug = format!("{:?}", mapped.authorization_token.0);
     assert!(debug.contains("REDACTED"));
     assert!(!debug.contains(FIXTURE_SECRET));
-    let server = first_server(&tool);
     assert!(
         serde_json::to_string(&server)
             .unwrap()
