@@ -132,7 +132,7 @@ def limit_answer(limit: int | None) -> JsonValue:
 
 
 def batch_answer(response: BatchResponse, model: str) -> JsonValue:
-    batch = LiteLLMBatch.model_validate(response)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4321
+    batch = LiteLLMBatch.model_validate(response)
     encode_batch_response_ids(batch, model)
     return JSON.validate_json(batch.model_dump_json())
 
