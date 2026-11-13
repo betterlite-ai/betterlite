@@ -1,0 +1,36 @@
+kind: helper
+name: native-beta-merge
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic: {}
+    calls:
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers:
+          Anthropic-Beta: " custom ,custom"
+          anthropic-beta: other
+          X-Keep: "yes"
+        optional_params: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers:
+          Anthropic-Beta: ""
+        optional_params: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers:
+          anthropic-beta: "unknown-custom,effort-2025-11-24"
+        optional_params:
+          speed: fast
+        messages: []
+env: {}
+compare:
+  ignore: []
