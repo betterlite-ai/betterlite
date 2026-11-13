@@ -1,14 +1,8 @@
-use std::collections::BTreeMap;
-
-use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
-
 use crate::api::upload_filename::safe_filename;
-
 use super::error::FileUploadValidationError;
-use super::failure::{ERROR_TYPE, FILE_PARAM, FILE_TOO_LARGE, FailureFields, INVALID_REQUEST};
+use super::failure::{FILE_PARAM, FILE_TOO_LARGE, FailureFields, INVALID_REQUEST};
 use super::source::FileBody;
 use super::{exceeds, megabytes};
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UploadValidationFailure {
     TooLarge { size_bytes: u128, limit_mb: i64 },
@@ -16,7 +10,6 @@ pub enum UploadValidationFailure {
     BlockedExtension { extension: String },
     UnsafeFilename { filename: String },
 }
-
 impl UploadValidationFailure {
     pub fn fields(&self) -> FailureFields {
         let (status, param) = match self {
@@ -31,20 +24,6 @@ impl UploadValidationFailure {
             param: param.to_owned(),
         }
     }
-
-    pub fn exception(&self) -> ProxyException {
-        let fields = self.fields();
-        ProxyException::new(ProxyExceptionInit {
-            message: fields.message,
-            error_type: ERROR_TYPE.to_owned(),
-            param: Some(fields.param),
-            code: ExceptionCode::Status(fields.status),
-            headers: BTreeMap::new(),
-            openai_code: None,
-            provider_specific_fields: BTreeMap::new(),
-        })
-    }
-
     fn message(&self) -> String {
         match self {
             Self::TooLarge {
@@ -72,7 +51,6 @@ impl UploadValidationFailure {
         }
     }
 }
-
 pub fn check_upload_file_size(
     body: &mut FileBody<'_>,
     max_file_size_mb: Option<i64>,
@@ -89,7 +67,6 @@ pub fn check_upload_file_size(
     }
     Ok(None)
 }
-
 pub fn check_allowed_extension(
     filename: Option<&str>,
     allowed_extensions: Option<&[String]>,
@@ -104,7 +81,6 @@ pub fn check_allowed_extension(
     }
     Some(UploadValidationFailure::ExtensionNotAllowed { extension })
 }
-
 pub fn check_blocked_extension(
     filename: Option<&str>,
     blocked_extensions: Option<&[String]>,
@@ -123,7 +99,6 @@ pub fn check_blocked_extension(
     }
     None
 }
-
 pub fn check_unsafe_filename(filename: Option<&str>) -> Option<UploadValidationFailure> {
     let Some(filename) = filename else {
         return None;
@@ -142,7 +117,6 @@ pub fn check_unsafe_filename(filename: Option<&str>) -> Option<UploadValidationF
     }
     None
 }
-
 fn normalized_extension(filename: Option<&str>) -> String {
     let Some(filename) = filename.filter(|name| !name.is_empty()) else {
         return String::new();

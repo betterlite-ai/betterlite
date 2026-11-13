@@ -1,20 +1,16 @@
 use serde::Deserialize;
-
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
-
 const MAX_FILE_SIZE_PATH: &str = "general_settings.max_file_size_mb";
 const MAX_BATCH_FILE_SIZE_PATH: &str = "general_settings.max_batch_file_size_mb";
 const ALLOWED_EXTENSIONS_PATH: &str = "general_settings.allowed_file_extensions";
 const BLOCKED_EXTENSIONS_PATH: &str = "general_settings.blocked_file_extensions";
-
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
     general_settings: RawGeneral,
 }
-
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     max_file_size_mb: Option<JsonValue>,
@@ -22,7 +18,6 @@ struct RawGeneral {
     allowed_file_extensions: Option<JsonValue>,
     blocked_file_extensions: Option<JsonValue>,
 }
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Settings {
     pub max_file_size_mb: Option<i64>,
@@ -30,36 +25,25 @@ pub struct Settings {
     pub allowed_file_extensions: Option<Vec<String>>,
     pub blocked_file_extensions: Option<Vec<String>>,
 }
-
 impl Section for Raw {
     type Settings = Settings;
-
     fn convert<L>(self, _lookup: &L) -> Result<Self::Settings, ConfigError>
     where
         L: EnvironmentLookup,
     {
-        let general = self.general_settings;
+        let raw = self.general_settings;
+        let max_file = raw.max_file_size_mb.as_ref();
+        let max_batch = raw.max_batch_file_size_mb.as_ref();
+        let allowed = raw.allowed_file_extensions.as_ref();
+        let blocked = raw.blocked_file_extensions.as_ref();
         Ok(Settings {
-            max_file_size_mb: strict_integer(
-                general.max_file_size_mb.as_ref(),
-                MAX_FILE_SIZE_PATH,
-            )?,
-            max_batch_file_size_mb: lax_integer(
-                general.max_batch_file_size_mb.as_ref(),
-                MAX_BATCH_FILE_SIZE_PATH,
-            )?,
-            allowed_file_extensions: string_list(
-                general.allowed_file_extensions.as_ref(),
-                ALLOWED_EXTENSIONS_PATH,
-            )?,
-            blocked_file_extensions: string_list(
-                general.blocked_file_extensions.as_ref(),
-                BLOCKED_EXTENSIONS_PATH,
-            )?,
+            max_file_size_mb: strict_integer(max_file, MAX_FILE_SIZE_PATH)?,
+            max_batch_file_size_mb: lax_integer(max_batch, MAX_BATCH_FILE_SIZE_PATH)?,
+            allowed_file_extensions: string_list(allowed, ALLOWED_EXTENSIONS_PATH)?,
+            blocked_file_extensions: string_list(blocked, BLOCKED_EXTENSIONS_PATH)?,
         })
     }
 }
-
 fn strict_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, ConfigError> {
     let Some(value) = raw else {
         return Ok(None);
@@ -69,7 +53,6 @@ fn strict_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Co
         None => Err(invalid(path, value)),
     }
 }
-
 fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, ConfigError> {
     let Some(value) = raw else {
         return Ok(None);
@@ -90,7 +73,6 @@ fn lax_integer(raw: Option<&JsonValue>, path: &str) -> Result<Option<i64>, Confi
     };
     coerced.ok_or_else(|| invalid(path, value))
 }
-
 fn lax_string_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
     if let Ok(value) = trimmed.parse::<i64>() {
@@ -102,7 +84,6 @@ fn lax_string_integer(text: &str) -> Option<i64> {
     }
     integer.parse::<i64>().ok()
 }
-
 fn string_list(raw: Option<&JsonValue>, path: &str) -> Result<Option<Vec<String>>, ConfigError> {
     let Some(value) = raw else {
         return Ok(None);
@@ -123,22 +104,18 @@ fn string_list(raw: Option<&JsonValue>, path: &str) -> Result<Option<Vec<String>
     }
     Ok(Some(strings))
 }
-
 fn invalid(path: &str, value: &JsonValue) -> ConfigError {
-    match value {
-        JsonValue::Bool(flag) => ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: *flag,
-        },
+    let flag = match value {
+        JsonValue::Bool(flag) => *flag,
         JsonValue::Null
         | JsonValue::Number(_)
         | JsonValue::String(_)
         | JsonValue::Array(_)
-        | JsonValue::Object(_) => ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        },
+        | JsonValue::Object(_) => false,
+    };
+    ConfigError::InvalidScalar {
+        path: path.to_owned(),
+        value: flag,
     }
 }
-
 mod tests;

@@ -1,6 +1,5 @@
 const NON_ASCII: u8 = 0x80;
 const MAX_CODE_POINT: u32 = 0x10FFFF;
-
 #[derive(Debug, Clone, Copy)]
 enum Encoding {
     Utf8,
@@ -9,20 +8,18 @@ enum Encoding {
     Utf32Le,
     Utf32Be,
 }
-
 // Python's json.loads(bytes) picks the encoding per line with json.detect_encoding
 pub(super) fn decode_line(line: &[u8]) -> Option<Vec<u8>> {
     let (encoding, skip) = detect_encoding(line);
     let body = line.get(skip..)?;
     match encoding {
         Encoding::Utf8 => decode_utf8(body),
-        Encoding::Utf16Le => decode_utf16(body, true),
-        Encoding::Utf16Be => decode_utf16(body, false),
-        Encoding::Utf32Le => decode_utf32(body, true),
-        Encoding::Utf32Be => decode_utf32(body, false),
+        Encoding::Utf16Le => decode_units(body, 2, true),
+        Encoding::Utf16Be => decode_units(body, 2, false),
+        Encoding::Utf32Le => decode_units(body, 4, true),
+        Encoding::Utf32Be => decode_units(body, 4, false),
     }
 }
-
 fn detect_encoding(line: &[u8]) -> (Encoding, usize) {
     if line.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
         return (Encoding::Utf32Be, 4);
@@ -72,7 +69,6 @@ fn detect_encoding(line: &[u8]) -> (Encoding, usize) {
     }
     (Encoding::Utf8, 0)
 }
-
 fn decode_utf8(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut rest = bytes;
@@ -107,37 +103,30 @@ fn decode_utf8(bytes: &[u8]) -> Option<Vec<u8>> {
     }
     Some(decoded)
 }
-
-fn decode_utf16(bytes: &[u8], little_endian: bool) -> Option<Vec<u8>> {
-    let mut chunks = bytes.chunks_exact(2);
+fn decode_units(bytes: &[u8], width: usize, little_endian: bool) -> Option<Vec<u8>> {
+    let mut chunks = bytes.chunks_exact(width);
     if !chunks.remainder().is_empty() {
         return None;
     }
     let mut decoded = Vec::new();
     for chunk in &mut chunks {
-        let [first, second] = <[u8; 2]>::try_from(chunk).ok()?;
-        let unit = if little_endian {
-            u16::from_le_bytes([first, second])
-        } else {
-            u16::from_be_bytes([first, second])
-        };
-        decoded.push(scalar_to_json_byte(u32::from(unit)));
-    }
-    Some(decoded)
-}
-
-fn decode_utf32(bytes: &[u8], little_endian: bool) -> Option<Vec<u8>> {
-    let mut chunks = bytes.chunks_exact(4);
-    if !chunks.remainder().is_empty() {
-        return None;
-    }
-    let mut decoded = Vec::new();
-    for chunk in &mut chunks {
-        let [first, second, third, fourth] = <[u8; 4]>::try_from(chunk).ok()?;
-        let code_point = if little_endian {
-            u32::from_le_bytes([first, second, third, fourth])
-        } else {
-            u32::from_be_bytes([first, second, third, fourth])
+        let code_point = match width {
+            2 => {
+                let [first, second] = <[u8; 2]>::try_from(chunk).ok()?;
+                if little_endian {
+                    u32::from(u16::from_le_bytes([first, second]))
+                } else {
+                    u32::from(u16::from_be_bytes([first, second]))
+                }
+            }
+            _ => {
+                let [first, second, third, fourth] = <[u8; 4]>::try_from(chunk).ok()?;
+                if little_endian {
+                    u32::from_le_bytes([first, second, third, fourth])
+                } else {
+                    u32::from_be_bytes([first, second, third, fourth])
+                }
+            }
         };
         if code_point > MAX_CODE_POINT {
             return None;
@@ -146,7 +135,6 @@ fn decode_utf32(bytes: &[u8], little_endian: bool) -> Option<Vec<u8>> {
     }
     Some(decoded)
 }
-
 // the JSON grammar only distinguishes ASCII, so every non-ASCII scalar folds to one placeholder
 fn scalar_to_json_byte(code_point: u32) -> u8 {
     match u8::try_from(code_point) {

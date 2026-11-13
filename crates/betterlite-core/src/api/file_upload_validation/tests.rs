@@ -11,6 +11,7 @@ use super::batch::{
 };
 use super::line_shape::LineShape;
 use super::source::FileBody;
+use super::failure::exception;
 use super::upload::{
     UploadValidationFailure, check_allowed_extension, check_blocked_extension,
     check_unsafe_filename, check_upload_file_size,
@@ -58,7 +59,7 @@ fn unsafe_filename_components_accept(#[case] filename: Option<&str>) {
 fn unsafe_filename_components_reject(#[case] filename: &str) {
     let failure = check_unsafe_filename(Some(filename)).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         format!(
@@ -79,7 +80,7 @@ fn extension_policy_allowlist_and_blocklist() {
     assert!(check_blocked_extension(Some("REPORT.PDF"), Some(&upper)).is_none());
     let failure = check_blocked_extension(Some("report.pdf"), Some(&upper)).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         "File extension '.pdf' is blocked by this proxy's blocked_file_extensions setting. The file was not forwarded to the provider."
@@ -109,7 +110,7 @@ fn extension_policy_allow_failures(
     let allow = names(allow);
     let failure = check_allowed_extension(filename, Some(&allow)).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(fields.status, 400);
     assert_eq!(exception.error_type, "invalid_request_error");
     assert_eq!(exception.param, Some("file".to_owned()));
@@ -147,7 +148,7 @@ fn upload_size_boundaries_reject() {
     let data = vec![b'x'; 1_048_577];
     let failure = upload_size(&data, Some(1)).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         "Uploaded file exceeds the configured max_file_size_mb of 1 MB (read stopped at 1.0 MB). The file was not forwarded to the provider."
@@ -193,7 +194,7 @@ fn batch_size_and_extension_prefers_the_extension() {
 fn batch_size_and_extension_absent_name() {
     let failure = batch_failure(b"x", None).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         "Invalid file format for Batch API: ''. Batch input files must be .jsonl files. The file was not forwarded to the provider."
@@ -299,7 +300,7 @@ fn batch_line_failures(
 ) {
     let failure = batch_failure(source, Some("x.jsonl")).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(fields.message, message);
     assert_eq!(fields.status, 400);
     assert_eq!(exception.error_type, "invalid_request_error");
@@ -356,7 +357,7 @@ fn batch_line_failures_rewind_a_seekable_scan() {
 fn required_batch_keys(#[case] source: &[u8], #[case] key: &str) {
     let failure = batch_failure(source, Some("x.jsonl")).unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         format!(
@@ -389,7 +390,7 @@ fn required_batch_keys_vertex_shape() {
     .unwrap()
     .unwrap();
     let fields = failure.fields();
-    let exception = failure.exception();
+    let exception = exception(fields.clone());
     assert_eq!(
         fields.message,
         "Missing required parameter: 'request' (batch input file line 1). A passthrough upload takes native Vertex batch rows, so each line must be a JSON object with a request key. The file was not forwarded to the provider."

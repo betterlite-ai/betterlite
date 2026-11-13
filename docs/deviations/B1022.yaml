@@ -1,18 +1,5 @@
 task: B1022
 deviations:
-  - what: A batch upload is capped at ApiLimits.max_json_bytes (16 MiB by default), each line at max_event_bytes
-      (1 MiB) and the content lines at max_items (65536); an over-limit file is rejected instead of being read
-      to the end.
-    why: The bounded-inputs rule requires finite memory for every untrusted input, while LiteLLM iterates the
-      spooled upload with no size, line or count cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L104-L118
-  - what: A batch line nested deeper than 128 JSON containers is reported as "not valid JSON" (400) instead of
-      reaching LiteLLM's recursive parser.
-    why: LiteLLM's json.loads raises RecursionError there, which _check_line does not catch, so the proof reads it
-      as a 500 on a well-formed request; betterlite answers 400 with the rest of the file checked in bounded stack.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L89-L98
-  - what: A general_settings file upload value of the wrong type fails the config load with a typed
-      configuration-value error that names the key; LiteLLM keeps the value and raises TypeError from
-      coerce_optional_int_setting or coerce_optional_str_list_setting at the first upload, which answers 500.
-    why: A bad value no working setup relies on should stop startup with the field named, not one 500 per request.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L18-L31
+  - {what: A batch upload is capped at max_json_bytes (16 MiB), each line at max_event_bytes (1 MiB) and content lines at max_items (65536), while LiteLLM reads the spooled file to the end with no cap, why: bounded-inputs requires finite memory for untrusted input, link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L104-L118"}
+  - {what: A line nested deeper than 128 JSON containers is reported as not valid JSON (400), where LiteLLM's json.loads raises RecursionError and answers 500, why: a 500 on input LiteLLM already fails belongs at 400 with a bounded stack, link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_file_validation.py#L89-L98"}
+  - {what: A general_settings upload value of the wrong type fails the config load with ConfigError::InvalidScalar naming the key, where LiteLLM keeps it and raises TypeError at the first upload (500), why: a bad value no working setup relies on should stop startup with the field named, link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/general_upload_validation.py#L18-L31"}

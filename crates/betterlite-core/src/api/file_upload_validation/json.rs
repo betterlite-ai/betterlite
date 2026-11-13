@@ -1,15 +1,12 @@
 use super::line_shape::LineShape;
-
 // LiteLLM's json.loads recurses about a thousand levels and its handler does not catch RecursionError
 const MAX_DEPTH: usize = 128;
-
 pub(super) enum Scan {
     Valid,
     NotObject,
     Invalid,
     Missing(&'static str),
 }
-
 pub(super) fn scan(text: &[u8], shape: LineShape) -> Scan {
     let mut parser = Parser {
         rest: text,
@@ -38,13 +35,11 @@ pub(super) fn scan(text: &[u8], shape: LineShape) -> Scan {
         None => Scan::Valid,
     }
 }
-
 struct Parser<'a> {
     rest: &'a [u8],
     shape: LineShape,
     seen: u8,
 }
-
 impl Parser<'_> {
     fn peek(&self) -> Option<u8> {
         match self.rest.first() {
@@ -52,19 +47,16 @@ impl Parser<'_> {
             None => None,
         }
     }
-
     fn next_unit(&mut self) -> Option<u8> {
         let (unit, rest) = self.rest.split_first()?;
         self.rest = rest;
         Some(*unit)
     }
-
     fn skip_whitespace(&mut self) {
         while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
             drop(self.next_unit());
         }
     }
-
     fn value(&mut self, depth: usize) -> Option<()> {
         if depth > MAX_DEPTH {
             return None;
@@ -84,7 +76,16 @@ impl Parser<'_> {
         }
         Some(())
     }
-
+    fn member(&mut self, depth: usize, track_keys: bool) -> Option<Option<String>> {
+        let key = self.string(track_keys)?;
+        self.skip_whitespace();
+        if self.next_unit()? != b':' {
+            return None;
+        }
+        self.skip_whitespace();
+        self.value(depth)?;
+        Some(key)
+    }
     fn object(&mut self, depth: usize, track_keys: bool) -> Option<()> {
         if self.next_unit()? != b'{' {
             return None;
@@ -96,13 +97,7 @@ impl Parser<'_> {
         }
         loop {
             self.skip_whitespace();
-            let key = self.string(track_keys)?;
-            self.skip_whitespace();
-            if self.next_unit()? != b':' {
-                return None;
-            }
-            self.skip_whitespace();
-            self.value(depth.saturating_add(1))?;
+            let key = self.member(depth.saturating_add(1), track_keys)?;
             if let Some(key) = key {
                 self.mark(&key);
             }
@@ -114,7 +109,6 @@ impl Parser<'_> {
             }
         }
     }
-
     fn array(&mut self, depth: usize) -> Option<()> {
         if self.next_unit()? != b'[' {
             return None;
@@ -135,7 +129,6 @@ impl Parser<'_> {
             }
         }
     }
-
     fn signed(&mut self) -> Option<()> {
         drop(self.next_unit()?);
         if self.rest.starts_with(b"Infinity") {
@@ -144,7 +137,6 @@ impl Parser<'_> {
         }
         self.number()
     }
-
     fn number(&mut self) -> Option<()> {
         self.integer()?;
         if self.peek() == Some(b'.') {
@@ -160,7 +152,6 @@ impl Parser<'_> {
         }
         Some(())
     }
-
     fn integer(&mut self) -> Option<()> {
         if self.peek() == Some(b'-') {
             drop(self.next_unit()?);
@@ -174,30 +165,25 @@ impl Parser<'_> {
             _ => None,
         }
     }
-
     fn digits_optional(&mut self) {
         while matches!(self.peek(), Some(b'0'..=b'9')) {
             drop(self.next_unit());
         }
     }
-
     fn digits(&mut self) -> Option<()> {
         let before = self.rest.len();
         self.digits_optional();
         (self.rest.len() < before).then_some(())
     }
-
     fn literal(&mut self, expected: &[u8]) -> Option<()> {
         self.rest = self.rest.strip_prefix(expected)?;
         Some(())
     }
-
     fn mark(&mut self, key: &str) {
         if let Some(bit) = self.shape.key_bit(key) {
             self.seen = self.seen.bitor(bit);
         }
     }
-
     fn string(&mut self, capture: bool) -> Option<Option<String>> {
         if self.next_unit()? != b'"' {
             return None;
@@ -218,7 +204,6 @@ impl Parser<'_> {
             }
         }
     }
-
     fn escape(&mut self, text: &mut String, ascii: bool) -> Option<bool> {
         let code = match self.next_unit()? {
             b'"' => 0x22,
@@ -229,28 +214,23 @@ impl Parser<'_> {
             b'n' => 0x0A,
             b'r' => 0x0D,
             b't' => 0x09,
-            b'u' => return self.unicode_escape(text, ascii),
+            b'u' => {
+                let mut value = 0u32;
+                for _ in 0..4 {
+                    let digit = char::from(self.next_unit()?).to_digit(16)?;
+                    value = value.checked_mul(16)?.checked_add(digit)?;
+                }
+                if ascii && value < 0x80 {
+                    text.push(char::from_u32(value)?);
+                    return Some(true);
+                }
+                return Some(false);
+            }
             _ => return None,
         };
         if ascii {
             text.push(char::from(code));
         }
         Some(ascii)
-    }
-
-    fn unicode_escape(&mut self, text: &mut String, ascii: bool) -> Option<bool> {
-        let mut value = 0u32;
-        for _ in 0..4 {
-            let digit = char::from(self.next_unit()?).to_digit(16)?;
-            value = value.checked_mul(16)?.checked_add(digit)?;
-        }
-        if !ascii {
-            return Some(false);
-        }
-        if value < 0x80 {
-            text.push(char::from_u32(value)?);
-            return Some(true);
-        }
-        Some(false)
     }
 }

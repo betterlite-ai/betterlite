@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-
 pub mod batch;
 mod codec;
 pub mod error;
@@ -9,9 +8,7 @@ pub mod line_shape;
 pub mod source;
 mod tests;
 pub mod upload;
-
 const MEBIBYTE: u64 = 1024 * 1024;
-
 fn exceeds(size_bytes: u128, limit_mb: i64) -> bool {
     match u64::try_from(limit_mb) {
         Ok(limit) => match limit.checked_mul(MEBIBYTE) {
@@ -21,7 +18,6 @@ fn exceeds(size_bytes: u128, limit_mb: i64) -> bool {
         Err(_) => false,
     }
 }
-
 fn megabytes(size_bytes: u128) -> String {
     let scaled = size_bytes.saturating_mul(10);
     let divisor = u128::from(MEBIBYTE);

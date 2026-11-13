@@ -86,32 +86,24 @@ class Input(TypedDict):
     calls: list[Call]
 
 
-class CoercedSettings(TypedDict):
-    max_file_size_mb: int | None
-    max_batch_file_size_mb: int | None
-    allowed_file_extensions: list[str] | None
-    blocked_file_extensions: list[str] | None
+def source_bytes(source: Source) -> bytes:
+    data = base64.b64decode(source["data"]) * source["repeat"]
+    return data + b" " * source["pad"]
 
 
-class Failure(TypedDict):
-    message: str
-    type: str
-    param: str | None
-    code: str
-    status: int
+def exception_answer(error: ProxyException) -> JsonValue:
+    return JSON.validate_python(
+        {
+            "message": error.message,
+            "type": error.type,
+            "param": error.param,
+            "code": error.code,
+            "status": int(error.code),
+        }
+    )
 
 
-def exception_answer(error: ProxyException) -> Failure:
-    return {
-        "message": error.message,
-        "type": error.type,
-        "param": error.param,
-        "code": error.code,
-        "status": int(error.code),
-    }
-
-
-def upload_answer(failure: UploadValidationFailure | None) -> Failure | None:
+def upload_answer(failure: UploadValidationFailure | None) -> JsonValue:
     if failure is None:
         return None
     try:
@@ -120,18 +112,13 @@ def upload_answer(failure: UploadValidationFailure | None) -> Failure | None:
         return exception_answer(error)
 
 
-def batch_answer(failure: BatchFileValidationFailure | None) -> Failure | None:
+def batch_answer(failure: BatchFileValidationFailure | None) -> JsonValue:
     if failure is None:
         return None
     try:
         raise_batch_file_validation_failure(failure)
     except ProxyException as error:
         return exception_answer(error)
-
-
-def source_bytes(source: Source) -> bytes:
-    data = base64.b64decode(source["data"]) * source["repeat"]
-    return data + b" " * source["pad"]
 
 
 def string_items(value: tuple[str, ...] | None) -> list[str] | None:
@@ -148,13 +135,16 @@ def settings_answer(call: SettingsCall) -> JsonValue:
         blocked = coerce_optional_str_list_setting(call["blocked_file_extensions"])
     except (TypeError, ValidationError):
         return JSON.validate_python({"error": "invalid_setting"})
-    settings: CoercedSettings = {
-        "max_file_size_mb": max_file_size_mb,
-        "max_batch_file_size_mb": max_batch_file_size_mb,
-        "allowed_file_extensions": string_items(allowed),
-        "blocked_file_extensions": string_items(blocked),
-    }
-    return JSON.validate_python({"settings": settings})
+    return JSON.validate_python(
+        {
+            "settings": {
+                "max_file_size_mb": max_file_size_mb,
+                "max_batch_file_size_mb": max_batch_file_size_mb,
+                "allowed_file_extensions": string_items(allowed),
+                "blocked_file_extensions": string_items(blocked),
+            }
+        }
+    )
 
 
 def extensions_answer(call: ExtensionsCall) -> JsonValue:
