@@ -352,24 +352,24 @@ async fn tables_and_teams(
 }
 
 async fn assert_without_governance(admin_url: &SecretString) {
-    let (tables, teams) = tables_and_teams(admin_url, &seed_with(None, None)).await;
+    let (bare_tables, bare_teams) = tables_and_teams(admin_url, &seed_with(None, None)).await;
     assert!(
-        tables.is_empty(),
-        "without dashboard, no governance table exists: {tables:?}"
+        bare_tables.is_empty(),
+        "without dashboard, no governance table exists: {bare_tables:?}"
     );
     assert_eq!(
-        teams,
+        bare_teams,
         ["alice|", "bob|"],
         "without governance nothing rewrites the user teams"
     );
     let dashboard = seed_with(Some(empty_dashboard()), None);
-    let (tables, teams) = tables_and_teams(admin_url, &dashboard).await;
+    let (dashboard_tables, dashboard_teams) = tables_and_teams(admin_url, &dashboard).await;
     assert_eq!(
-        tables,
+        dashboard_tables,
         ["LiteLLM_DailyGuardrailMetrics", "LiteLLM_ToolTable"]
     );
     assert_eq!(
-        teams,
+        dashboard_teams,
         ["alice|", "bob|"],
         "governance absent leaves the user teams alone"
     );
