@@ -4,13 +4,13 @@ import sys
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from anthropic_beta_config import BetaConfigCall, run_beta_config
+from beta_config_call import BetaConfigCall, run_beta_config
 from messages_header_stream import (
     MessagesHeaderStreamCall,
     run_messages_header_stream,
 )
 from openai_chat import ChatCall, run_chat
-from vector_query_embedding import QueryEmbeddingCall, run_query
+from query_embedding_call import QueryEmbeddingCall, run_query
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
 MAX_REQUEST_BYTES = 1048576
