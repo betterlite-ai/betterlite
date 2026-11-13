@@ -1,0 +1,35 @@
+kind: helper
+name: mcp_status_and_env_defaults
+call:
+  managed_resource_rows:
+    rows:
+      - name: status_healthy
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"healthy"}}'
+      - name: status_reachable
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"reachable"}}'
+      - name: status_unhealthy
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"unhealthy"}}'
+      - name: status_unknown
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"unknown"}}'
+      - name: status_null
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":null}}'
+      - name: status_invalid
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"weird"}}'
+      - name: approval_status_free_string
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","approval_status":"not-a-listed-status"}}'
+      - name: approval_status_null
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","approval_status":null}}'
+      - name: env_absent
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse"}}'
+      - name: env_null
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","env":null,"static_headers":null}}'
+      - name: oauth_flow_client_credentials
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","oauth2_flow":"client_credentials"}}'
+      - name: oauth_flow_authorization_code
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","oauth2_flow":"authorization_code"}}'
+      - name: oauth_flow_invalid
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","oauth2_flow":"other"}}'
+      - name: auth_type_oauth2
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","auth_type":"oauth2","credentials":{"auth_value":"v","scopes":["a"]}}}'
+env: {}
+compare: {ignore: []}
