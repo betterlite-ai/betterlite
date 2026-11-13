@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-copy-cache-empty-marker
+call: {"messages_content_primitives": {"operation": "copy_cache_control", "source": {"cache_control": {}}, "target": {"type": "text"}, "model": "anthropic/claude-3-opus"}}
+env: {}
+compare: {ignore: []}

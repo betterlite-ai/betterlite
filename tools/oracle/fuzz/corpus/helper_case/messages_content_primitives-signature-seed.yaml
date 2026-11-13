@@ -1,0 +1,15 @@
+kind: helper
+name: messages-content-primitives-signature-seed
+call:
+  messages_content_primitives:
+    operation: tool_call_signature
+    attributes: true
+    tool_call:
+      provider_specific_fields:
+        thought_signature: outer
+      function:
+        provider_specific_fields:
+          thought_signature: inner
+env: {}
+compare:
+  ignore: []

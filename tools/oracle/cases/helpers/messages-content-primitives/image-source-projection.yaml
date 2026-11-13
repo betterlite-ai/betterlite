@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-source-projection
+call: {"messages_content_primitives": {"operation": "image_source_url", "image_source": {"type": "base64", "data": "YWJj"}}}
+env: {}
+compare: {ignore: []}
