@@ -80,7 +80,7 @@ fn write_back(params: &mut Object, record: &RequestRecord, deployment: Option<&J
     }
 }
 
-// Any non-sentinel value reads the same to the marker rule, whose written id comes from the original JSON.
+// The marker rule only distinguishes the every-deployment sentinel; every other value is re-read from the original JSON.
 fn record_of(value: &Json) -> RequestRecord {
     serde_json::to_value(value)
         .ok()
