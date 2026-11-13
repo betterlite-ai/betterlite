@@ -1,18 +1,24 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::embedding::EmbeddingInput;
 use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 
 use crate::model_policy::capabilities::VertexCapabilityProvider;
-use crate::vertex_embedding_call::decode::decode_vertex_embedding;
+use crate::vertex_embedding_call::decode::{RESPONSE_BODY_LIMIT, decode_vertex_embedding};
 use crate::vertex_embedding_call::error::VertexEmbeddingCallError;
 use crate::vertex_embedding_call::multimodal::{MultimodalClients, multimodal_embedding};
 use crate::vertex_embedding_call::text::{TextClients, async_text_embedding, text_embedding};
@@ -100,14 +106,14 @@ async fn execution_text_posts_the_transformed_request() {
         calls[0].url,
         "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/text-embedding-005:predict"
     );
-    assert_eq!(
-        calls[0].headers.get("Authorization"),
-        Some(&format!("Bearer {TOKEN}"))
-    );
-    assert_eq!(
-        calls[0].headers.get("Content-Type").map(String::as_str),
-        Some("application/json")
-    );
+    let expected = BTreeMap::from([
+        (String::from("Authorization"), format!("Bearer {TOKEN}")),
+        (
+            String::from("Content-Type"),
+            String::from("application/json"),
+        ),
+    ]);
+    assert_eq!(calls[0].headers, expected);
 }
 
 #[tokio::test]
@@ -402,10 +408,119 @@ async fn execution_logs_no_credentials() {
         .unwrap();
     drop(guard);
     let logged = fs::read_to_string(log.path()).unwrap();
+    assert!(logged.contains("sending the Vertex embedding request"));
+    assert!(logged.contains("received the Vertex embedding answer"));
     assert!(logged.contains(TEXT_MODEL));
     assert!(logged.contains("private.example.com"));
     assert!(!logged.contains(TOKEN));
     assert!(!logged.contains("super-secret"));
+}
+
+#[tokio::test]
+async fn execution_posts_through_the_pooled_client() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let api_base = format!("http://{address}/");
+    let optional = json("{}");
+    let input = EmbeddingInput::Text(String::from("hello"));
+    let mut call = text_call(&input, &optional);
+    call.api_base = Some(&api_base);
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let fixture = auth();
+    let clients = TextClients {
+        pooled: &client,
+        caller: None,
+    };
+    let mut server = tokio::task::JoinSet::new();
+    server.spawn(answer_embedding(listener));
+    let response = text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
+        .await
+        .unwrap();
+    assert_eq!(response.model, TEXT_MODEL);
+    let sent = tokio::time::timeout(Duration::from_secs(5), server.join_next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let sent = String::from_utf8(sent).unwrap();
+    assert!(sent.starts_with(
+        "POST /v1/projects/project-p/locations/us-central1/publishers/google/models/text-embedding-005:predict HTTP/1.1"
+    ));
+    assert!(sent.contains(&format!("authorization: Bearer {TOKEN}")));
+    assert!(sent.contains("content-type: application/json"));
+    assert!(sent.ends_with(r#"{"instances":[{"content":"hello"}],"parameters":{}}"#));
+}
+
+async fn answer_embedding(listener: TcpListener) -> Vec<u8> {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    while !request_is_complete(&received) {
+        let read = stream.read(&mut buffer).await.unwrap();
+        assert_ne!(
+            read, 0,
+            "the client closed before sending its whole request"
+        );
+        received.extend_from_slice(&buffer[..read]);
+    }
+    let body = TEXT_ANSWER.as_bytes();
+    let head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    stream.write_all(body).await.unwrap();
+    received
+}
+
+fn request_is_complete(received: &[u8]) -> bool {
+    let Some(head_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return false;
+    };
+    let head = std::str::from_utf8(&received[..head_end]).unwrap();
+    let length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(": ")?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap_or_default();
+    received.len() >= head_end.saturating_add(4).saturating_add(length)
+}
+
+#[test]
+fn execution_decodes_a_vertex_answer_at_the_limit() {
+    let at_limit = valid_string_body(RESPONSE_BODY_LIMIT);
+    assert!(decode_vertex_embedding(&at_limit).is_ok());
+}
+
+#[test]
+fn execution_refuses_an_oversized_vertex_answer() {
+    let oversized = valid_string_body(RESPONSE_BODY_LIMIT.saturating_add(1));
+    let error = decode_vertex_embedding(&oversized).unwrap_err();
+    assert!(matches!(
+        error,
+        VertexEmbeddingCallError::ResponseTooLarge { size, limit }
+            if size == RESPONSE_BODY_LIMIT.saturating_add(1) && limit == RESPONSE_BODY_LIMIT
+    ));
+    assert_eq!(error.status_code(), 500);
+}
+
+#[test]
+fn execution_refuses_malformed_vertex_json() {
+    let error = decode_vertex_embedding(b"{\"predictions\":").unwrap_err();
+    assert!(matches!(error, VertexEmbeddingCallError::Decode { .. }));
+    assert_eq!(error.status_code(), 500);
+}
+
+fn valid_string_body(len: usize) -> Vec<u8> {
+    let mut body = Vec::with_capacity(len);
+    body.push(b'"');
+    body.resize(len.saturating_sub(1), b'a');
+    body.push(b'"');
+    body
 }
 
 #[rstest]

@@ -146,19 +146,15 @@ async fn plans_multimodal_forced_headers() {
         .await
         .unwrap();
     let calls = recorder.recorded();
-    let sent = &calls[0];
-    assert_eq!(
-        sent.headers.get("Content-Type").map(String::as_str),
-        Some("application/json; charset=utf-8")
-    );
-    assert_eq!(
-        sent.headers.get("Authorization"),
-        Some(&format!("Bearer {TOKEN}"))
-    );
-    assert_eq!(
-        sent.headers.get("x-goog-custom").map(String::as_str),
-        Some("kept")
-    );
+    let expected = BTreeMap::from([
+        (String::from("Authorization"), format!("Bearer {TOKEN}")),
+        (
+            String::from("Content-Type"),
+            String::from("application/json; charset=utf-8"),
+        ),
+        (String::from("x-goog-custom"), String::from("kept")),
+    ]);
+    assert_eq!(calls[0].headers, expected);
 }
 
 #[tokio::test]
