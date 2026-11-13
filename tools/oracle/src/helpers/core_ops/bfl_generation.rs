@@ -60,7 +60,7 @@ pub(crate) struct PollParams {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", content = "params", rename_all = "snake_case")]
+#[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum Input {
     Mapping(MappingParams),
     Credentials(CredentialParams),
