@@ -611,6 +611,7 @@ async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
 #[case::jailbreak(r#"{"summary":{"jailbreak":1}}"#, true)]
 #[case::unknown_integer(r#"{"summary":{"nsfw":1},"details":{"nsfw":{"score":0.9}}}"#, true)]
 #[case::unknown_zero(r#"{"summary":{"nsfw":0}}"#, false)]
+#[case::unknown_float_one(r#"{"summary":{"nsfw":1.0}}"#, true)]
 #[case::missing_fields(r#"{}"#, false)]
 fn enkryptai_guardrail_processes_the_summary(#[case] body: &str, #[case] detected: bool) {
     let value = parse_value(body);
@@ -664,6 +665,30 @@ fn enkryptai_config_reads_the_api_base_environment() {
     let config = ConfigLoader { lookup }.load(source).expect("config");
     let configured = &config.sections.enkryptai_detection.guardrails[0];
     assert_eq!(configured.api_base, "http://enkrypt.test");
+}
+
+#[test]
+fn enkryptai_config_reads_the_timeout() {
+    let source = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n      timeout: '2.5'\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .expect("config");
+    assert_eq!(
+        config.sections.enkryptai_detection.guardrails[0].timeout,
+        Duration::from_millis(2500)
+    );
+    let defaults = "guardrails:\n  - guardrail_name: guard\n    litellm_params:\n      guardrail: enkryptai\n      api_key: key\n";
+    let loaded = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(defaults)
+    .expect("config");
+    assert_eq!(
+        loaded.sections.enkryptai_detection.guardrails[0].timeout,
+        Duration::from_secs(600)
+    );
 }
 
 #[test]
