@@ -33,9 +33,9 @@ pub fn regroup_embeddings(
             Some(_) => None,
             None => Some(embedding_body(&custom_id, &group, model)?),
         };
-        let error = message.map(|message| OpenAiBatchOutputError {
+        let error = message.map(|text| OpenAiBatchOutputError {
             code: String::from(VERTEX_AI_ERROR),
-            message,
+            message: text,
         });
         outputs.push(openai_batch_output_row(custom_id, body, error, next_id()));
     }
