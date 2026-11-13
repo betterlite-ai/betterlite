@@ -26,16 +26,16 @@ pub(super) const VERIFICATION_FIELDS: &[(&str, Field)] = &[
     ("form", Field::Block("<form ", ">")),
     (
         "token_input",
-        Field::Block("<input type=\"hidden\" name=\"browser_complete_token\"", ">"),
+        Field::Block(
+            "<input type=\"hidden\" name=\"browser_complete_token\"",
+            ">",
+        ),
     ),
     (
         "code_label",
         Field::Block("<label for=\"user_code\">", "</label>"),
     ),
-    (
-        "code_input",
-        Field::Block("<input id=\"user_code\"", ">"),
-    ),
+    ("code_input", Field::Block("<input id=\"user_code\"", ">")),
     (
         "submit",
         Field::Block("<button type=\"submit\">", "</button>"),
