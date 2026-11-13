@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::fmt::{Display, Write as _};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
@@ -256,21 +256,24 @@ where
 }
 
 fn render_models(catalog: &DeploymentCatalog) -> String {
-    let models = catalog
-        .models
-        .iter()
-        .map(|spec| format!("{}:{}", spec.model_name, spec.id().unwrap_or_default()));
-    let ids = catalog
-        .id_index
-        .iter()
-        .map(|(id, index)| format!("{id}:{index}"));
-    format!(
-        "models=[{}] ids({}) names({}) set=[{}]",
-        joined(models),
-        joined(ids),
-        indices(&catalog.name_index),
-        joined(&catalog.model_names)
-    )
+    let mut listed = String::new();
+    for spec in &catalog.models {
+        write!(
+            listed,
+            "{}:{},",
+            spec.model_name,
+            spec.id().unwrap_or_default()
+        )
+        .unwrap();
+    }
+    let mut keyed = String::new();
+    for (id, index) in &catalog.id_index {
+        write!(keyed, "{id}:{index},").unwrap();
+    }
+    let names = indices(&catalog.name_index);
+    let set = joined(&catalog.model_names);
+    let (models, ids) = (listed.trim_end_matches(','), keyed.trim_end_matches(','));
+    format!("models=[{models}] ids({ids}) names({names}) set=[{set}]")
 }
 
 fn render(catalog: &DeploymentCatalog, show: Show) -> String {
