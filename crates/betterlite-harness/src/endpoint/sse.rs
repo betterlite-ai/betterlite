@@ -36,9 +36,6 @@ impl SSEUsageParser {
             return;
         };
         let payload = payload.trim_ascii();
-        if payload.is_empty() || payload == b"[DONE]" {
-            return;
-        }
         let Ok(event) = serde_json::from_slice::<JsonObject>(payload) else {
             return;
         };

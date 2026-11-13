@@ -917,6 +917,10 @@ fn encode_chunk_rejects_bytes_on_routes_without_a_raw_form() {
     b"event: message\ndata: {\"type\":\"ok\\ndata: [DONE]\"}\n\n".as_slice()
 )]
 #[case::empty(r#"{"type":""}"#, b"event: message\ndata: {\"type\":\"\"}\n\n".as_slice())]
+#[case::carriage_return(
+    r#"{"type":"ok\rdata"}"#,
+    b"event: message\ndata: {\"type\":\"ok\\rdata\"}\n\n".as_slice()
+)]
 #[case::number(r#"{"type":7}"#, b"event: message\ndata: {\"type\":7}\n\n".as_slice())]
 fn encode_chunk_never_puts_a_foreign_event_name_on_the_event_line(
     #[case] json: &'static str,
