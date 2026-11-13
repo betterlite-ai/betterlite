@@ -90,6 +90,35 @@ fn message_items(response: &AssembledResponse) -> Vec<&ResponseOutputItem> {
 const CHAT_A: &str = r#"{"id":"chat_a","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}]}"#;
 
 #[test]
+fn request_input_does_not_change_the_response() {
+    let chat: ChatCompletionResponse = serde_json::from_str(CHAT_A).unwrap();
+    let request = RequestFields {
+        tool_choice: None,
+        tools: None,
+    };
+    let text = assemble_response(
+        &Json::Text("hello".to_owned()),
+        &request,
+        &chat,
+        ApiLimits::default(),
+        || "id".to_owned(),
+    )
+    .unwrap();
+    let items = assemble_response(
+        &Json::List(vec![Json::Null]),
+        &request,
+        &chat,
+        ApiLimits::default(),
+        || "id".to_owned(),
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&text.response).unwrap(),
+        serde_json::to_string(&items.response).unwrap()
+    );
+}
+
+#[test]
 fn response_defaults() {
     let response = assemble(CHAT_A);
     let body = &response.response;
