@@ -52,8 +52,19 @@ struct RequestCall {
     generation_config: Object,
     #[serde(default)]
     settings: BTreeMap<String, String>,
-    tools: Option<Json>,
-    system_instruction: Option<Json>,
+    #[serde(default = "default_tools")]
+    tools: Json,
+    #[serde(default = "default_system_instruction")]
+    system_instruction: Json,
+}
+
+// a case that leaves the field out sends the None LiteLLM's signature defaults to
+fn default_tools() -> Json {
+    Json::Null
+}
+
+fn default_system_instruction() -> Json {
+    Json::Null
 }
 
 // the response transform is inherited by both providers from the Studio config, so the case's provider and model select only the Python instance

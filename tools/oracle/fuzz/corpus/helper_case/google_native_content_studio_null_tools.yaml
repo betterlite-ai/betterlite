@@ -24,5 +24,21 @@ call:
         tools: [{functionDeclarations: []}]
         generation_config: {candidate_count: 2}
         settings: {}
+      - function: request
+        provider: studio
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: []
+        generation_config: {temperature: 0}
+        system_instruction: {}
+        settings: {}
+      - function: request
+        provider: studio
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: false
+        generation_config: {}
+        system_instruction: ""
+        settings: {}
 env: {}
 compare: {ignore: []}

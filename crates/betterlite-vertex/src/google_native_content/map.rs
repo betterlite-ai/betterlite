@@ -55,12 +55,7 @@ pub fn studio_optional_params(config: &Object) -> Object {
         if !supported {
             continue;
         }
-        let output_key = if *param == param_camel {
-            param.clone()
-        } else {
-            param_camel
-        };
-        mapped.insert(output_key, value.clone());
+        mapped.insert(param_camel, value.clone());
     }
     mapped
 }

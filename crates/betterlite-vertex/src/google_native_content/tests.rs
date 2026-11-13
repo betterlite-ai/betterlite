@@ -66,9 +66,9 @@ fn request(provider: NativeProvider, model: &str, config: &str) -> GenerateConte
     let request = GenerateContentRequest {
         model: model.to_owned(),
         contents: json_of(CONTENTS),
-        tools: None,
+        tools: Json::Null,
         generation_config: object(config),
-        system_instruction: None,
+        system_instruction: Json::Null,
     };
     transform_request(provider, &request, &settings()).unwrap()
 }
@@ -285,9 +285,9 @@ fn studio_request_adds_a_system_instruction_for_a_non_null_value() {
     let request = GenerateContentRequest {
         model: MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: Some(json_of(r#"[{"functionDeclarations":[]}]"#)),
+        tools: json_of(r#"[{"functionDeclarations":[]}]"#),
         generation_config: object(r#"{"temperature":0}"#),
-        system_instruction: Some(json_of(r#"{"parts":[{"text":"behave"}]}"#)),
+        system_instruction: json_of(r#"{"parts":[{"text":"behave"}]}"#),
     };
     let body = transform_request(NativeProvider::Studio, &request, &settings()).unwrap();
     assert_eq!(
@@ -303,15 +303,39 @@ fn studio_request_leaves_out_a_null_instruction() {
     let request = GenerateContentRequest {
         model: MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: None,
+        tools: Json::Null,
         generation_config: object("{}"),
-        system_instruction: Some(Json::Null),
+        system_instruction: Json::Null,
     };
     let body = transform_request(NativeProvider::Studio, &request, &settings()).unwrap();
     assert_eq!(
         rendered(&body),
         json_of(&format!(
             r#"{{"model":"{MODEL}","contents":{CONTENTS},"tools":null,"generationConfig":{{}}}}"#
+        ))
+    );
+}
+
+#[rstest]
+#[case::empty_list_and_object("[]", "{}")]
+#[case::empty_text("false", r#""""#)]
+#[case::zero("0", "[]")]
+fn studio_request_keeps_falsy_tools_and_instruction(
+    #[case] tools: &str,
+    #[case] instruction: &str,
+) {
+    let request = GenerateContentRequest {
+        model: MODEL.to_owned(),
+        contents: json_of(CONTENTS),
+        tools: json_of(tools),
+        generation_config: object("{}"),
+        system_instruction: json_of(instruction),
+    };
+    let body = transform_request(NativeProvider::Studio, &request, &settings()).unwrap();
+    assert_eq!(
+        rendered(&body),
+        json_of(&format!(
+            r#"{{"model":"{MODEL}","contents":{CONTENTS},"tools":{tools},"generationConfig":{{}},"systemInstruction":{instruction}}}"#
         ))
     );
 }
@@ -324,9 +348,9 @@ fn vertex_request_omits_a_falsy_tools_value(#[case] tools: &str) {
     let request = GenerateContentRequest {
         model: MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: Some(json_of(tools)),
+        tools: json_of(tools),
         generation_config: object(r#"{"temperature":0}"#),
-        system_instruction: None,
+        system_instruction: Json::Null,
     };
     let body = transform_request(NativeProvider::Vertex, &request, &settings()).unwrap();
     assert_eq!(
@@ -342,9 +366,9 @@ fn vertex_request_omits_empty_config_and_instruction() {
     let request = GenerateContentRequest {
         model: MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: Some(Json::List(Vec::new())),
+        tools: Json::List(Vec::new()),
         generation_config: Object::new(),
-        system_instruction: Some(Json::Object(Object::new())),
+        system_instruction: Json::Object(Object::new()),
     };
     let body = transform_request(NativeProvider::Vertex, &request, &settings()).unwrap();
     assert_eq!(
@@ -358,9 +382,9 @@ fn vertex_request_keeps_truthy_fields_in_source_order() {
     let request = GenerateContentRequest {
         model: MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: Some(json_of(r#"[{"functionDeclarations":[]}]"#)),
+        tools: json_of(r#"[{"functionDeclarations":[]}]"#),
         generation_config: object(r#"{"temperature":0}"#),
-        system_instruction: Some(json_of(r#"{"parts":[{"text":"x"}]}"#)),
+        system_instruction: json_of(r#"{"parts":[{"text":"x"}]}"#),
     };
     let body = transform_request(NativeProvider::Vertex, &request, &settings()).unwrap();
     assert_eq!(
@@ -377,9 +401,9 @@ fn a_request_transform_leaves_the_caller_config_alone() {
     let request = GenerateContentRequest {
         model: OLD_MODEL.to_owned(),
         contents: json_of(CONTENTS),
-        tools: None,
+        tools: Json::Null,
         generation_config: object(given),
-        system_instruction: None,
+        system_instruction: Json::Null,
     };
     transform_request(NativeProvider::Studio, &request, &settings()).unwrap();
     assert_eq!(rendered(&request.generation_config), json_of(given));
@@ -420,6 +444,8 @@ fn response_keeps_unknown_top_level_and_candidate_fields() {
     r#"{"promptFeedback":null,"usageMetadata":null,"responseId":null,"modelVersion":null}"#
 )]
 #[case::candidates_object(r#"{"candidates":{"a":1}}"#)]
+#[case::candidates_number(r#"{"candidates":5}"#)]
+#[case::candidates_bool(r#"{"candidates":true}"#)]
 #[case::candidate_number(r#"{"candidates":[7]}"#)]
 #[case::candidate_null(r#"{"candidates":[null]}"#)]
 #[case::content_list(r#"{"candidates":[{"content":[]}]}"#)]

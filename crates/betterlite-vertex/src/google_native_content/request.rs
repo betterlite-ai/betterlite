@@ -12,9 +12,9 @@ use super::map::normalize_response_schema;
 pub struct GenerateContentRequest {
     pub model: String,
     pub contents: Json,
-    pub tools: Option<Json>,
+    pub tools: Json,
     pub generation_config: Object,
-    pub system_instruction: Option<Json>,
+    pub system_instruction: Json,
 }
 
 // Studio keeps tools and generationConfig even when absent or empty, Vertex adds a field only when Python calls it truthy
@@ -41,11 +41,9 @@ pub fn transform_request(
             Ok(GenerateContentBody {
                 model: request.model.clone(),
                 contents: request.contents.clone(),
-                tools: Some(request.tools.clone().unwrap_or(Json::Null)),
-                system_instruction: request
-                    .system_instruction
-                    .clone()
-                    .filter(|instruction| !matches!(instruction, Json::Null)),
+                tools: Some(request.tools.clone()),
+                system_instruction: (!matches!(&request.system_instruction, Json::Null))
+                    .then(|| request.system_instruction.clone()),
                 generation_config: Some(config),
             })
         }
@@ -56,8 +54,11 @@ pub fn transform_request(
             Ok(GenerateContentBody {
                 model: request.model.clone(),
                 contents: request.contents.clone(),
-                tools: request.tools.clone().filter(Json::is_truthy),
-                system_instruction: request.system_instruction.clone().filter(Json::is_truthy),
+                tools: request.tools.is_truthy().then(|| request.tools.clone()),
+                system_instruction: request
+                    .system_instruction
+                    .is_truthy()
+                    .then(|| request.system_instruction.clone()),
                 generation_config: (!config.is_empty()).then_some(config),
             })
         }
