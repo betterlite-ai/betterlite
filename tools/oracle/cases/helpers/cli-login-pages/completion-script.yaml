@@ -1,0 +1,9 @@
+kind: helper
+name: cli-login-pages-completion-script
+call:
+  cli_login_page:
+    environment: {}
+    renders:
+      - page: completion
+env: {}
+compare: {ignore: []}

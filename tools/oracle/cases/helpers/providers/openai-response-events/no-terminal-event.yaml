@@ -1,0 +1,14 @@
+kind: helper
+name: openai-response-events-no-terminal-event
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    no_terminal_event:
+      probes:
+        - chunks: []
+        - chunks:
+            - 'data: {"type":"response.created","response":{"id":"r","created_at":1,"output":[]}}'
+            - 'data: {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":0,"delta":"d"}'
+        - chunks:
+            - 'data: {"type":"response.completed","response":{"id":"r","created_at":1,"output":"bad"}}'

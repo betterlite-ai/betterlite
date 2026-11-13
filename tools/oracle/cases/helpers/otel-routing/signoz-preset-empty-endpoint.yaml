@@ -1,0 +1,17 @@
+kind: helper
+name: signoz-preset-empty-endpoint
+call:
+  b3851:
+    function: signoz_preset
+    environment:
+      SIGNOZ_INGESTION_ENDPOINT: ""
+      SIGNOZ_INGESTION_KEY: key-1
+    base:
+      exporters: []
+      mapper_names: []
+      resource_attributes: {}
+env:
+  SIGNOZ_INGESTION_ENDPOINT: ""
+  SIGNOZ_INGESTION_KEY: key-1
+compare:
+  ignore: []

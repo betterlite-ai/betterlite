@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-beta-filter-native
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic: {}
+    calls:
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers:
+          anthropic-beta: custom-beta
+        optional_params:
+          thinking:
+            type: enabled
+            display: updates
+        messages: []
+env: {}
+compare:
+  ignore: []

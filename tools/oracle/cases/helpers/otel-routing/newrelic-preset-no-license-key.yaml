@@ -1,0 +1,15 @@
+kind: helper
+name: newrelic-preset-no-license-key
+call:
+  b3851:
+    function: newrelic_preset
+    environment:
+      NEW_RELIC_REGION: eu
+    base:
+      exporters: []
+      mapper_names: [genai]
+      resource_attributes: {}
+env:
+  NEW_RELIC_REGION: eu
+compare:
+  ignore: []

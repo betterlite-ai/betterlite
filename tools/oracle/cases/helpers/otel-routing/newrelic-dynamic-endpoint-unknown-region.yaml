@@ -1,0 +1,10 @@
+kind: helper
+name: newrelic-dynamic-endpoint-unknown-region
+call:
+  b3851:
+    function: newrelic_dynamic_endpoint
+    params:
+      newrelic_region: mars
+env: {}
+compare:
+  ignore: []

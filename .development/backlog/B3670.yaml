@@ -1,7 +1,7 @@
 id: B3670
 milestone: M6 guardrails
 title: Native request provenance and tool rewrite identity
-status: todo
+status: done
 depends_on: [B3663, B909, B917]
 file: tasks/B3670-tool-call-identity-and-provenance.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1516

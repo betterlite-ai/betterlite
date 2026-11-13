@@ -1,0 +1,69 @@
+kind: helper
+name: gemini-cache-prefix-disjoint-markers
+call:
+  gemini_cache_prefix:
+    cases:
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-1
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: system, content: "plain rules"}
+          - {role: user, content: [{type: text, text: first, cache_control: {type: ephemeral}}]}
+          - {role: user, content: second, cache_control: {type: ephemeral}}
+          - {role: assistant, content: "not cached"}
+          - {role: user, content: [{type: text, text: later, cache_control: {type: ephemeral}}]}
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-2
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: "a", cache_control: {type: ephemeral}}
+          - {role: user, content: "b", cache_control: {type: ephemeral}}
+          - {role: user, content: "c", cache_control: {type: ephemeral}}
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-3
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: "a"}
+          - {role: assistant, content: "b"}
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-4
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: true
+        messages:
+          - {role: user, content: [{type: text, text: first, cache_control: {type: ephemeral}}]}
+          - {role: user, content: [{type: text, text: second, cache_control: {type: ephemeral}}]}
+      - model: gemini-2.5-pro
+        provider: vertex_ai
+        supports_system_message: true
+        cache_key: cache-key-5
+        project: proj
+        location: us-central1
+        now: "2026-11-12T00:00:00Z"
+        disable_transform: false
+        messages:
+          - {role: user, content: "a", cache_control: {type: ephemeral}}
+          - {role: assistant, content: "b", cache_control: {type: ephemeral}}
+          - {role: user, content: "c"}
+          - {role: user, content: "d", cache_control: {type: ephemeral}}
+env: {}
+compare:
+  ignore: []

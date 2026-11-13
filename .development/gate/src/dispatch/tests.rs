@@ -1031,6 +1031,45 @@ fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
     );
 }
 
+#[test]
+fn a_granted_start_runs_on_a_stand_in_while_a_limited_vendor_holds_every_open_rung() {
+    let (mut agents, task) = fixtures();
+    answer_with(&mut agents, "not a report");
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let ladder = &agents.roles.worker.ladder;
+    let last = ladder.len() - 1;
+    let luna = ladder
+        .iter()
+        .position(|rung| rung.model == "gpt-6-luna")
+        .unwrap();
+    let mut progress = progress();
+    progress.used = agents.policy.max_worker_attempts;
+    progress.rung = luna;
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    progress.starts[luna] = 0;
+    progress.starts[last] = 0;
+    let before = progress.starts.clone();
+    let places = places(folder.path());
+    let ungranted = chain.pick(&places, &progress, &chain.links[luna]).unwrap();
+    assert!(ungranted.is_none());
+    run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
+    let grown: Vec<usize> = (0..ladder.len())
+        .filter(|&index| progress.starts[index] > before[index])
+        .collect();
+    assert_eq!(progress.used, agents.policy.max_worker_attempts + 2);
+    assert_eq!(grown.len(), 1);
+    assert_ne!(ladder[grown[0]].runner, ladder[luna].runner);
+    assert_eq!(progress.starts[grown[0]], before[grown[0]] + 2);
+}
+
 fn claude_answers(agents: &mut Agents, report: &str) {
     let answer = format!(r#"printf '{{"structured_output":{report},"session_id":"s1"}}'"#);
     for runner in &mut agents.runners {
