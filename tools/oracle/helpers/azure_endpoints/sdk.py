@@ -6,8 +6,8 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict, Unpack
 import httpx
 import litellm
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
+from pydantic import JsonValue as Json
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 CachedClient: TypeAlias = OpenAI | AsyncOpenAI | AzureOpenAI | AsyncAzureOpenAI
 
 
