@@ -5,16 +5,20 @@ use betterlite_core::agents::json::AgentJson;
 use betterlite_models::decisions::Json;
 use futures_core::Stream;
 use futures_util::StreamExt as _;
-use futures_util::stream::BoxStream;
 use indexmap::IndexMap;
 use thiserror::Error;
 
 use crate::completion_bridge::EventSource;
 use crate::completion_bridge::wire::MessageSendParams;
 use crate::utils::session_scoping::{get_session_id_from_a2a_params, scope_session_to_principal};
+use call::{AgentCoreHandler, HandlerCall, SignedRequestCall, StreamedEvents};
+use headers::filter_reserved_headers;
 use params::LitellmParams;
 use runtime::{AgentCoreRuntime, HttpRequest, RpcMethod, SigningRequest};
 
+pub mod call;
+pub mod config;
+mod headers;
 pub mod params;
 pub mod runtime;
 mod tests;
@@ -54,72 +58,10 @@ pub enum AgentCoreError<E: Error + 'static> {
     Runtime(E),
 }
 
-pub type StreamedEvents<E> = BoxStream<'static, Result<AgentJson, AgentCoreError<E>>>;
-
 pub struct SignedRequest {
     pub url: String,
     pub headers: BTreeMap<String, String>,
     pub body: Vec<u8>,
-}
-
-pub struct SignedRequestCall<'call> {
-    pub request_id: &'call str,
-    pub params: &'call MessageSendParams,
-    pub litellm_params: &'call LitellmParams,
-    pub method: RpcMethod,
-    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
-}
-
-pub struct HandlerCall<'call> {
-    pub request_id: &'call str,
-    pub params: &'call MessageSendParams,
-    pub litellm_params: &'call LitellmParams,
-    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
-}
-
-pub struct ConfigCall<'call> {
-    pub request_id: &'call str,
-    pub params: &'call MessageSendParams,
-    // LiteLLM's config methods take api_base and never pass it on: the URL comes from the model ARN
-    pub api_base: Option<&'call str>,
-    pub litellm_params: Option<&'call BTreeMap<String, AgentJson>>,
-    pub agent_extra_headers: Option<&'call BTreeMap<String, String>>,
-}
-
-pub struct AgentCoreHandler<R, S> {
-    pub runtime: R,
-    pub ids: S,
-}
-
-pub struct BedrockAgentCoreConfig<R, S> {
-    pub handler: AgentCoreHandler<R, S>,
-}
-
-fn filter_reserved_headers(
-    agent_extra_headers: &BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    let mut filtered = BTreeMap::new();
-    let mut dropped = Vec::new();
-    for (name, value) in agent_extra_headers {
-        let lower = name.to_lowercase();
-        let reserved = RESERVED_EXACT_HEADERS.contains(&lower.as_str())
-            || RESERVED_PREFIX_HEADERS
-                .iter()
-                .any(|prefix| lower.starts_with(prefix));
-        if reserved {
-            dropped.push(name.clone());
-            continue;
-        }
-        filtered.insert(name.clone(), value.clone());
-    }
-    if !dropped.is_empty() {
-        dropped.sort();
-        tracing::warn!(
-            headers = ?dropped,
-            "BedrockAgentCore A2A: dropping reserved header(s) from agent_extra_headers (not forwarded to AgentCore)"
-        );
-    }
-    filtered
 }
 
 fn request_scoped_runtime_session_id(
@@ -326,7 +268,7 @@ where
         let lines = response.lines;
         Ok(async_stream::stream! {
             if json_reply {
-                let body = match collect_body(lines).await {
+                let body = match runtime::collect_body(lines).await {
                     Ok(body) => body,
                     Err(error) => {
                         yield Err(error);
@@ -345,60 +287,5 @@ where
             }
         }
         .boxed())
-    }
-}
-
-async fn collect_body<L, E>(lines: L) -> Result<String, AgentCoreError<E>>
-where
-    L: Stream<Item = Result<String, E>>,
-    E: Error + 'static,
-{
-    let mut lines = std::pin::pin!(lines);
-    let mut body = String::new();
-    while let Some(line) = lines.next().await {
-        let line = line.map_err(AgentCoreError::Runtime)?;
-        if !body.is_empty() {
-            body.push('\n');
-        }
-        body.push_str(&line);
-    }
-    Ok(body)
-}
-
-impl<R, S> BedrockAgentCoreConfig<R, S>
-where
-    R: AgentCoreRuntime,
-    S: EventSource + Send,
-{
-    pub async fn handle_non_streaming(
-        &mut self,
-        call: &ConfigCall<'_>,
-    ) -> Result<AgentJson, AgentCoreError<R::Error>> {
-        let litellm_params =
-            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
-        self.handler
-            .handle_non_streaming(&HandlerCall {
-                request_id: call.request_id,
-                params: call.params,
-                litellm_params: &litellm_params,
-                agent_extra_headers: call.agent_extra_headers,
-            })
-            .await
-    }
-
-    pub async fn handle_streaming(
-        &mut self,
-        call: &ConfigCall<'_>,
-    ) -> Result<StreamedEvents<R::Error>, AgentCoreError<R::Error>> {
-        let litellm_params =
-            LitellmParams::parse(call.litellm_params.ok_or(TransformError::MissingParams)?)?;
-        self.handler
-            .handle_streaming(&HandlerCall {
-                request_id: call.request_id,
-                params: call.params,
-                litellm_params: &litellm_params,
-                agent_extra_headers: call.agent_extra_headers,
-            })
-            .await
     }
 }

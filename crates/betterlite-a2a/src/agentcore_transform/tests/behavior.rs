@@ -7,6 +7,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
+use crate::agentcore_transform::call::{AgentCoreHandler, HandlerCall, SignedRequestCall};
+use crate::agentcore_transform::config::{BedrockAgentCoreConfig, ConfigCall};
 use crate::agentcore_transform::params::LitellmParams;
 use crate::agentcore_transform::runtime::RpcMethod;
 use crate::agentcore_transform::tests::support::{
@@ -14,8 +16,7 @@ use crate::agentcore_transform::tests::support::{
     bearer_params, fixture, litellm_params, params,
 };
 use crate::agentcore_transform::{
-    AgentCoreError, AgentCoreHandler, BedrockAgentCoreConfig, ConfigCall, HandlerCall,
-    SignedRequest, SignedRequestCall, TransformError, get_url_and_signed_request, parse_sse_events,
+    AgentCoreError, SignedRequest, TransformError, get_url_and_signed_request, parse_sse_events,
 };
 use crate::completion_bridge::wire::MessageSendParams;
 
@@ -113,7 +114,7 @@ fn valid_lines(items: &[&str]) -> impl Stream<Item = Result<String, FixtureError
 fn reserved_headers_are_dropped_in_any_case(#[case] name: &str) {
     let headers = BTreeMap::from([(name.to_owned(), "value".to_owned())]);
 
-    let filtered = crate::agentcore_transform::filter_reserved_headers(&headers);
+    let filtered = crate::agentcore_transform::headers::filter_reserved_headers(&headers);
 
     assert!(filtered.is_empty());
 }
@@ -125,7 +126,7 @@ fn safe_headers_survive_the_filter() {
         ("Authorization".to_owned(), "Bearer fake".to_owned()),
     ]);
 
-    let filtered = crate::agentcore_transform::filter_reserved_headers(&headers);
+    let filtered = crate::agentcore_transform::headers::filter_reserved_headers(&headers);
 
     assert_eq!(
         filtered,
@@ -135,7 +136,9 @@ fn safe_headers_survive_the_filter() {
 
 #[test]
 fn an_empty_header_map_filters_to_nothing() {
-    assert!(crate::agentcore_transform::filter_reserved_headers(&BTreeMap::new()).is_empty());
+    assert!(
+        crate::agentcore_transform::headers::filter_reserved_headers(&BTreeMap::new()).is_empty()
+    );
 }
 
 #[test]

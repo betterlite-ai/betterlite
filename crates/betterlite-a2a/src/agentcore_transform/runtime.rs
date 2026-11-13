@@ -5,6 +5,7 @@ use std::future::Future;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_models::decisions::Json;
 use futures_core::Stream;
+use futures_util::StreamExt as _;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use uuid::Uuid;
@@ -90,4 +91,22 @@ pub struct StreamedResponse<L> {
     pub status: u16,
     pub content_type: String,
     pub lines: L,
+}
+
+// httpx hands a JSON reply back as one body; joining its lines with "\n" is the same text for JSON input
+pub(crate) async fn collect_body<L, E>(lines: L) -> Result<String, super::AgentCoreError<E>>
+where
+    L: Stream<Item = Result<String, E>>,
+    E: Error + 'static,
+{
+    let mut lines = std::pin::pin!(lines);
+    let mut body = String::new();
+    while let Some(line) = lines.next().await {
+        let line = line.map_err(super::AgentCoreError::Runtime)?;
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        body.push_str(&line);
+    }
+    Ok(body)
 }
