@@ -117,7 +117,7 @@ deviations:
 - what: "`client` raises `UnsupportedCallArgument`."
   why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
 - what: A non-stream result is a plain dict, where LiteLLM returns a provider response object.
-  why: The wheel has no pydantic, and the provider types are not part of the public surface. The data is the same.
+  why: The provider types are not part of the public surface. The data is the same.
 out_of_scope:
 - The mock response, the `generationConfig` rename, the chat-completions adapter, `_merge_native_request_fields` and the provider handler run in Rust (B3489 and its parts).
 - litellm/google_genai/adapters and the streaming logging code are Rust-side concerns.

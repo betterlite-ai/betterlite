@@ -1,0 +1,19 @@
+kind: helper
+name: messages-stream-split-delta-and-error-literals
+call:
+  messages_stream_split:
+    steps:
+      - {function: delta_payload_field, delta_type: text_delta}
+      - {function: delta_payload_field, delta_type: input_json_delta}
+      - {function: delta_payload_field, delta_type: thinking_delta}
+      - {function: delta_payload_field, delta_type: signature_delta}
+      - {function: error_status_and_message, failure: {kind: base_llm, status_code: 429, message: slow down}}
+      - {function: error_status_and_message, failure: {kind: base_llm, status_code: 500, message: ""}}
+      - {function: error_status_and_message, failure: {kind: mid_stream_fallback, status_code: 429, message: fallback}}
+      - {function: error_status_and_message, failure: {kind: unclassified, status_code: 429, message: boom}}
+      - {function: error_status_and_message, failure: {kind: unclassified, status_code: 429, message: ""}}
+      - {function: mid_stream_error_sse_event, failure: {kind: base_llm, status_code: 500, message: boom}}
+      - {function: mid_stream_error_sse_event, failure: {kind: base_llm, status_code: 429, message: boom}}
+      - {function: mid_stream_error_sse_event, failure: {kind: unclassified, status_code: 429, message: boom}}
+env: {}
+compare: {ignore: []}

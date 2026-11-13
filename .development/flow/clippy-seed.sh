@@ -21,6 +21,13 @@ git -C "${checkout}" checkout --quiet --detach origin/main || exit 1
 commit=$(git -C "${checkout}" rev-parse HEAD) || exit 1
 if [[ -f "${store}/commit" ]] && [[ $(< "${store}/commit") == "${commit}" ]]; then exit 0; fi
 cd "${checkout}" || exit 1
+# cargo keeps the old build of every crate whose dependencies changed, so the target only grows (11-13: 1.3 GB to 3.1 GB in 16 refreshes) and every new checkout copies it
+size=0
+if [[ -d target ]]; then size=$(du -s -k target) || exit 1; fi
+if [[ ${size%%$'\t'*} -gt 2097152 ]]; then
+  rm -rf target || exit 1
+  printf '%(%H:%M)T removed the target past 2 GiB, building cold\n' -1
+fi
 printf '%(%H:%M)T building %s\n' -1 "${commit}"
 for targets in --lib --all-targets; do
   PATH=${P}/bin:${PATH} GATE_BUILD_SLOTS=8 GATE_LOWEST_BUILD_SLOT=2 systemd-run --user --scope --slice=betterlite-dispatch.slice -p MemoryMax=16G -p MemorySwapMax=4G -q -- bash "${P}/build-env.sh" nice -n 10 cargo clippy --quiet --locked -p betterlite-oracle "${targets}" -- -D warnings 8>&- || exit 1

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-tool-use-empty-signature
+call: {"messages_content_primitives": {"operation": "tool_use_signature", "content": {"provider_specific_fields": {"signature": ""}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: date-only-and-invalid-time
+call:
+  xai_batches:
+    operation: batch
+    calls:
+      - endpoint: null
+        batch: {batch_id: batch_date, create_time: "2024-01-02", expire_time: "2024-12-31"}
+      - endpoint: null
+        batch: {batch_id: batch_zulu, create_time: "2024-01-02T03:04:05Z", expire_time: "2024-01-02T03:04:05.987654+02:00"}
+      - endpoint: null
+        batch: {batch_id: batch_space, create_time: "2024-01-02 03:04:05"}
+      - endpoint: null
+        batch: {batch_id: batch_invalid, create_time: "not-a-date", expire_time: "later"}
+      - endpoint: null
+        batch: {batch_id: batch_missing}
+      - endpoint: null
+        batch: {batch_id: batch_cancelled, cancel_time: "2024-01-02", state: {num_requests: 1, num_success: 1}}
+env: {}
+compare: {ignore: []}

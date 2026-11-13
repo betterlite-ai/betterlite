@@ -1,0 +1,5 @@
+general_settings:
+  litellm_jwtauth:
+    team_id_jwt_field: os.environ/TEAM_ID_JWT_FIELD
+    user_id_jwt_field: os.environ/USER_ID_JWT_FIELD
+    user_id_upsert: os.environ/USER_ID_UPSERT
