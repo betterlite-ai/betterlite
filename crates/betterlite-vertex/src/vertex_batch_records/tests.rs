@@ -56,8 +56,14 @@ fn generate_row(model_version: &str) -> String {
 
 fn create_request(input_file_id: &str) -> CreateBatchRequest {
     CreateBatchRequest {
+        completion_window: None,
+        endpoint: None,
         input_file_id: Some(input_file_id.to_owned()),
-        ..CreateBatchRequest::default()
+        metadata: None,
+        output_expires_after: None,
+        extra_headers: None,
+        extra_body: None,
+        timeout: None,
     }
 }
 
@@ -69,33 +75,21 @@ fn page(source: &str) -> VertexBatchJobPage {
     serde_json::from_str(source).unwrap()
 }
 
-struct FixedPricing {
+struct FixturePricing {
     failure: bool,
+    require_info: bool,
 }
 
-impl RowCostCalculator for FixedPricing {
+impl RowCostCalculator for FixturePricing {
     fn calculate(&self, request: &RowCostRequest<'_>) -> Result<GenericCostResult, TokenCostError> {
-        if self.failure || request.custom_llm_provider != VERTEX_AI_PROVIDER {
+        let missing_info = self.require_info && request.model_info.is_none();
+        if self.failure || missing_info || request.custom_llm_provider != VERTEX_AI_PROVIDER {
             return Err(TokenCostError::UnknownModel);
         }
         Ok(GenericCostResult {
             prompt_cost: Decimal::new(25, 2),
             completion_cost: Decimal::new(5, 1),
         })
-    }
-}
-
-struct InfoPricing;
-
-impl RowCostCalculator for InfoPricing {
-    fn calculate(&self, request: &RowCostRequest<'_>) -> Result<GenericCostResult, TokenCostError> {
-        match request.model_info {
-            Some(_) => Ok(GenericCostResult {
-                prompt_cost: Decimal::ONE,
-                completion_cost: Decimal::ZERO,
-            }),
-            None => Err(TokenCostError::UnknownModel),
-        }
     }
 }
 
@@ -112,7 +106,10 @@ fn stats(row: &Json, model_name: Option<&str>) -> NativeVertexBatchRowStats {
         model_name,
         None,
         calculate_usage,
-        &FixedPricing { failure: false },
+        &FixturePricing {
+            failure: false,
+            require_info: false,
+        },
     )
     .unwrap()
     .unwrap()
@@ -481,7 +478,10 @@ fn a_row_without_a_usable_response_is_failed(#[case] source: &str) {
         Some("deployment"),
         None,
         calculate_usage,
-        &FixedPricing { failure: false },
+        &FixturePricing {
+            failure: false,
+            require_info: false,
+        },
     )
     .unwrap();
     assert!(outcome.is_none());
@@ -551,7 +551,10 @@ fn a_pricing_failure_keeps_the_usage_and_returns_zero_cost() {
         None,
         None,
         calculate_usage,
-        &FixedPricing { failure: true },
+        &FixturePricing {
+            failure: true,
+            require_info: false,
+        },
     )
     .unwrap()
     .unwrap();
@@ -570,15 +573,26 @@ fn the_row_calculator_receives_the_model_info() {
         None,
         Some(&info),
         calculate_usage,
-        &InfoPricing,
+        &FixturePricing {
+            failure: false,
+            require_info: true,
+        },
     )
     .unwrap()
     .unwrap();
-    assert_eq!(priced.prompt_cost, Decimal::ONE);
-    let unpriced =
-        native_vertex_batch_row_stats(&priced_row(), None, None, calculate_usage, &InfoPricing)
-            .unwrap()
-            .unwrap();
+    assert_eq!(priced.prompt_cost, Decimal::new(25, 2));
+    let unpriced = native_vertex_batch_row_stats(
+        &priced_row(),
+        None,
+        None,
+        calculate_usage,
+        &FixturePricing {
+            failure: false,
+            require_info: true,
+        },
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(unpriced.prompt_cost, Decimal::ZERO);
 }
 

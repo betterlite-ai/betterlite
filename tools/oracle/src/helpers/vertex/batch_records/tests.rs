@@ -105,7 +105,10 @@ fn a_job_call_projects_its_openai_fields() {
     assert_eq!(batch["status"], json!("completed"));
     assert_eq!(batch["created_at"], json!(1_704_067_200_i64));
     assert_eq!(batch["input_file_id"], json!("gs://b/in.jsonl"));
-    assert_eq!(batch["output_file_id"], json!("gs://b/out/predictions.jsonl"));
+    assert_eq!(
+        batch["output_file_id"],
+        json!("gs://b/out/predictions.jsonl")
+    );
     assert_eq!(batch["error_file_id"], Value::Null);
 }
 

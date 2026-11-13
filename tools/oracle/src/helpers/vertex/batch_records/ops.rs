@@ -27,20 +27,10 @@ use crate::helpers::{HelperError, OrHelperError as _};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    Create {
-        calls: Vec<CreateCall>,
-    },
-    Job {
-        zone: String,
-        calls: Vec<JobCall>,
-    },
-    List {
-        zone: String,
-        calls: Vec<ListCall>,
-    },
-    Row {
-        calls: Vec<RowCall>,
-    },
+    Create { calls: Vec<CreateCall> },
+    Job { zone: String, calls: Vec<JobCall> },
+    List { zone: String, calls: Vec<ListCall> },
+    Row { calls: Vec<RowCall> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,18 +101,15 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
         }
         Input::Job { zone, calls } => {
             let local = local_context(zone)?;
-            let outcomes: Vec<Value> = calls
-                .iter()
-                .map(|call| job_outcome(call, &local))
-                .collect();
+            let outcomes: Vec<Value> = calls.iter().map(|call| job_outcome(call, &local)).collect();
             Ok(json!({"calls": outcomes}))
         }
         Input::List { zone, calls } => {
             let local = local_context(zone)?;
-            let outcomes = calls
+            let outcomes: Vec<Value> = calls
                 .iter()
                 .map(|call| list_outcome(call, &local))
-                .collect::<Result<Vec<_>, _>>()?;
+                .collect();
             Ok(json!({"calls": outcomes}))
         }
         Input::Row { calls } => {
@@ -133,7 +120,8 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
 }
 
 fn create_outcome(call: &CreateCall) -> Result<Value, Box<HelperError>> {
-    let request = serde_json::from_value::<CreateBatchRequest>(call.data.clone()).or_value_error()?;
+    let request =
+        serde_json::from_value::<CreateBatchRequest>(call.data.clone()).or_value_error()?;
     // the display name carries a fresh uuid, so the oracle cases compare every other field
     let job = to_batch_job(
         &request,
@@ -162,16 +150,23 @@ fn job_outcome(call: &JobCall, local: &LocalTimeContext) -> Value {
     }
 }
 
-fn list_outcome(call: &ListCall, local: &LocalTimeContext) -> Result<Value, Box<HelperError>> {
+fn list_outcome(call: &ListCall, local: &LocalTimeContext) -> Value {
     let Ok(page) = serde_json::from_value::<VertexBatchJobPage>(call.page.clone()) else {
-        return Ok(json!({"ok": false, "status": Value::Null}));
+        return json!({"ok": false, "status": Value::Null});
     };
     match to_batch_list(&page, local) {
-        Ok(list) => {
-            let value = serde_json::to_value(&list).or_value_error()?;
-            Ok(json!({"ok": true, "page": value}))
-        }
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Ok(list) => json!({
+            "ok": true,
+            "page": {
+                "object": "list",
+                "data": list.data.iter().map(job_state).collect::<Vec<_>>(),
+                "first_id": list.first_id,
+                "last_id": list.last_id,
+                "has_more": list.has_more,
+                "next_page_token": list.next_page_token,
+            },
+        }),
+        Err(error) => json!({"ok": false, "status": error.status_code()}),
     }
 }
 
