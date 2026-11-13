@@ -209,6 +209,18 @@ fn stateless_translation_rejects_empty_and_non_object_chunks() {
 }
 
 #[rstest::rstest]
+#[case::integer("5", "int")]
+#[case::float("1.5", "float")]
+#[case::boolean("true", "bool")]
+fn stateless_translation_names_the_rejected_chunk_type(#[case] source: &str, #[case] kind: &str) {
+    let failure = translate_event(&event(source), None, factory()).unwrap_err();
+    assert_eq!(
+        failure.to_string(),
+        format!("Chat provider: Invalid chunk type <class '{kind}'>")
+    );
+}
+
+#[rstest::rstest]
 #[case::zero("0")]
 #[case::null("null")]
 #[case::empty_list("[]")]
