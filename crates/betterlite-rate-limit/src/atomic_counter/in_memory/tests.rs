@@ -238,6 +238,10 @@ async fn in_memory_expires_a_window_at_exactly_the_window_size() {
         ]
     );
     assert_eq!(response.statuses[0].limit_remaining, 9);
+    assert_eq!(
+        response.reservation_windows,
+        Some(BTreeSet::from([window(REQUESTS_KEY, "1700000300")]))
+    );
 }
 
 #[tokio::test]
