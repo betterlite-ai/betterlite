@@ -459,6 +459,20 @@ fn dispatch_a2a_call_types_hold_asend_and_send() {
 // emit
 
 #[test]
+fn emit_stream_error_display_prints_the_detail() {
+    let text_error = StreamHttpError {
+        status_code: 400,
+        detail: HttpErrorDetail::Text("denied".to_owned()),
+    };
+    assert_eq!(text_error.to_string(), "denied");
+    let object_error = StreamHttpError {
+        status_code: 400,
+        detail: HttpErrorDetail::Object(BTreeMap::from([("message".to_owned(), text("denied"))])),
+    };
+    assert_eq!(object_error.to_string(), r#"{"message":"denied"}"#);
+}
+
+#[test]
 fn emit_block_returns_the_translation_chunks_in_order() {
     let translation = ProbeTranslation {
         block: BlockBehavior::Fixed(vec![b"first".to_vec(), b"second".to_vec()]),

@@ -106,6 +106,14 @@ fn stream_item_records_finish_reasons_by_choice_index() {
 }
 
 #[test]
+fn stream_item_choice_index_reads_an_unsigned_index() {
+    let item = parsed(r#"{"choices": [{"index": 18446744073709551615, "finish_reason": "stop"}]}"#);
+    let mut reasons = IndexMap::new();
+    record_finish_reasons(&item, &mut reasons);
+    assert_eq!(reasons.get(&i64::MAX), Some(&Some("stop".to_owned())));
+}
+
+#[test]
 fn stream_item_records_a_null_index_as_choice_zero() {
     let item = parsed(r#"{"choices": [{"index": null, "finish_reason": "length"}]}"#);
     let mut reasons = IndexMap::new();
