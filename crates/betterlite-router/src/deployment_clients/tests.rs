@@ -801,3 +801,26 @@ fn deployment_clients_boundaries_an_empty_update_writes_no_tags() {
     assert!(!context.metadata.contains_key("tags"));
     assert!(context.tags.is_empty());
 }
+
+#[test]
+fn deployment_clients_boundaries_a_credential_field_of_the_wrong_type_is_an_error() {
+    let flag = spec("gpt", "d1", &[("api_key", Json::Bool(true))], &[]);
+    let error = deployment_credentials(&catalog(&[flag]), "d1").expect_err("a bool is no key");
+    assert!(error.to_string().contains("api_key"), "{error}");
+    let list = spec("gpt", "d2", &[("api_key", Json::List(Vec::new()))], &[]);
+    assert!(deployment_credentials(&catalog(&[list]), "d2").is_err());
+    let object = spec(
+        "gpt",
+        "d3",
+        &[("vertex_credentials", Json::Object(JsonObject::new()))],
+        &[],
+    );
+    assert!(deployment_credentials(&catalog(&[object]), "d3").is_ok());
+    let tags = spec(
+        "gpt",
+        "d4",
+        &[("bedrock_tags", Json::List(Vec::new()))],
+        &[],
+    );
+    assert!(deployment_credentials(&catalog(&[tags]), "d4").is_ok());
+}
