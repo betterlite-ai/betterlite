@@ -20,6 +20,7 @@ HEADER_NAMES = (
     "user-api-key-team-id",
     "user-api-key-user-id",
 )
+BLOCK_STATUS = 400
 JSON = TypeAdapter(JsonValue)
 
 
@@ -137,6 +138,8 @@ def run(input_value: Call) -> JsonValue:
     try:
         result = asyncio.run(check(instance, handler, input_value))
     except HTTPException as error:
+        if error.status_code != BLOCK_STATUS:
+            raise
         return blocked(captured, error)
     return {
         "path": captured.get("path"),

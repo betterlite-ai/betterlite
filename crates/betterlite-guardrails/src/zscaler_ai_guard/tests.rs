@@ -689,8 +689,8 @@ async fn an_unknown_action_is_a_500() {
 }
 
 #[tokio::test]
-async fn any_other_status_keeps_its_status() {
-    let mock = mock(300, "{}").await;
+async fn any_other_success_status_keeps_its_status() {
+    let mock = mock(201, "{}").await;
     let guardrail = guardrail(&mock.base);
     let error = guardrail
         .apply_guardrail(
@@ -700,12 +700,12 @@ async fn any_other_status_keeps_its_status() {
         )
         .await
         .unwrap_err();
-    assert_eq!(error.status_code(), StatusCode::MULTIPLE_CHOICES);
+    assert_eq!(error.status_code(), StatusCode::CREATED);
     assert_eq!(
         error.detail(),
         ZscalerErrorDetail::Service {
             error_type: super::ERROR_TYPE,
-            reason: "Response status code: 300".to_owned()
+            reason: "Response status code: 201".to_owned()
         }
     );
 }
@@ -728,6 +728,28 @@ async fn a_client_error_is_a_500_like_litellms_http_client() {
         ZscalerErrorDetail::Service {
             error_type: super::ERROR_TYPE,
             reason: "Response status code: 404".to_owned()
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_redirect_status_is_a_500_like_litellms_http_client() {
+    let mock = mock(300, "{}").await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        error.detail(),
+        ZscalerErrorDetail::Service {
+            error_type: super::ERROR_TYPE,
+            reason: "Response status code: 300".to_owned()
         }
     );
 }

@@ -13,6 +13,6 @@ call:
     inputs: {texts: [hello]}
     request_data: {metadata: {}}
     input_type: request
-    answer: {status: 300, headers: {}, body: {}}
+    answer: {status: 201, headers: {}, body: {}}
 env: {}
 compare: {ignore: []}

@@ -152,9 +152,9 @@ fn handle_response(status: StatusCode, body: &[u8]) -> Result<(), ZscalerAiGuard
     evaluate_answer(&answer)
 }
 
-// LiteLLM's HTTP client raises on every 4xx and 5xx before _handle_response runs, so those arrive as a 500
+// LiteLLM's HTTP client raises on every status outside 2xx before _handle_response runs, so those arrive as a 500
 fn status_failure(status: StatusCode) -> ZscalerAiGuardError {
-    if !status.is_client_error() && !status.is_server_error() {
+    if status.is_success() {
         return ZscalerAiGuardError::Http {
             status,
             reason: format!("Response status code: {}", status.as_u16()),
