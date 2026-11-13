@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-part-text-number
+call: {"messages_content_primitives": {"operation": "tool_result_part", "item": {"type": "text", "text": 7}}}
+env: {}
+compare: {ignore: []}

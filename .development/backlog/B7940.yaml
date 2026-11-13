@@ -2,7 +2,7 @@ id: B7940
 milestone: M12 python
 title: Python types for Slack alerting, interception configs and the Bedrock knowledge base (types/integrations)
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7940-types-integration-alerts.yaml
 covers:
   - "litellm/types/integrations/slack_alerting.py"

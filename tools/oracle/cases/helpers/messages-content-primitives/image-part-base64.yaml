@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-part-base64
+call: {"messages_content_primitives": {"operation": "tool_result_image_part", "image_source": {"type": "base64", "data": "YWJj"}}}
+env: {}
+compare: {ignore: []}

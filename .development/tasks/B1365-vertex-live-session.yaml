@@ -61,7 +61,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_live.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Fixed injected auth and captured warnings make the setup policy directly comparable.
     - id: vertex-live-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_live*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_live::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_live*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^vertex_live::/)'
       why: Shared fixture parsing includes Vertex-specific Live setup inputs.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-live/global-wss.yaml

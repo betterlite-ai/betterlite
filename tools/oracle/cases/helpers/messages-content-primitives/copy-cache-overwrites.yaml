@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-copy-cache-overwrites
+call: {"messages_content_primitives": {"operation": "copy_cache_control", "source": {"cache_control": {"type": "ephemeral", "ttl": "1h"}}, "target": {"type": "text", "cache_control": {"type": "old"}}, "model": "claude-3"}}
+env: {}
+compare: {ignore: []}
