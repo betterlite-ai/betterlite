@@ -262,7 +262,13 @@ fn config_keeps_the_explicit_values() {
     )
     .unwrap();
     assert_eq!(config.api_base.as_deref(), Some("https://headroom.test"));
-    assert_eq!(config.api_key.as_deref(), Some("k"));
+    assert_eq!(
+        config
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("k")
+    );
     assert_eq!(config.model.as_deref(), Some("m"));
     assert_eq!(config.unreachable_fallback, UnreachableFallback::FailOpen);
     assert!(!config.ccr_retrieval);

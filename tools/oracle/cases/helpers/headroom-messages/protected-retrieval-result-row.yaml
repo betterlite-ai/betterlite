@@ -12,6 +12,7 @@ call:
             type: function
             function: {name: headroom_retrieve, arguments: "{}"}
       - {role: tool, tool_call_id: call-9, content: recovered content}
+      - {role: assistant, content: reply}
       - {role: user, content: next}
 env: {}
 compare: {ignore: []}

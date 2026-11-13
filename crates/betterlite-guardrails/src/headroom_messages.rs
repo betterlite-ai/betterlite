@@ -30,7 +30,10 @@ fn flatten_row(row: &JsonValue) -> JsonValue {
     let Some(content) = fields.get("content") else {
         return row.clone();
     };
-    let Some(guardrail_content) = guardrail_value(content) else {
+    let converted = serde_json::to_value(content)
+        .ok()
+        .and_then(|encoded| serde_json::from_value::<GuardrailValue>(encoded).ok());
+    let Some(guardrail_content) = converted else {
         return row.clone();
     };
     if !is_all_text_parts(&guardrail_content) {
@@ -68,7 +71,10 @@ fn restore_row(original: &JsonValue, returned: &JsonValue) -> JsonValue {
     else {
         return returned.clone();
     };
-    let Some(guardrail_content) = guardrail_value(original_content) else {
+    let converted = serde_json::to_value(original_content)
+        .ok()
+        .and_then(|encoded| serde_json::from_value::<GuardrailValue>(encoded).ok());
+    let Some(guardrail_content) = converted else {
         return returned.clone();
     };
     let GuardrailValue::Array(parts) = &guardrail_content else {
@@ -262,9 +268,4 @@ fn json_str(value: &JsonValue) -> Option<&str> {
         | JsonValue::Array(_)
         | JsonValue::Object(_) => None,
     }
-}
-
-fn guardrail_value(value: &JsonValue) -> Option<GuardrailValue> {
-    let encoded = serde_json::to_value(value).ok()?;
-    serde_json::from_value(encoded).ok()
 }

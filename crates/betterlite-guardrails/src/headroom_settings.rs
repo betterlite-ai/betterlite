@@ -67,25 +67,20 @@ pub enum HeadroomSettingsError {
         #[source]
         source: InvalidHeaderValue,
     },
-}
-
-// The wire model writes the secret out for the admin UI, so it derives no Debug and resolves to SecretString before use.
-#[derive(Clone, Deserialize)]
-#[serde(try_from = "RawHeadroomConfig")]
-pub struct HeadroomConfig {
-    pub api_base: Option<String>,
-    pub api_key: Option<String>,
-    pub model: Option<String>,
-    pub unreachable_fallback: UnreachableFallback,
-    pub ccr_retrieval: bool,
-}
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum HeadroomConfigError {
     #[error(
         "headroom config `unreachable_fallback` must be `fail_closed` or `fail_open`, got `{value}`"
     )]
     UnreachableFallback { value: String },
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "RawHeadroomConfig")]
+pub struct HeadroomConfig {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub model: Option<String>,
+    pub unreachable_fallback: UnreachableFallback,
+    pub ccr_retrieval: bool,
 }
 
 #[derive(Deserialize)]
@@ -94,7 +89,7 @@ struct RawHeadroomConfig {
     #[serde(default)]
     api_base: Option<String>,
     #[serde(default)]
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
@@ -104,14 +99,14 @@ struct RawHeadroomConfig {
 }
 
 impl TryFrom<RawHeadroomConfig> for HeadroomConfig {
-    type Error = HeadroomConfigError;
+    type Error = HeadroomSettingsError;
 
     fn try_from(raw: RawHeadroomConfig) -> Result<Self, Self::Error> {
         let unreachable_fallback = match raw.unreachable_fallback.as_deref() {
             None | Some("fail_closed") => UnreachableFallback::FailClosed,
             Some(FAIL_OPEN) => UnreachableFallback::FailOpen,
             Some(other) => {
-                return Err(HeadroomConfigError::UnreachableFallback {
+                return Err(HeadroomSettingsError::UnreachableFallback {
                     value: other.to_owned(),
                 });
             }

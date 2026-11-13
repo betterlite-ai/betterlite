@@ -98,12 +98,15 @@ fn protected_indices_add_retrieval_result_rows() {
         r#"[
             {"role": "user", "content": "u"},
             {"role": "assistant", "content": null, "tool_calls": [{"id": "call-9", "type": "function", "function": {"name": "headroom_retrieve", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "call-9", "content": "recovered"}
+            {"role": "tool", "tool_call_id": "call-9", "content": "recovered"},
+            {"role": "assistant", "content": "a"},
+            {"role": "user", "content": "next"}
         ]"#,
     );
-    let protected = protected_indices(&messages, &BTreeSet::new());
-    assert!(protected.contains(&2));
-    assert!(protected.contains(&1));
+    assert_eq!(
+        protected_indices(&messages, &BTreeSet::new()),
+        indices(&[1, 2, 3, 4])
+    );
 }
 
 #[test]
