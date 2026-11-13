@@ -1,0 +1,31 @@
+kind: helper
+name: google-native-content-vertex-empty-omission
+call:
+  google_native_content:
+    calls:
+      - function: request
+        provider: vertex
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: []
+        generation_config: {}
+        system_instruction: {}
+        settings: {}
+      - function: request
+        provider: vertex
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: [{functionDeclarations: []}]
+        generation_config: {temperature: 0.5}
+        system_instruction: {parts: [{text: x}]}
+        settings: {}
+      - function: request
+        provider: vertex
+        model: gemini-2.5-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        tools: null
+        generation_config: {temperature: 0}
+        system_instruction: ""
+        settings: {}
+env: {}
+compare: {ignore: []}

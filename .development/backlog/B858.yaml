@@ -1,7 +1,7 @@
 id: B858
 milestone: M4 keys, spend and management
 title: Typed managed-resource and analytics rows
-status: todo
+status: done
 depends_on: [B014, B171, B700, B856, B860, B1015, B1035, B1138, B2303, B2305, B2307, B2310]
 file: tasks/B858-managed-resource-rows.yaml
 covers:
@@ -13,7 +13,7 @@ covers:
   - "litellm/models/tag.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1541

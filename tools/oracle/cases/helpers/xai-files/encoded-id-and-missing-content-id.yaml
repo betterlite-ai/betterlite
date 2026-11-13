@@ -1,0 +1,17 @@
+kind: helper
+name: encoded-id-and-missing-content-id
+call:
+  xai_files:
+    env: {}
+    xai_key: null
+    steps:
+      - {step: url, api_base: null, target: file, file_id: "a/b c"}
+      - {step: url, api_base: null, target: content, file_id: "a/b c"}
+      - {step: url, api_base: "https://p.example/v1", target: file, file_id: ".."}
+      - {step: url, api_base: "https://p.example/v1", target: content, file_id: ".."}
+      - {step: url, api_base: null, target: content, file_id: null}
+      - {step: url, api_base: null, target: file, file_id: ""}
+      - {step: content, status: 500, headers: [["x-a", "b"]], body: raw}
+      - {step: content, status: 206, headers: [], body: ""}
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,7 @@ workspace = true
 testing = []
 
 [dependencies]
+arc-swap = "1.9.2"
 async-trait = "0.1.92"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }

@@ -1,0 +1,19 @@
+kind: helper
+name: completed-response-lifecycle
+call:
+  messages_sse_events:
+    action: response_as_sse_events
+    response:
+      type: message
+      id: msg_a
+      model: claude-sonnet-4-20250514
+      role: assistant
+      content:
+        - {type: text, text: Hi}
+      usage: {input_tokens: 5, output_tokens: 2, cache_read_input_tokens: 3}
+      stop_reason: end_turn
+      stop_sequence: END
+      extra: 7
+env: {}
+compare:
+  ignore: []

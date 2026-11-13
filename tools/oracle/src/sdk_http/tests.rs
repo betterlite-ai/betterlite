@@ -325,7 +325,8 @@ fn decoded_kind(text: &str) -> Nullable {
         SdkResult::Success { .. }
         | SdkResult::Embedding { .. }
         | SdkResult::Vectors { .. }
-        | SdkResult::BetaConfig { .. } => None,
+        | SdkResult::BetaConfig { .. }
+        | SdkResult::MessagesHeaderStream { .. } => None,
     }
 }
 

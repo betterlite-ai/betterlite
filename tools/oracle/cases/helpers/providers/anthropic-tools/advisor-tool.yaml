@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-tools-advisor-tool
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: advisor_20260301, model: claude-opus-5-5, max_uses: 3, caching: {type: ephemeral}}
+          - {type: advisor_20260301, model: '', max_uses: null, caching: null}
+          - {type: advisor_20260301, model: claude-sonnet-4-5, cache_control: {type: ephemeral}, defer_loading: false, allowed_callers: [direct]}
+          - {type: advisor_20260301, model: claude-sonnet-4-5, max_uses: 0, caching: {}}
+      - function: tools
+        tools:
+          - {type: advisor_20260301}
+      - function: tools
+        tools:
+          - {type: advisor_20260301, model: 7}
+      - function: tools
+        tools:
+          - {type: unknown_20260101, model: claude-sonnet-4-5}
+env: {}
+compare: {ignore: []}

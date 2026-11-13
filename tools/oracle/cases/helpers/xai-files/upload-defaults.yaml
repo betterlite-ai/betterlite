@@ -1,0 +1,21 @@
+kind: helper
+name: upload-defaults
+call:
+  xai_files:
+    env: {}
+    xai_key: null
+    steps:
+      - {step: auth, api_key: sk-key}
+      - {step: url, api_base: null, target: collection, file_id: null}
+      - {step: url, api_base: "https://proxy.example/v1/", target: collection, file_id: null}
+      - {step: reply, parse: file, api_base: null, now: 1700000000, status: 200, body: '{"id": "file-1"}'}
+      - step: reply
+        parse: file
+        api_base: null
+        now: 1700000100
+        status: 200
+        body: '{"id": "file-2", "bytes": 5, "created_at": 12, "filename": "f", "purpose": "assistants", "status": "processed", "expires_at": 5}'
+      - {step: reply, parse: file, api_base: null, now: 1700000200, status: 200, body: "not json"}
+      - {step: reply, parse: file, api_base: null, now: 1700000200, status: 404, body: "missing"}
+env: {}
+compare: {ignore: []}

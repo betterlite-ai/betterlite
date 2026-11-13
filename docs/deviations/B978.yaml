@@ -1,0 +1,11 @@
+task: B978
+deviations:
+  - what: A raw Messages transport read above 1048576 bytes fails with 502 bad_gateway/stream/event_too_large before its data lines are inspected, rather than being parsed unbounded.
+    why: The bounded-inputs rule requires finite memory use, and the pinned streaming iterator classifies and decodes every provider read without a size check. B1087's provider-event cap already bounds the same kind of input for every other API module, so betterlite reuses it here and the native boundary test asserts the contrast.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L85-L107
+  - what: A data line whose JSON holds a lone surrogate escape such as "\ud800" is dropped, so an error frame carrying one is not terminal, where LiteLLM's json.loads keeps the surrogate and treats the frame as a provider error.
+    why: Rust strings cannot hold an unpaired UTF-16 surrogate, and serde_json rejects the escape. docs/compatibility.md makes standard JSON output the rule, so betterlite documents the drop instead of adding a second string type that can hold one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L84-L91
+  - what: A data line nested more than 128 levels deep is dropped, where Python's json.loads parses it up to its own recursion limit near 1000.
+    why: serde_json's default recursion limit keeps provider bytes off the stack, and the bounded-inputs rule forbids unbounded recursion on untrusted input; the cap is documented rather than raised.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L84-L91

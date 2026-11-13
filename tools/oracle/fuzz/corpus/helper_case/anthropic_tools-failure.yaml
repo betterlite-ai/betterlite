@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-tools-seed-failure
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: advisor_20260301}
+      - function: tools
+        tools:
+          - {type: custom, function: {name: broken, eager_input_streaming: 1}}
+env: {}
+compare: {ignore: []}

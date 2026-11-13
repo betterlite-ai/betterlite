@@ -1,0 +1,11 @@
+kind: helper
+name: normalize-config-list-input
+call:
+  b3601:
+    calls:
+      - function: normalize_config
+        config: [g1, g2]
+      - function: normalize_config
+        config: []
+env: {}
+compare: {ignore: []}

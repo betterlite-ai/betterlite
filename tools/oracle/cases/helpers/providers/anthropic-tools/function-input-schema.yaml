@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-tools-function-input-schema
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: function, function: {name: weather, description: look up the weather, parameters: {type: object, properties: {city: {type: string}}}}}
+          - {type: function, function: {name: bare}}
+          - {type: custom, function: {name: empty, description: '', parameters: {}}}
+          - {type: custom, function: {name: eager, eager_input_streaming: false, parameters: {properties: {x: {type: integer}}}}}
+          - {type: function, function: {name: top-eager}, eager_input_streaming: true}
+      - function: tools
+        tools: []
+      - function: tools
+        tools:
+          - {type: function, function: {parameters: {}}}
+      - function: tools
+        tools:
+          - {type: function, function: {name: broken, eager_input_streaming: yes-please}}
+env: {}
+compare: {ignore: []}

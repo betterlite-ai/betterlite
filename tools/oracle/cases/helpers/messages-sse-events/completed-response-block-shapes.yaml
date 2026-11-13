@@ -1,0 +1,19 @@
+kind: helper
+name: completed-response-block-shapes
+call:
+  messages_sse_events:
+    action: response_as_sse_events
+    response:
+      content:
+        - {type: tool_use, id: tool_1, name: lookup, input: {x: 1}}
+        - {type: tool_use, input: null}
+        - {type: thinking, thinking: Thought, signature: sig}
+        - {type: thinking, thinking: "", signature: ""}
+        - {type: redacted_thinking, data: cipher}
+        - {type: compaction, text: packed}
+        - {type: text, text: "é"}
+      stop_reason: tool_use
+      usage: {input_tokens: 1}
+env: {}
+compare:
+  ignore: []

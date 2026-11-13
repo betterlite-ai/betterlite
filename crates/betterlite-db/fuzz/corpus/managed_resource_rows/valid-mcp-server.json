@@ -1,0 +1,1 @@
+{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","status":"unknown","static_headers":{"Authorization":"Bearer corpus-secret"},"env":{"A":"B"},"pinned_tools":{"t":{"description":"d","input_schema":{}}},"approval_status":"active","args":[],"byok_description":[]}}

@@ -6,7 +6,7 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
-use super::{prepare, seed};
+use super::prepare;
 use crate::git::{common_dir, coordinator, git};
 
 fn fixture() -> (TempDir, PathBuf) {
@@ -111,47 +111,6 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
     );
     assert_eq!(coordinator(&target).unwrap(), common_dir(&root).unwrap());
     assert!(prepare(&root, &target, "task/B124-other").is_err());
-}
-
-#[test]
-fn a_new_checkout_gets_the_seed_target_and_only_files_changed_since_are_newer() {
-    let (folder, root) = fixture();
-    fs::write(root.join("stable"), "same\n").unwrap();
-    git(&root, &["add", "stable"]).unwrap();
-    git(&root, &["commit", "-qm", "stable file"]).unwrap();
-    let seeded = git(&root, &["rev-parse", "HEAD"]).unwrap();
-    fs::write(root.join("counter"), "two\n").unwrap();
-    git(&root, &["commit", "-qam", "second counter"]).unwrap();
-    let store = folder.path().join("clippy-seed");
-    fs::create_dir_all(store.join("target/debug")).unwrap();
-    fs::write(store.join("target/debug/unit"), "built\n").unwrap();
-    fs::write(store.join("lock"), "").unwrap();
-    fs::write(store.join("commit"), &seeded).unwrap();
-    let target = folder.path().join("B123");
-    prepare(&root, &target, "task/B123-counter").unwrap();
-
-    seed(&store, &target).unwrap();
-
-    let unit = target.join("target/debug/unit");
-    assert_eq!(fs::read_to_string(&unit).unwrap(), "built\n");
-    let built = fs::metadata(&unit).unwrap().modified().unwrap();
-    let stable = fs::metadata(target.join("stable")).unwrap();
-    let counter = fs::metadata(target.join("counter")).unwrap();
-    assert!(stable.modified().unwrap() < built);
-    assert!(counter.modified().unwrap() >= built);
-    let status = ["status", "--porcelain", "--untracked-files=no"];
-    assert_eq!(git(&target, &status).unwrap(), "");
-}
-
-#[test]
-fn a_new_checkout_without_a_seed_gets_no_target() {
-    let (folder, root) = fixture();
-    let target = folder.path().join("B123");
-    prepare(&root, &target, "task/B123-counter").unwrap();
-
-    seed(&folder.path().join("clippy-seed"), &target).unwrap();
-
-    assert!(!target.join("target").exists());
 }
 
 #[test]

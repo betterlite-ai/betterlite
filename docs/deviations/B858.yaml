@@ -1,0 +1,11 @@
+task: B858
+deviations:
+  - what: The managed-resource row decoder rejects stored JSON over 1048576 bytes or deeper than 64 levels, including
+      JSON embedded in the spend-log metadata and request_tags strings, with a typed error instead of parsing it.
+    why: Bounds the new otherwise unbounded byte decoder this task owns; the limits never shrink one an inherited decoder
+      already sets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/autorouter_session.py#L1-L45
+  - what: A stored row object that repeats a field name is rejected with an invalid-JSON error, while LiteLLM's JSON
+      parsing keeps the last value.
+    why: Reuses B2310's JsonData object type, which prevents duplicate keys so no stored value is overwritten silently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/spend_logs.py#L16-L38

@@ -1,0 +1,16 @@
+kind: helper
+name: google-native-content-vertex-unknown-option
+call:
+  google_native_content:
+    calls:
+      - function: optional_params
+        provider: vertex
+        model: gemini-2.5-flash
+        config:
+          temperature: 0.2
+          unknownOption: keep
+          custom_key: 7
+          labels: {team: a}
+          not_an_option: {nested: [1, 2]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-tools-parallel-tool-use
+call:
+  anthropic_tools:
+    calls:
+      - {function: tool_choice, tool_choice: null, parallel_tool_calls: true}
+      - {function: tool_choice, tool_choice: null, parallel_tool_calls: false}
+      - {function: tool_choice, tool_choice: auto, parallel_tool_calls: false}
+      - {function: tool_choice, tool_choice: required, parallel_tool_calls: true}
+      - {function: tool_choice, tool_choice: none, parallel_tool_calls: true}
+      - {function: tool_choice, tool_choice: none, parallel_tool_calls: false}
+      - {function: tool_choice, tool_choice: {type: none}, parallel_tool_calls: true}
+      - {function: tool_choice, tool_choice: {function: {name: lookup}}, parallel_tool_calls: true}
+      - {function: tool_choice, tool_choice: {function: {}}, parallel_tool_calls: false}
+      - {function: tool_choice, tool_choice: auto, parallel_tool_calls: null}
+env: {}
+compare: {ignore: []}

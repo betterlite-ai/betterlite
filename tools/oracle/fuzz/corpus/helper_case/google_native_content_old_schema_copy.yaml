@@ -1,0 +1,39 @@
+kind: helper
+name: google-native-content-old-schema-copy
+call:
+  google_native_content:
+    calls:
+      - function: request
+        provider: vertex
+        model: gemini-1.5-pro
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          response_schema:
+            type: object
+            properties:
+              b: {type: string}
+              a: {type: integer}
+          response_json_schema: {type: object}
+        settings: {}
+      - function: request
+        provider: studio
+        model: gemini-1.5-pro
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          responseSchema:
+            type: object
+            properties:
+              b: {type: string}
+              a: {type: integer}
+          responseJsonSchema: {type: object}
+        settings: {}
+      - function: request
+        provider: vertex
+        model: gemini-1.5-pro
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          responseSchema: null
+          response_schema: {type: object, properties: {a: {type: string}}}
+        settings: {}
+env: {}
+compare: {ignore: []}

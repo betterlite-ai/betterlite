@@ -6,6 +6,7 @@ use std::string::FromUtf8Error;
 use betterlite_config::loader::ConfigError;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat::RequestError;
 use betterlite_openai::chat::deployment::DeploymentError;
 use betterlite_openai::chat::execution::ChatError;
@@ -74,4 +75,14 @@ pub enum SdkHttpError {
     ErrorBody(#[source] serde_json::Error),
     #[error("the native error class {0} has no LiteLLM SDK projection yet")]
     Unprojected(String),
+    #[error("the provider request URL is not valid: {0}")]
+    Url(#[source] Box<url::ParseError>),
+    #[error("the provider request failed: {0}")]
+    Transport(#[source] Box<TransportError>),
+    #[error("the provider response stream failed: {0}")]
+    Stream(#[source] Box<HttpError>),
+    #[error("the provider response header {0} is not text")]
+    HeaderValue(String),
+    #[error("the provider streamed more than {limit} bytes")]
+    StreamTooLarge { limit: usize },
 }

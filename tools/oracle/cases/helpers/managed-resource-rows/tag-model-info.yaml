@@ -1,0 +1,22 @@
+kind: helper
+name: tag_model_info
+call:
+  managed_resource_rows:
+    rows:
+      - name: tag_defaults
+        stored: '{"kind":"tag","row":{"tag_name":"t"}}'
+      - name: tag_model_info_object
+        stored: '{"kind":"tag","row":{"tag_name":"t","model_info":{"a":1}}}'
+      - name: tag_model_info_null
+        stored: '{"kind":"tag","row":{"tag_name":"t","model_info":null}}'
+      - name: tag_null_collections_normalized
+        stored: '{"kind":"tag","row":{"tag_name":"t","models":null,"spend":null,"model_info":{"kept":true}}}'
+      - name: tag_nested_budget_table
+        stored: '{"kind":"tag","row":{"tag_name":"t","budget_id":"b","litellm_budget_table":{"budget_id":"b","budget_duration":"1d"}}}'
+      - name: tag_budget_table_decimal
+        stored: '{"kind":"tag","row":{"tag_name":"t","litellm_budget_table":{"budget_id":"b","max_budget":5}}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/rows/5/row/litellm_budget_table/max_budget
+      why: B2310 stores budget amounts as Decimal serialized by arbitrary_precision while pydantic writes a float

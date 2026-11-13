@@ -13,7 +13,11 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-db = { path = ".." }
+betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-secrets = { path = "../../betterlite-secrets" }
 libfuzzer-sys = "0.4.9"
+secrecy.workspace = true
+uuid.workspace = true
 
 [[bin]]
 name = "database_token_expiry"
@@ -88,6 +92,13 @@ bench = false
 [[bin]]
 name = "daily_values"
 path = "fuzz_targets/daily_values.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "managed_resource_rows"
+path = "fuzz_targets/managed_resource_rows.rs"
 test = false
 doc = false
 bench = false

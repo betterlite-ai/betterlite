@@ -1,0 +1,31 @@
+kind: helper
+name: google-native-content-studio-alias-filter
+call:
+  google_native_content:
+    calls:
+      - function: optional_params
+        provider: studio
+        model: gemini-2.0-flash
+        config:
+          temperature: 0.3
+          top_p: 0.9
+          topP: 0.8
+          stop_sequences: [END]
+          stopSequences: [STOP]
+          response_schema: {type: object}
+          responseSchema: {type: object, properties: {}}
+          unknown_option: 1
+          labels: {team: a}
+          http_options: {api_version: v1}
+          HTTPOptions: {x: 1}
+      - function: optional_params
+        provider: studio
+        model: gemini-2.0-flash
+        config:
+          system_instruction: {parts: [{text: hi}]}
+          response_json_schema: {type: object}
+          cached_content: cache-1
+          candidate_count: 2
+          not_an_option: true
+env: {}
+compare: {ignore: []}

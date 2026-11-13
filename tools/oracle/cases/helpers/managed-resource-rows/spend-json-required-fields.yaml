@@ -1,0 +1,43 @@
+kind: helper
+name: spend_json_required_fields
+call:
+  managed_resource_rows:
+    rows:
+      - name: metadata_json_object
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":"{\"a\": 1}"}}'
+      - name: metadata_json_array
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":"[1, 2]"}}'
+      - name: metadata_json_string
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":"\"text\""}}'
+      - name: metadata_json_number
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":"3"}}'
+      - name: metadata_json_null_text
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":"null"}}'
+      - name: metadata_null
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":null}}'
+      - name: metadata_object_rejected
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":{"a":1}}}'
+      - name: metadata_number_rejected
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"metadata":3}}'
+      - name: request_tags_json_array
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"request_tags":"[\"x\"]"}}'
+      - name: request_tags_number_rejected
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null,"request_tags":3}}'
+      - name: messages_text
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":"hello","response":null}}'
+      - name: messages_array
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":[1,2],"response":null}}'
+      - name: messages_object
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":{"a":1},"response":null}}'
+      - name: messages_null
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null,"response":null}}'
+      - name: messages_number_rejected
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":3,"response":null}}'
+      - name: start_time_missing
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","endTime":null,"messages":null,"response":null}}'
+      - name: messages_missing
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"response":null}}'
+      - name: response_missing
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"c","startTime":null,"endTime":null,"messages":null}}'
+env: {}
+compare: {ignore: []}

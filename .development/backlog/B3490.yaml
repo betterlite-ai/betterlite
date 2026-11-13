@@ -1,7 +1,7 @@
 id: B3490
 milestone: M5 api families
 title: Select interaction providers and prepare optional fields
-status: todo
+status: done
 depends_on: [B3481, B1369, B1370, B2202]
 file: tasks/B3490-interaction-contract.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/interactions/utils.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1543

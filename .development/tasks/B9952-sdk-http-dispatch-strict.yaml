@@ -13,18 +13,42 @@ description: >-
   mypy's exhaustive-match check names a call class that has no arm, and the next task adds one arm. Read the request from
   file descriptor 0 in a form mypy types as bytes. Keep the request JSON, the size limit, the stdout redirect and every
   answer the same: the 26 sdk-http cases pass unchanged.
+
+
+  Two of its neighbors share a module name with a helper: sdk_http/anthropic_beta_config.py (a link to
+  helpers/anthropic_beta_config/sdk_adapter.py) and sdk_http/vector_query_embedding.py. mypy_path in
+  tools/oracle/litellm/mypy.toml lists tools/oracle/helpers before tools/oracle/sdk_http, so mypy reads the helper
+  modules for those two imports and reports 12 errors. Rename the link to sdk_http/beta_config_call.py with the same
+  target, and rename vector_query_embedding.py to sdk_http/query_embedding_call.py. Max picked the rename on 2026-11-13.
+  The renamed query module leaves python-legacy.txt too, so clean it: build the abstract LiteLLM config the way
+  tools/oracle/helpers/speech_provider_contract.py builds its Subject (a subclass, `__abstractmethods__ = frozenset()`,
+  one suppression line on the instance with the pinned LiteLLM link) instead of `type()` and `setattr`, and read
+  `litellm_embedding_config` with a mapping pattern instead of isinstance and cast. LiteLLM's embed_query and
+  aembed_query raise a bare Exception, so the broad catch keeps its noqa with the pinned link.
 scope:
   paths:
   - python-legacy.txt
   - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/anthropic_beta_config.py
+  - tools/oracle/sdk_http/beta_config_call.py
+  - tools/oracle/sdk_http/vector_query_embedding.py
+  - tools/oracle/sdk_http/query_embedding_call.py
   lint_tables: false
 references:
 - url: https://github.com/python/mypy/blob/ad02a35e623d105ab7340f75558716bc09f8242e/mypy/typeshed/stdlib/sys/__init__.pyi#L79
   why: In the typeshed of mypy 2.4.1, the version uv.lock pins, sys.stdin is `TextIO | MaybeNone`, the Any that disallow_any_expr rejects.
+- url: https://github.com/betterlite-ai/betterlite/blob/9b2d502e55/tools/oracle/litellm/mypy.toml#L5
+  why: mypy_path reads tools/oracle/helpers before tools/oracle/sdk_http, so a sdk_http module named like a helper resolves to the helper.
+- url: https://github.com/betterlite-ai/betterlite/blob/9b2d502e55/tools/oracle/helpers/speech_provider_contract.py#L107-L112
+  why: The clean way an oracle module instantiates an abstract LiteLLM config, with one suppression line.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L330-L357
+  why: embed_query and aembed_query wrap every failure in a bare Exception, the class the query module catches.
 dod:
 - text: dispatch.py is off python-legacy.txt and passes ruff, the Python rules and mypy strict.
   proof: [off-legacy, python-legacy, hooks]
-- text: dispatch.py passes basedpyright strict with the sdk_http configuration.
+- text: The beta config and query embedding modules have sdk_http names no helper uses, and the query module is off python-legacy.txt and passes ruff, the Python rules and mypy strict.
+  proof: [renamed, off-legacy, python-legacy, hooks]
+- text: dispatch.py and query_embedding_call.py pass basedpyright strict with the sdk_http configuration.
   proof: [pyright]
 - text: Every sdk-http case still gives the same answer.
   proof: [sdk-http-cases]
@@ -32,25 +56,37 @@ checks:
   optional: []
   commands:
   - id: off-legacy
-    why: The dispatcher is still on the legacy list or unchanged.
+    why: The dispatcher or the query module is still on the legacy list, or the dispatcher is unchanged.
     run: |-
       ! grep -q -x -F tools/oracle/sdk_http/dispatch.py python-legacy.txt &&
+      ! grep -q -F -e tools/oracle/sdk_http/vector_query_embedding.py -e tools/oracle/sdk_http/query_embedding_call.py python-legacy.txt &&
       test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/sdk_http/dispatch.py)"
+  - id: renamed
+    why: A sdk_http module still shares its name with a helper module.
+    run: |-
+      test ! -e tools/oracle/sdk_http/anthropic_beta_config.py &&
+      test ! -e tools/oracle/sdk_http/vector_query_embedding.py &&
+      test "$(readlink tools/oracle/sdk_http/beta_config_call.py)" = ../helpers/anthropic_beta_config/sdk_adapter.py &&
+      test -f tools/oracle/sdk_http/query_embedding_call.py &&
+      ! git ls-files 'tools/oracle/helpers/beta_config_call*' 'tools/oracle/helpers/query_embedding_call*' | grep -q .
   - id: pyright
-    why: The dispatcher fails the type checker the sdk_http tasks run.
-    run: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json tools/oracle/sdk_http/dispatch.py
+    why: The dispatcher or the query module fails the type checker the sdk_http tasks run.
+    run: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json tools/oracle/sdk_http/dispatch.py tools/oracle/sdk_http/query_embedding_call.py
   - id: sdk-http-cases
     why: A call no longer reaches LiteLLM the same way.
     run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/sdk-http
 oracle_cases: []
 deviations: []
 out_of_scope:
-- The call modules next to it (openai_chat.py, vector_query_embedding.py, vector_store_embedding_executor.py) stay on the legacy list; no open task edits them.
-- The Rust side in tools/oracle/src/sdk_http does not change.
+- openai_chat.py and vector_store_embedding_executor.py stay on the legacy list; no open task edits them.
+- The helper modules of the same names and tools/oracle/litellm/mypy.toml don't change. Reordering mypy_path makes the hooks run mypy on every file, and that run fails on main for reasons outside this task.
+- The Rust side in tools/oracle/src/sdk_http does not change; it starts dispatch.py only.
 pitfalls:
 - The modules run as scripts, so dispatch.py imports its neighbors by bare name (`from openai_chat import ...`). Keep that; a package import breaks how the oracle starts the file.
 - A `case _:` or a bare-name catch-all fails no-match-wildcard. The last call type gets its own class pattern.
+- sdk_http/anthropic_beta_config.py is a git symlink. Rename it with git mv so it stays a link to ../helpers/anthropic_beta_config/sdk_adapter.py; a copy of the file would drift from the helper.
+- '`type("Concrete", ...)` and `setattr(..., "__abstractmethods__", ...)` fail no-reflection. A named subclass and a plain `__abstractmethods__` assignment do not.'
 review_level: standard
 budget:
-  max_changed_lines: 200
-  max_new_expects: 0
+  max_changed_lines: 350
+  max_new_expects: 2

@@ -1,7 +1,7 @@
 id: B1410
 milestone: M3 providers
 title: Voxtral speech, transcription and Mistral resource credentials
-status: todo
+status: done
 depends_on: [B002, B1408, B514, B515, B1122, B171]
 file: tasks/B1410-mistral-audio.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/mistral/{audio_speech,audio_transcription}/**"
 parent: B036
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1540

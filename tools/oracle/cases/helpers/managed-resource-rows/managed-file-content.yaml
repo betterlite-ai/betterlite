@@ -1,0 +1,18 @@
+kind: helper
+name: managed_file_content
+call:
+  managed_resource_rows:
+    rows:
+      - name: managed_file_with_object
+        stored: '{"kind":"managed_file","row":{"unified_file_id":"u","file_object":{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"},"model_mappings":{"m":"mf"},"flat_model_file_ids":["mf"],"storage_backend":"s3"}}'
+      - name: managed_file_without_object
+        stored: '{"kind":"managed_file","row":{"unified_file_id":"u","file_object":null,"model_mappings":{},"flat_model_file_ids":[]}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/rows/0/row/file_object/status
+      why: B516's FileObject omits absent optional fields while pydantic dumps them as null
+    - pointer: /value/rows/0/row/file_object/expires_at
+      why: B516's FileObject omits absent optional fields while pydantic dumps them as null
+    - pointer: /value/rows/0/row/file_object/status_details
+      why: B516's FileObject omits absent optional fields while pydantic dumps them as null

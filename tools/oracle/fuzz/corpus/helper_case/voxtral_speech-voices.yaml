@@ -1,0 +1,13 @@
+kind: helper
+name: voxtral-speech-voice-alias-and-mapping-priority
+call:
+  voxtral_speech:
+    probes:
+      - {voice: Alloy, kwargs: {voice_id: echo}}
+      - {voice: {name: Echo}}
+      - {voice: {voice_id: 5, id: custom-Voice}}
+      - {kwargs: {voice_id: NOVA}}
+      - {voice: "  Fable  "}
+      - {voice: {voice_id: Alloy, id: Echo, name: Onyx}}
+env: {}
+compare: {ignore: []}

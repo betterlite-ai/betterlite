@@ -1,0 +1,13 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: sk-catalog
+
+router_settings:
+  model_group_alias:
+    gpt: gpt-4o
+    fast:
+      model: gpt-4o
+      hidden: true
+    from-env: os.environ/CATALOG_TARGET

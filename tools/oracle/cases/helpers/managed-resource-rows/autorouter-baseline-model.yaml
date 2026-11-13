@@ -1,0 +1,17 @@
+kind: helper
+name: autorouter_baseline_model
+call:
+  managed_resource_rows:
+    rows:
+      - name: autorouter_no_baselines
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{}}}'
+      - name: autorouter_single_baseline
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{"a":5}}}'
+      - name: autorouter_excluded_turns_multiple
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{"a":5,"b":7},"savings_estimated_turns":0}}'
+      - name: autorouter_all_turns_estimated
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{"a":5,"b":7},"savings_estimated_turns":3}}'
+      - name: autorouter_lexical_tie
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{"a":7,"b":7},"savings_estimated_turns":3}}'
+env: {}
+compare: {ignore: []}

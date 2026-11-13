@@ -1,0 +1,31 @@
+kind: helper
+name: messages-native-prepare-base-retry-defaults
+call:
+  messages_native_prepare:
+    function: base_defaults
+    headers:
+      x-caller: value
+    status: 400
+    text: "messages.2.content.0: Invalid `signature` in `thinking` block"
+    request:
+      thinking:
+        type: enabled
+      messages:
+        - role: assistant
+          content:
+            - type: thinking
+              thinking: a
+              signature: s
+            - type: text
+              text: keep
+        - role: assistant
+          content:
+            - type: redacted_thinking
+              data: d
+        - role: user
+          content: hi
+    error_message: teapot
+    error_status: 418
+env: {}
+compare:
+  ignore: []

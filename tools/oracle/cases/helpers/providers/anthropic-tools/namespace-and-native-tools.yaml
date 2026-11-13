@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-tools-namespace-and-native-tools
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - type: namespace
+            tools:
+              - {input_schema: {type: object, x: 1}, name: native, type: custom, cache_control: {type: ephemeral}}
+              - {name: flat, description: d, parameters: {properties: {a: {type: string}}}, cache_control: {type: ephemeral}}
+              - {type: function, function: {name: nested, cache_control: {type: ephemeral}}}
+              - {input_schema: {type: object}, function: {name: ignored-normal-form}}
+              - {type: web_search_20250305}
+              - {description: skipped}
+          - {type: custom, name: kept, input_schema: {type: object, unknown: true}, defer_loading: true}
+          - {type: namespace, tools: [{name: flat-second}, {type: mcp, server_url: 'https://mcp.test/rpc', server_label: label}]}
+      - function: tools
+        tools:
+          - {description: nameless}
+env: {}
+compare: {ignore: []}

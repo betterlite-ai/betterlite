@@ -1,0 +1,21 @@
+kind: helper
+name: mcp_pinned_tools
+call:
+  managed_resource_rows:
+    rows:
+      - name: pinned_tools_absent
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse"}}'
+      - name: pinned_tools_null
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":null}}'
+      - name: pinned_tools_empty_object
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":"{}"}}'
+      - name: pinned_tools_object
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":{"t":{"description":"d"}}}}'
+      - name: pinned_tools_json_text
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":"{ \"t\": { \"description\": \"d\", \"input_schema\": {\"type\": \"object\"} } }"}}'
+      - name: pinned_tools_unknown_field
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":{"t":{"extra":1}}}}'
+      - name: pinned_tools_array
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","pinned_tools":["tool"]}}'
+env: {}
+compare: {ignore: []}

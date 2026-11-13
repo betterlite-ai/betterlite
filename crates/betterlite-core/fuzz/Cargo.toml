@@ -216,3 +216,10 @@ path = "fuzz_targets/realtime_contract.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "messages_sse_events"
+path = "fuzz_targets/messages_sse_events.rs"
+test = false
+doc = false
+bench = false

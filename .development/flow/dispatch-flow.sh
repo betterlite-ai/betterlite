@@ -12,7 +12,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, three rounds at most; once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit waits 30 minutes and reruns (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 id=$1
@@ -240,7 +240,11 @@ if [[ "${draft}" = true ]]; then
   gh pr edit "${pr}" --body-file "${body}" > /dev/null
   gh pr ready "${pr}" > /dev/null || land_again "PR #${pr} is open, but it did not leave draft, see logs/land-${id}.log"
 fi
-gh pr merge "${branch}" --auto --squash > /dev/null 2>&1
+# pr-watch lets go of a PR it finds unarmed, so a refused auto-merge left B5790's green PR 1431 outside the queue for 22 hours (11-12)
+if ! gh pr merge "${branch}" --auto --squash > /dev/null; then
+  armed=$(gh api graphql -F n="${pr}" -f query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequest(number:\$n){autoMergeRequest{enabledAt} mergeQueueEntry{state}}}}" -q '.data.repository.pullRequest | .autoMergeRequest != null or .mergeQueueEntry != null')
+  [[ "${armed}" = true ]] || land_again "PR #${pr} is open, but auto-merge did not turn on, see logs/land-${id}.log"
+fi
 say "PR #${pr} open: https://github.com/betterlite-ai/betterlite/pull/${pr}"
 verified_head=$(git rev-parse HEAD) || exit 5
 result=$(bash "${P}/pr-watch.sh" "${pr}" merge)
@@ -281,7 +285,7 @@ case "${result}" in
     say "${result:-pr-watch for PR #${pr} ended without the main run result}"
     case "${result}" in *passed) exit 0 ;; *) exit 5 ;; esac
     ;;
-  # CI runs every check that builds tests, so a red run goes back to the worker with its gate lines and logs, three rounds at most
+  # CI runs every check that builds, clippy included since stage 3, so a red run goes back to the worker with its gate lines and logs, eight rounds at most
   *" run "*" failed"*)
     run_id=
     [[ ${result} =~ run\ ([0-9]+)\ failed ]] && run_id=${BASH_REMATCH[1]}
@@ -298,8 +302,8 @@ case "${result}" in
       gh run rerun "${run_id}" > /dev/null 2>&1
       OUTAGES=$((${OUTAGES:-0} + 1)) LAND_ONLY=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}" ""
     fi
-    [[ "${CI_ROUNDS:-0}" -lt 3 ]] || {
-      park "CI failed on PR #${pr} (run ${run_id}) after 3 fix rounds"
+    [[ "${CI_ROUNDS:-0}" -lt 8 ]] || {
+      park "CI failed on PR #${pr} (run ${run_id}) after 8 fix rounds"
       exit 5
     }
     rm -rf -- "${worktree}/target/ci-logs"
@@ -326,7 +330,7 @@ Mutants CI missed:
 ${missed}}${timed_out:+
 Mutants that timed out in CI (the gate counts a timeout as a failure, so a test must fail on the mutant instead of hanging):
 ${timed_out}}
-The gate logs of that run are in target/ci-logs/${run_id}/ in your worktree. Fix the cause and finish as usual. The final gate here runs only the lint checks; CI runs the tests again once the branch is pushed."
+The gate logs of that run are in target/ci-logs/${run_id}/ in your worktree. Fix the cause and finish as usual. The final gate here builds nothing; CI runs clippy and the tests again once the branch is pushed."
     ;;
   # main moved under the open PR; the land path merges main again (line 88) and stops when the merge needs a person, three rounds at most
   *" conflicts with main"*)

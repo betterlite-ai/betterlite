@@ -1,0 +1,19 @@
+kind: helper
+name: jsonpath-type-mismatch
+call:
+  b3601:
+    calls:
+      - function: evaluate
+        data: {foo: "text"}
+        expression: foo.bar
+      - function: evaluate
+        data: {items: "text"}
+        expression: "items[*].name"
+      - function: evaluate
+        data: {items: {name: a}}
+        expression: "items[*].name"
+      - function: evaluate
+        data: {items: [{name: a}, "text", {name: b}]}
+        expression: "items[*].name"
+env: {}
+compare: {ignore: []}

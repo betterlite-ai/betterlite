@@ -1,0 +1,1 @@
+{"kind":"managed_file","row":{"unified_file_id":"u","file_object":{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"},"model_mappings":{"m":"mf"},"flat_model_file_ids":["mf"],"created_by":"c","team_id":"t","updated_by":"u","storage_backend":"s3","storage_url":"s3://bucket/f"}}

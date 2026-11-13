@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-tools-tool-choice-any-none-auto
+call:
+  anthropic_tools:
+    calls:
+      - {function: tool_choice, tool_choice: auto, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: required, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: none, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: unrecognized, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: null, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: auto}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: required}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: any}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: none}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: tool, name: lookup}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: unknown, name: lookup}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {function: {name: lookup}}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {function: {name: ''}}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {type: function, function: {name: lookup}}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {function: {}}, parallel_tool_calls: null}
+      - {function: tool_choice, tool_choice: {function: {name: null}}, parallel_tool_calls: null}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: google-native-content-vertex-acronym-split
+call:
+  google_native_content:
+    calls:
+      - function: optional_params
+        provider: vertex
+        model: gemini-2.5-flash
+        config:
+          HTTPOptions: {timeout: 1}
+          JSONSchema: {}
+          APIKey: key
+          responseJsonSchema: {type: object}
+          candidateCount: 2
+      - function: optional_params
+        provider: vertex
+        model: gemini-2.5-flash
+        config:
+          http_options: {timeout: 1}
+          response_json_schema: {type: object}
+env: {}
+compare: {ignore: []}

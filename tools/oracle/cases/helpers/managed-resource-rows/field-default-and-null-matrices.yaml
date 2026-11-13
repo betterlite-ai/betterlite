@@ -1,0 +1,40 @@
+kind: helper
+name: field_default_and_null_matrices
+call:
+  managed_resource_rows:
+    rows:
+      - name: managed_file_defaults
+        stored: '{"kind":"managed_file","row":{"unified_file_id":"u","model_mappings":{},"flat_model_file_ids":[]}}'
+      - name: managed_file_explicit_nulls
+        stored: '{"kind":"managed_file","row":{"unified_file_id":"u","file_object":null,"model_mappings":{},"flat_model_file_ids":[],"created_by":null,"team_id":null,"updated_by":null,"storage_backend":null,"storage_url":null}}'
+      - name: managed_object_defaults
+        stored: '{"kind":"managed_object","row":{"unified_object_id":"o","model_object_id":"m","file_purpose":"batch","file_object":{"id":"b","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"f","object":"batch","status":"validating"}}}'
+      - name: managed_vector_store_defaults
+        stored: '{"kind":"managed_vector_store","row":{"unified_resource_id":"u","model_mappings":{},"flat_model_resource_ids":[]}}'
+      - name: managed_vector_stores_defaults
+        stored: '{"kind":"managed_vector_stores","row":{"vector_store_id":"v","custom_llm_provider":"openai"}}'
+      - name: mcp_env_var_defaults
+        stored: '{"kind":"mcp_env_var","row":{"name":"A"}}'
+      - name: mcp_env_var_explicit_nulls
+        stored: '{"kind":"mcp_env_var","row":{"name":"A","value":"","scope":"user","description":null}}'
+      - name: mcp_server_defaults
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse"}}'
+      - name: mcp_server_nullable_nulls
+        stored: '{"kind":"mcp_server","row":{"server_id":"s","transport":"sse","server_name":null,"alias":null,"description":null,"url":null,"status":null,"approval_status":null,"oauth2_flow":null,"auth_type":null,"credentials":null,"static_headers":null,"env":null,"pinned_tools":null,"mcp_info":null,"env_vars":null,"timeout":null}}'
+      - name: skill_defaults
+        stored: '{"kind":"skill","row":{"skill_id":"s"}}'
+      - name: skill_explicit_nulls
+        stored: '{"kind":"skill","row":{"skill_id":"s","file_content":null,"metadata":null,"created_at":null,"updated_at":null}}'
+      - name: autorouter_defaults
+        stored: '{"kind":"autorouter_session","row":{"api_key":"k","session_id":"s","router_name":"r","router_type":"t","first_turn_at":"2026-01-01T00:00:00Z","last_turn_at":"2026-01-01T00:00:00Z","last_model":"m","turns":3,"spend":1.5,"saved_spend":0.5,"classifier_cost":0.25,"tier_turns":{},"baseline_models":{}}}'
+      - name: spend_log_explicit_nulls
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"model":null,"api_base":null,"spend":null,"cache_hit":null,"cache_key":null,"request_tags":null,"requester_ip_address":null,"created_at":null,"updated_at":null}}'
+      - name: error_log_defaults
+        stored: '{"kind":"error_log","row":{"startTime":null,"endTime":null}}'
+      - name: tag_defaults
+        stored: '{"kind":"tag","row":{"tag_name":"t"}}'
+env: {}
+compare:
+  ignore:
+    - pointer: /value/rows/13/row/request_id
+      why: the omitted error request_id is one UUID minted at Python import, so each process has its own

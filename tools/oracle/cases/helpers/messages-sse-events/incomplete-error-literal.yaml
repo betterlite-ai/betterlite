@@ -1,0 +1,8 @@
+kind: helper
+name: incomplete-error-literal
+call:
+  messages_sse_events:
+    action: incomplete_error_literal
+env: {}
+compare:
+  ignore: []

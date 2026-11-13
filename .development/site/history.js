@@ -1,6 +1,7 @@
 import { GITHUB, DAY, number, oneDecimal, compact, shortDate, yearDate, longDate, dayTime, hourOnly, esc, idNumber, figure, dayKey, porting, milestoneOrder, cssColor, duration, quantile, plural, swatch } from "./shared.js";
 
-const CUTOVER_PR = 722;
+// Stage 2 starts when #722 merges and stage 3 when #1544 does.
+const CUTOVER_PRS = [722, 1544];
 const MEDIAN_WINDOW = 20;
 // Gridlines of the logarithmic time scales, in minutes.
 const STAGE_TICKS = [1, 5, 15, 60, 240, 1440, 4320, 10080];
@@ -13,7 +14,7 @@ const STEPS = [
   { key: "queue", label: "Queue", about: "Added to the merge queue to merged", color: "--c3" },
 ];
 const TOTAL = { key: "total", label: "Total", about: "First commit to merged" };
-const STAGE_COLORS = { 1: "--c7", 2: "--c4" };
+const STAGE_COLORS = { 1: "--c7", 2: "--c4", 3: "--c5" };
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SIZE_BUCKETS = [
   { label: "Under 100", from: 0, to: 100 },
@@ -82,8 +83,8 @@ function bootHours(boot) {
   return (boot.to - boot.from) / 3600;
 }
 
-function stageOf(time, cutover) {
-  return cutover === null || time <= cutover ? 1 : 2;
+function stageOf(time, cutovers) {
+  return 1 + cutovers.filter((cutover) => time > cutover).length;
 }
 
 function inStage(period, stage) {
@@ -163,24 +164,27 @@ function attachRuns(runs, pulls) {
   return counts;
 }
 
-function stageRows(pulls, byPull, cutover, runCounts) {
-  const rows = pulls.map((pull) => ({
-    number: pull.number,
-    task: byPull.get(pull.number)?.id,
-    merged: pull.merged,
-    x: pull.merged,
-    mergedStage: stageOf(pull.merged, cutover),
-    stage: cutover === null || pull.merged <= cutover ? 1 : pull.first > cutover ? 2 : 0,
-    build: minutesBetween(pull.first, pull.opened),
-    checks: minutesBetween(pull.opened, pull.queued),
-    queue: minutesBetween(pull.queued, pull.merged),
-    total: minutesBetween(pull.first, pull.merged),
-    lines: pull.lines,
-    files: pull.files,
-    commits: pull.commits,
-    queues: pull.queues,
-    runs: runCounts.get(pull.number) ?? 0,
-  })).sort((a, b) => a.merged - b.merged);
+function stageRows(pulls, byPull, cutovers, runCounts) {
+  const rows = pulls.map((pull) => {
+    const mergedStage = stageOf(pull.merged, cutovers);
+    return {
+      number: pull.number,
+      task: byPull.get(pull.number)?.id,
+      merged: pull.merged,
+      x: pull.merged,
+      mergedStage,
+      stage: stageOf(pull.first, cutovers) === mergedStage ? mergedStage : 0,
+      build: minutesBetween(pull.first, pull.opened),
+      checks: minutesBetween(pull.opened, pull.queued),
+      queue: minutesBetween(pull.queued, pull.merged),
+      total: minutesBetween(pull.first, pull.merged),
+      lines: pull.lines,
+      files: pull.files,
+      commits: pull.commits,
+      queues: pull.queues,
+      runs: runCounts.get(pull.number) ?? 0,
+    };
+  }).sort((a, b) => a.merged - b.merged);
   // uPlot needs rising x values, and some pull requests merged in the same second.
   for (let i = 1; i < rows.length; i++) {
     rows[i].x = Math.max(rows[i].x, rows[i - 1].x + 1);
@@ -214,32 +218,29 @@ function historyViews(merges, milestones, pulls, byPull) {
 
 function historyFacts(data) {
   const now = Date.now() / 1000;
-  const cutover = data.pulls.find((pull) => pull.number === CUTOVER_PR)?.merged ?? null;
-  const rows = stageRows(data.pulls, data.byPull, cutover, attachRuns(data.runs, data.pulls));
-  const tasks = data.merges.map((merge) => ({ ...merge, stage: stageOf(merge.time / 1000, cutover) }));
+  const cutovers = CUTOVER_PRS.map((number) => data.pulls.find((pull) => pull.number === number)?.merged ?? null).filter((time) => time !== null);
+  const rows = stageRows(data.pulls, data.byPull, cutovers, attachRuns(data.runs, data.pulls));
+  const tasks = data.merges.map((merge) => ({ ...merge, stage: stageOf(merge.time / 1000, cutovers) }));
   const days = rows.length === 0 ? [] : dayStarts(Math.min(rows[0].merged * 1000, ...tasks.map((merge) => merge.time)));
   const first = days.length === 0 ? now : days[0] / 1000;
-  const periods = [
-    { key: 1, label: "Stage 1", from: first, to: cutover ?? now, empty: false },
-    { key: 2, label: "Stage 2", from: cutover ?? now, to: now, empty: cutover === null },
-    { key: 0, label: "All", from: first, to: now, empty: false },
-  ];
-  const agentRuns = data.agentRuns.map((run) => ({ ...run, model: String(run.model).replace(/-\d{8}$/, ""), stage: stageOf(run.start, cutover) }));
+  const stages = [first, ...cutovers].map((from, i) => ({ key: i + 1, label: `Stage ${i + 1}`, from, to: cutovers[i] ?? now }));
+  const periods = [...stages, { key: 0, label: "All", from: first, to: now }];
+  const agentRuns = data.agentRuns.map((run) => ({ ...run, model: String(run.model).replace(/-\d{8}$/, ""), stage: stageOf(run.start, cutovers) }));
   return {
     ...data,
     now,
-    cutover,
+    cutovers,
     rows,
     taskRows: rows.filter((row) => row.task),
     tasks,
     days,
     periods,
-    live: periods.filter((period) => period.key !== 0 && !period.empty),
-    columns: cutover === null ? periods.slice(0, 1) : periods,
-    runs: data.runs.map((run) => ({ ...run, stage: stageOf(run.created, cutover) })),
+    live: stages,
+    columns: cutovers.length === 0 ? stages : periods,
+    runs: data.runs.map((run) => ({ ...run, stage: stageOf(run.created, cutovers) })),
     agentRuns,
     traced: agentRuns.filter((run) => run.role === "w" && run.calls !== null),
-    hours: data.hours.map((hour) => ({ ...hour, stage: stageOf(hour.hour, cutover) })),
+    hours: data.hours.map((hour) => ({ ...hour, stage: stageOf(hour.hour, cutovers) })),
     views: historyViews(data.merges, data.milestones, data.pulls, data.byPull),
   };
 }
@@ -248,7 +249,7 @@ function historyFacts(data) {
 function ssdPerDay(facts, period) {
   let written = 0;
   let minutes = 0;
-  if (facts.boot && period.key !== 2) {
+  if (facts.boot && period.key <= 1) {
     written += facts.boot.written_tb * 1000;
     minutes += (facts.boot.to - facts.boot.from) / 60;
   }
@@ -310,30 +311,29 @@ function cell(value, format, missing) {
   return value === null || value === undefined || Number.isNaN(value) ? `<span class="muted">${missing}</span>` : esc(format(value));
 }
 
-function renderStageNote(cutover) {
-  const link = `<a href="${GITHUB}/pull/${CUTOVER_PR}">#${CUTOVER_PR}</a>`;
-  document.getElementById("stage-note").innerHTML = cutover === null
-    ? `Stage 2 starts when ${link} merges. Until then every number here belongs to stage 1.`
-    : `Stage 1 ran until ${link} merged on ${esc(longDate.format(cutover * 1000))}. Stage 2 is everything after it.`;
+function renderStageNote(cutovers) {
+  const links = CUTOVER_PRS.map((number) => `<a href="${GITHUB}/pull/${number}">#${number}</a>`);
+  const ran = cutovers.map((cutover, i) => `Stage ${i + 1} ran until ${links[i]} merged on ${esc(longDate.format(cutover * 1000))}.`);
+  document.getElementById("stage-note").innerHTML = cutovers.length === 0
+    ? `Stage 2 starts when ${links[0]} merges. Until then every number here belongs to stage 1.`
+    : `${ran.join(" ")} Stage ${cutovers.length + 1} is everything after it.`;
 }
 
 function renderStageFigures(facts, stats) {
-  const one = stats.get(1);
-  const two = facts.cutover === null ? null : stats.get(2);
+  const stages = facts.live.map((period) => period.key);
+  const latest = stages.at(-1);
+  const missing = latest === 1 ? "none" : `<span class="muted">no data yet</span>`;
   const items = [
     ["tasksADay", oneDecimal.format, "Tasks merged a day"],
     ["taskMedian", duration, "Median time from first commit to merged, task PRs"],
     ["ciPerPr", oneDecimal.format, "CI runs per merged PR"],
     ["ssd", gigabytes, "SSD written a day"],
   ];
-  const stages = two === null ? [1] : [1, 2];
   const legend = `<div class="keys">${stages.map((stage) => `<span>${swatch(STAGE_COLORS[stage])}Stage ${stage}</span>`).join("")}</div>`;
   document.getElementById("stage-figures").innerHTML = legend + items.map(([key, format, label]) => {
-    const before = stageValue(1, one[key] === null ? "none" : esc(format(one[key])));
-    if (two === null) {
-      return figure(before, "", label);
-    }
-    return figure(stageValue(2, two[key] === null ? `<span class="muted">no data yet</span>` : esc(format(two[key]))), before, label);
+    const earlier = stages.slice(0, -1).map((stage) => stageValue(stage, stats.get(stage)[key] === null ? "none" : esc(format(stats.get(stage)[key]))));
+    const value = stats.get(latest)[key];
+    return figure(stageValue(latest, value === null ? missing : esc(format(value))), earlier.join("&emsp;"), label);
   }).join("");
 }
 
@@ -342,7 +342,7 @@ function stageValue(stage, html) {
 }
 
 function stageLabel(period) {
-  if (period.key === 1 || period.key === 2) {
+  if (period.key !== 0) {
     return `${swatch(STAGE_COLORS[period.key])}${esc(period.label)}`;
   }
   return esc(period.label);
@@ -548,41 +548,47 @@ function legendAtEnd(chart) {
   }
 }
 
-function paintStageBand(chart, cutover) {
+function paintStageBands(chart, cutovers) {
   const { left, top, width, height } = chart.bbox;
-  const from = Math.max(left, chart.valToPos(cutover, "x", true));
-  if (from < left + width) {
-    chart.ctx.save();
-    chart.ctx.fillStyle = `${cssColor("--c4")}14`;
-    chart.ctx.fillRect(from, top, left + width - from, height);
-    chart.ctx.restore();
+  for (const [i, cutover] of cutovers.entries()) {
+    const from = Math.max(left, chart.valToPos(cutover, "x", true));
+    const to = i + 1 < cutovers.length ? Math.min(left + width, chart.valToPos(cutovers[i + 1], "x", true)) : left + width;
+    if (from < to) {
+      chart.ctx.save();
+      chart.ctx.fillStyle = `${cssColor(STAGE_COLORS[i + 2])}14`;
+      chart.ctx.fillRect(from, top, to - from, height);
+      chart.ctx.restore();
+    }
   }
 }
 
-function paintStageLine(chart, cutover) {
+function paintStageLines(chart, cutovers) {
   const { left, top, width, height } = chart.bbox;
-  const x = Math.round(chart.valToPos(cutover, "x", true));
-  if (x < left || x > left + width) {
-    return;
+  for (const [i, cutover] of cutovers.entries()) {
+    const x = Math.round(chart.valToPos(cutover, "x", true));
+    if (x < left || x > left + width) {
+      continue;
+    }
+    const ratio = window.devicePixelRatio || 1;
+    const ctx = chart.ctx;
+    const flip = x > left + width * 0.8;
+    ctx.save();
+    ctx.strokeStyle = cssColor("--ink");
+    ctx.lineWidth = ratio;
+    ctx.setLineDash([4 * ratio, 3 * ratio]);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, top + height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = cssColor("--muted");
+    ctx.font = `${11 * ratio}px 'IBM Plex Mono', ui-monospace, monospace`;
+    ctx.textAlign = flip ? "right" : "left";
+    ctx.textBaseline = "top";
+    // Each later label sits one line lower, so labels of close cutovers don't overlap.
+    ctx.fillText(`stage ${i + 2}`, x + (flip ? -4 : 4) * ratio, top + (4 + 14 * i) * ratio);
+    ctx.restore();
   }
-  const ratio = window.devicePixelRatio || 1;
-  const ctx = chart.ctx;
-  const flip = x > left + width * 0.8;
-  ctx.save();
-  ctx.strokeStyle = cssColor("--ink");
-  ctx.lineWidth = ratio;
-  ctx.setLineDash([4 * ratio, 3 * ratio]);
-  ctx.beginPath();
-  ctx.moveTo(x, top);
-  ctx.lineTo(x, top + height);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = cssColor("--muted");
-  ctx.font = `${11 * ratio}px 'IBM Plex Mono', ui-monospace, monospace`;
-  ctx.textAlign = flip ? "right" : "left";
-  ctx.textBaseline = "top";
-  ctx.fillText("stage 2", x + (flip ? -4 : 4) * ratio, top + 4 * ratio);
-  ctx.restore();
 }
 
 function axis() {
@@ -602,7 +608,7 @@ function timeLabels(chart, splits) {
   });
 }
 
-function chartOptions(container, height, colors, first, incrs, cutover) {
+function chartOptions(container, height, colors, first, incrs, cutovers) {
   const options = {
     width: Math.max(320, container.clientWidth),
     height,
@@ -613,9 +619,9 @@ function chartOptions(container, height, colors, first, incrs, cutover) {
     series: [first],
     hooks: { ready: [legendAtEnd], setCursor: [legendAtEnd] },
   };
-  if (cutover !== null) {
-    options.hooks.drawClear = [(chart) => paintStageBand(chart, cutover)];
-    options.hooks.draw = [(chart) => paintStageLine(chart, cutover)];
+  if (cutovers.length > 0) {
+    options.hooks.drawClear = [(chart) => paintStageBands(chart, cutovers)];
+    options.hooks.draw = [(chart) => paintStageLines(chart, cutovers)];
   }
   return options;
 }
@@ -624,7 +630,7 @@ function dayLabel(chart, value) {
   return value == null ? null : shortDate.format(value * 1000);
 }
 
-function drawTotals(container, days, view, cutover) {
+function drawTotals(container, days, view, cutovers) {
   const colors = [null, ...view.map((series) => cssColor(series.color))];
   const data = [days.map((day) => day / 1000)];
   for (const series of view) {
@@ -636,7 +642,7 @@ function drawTotals(container, days, view, cutover) {
     }
     data.push(totals);
   }
-  const options = chartOptions(container, 260, colors, { label: "Day", value: dayLabel }, DAY_STEPS, cutover);
+  const options = chartOptions(container, 260, colors, { label: "Day", value: dayLabel }, DAY_STEPS, cutovers);
   view.forEach((series, i) => {
     options.series.push({
       label: series.label,
@@ -669,12 +675,12 @@ function dailyData(x, counts, shown) {
   return [x, ...stackBars(counts, shown), average];
 }
 
-function drawDaily(container, days, view, cutover, format) {
+function drawDaily(container, days, view, cutovers, format) {
   const ink = cssColor("--ink");
   const colors = [null, ...view.map((series) => cssColor(series.color)), ink];
   const counts = view.map((series) => countPerDay(days, series.times, series.weights));
   const x = days.map((day) => day / 1000);
-  const options = chartOptions(container, 220, colors, { label: "Day", value: dayLabel }, DAY_STEPS, cutover);
+  const options = chartOptions(container, 220, colors, { label: "Day", value: dayLabel }, DAY_STEPS, cutovers);
   options.scales.x.range = (chart, min, max) => [min - 43200, max + 43200];
   options.cursor.points = { show: false };
   const bars = uPlot.paths.bars({ size: [0.7, 48] });
@@ -694,14 +700,14 @@ function drawDaily(container, days, view, cutover, format) {
   return new uPlot(options, dailyData(x, counts, view.map(() => true)), container);
 }
 
-function drawStages(container, rows, cutover) {
+function drawStages(container, rows, cutovers) {
   const paper = cssColor("--paper");
   const colors = [null];
   const raw = [null];
   const data = [rows.map((row) => row.x)];
   const label = (chart, value, seriesIdx, idx) => (idx == null ? null : `#${rows[idx].number}${rows[idx].task ? ` ${rows[idx].task}` : ""}, ${dayTime.format(rows[idx].merged * 1000)}`);
   const value = (chart, plotted, seriesIdx, idx) => (idx == null || raw[seriesIdx][idx] === null ? null : duration(raw[seriesIdx][idx]));
-  const options = chartOptions(container, 320, colors, { label: "Pull request", value: label }, HOUR_STEPS, cutover);
+  const options = chartOptions(container, 320, colors, { label: "Pull request", value: label }, HOUR_STEPS, cutovers);
   for (const step of STEPS) {
     const color = cssColor(step.color);
     const values = rows.map((row) => row[step.key]);
@@ -744,9 +750,11 @@ function renderStageTable(rows, facts) {
   const bottom = facts.columns.map(() => `<th class="num">Median</th><th class="num">90th</th>`).join("");
   document.getElementById("stage-table").innerHTML = `<table><thead><tr><th rowspan="2">Step</th><th rowspan="2">From and to</th>${top}</tr><tr>${bottom}</tr></thead><tbody>${cells.slice(0, -1).join("")}</tbody><tfoot>${cells.at(-1)}</tfoot></table>`;
   const counted = `${number.format(rows.length)} merged since ${shortDate.format(rows[0].merged * 1000)}`;
-  document.getElementById("stage-count").textContent = facts.cutover === null
+  const parts = facts.live.map((period) => `${number.format(rows.filter((row) => row.stage === period.key).length)} ${period.key === 1 ? "in" : "started in"} stage ${period.key}`);
+  const crossed = number.format(rows.filter((row) => row.stage === 0).length);
+  document.getElementById("stage-count").textContent = facts.cutovers.length === 0
     ? `${counted}.`
-    : `${counted}: ${number.format(rows.filter((row) => row.stage === 1).length)} in stage 1, ${number.format(rows.filter((row) => row.stage === 2).length)} started in stage 2 and ${number.format(rows.filter((row) => row.stage === 0).length)} started before the switch and merged after it.`;
+    : `${counted}: ${parts.join(", ")} and ${crossed} started before ${facts.cutovers.length === 1 ? "the switch" : "a switch"} and merged after it.`;
 }
 
 function hourValues(facts, period, mode) {
@@ -783,14 +791,25 @@ function drawHours(container, facts, mode) {
     axes: [{ ...axis(), space: 34, incrs: [1, 2, 3, 6], values: (chart, splits) => splits.map((split) => slotName(mode, split)) }, { ...axis(), size: 48 }],
     series: [{ label: mode === "hour" ? "Hour" : "Weekday", value: (chart, value) => (value == null ? null : slotName(mode, value)) }],
   };
+  const bars = facts.live.map((period, i) => {
+    if (facts.live.length === 1) {
+      return uPlot.paths.bars({ size: [0.7, 48], align: 0 });
+    }
+    if (facts.live.length === 2) {
+      return uPlot.paths.bars({ size: [0.4, 40], align: i === 0 ? -1 : 1 });
+    }
+    // uPlot aligns a bar only to the left, middle or right of its slot, so from three stages on each bar gets its own start.
+    const width = 0.8 / facts.live.length;
+    const starts = [...Array(slots).keys()].map((slot) => slot - 0.4 + i * width);
+    return uPlot.paths.bars({ disp: { x0: { unit: 1, values: () => starts }, size: { unit: 1, values: () => [width] } } });
+  });
   facts.live.forEach((period, i) => {
-    const align = facts.live.length === 1 ? 0 : i === 0 ? -1 : 1;
     options.series.push({
       label: `${period.label}, merges a day`,
       fill: colors[i + 1],
       stroke: colors[i + 1],
       width: 0,
-      paths: uPlot.paths.bars({ size: facts.live.length === 1 ? [0.7, 48] : [0.4, 40], align }),
+      paths: bars[i],
       points: { show: false },
       value: (chart, value) => (value == null ? null : value.toFixed(2)),
     });
@@ -838,7 +857,7 @@ function drawMachine(charts, facts) {
     const color = cssColor("--c1");
     const muted = cssColor("--muted");
     const colors = [null, color, muted];
-    const options = chartOptions(container, 140, colors, { label: "Hour", value: (chart, value) => (value == null ? null : dayTime.format(value * 1000)) }, HOUR_STEPS, facts.cutover);
+    const options = chartOptions(container, 140, colors, { label: "Hour", value: (chart, value) => (value == null ? null : dayTime.format(value * 1000)) }, HOUR_STEPS, facts.cutovers);
     options.cursor.sync.key = "machine";
     options.axes[1].size = 40;
     options.series.push({ label: spec.title, stroke: color, width: 2, points: { show: hours.length < 48, size: 5 }, value: (chart, value) => (value == null ? null : oneDecimal.format(value)) });
@@ -858,15 +877,15 @@ function drawHistory(charts, facts) {
   }
   const ids = ["burnup", "daily", "hours", "stages", "ci", "agents"];
   const [burnup, daily, hours, stages, ci, agents] = ids.map((id) => document.getElementById(id));
-  charts.set(burnup, drawTotals(burnup, facts.days, facts.views[pressed("burnup")], facts.cutover));
-  charts.set(daily, drawDaily(daily, facts.days, facts.views[pressed("daily")], facts.cutover, number.format));
+  charts.set(burnup, drawTotals(burnup, facts.days, facts.views[pressed("burnup")], facts.cutovers));
+  charts.set(daily, drawDaily(daily, facts.days, facts.views[pressed("daily")], facts.cutovers, number.format));
   charts.set(hours, drawHours(hours, facts, pressed("hours")));
   const rows = pressed("stages") === "tasks" ? facts.taskRows : facts.rows;
-  charts.set(stages, drawStages(stages, rows, facts.cutover));
+  charts.set(stages, drawStages(stages, rows, facts.cutovers));
   renderStageTable(rows, facts);
-  charts.set(ci, drawDaily(ci, facts.days, ciView(facts, pressed("ci")), facts.cutover, number.format));
+  charts.set(ci, drawDaily(ci, facts.days, ciView(facts, pressed("ci")), facts.cutovers, number.format));
   const agentMode = pressed("agents");
-  charts.set(agents, drawDaily(agents, facts.days, agentView(facts, agentMode), facts.cutover, agentMode === "hours" ? oneDecimal.format : number.format));
+  charts.set(agents, drawDaily(agents, facts.days, agentView(facts, agentMode), facts.cutovers, agentMode === "hours" ? oneDecimal.format : number.format));
   drawMachine(charts, facts);
 }
 
@@ -1020,7 +1039,7 @@ function showTip(tip, event) {
 
 export function renderHistory(data) {
   const facts = historyFacts(data);
-  renderStageNote(facts.cutover);
+  renderStageNote(facts.cutovers);
   renderMilestonePace(facts);
   if (facts.rows.length === 0) {
     for (const id of ["burnup", "daily", "hours", "stages", "violins", "ci", "agents", "wait"]) {

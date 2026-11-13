@@ -1,9 +1,8 @@
 mod tests;
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
 
 use crate::affected::finish;
 use crate::error::GateError;
@@ -32,11 +31,7 @@ pub(crate) fn ensure(
     let branch = branch_name(task);
     let folder = root.join(worktrees);
     let path = folder.join(&task.id);
-    let new = !path.join(".git").exists();
     prepare(root, &path, &branch)?;
-    if new {
-        seed(&folder.join("clippy-seed"), &path)?;
-    }
     // inside the worker sandbox uv cannot hardlink from its cache and copies the whole LiteLLM venv
     finish(
         "uv",
@@ -159,81 +154,6 @@ fn prepare(root: &Path, target: &Path, branch: &str) -> Result<(), GateError> {
         git(target, &["switch", "--no-track", "-c", branch, &base])?;
     }
     configure(&canonical, target)
-}
-
-// cargo rebuilds a unit when a source is newer than its output, so copied units stay fresh only under older sources
-fn seed(store: &Path, checkout: &Path) -> Result<(), GateError> {
-    let Some(commit) = copy_seed(store, checkout)? else {
-        return Ok(());
-    };
-    // 2000 rather than 1970, since zip and wheel builds refuse dates before 1980
-    let old = SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_hours(262_968))
-        .ok_or_else(|| refuse(checkout, "the year 2000 is not a valid file time"))?;
-    for name in git(checkout, &["ls-files", "-z"])?.split_terminator('\0') {
-        stamp(&checkout.join(name), old)?;
-    }
-    let changed = ["diff", "--name-only", "-z", commit.trim(), "HEAD"];
-    let now = SystemTime::now();
-    for name in git(checkout, &changed)?.split_terminator('\0') {
-        stamp(&checkout.join(name), now)?;
-    }
-    git(checkout, &["update-index", "-q", "--refresh"])?;
-    Ok(())
-}
-
-fn copy_seed(store: &Path, checkout: &Path) -> Result<Option<String>, GateError> {
-    let recorded = store.join("commit");
-    if !recorded.is_file() {
-        return Ok(None);
-    }
-    let lock = store.join("lock");
-    let shared = File::open(&lock).map_err(|source| GateError::Read {
-        path: lock.clone(),
-        source,
-    })?;
-    shared
-        .lock_shared()
-        .map_err(|source| GateError::Lock { path: lock, source })?;
-    let commit = fs::read_to_string(&recorded).map_err(|source| GateError::Read {
-        path: recorded,
-        source,
-    })?;
-    let snapshot = store.join("target");
-    let copy = checkout.join("target");
-    finish(
-        "cp",
-        &[
-            "-a",
-            snapshot
-                .to_str()
-                .ok_or(GateError::NotUnicode("the clippy seed"))?,
-            copy.to_str()
-                .ok_or(GateError::NotUnicode("the task checkout"))?,
-        ],
-        checkout,
-    )?;
-    Ok(Some(commit))
-}
-
-fn stamp(path: &Path, time: SystemTime) -> Result<(), GateError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() => {}
-        Ok(_) => return Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-        Err(source) => {
-            return Err(GateError::Read {
-                path: path.to_owned(),
-                source,
-            });
-        }
-    }
-    File::open(path)
-        .and_then(|file| file.set_modified(time))
-        .map_err(|source| GateError::Write {
-            path: path.to_owned(),
-            source,
-        })
 }
 
 fn idle(target: &Path) -> Result<(), GateError> {

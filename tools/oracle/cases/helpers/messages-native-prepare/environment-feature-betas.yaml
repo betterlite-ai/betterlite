@@ -1,0 +1,32 @@
+kind: helper
+name: messages-native-prepare-environment-feature-betas
+call:
+  messages_native_prepare:
+    function: environment
+    calls:
+      - headers: {}
+        optional_params:
+          speed: fast
+        messages: []
+        environment:
+          ANTHROPIC_API_KEY: sk-test
+      - headers: {}
+        optional_params:
+          context_management:
+            edits:
+              - type: clear_tool_uses_20250919
+        messages: []
+        environment:
+          ANTHROPIC_API_KEY: sk-test
+      - headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content: hi
+            output_config:
+              effort: low
+        environment:
+          ANTHROPIC_API_KEY: sk-test
+env: {}
+compare:
+  ignore: []

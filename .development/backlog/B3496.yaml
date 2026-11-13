@@ -1,7 +1,7 @@
 id: B3496
 milestone: M5 api families
 title: Settle background interaction usage before deletion
-status: todo
+status: done
 depends_on: [B3481, B250, B206]
 file: tasks/B3496-interaction-settlement.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/constants.py"
 parent: B098
 split_from: B098
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1546

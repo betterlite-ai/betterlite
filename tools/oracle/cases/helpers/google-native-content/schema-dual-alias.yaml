@@ -1,0 +1,38 @@
+kind: helper
+name: google-native-content-schema-dual-alias
+call:
+  google_native_content:
+    calls:
+      - function: request
+        provider: studio
+        model: gemini-2.0-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          responseSchema: {type: object, properties: {a: {type: string}}}
+          responseJsonSchema: {type: object}
+          temperature: 0.1
+        settings: {}
+      - function: request
+        provider: vertex
+        model: gemini-2.0-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          response_schema: {type: object}
+          response_json_schema: {type: object}
+        settings: {}
+      - function: request
+        provider: vertex
+        model: gemini-2.0-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          responseSchema: {type: object}
+        settings: {}
+      - function: request
+        provider: studio
+        model: gemini-2.0-flash
+        contents: [{role: user, parts: [{text: hi}]}]
+        generation_config:
+          response_schema: {type: object}
+        settings: {}
+env: {}
+compare: {ignore: []}

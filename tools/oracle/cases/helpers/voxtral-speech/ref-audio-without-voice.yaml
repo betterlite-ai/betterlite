@@ -1,0 +1,13 @@
+kind: helper
+name: voxtral-speech-ref-audio-without-voice
+call:
+  voxtral_speech:
+    probes:
+      - {optional_params: {response_format: opus, ref_audio: "data:audio/ogg;base64,AAAA"}}
+      - {optional_params: {response_format: wav, ref_audio: 5}}
+      - {kwargs: {ref_audio: "data:audio/wav;base64,AAAA"}, optional_params: {response_format: mp3}}
+      - {kwargs: {ref_audio: 5}}
+      - {voice: onyx, optional_params: {response_format: ""}}
+      - {kwargs: {voice_id: shimmer}, optional_params: {ref_audio: "x"}}
+env: {}
+compare: {ignore: []}

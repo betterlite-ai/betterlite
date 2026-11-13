@@ -63,14 +63,16 @@
     </div>
     <div class="block">
       <header>
-        <h3>Two stages</h3>
-        <p>Counts per day go by merge time. Times and sizes per pull request go by when the work started: stage 2 holds the pull requests whose first commit came after the switch, and one that started before and merged after counts only in All.</p>
+        <h3>Three stages</h3>
+        <p>Counts per day go by merge time. Times and sizes per pull request go by when the work started: a stage holds the pull requests that started and merged in it, and one that started before a switch and merged after it counts only in All.</p>
       </header>
       <div>
         <div class="stage-about">
           <p>Stage 1, until #722 merged. A worker agent wrote the task and ran its whole check list on the laptop before the pull request opened: the build, the task's tests, the oracle cases that compare answers with LiteLLM, and the mutation tests. Every task checkout kept its own build folder, several gigabytes each. With dozens of agents at once the builds filled the disk, wrote to it all day and slowed every agent down. CI then checked lint on the pull request and ran the task's tests again in the merge queue.</p>
-          <p>Stage 2, from #722 on. On the laptop a worker only formats and lints the code and runs the checks that need no test build. The tests, the oracle cases and the mutation tests run in CI on the pull request. A red run goes back to the same worker with the failing lines, the reviewer checks the fix, and after three red rounds the task is marked blocked. The merge queue still tests the merged result before it reaches main.</p>
-          <p>What should change: less disk traffic and less waiting on the laptop, so pull requests open sooner. What it costs: more CI runs, and some tasks need an extra round when CI finds what the laptop no longer checks. The table below shows both sides.</p>
+          <p>Stage 2, from #722 until #1544. On the laptop a worker only formats and lints the code and runs the checks that need no test build. The tests, the oracle cases and the mutation tests run in CI on the pull request. A red run goes back to the same worker with the failing lines, the reviewer checks the fix, and after three red rounds the task is marked blocked. The merge queue still tests the merged result before it reaches main.</p>
+          <p>Stage 3, from #1544 on. The laptop only runs the agents. A worker formats its code and runs the checks that build nothing, and clippy moves to CI with the tests, the oracle cases and the mutation tests. On a pull request CI runs lint first and starts the other parts once it passes, so a compile error costs one short job. A red run goes back to the same worker, up to eight rounds. With no builds on the laptop, memory and the vendors' seats decide how many tasks run at once, and DeepSeek went from 32 seats to 128.</p>
+          <p>What stage 2 should change: less disk traffic and less waiting on the laptop, so pull requests open sooner. What it costs: more CI runs, and some tasks need an extra round when CI finds what the laptop no longer checks. The table below shows both sides.</p>
+          <p>What stage 3 should change: many more tasks at once, since builds no longer fill the laptop's disk and CPU. What it costs: more CI rounds per task, since a compile error now shows up in CI instead of on the laptop.</p>
         </div>
         <div class="figures small" id="stage-figures"></div>
         <div class="table-scroll" id="stage-compare"></div>
@@ -205,7 +207,7 @@
     <div class="block">
       <header>
         <h3>Build machine</h3>
-        <p>One laptop runs every agent, build and lint. The table compares the averages since the machine started with stage 2 and the last full hour. The dashed line in each chart is the average since it started.</p>
+        <p>One laptop runs every agent. Until stage 3 it also ran every build and lint. The table puts the averages since the machine started next to each stage's 5-minute samples and the last full hour. The dashed line in each chart is the average since it started.</p>
         <p id="machine-note"></p>
       </header>
       <div>

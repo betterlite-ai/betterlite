@@ -1,0 +1,16 @@
+kind: helper
+name: get-settings-found
+call:
+  b3601:
+    calls:
+      - function: get_settings
+        config: {g1: {request_fields: [query], response_fields: [output]}}
+        name: g1
+      - function: get_settings
+        config: {g1: {request_fields: ["documents[*].text"]}}
+        name: g1
+      - function: get_settings
+        config: {g1: {request_fields: [query], extra: 1}}
+        name: g1
+env: {}
+compare: {ignore: []}

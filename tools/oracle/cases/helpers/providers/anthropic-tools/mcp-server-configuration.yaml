@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-tools-mcp-server-configuration
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: url, url: 'https://mcp.test/rpc', name: remote, headers: {Authorization: 'Bearer raw'}, require_approval: never}
+          - {type: mcp, server_url: 'https://mcp.test/rpc', server_label: label, allowed_tools: [], headers: {Authorization: 'Bearer x Bearer y', X-Other: keep}, require_approval: never}
+          - {type: mcp, server_url: 'https://mcp.test/other', server_label: second, allowed_tools: [one, two]}
+          - {type: mcp, server_url: 'https://mcp.test/empty', server_label: empty-token, headers: {Authorization: 'Bearer '}}
+          - {type: mcp, server_url: 'https://mcp.test/lower', server_label: lower, headers: {authorization: 'Bearer ignored'}}
+          - {type: mcp, server_url: 'https://mcp.test/null', server_label: null-headers, headers: null, allowed_tools: null}
+          - {type: mcp, server_url: 'https://mcp.test/plain', server_label: plain-token, headers: {Authorization: plain-token}}
+      - function: tools
+        tools:
+          - {type: mcp, server_label: label}
+      - function: tools
+        tools:
+          - {type: mcp, server_url: 'https://mcp.test/rpc'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: spend_decimal
+call:
+  managed_resource_rows:
+    rows:
+      - name: spend_default_zero
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null}}'
+      - name: spend_explicit_zero
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":0.0}}'
+      - name: spend_fraction
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":1.25}}'
+      - name: spend_integer
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":5}}'
+      - name: spend_negative
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":-0.5}}'
+      - name: spend_null
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":null}}'
+      - name: spend_large
+        stored: '{"kind":"spend_log","row":{"request_id":"r","api_key":"k","call_type":"completion","startTime":null,"endTime":null,"messages":null,"response":null,"spend":123456.789}}'
+env: {}
+compare: {ignore: []}

@@ -1,3 +1,4 @@
+use betterlite_core::api::messages_sse_events::stream::MessagesStreamHiddenParams;
 use betterlite_openai::embedding::EmbeddingResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
@@ -10,7 +11,17 @@ pub enum SdkResult {
     Embedding { value: EmbeddingOutcomes },
     Vectors { value: QueryVectors },
     BetaConfig { value: BetaConfigRun },
+    MessagesHeaderStream { value: HeaderStreamRun },
     Failure(Failure),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderStreamRun {
+    pub hidden_params: MessagesStreamHiddenParams,
+    pub provider_bytes: Vec<u8>,
+    pub has_buffered_provider_output: bool,
+    pub closed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

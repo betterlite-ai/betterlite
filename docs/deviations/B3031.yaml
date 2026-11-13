@@ -1,0 +1,17 @@
+task: B3031
+deviations:
+  - what: The per-request stash is a RequestStashSlot passed to every hook and callback, not a ContextVar that child tasks inherit.
+    why: The rules forbid task-local and global state. The ownership rule is kept (a stash with an owner call id answers only that id or no id), so router retries still reach it and nested calls that get no slot see nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L608-L620
+  - what: A string value of general_settings.fail_closed_rate_limit_enforcement is read with betterlite's shared env bool parser (true, false, 1, 0, yes, no, on, off in any case).
+    why: LiteLLM's pydantic read accepts a similar set of strings, so a setup that passes the flag through os.environ/ keeps working. A string neither reads as a bool warns and disables, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L144-L156
+  - what: A LITELLM_RATE_LIMIT_WINDOW_SIZE that is not a positive integer is a config load error naming the variable.
+    why: LiteLLM crashes at startup on text (int() raises) and silently builds a zero or negative window that resets on every request; no working setup relies on either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L811-L817
+  - what: ReservationWindowIdentity is a named struct and reservation_windows an ordered set.
+    why: Python uses a tuple and a frozenset. Order and the tuple shape are not visible to clients.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L497-L497
+  - what: The fail-closed rejection logs its WARNING through tracing with LiteLLM's message, without LiteLLM's Redis timeout throttling and its circuit-open DEBUG downgrade.
+    why: B393's log_redis_failure lives in betterlite-server, which takes the rate limiter as a dependency in B3055, so this crate cannot call it without a dependency cycle. The level, the message and the raised error match; only repeated timeout lines are not throttled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L504

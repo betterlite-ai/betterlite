@@ -1,0 +1,36 @@
+kind: probe
+name: catalog-updates-raise-mode-failed-set
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: false
+        steps:
+          - action: set
+            models:
+              - {model_name: g, model: "openai/m1", id: a}
+              - {model_name: h, model: "openai/m3", id: c}
+          - action: set
+            models:
+              - {model_name: g, model: "openai/m5", id: d}
+              - {model_name: k, model: "bogus/x", id: e}
+              - {model_name: h, model: "openai/m6", id: f}
+compare:
+  expected_difference:
+    - pointer: /output/catalog_updates/steps/1/names
+      reference: [g]
+      rust: [g, h]
+      why: LiteLLM clears its model list before it adds the entries, so the failed set leaves the entries added before the invalid one. betterlite builds the list apart and keeps the earlier catalog
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9527
+    - pointer: /output/catalog_updates/steps/1/ids
+      reference: [d]
+      rust: [a, c]
+      why: the id index of LiteLLM holds only the entry added before the failure, while betterlite keeps the ids of the earlier catalog
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9527
+    - pointer: /output/catalog_updates/steps/1/by_name
+      reference: {g: [d]}
+      rust: {g: [a], h: [c]}
+      why: the model name index of LiteLLM holds only the entry added before the failure, while betterlite keeps the earlier index
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9519-L9527
+  ignore: []

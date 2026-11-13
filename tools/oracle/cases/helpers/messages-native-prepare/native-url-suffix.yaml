@@ -1,0 +1,17 @@
+kind: helper
+name: messages-native-prepare-url-suffix
+call:
+  messages_native_prepare:
+    function: url
+    api_bases:
+      - null
+      - https://configured.test
+      - https://configured.test/v1/messages
+      - https://configured.test/
+      - ""
+    environment:
+      ANTHROPIC_API_BASE: https://api-base.test
+      ANTHROPIC_BASE_URL: https://base-url.test
+env: {}
+compare:
+  ignore: []

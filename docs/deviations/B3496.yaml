@@ -1,0 +1,20 @@
+task: B3496
+deviations:
+  - what: Rust names are shorter than LiteLLM's, so maybe_settle_background_interaction_before_delete is settle_before_delete, _bill_settled_interaction is bill_settled_interaction, _release_open_budget_reservation is release_open_reservation and _is_interactions_create_call_type is is_billable_interaction.
+    why: A lint refuses names over 30 characters, and B3500's adelete calls settle_before_delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L287-L311
+  - what: Settlement reaches the create's logging object through the SettlementHost trait, whose reservation and error types are associated types, instead of a Python object whose call details are a dict.
+    why: Typed collaborators come in through constructors, and betterlite-interactions must not depend on betterlite-logging, which depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L166-L200
+  - what: settle_before_delete takes the active-poll registry and the fetch function as arguments, where LiteLLM reads the process-global _ACTIVE_POLLS dict and defaults the fetch to _fetch_interaction.
+    why: Rule inject-dependencies bars globals; B3481's registry is owned by the server, and the create path supplies its fetcher.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L287-L296
+  - what: The three numeric polling settings load into Durations, so text Rust's f64 parser rejects but Python's float() accepts (digit underscores such as "1_0") and a negative or nan number are startup errors naming the variable; +inf and finite values past Duration's range clamp to Duration::MAX, where LiteLLM keeps the float and polls with no timeout or no backoff cap.
+    why: A Duration cannot be negative or nan, while a positive value the type cannot hold clamps so a setup that polls without a timeout or an interval cap keeps working instead of stopping at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1831-L1843
+  - what: The spans_logged dedupe scopes are Python tuples in LiteLLM's dict and text keys in betterlite's JSON call details, so the reset compares each key's JSON array form and drops it when its last element is "success".
+    why: B250 stores call details as JSON, whose object keys are text; the cleared set is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2678-L2701
+  - what: The settled completion reaches B250's success handler as a JSON object carrying the cleaned _hidden_params, and a second settlement of the same logging object fails with a typed error rather than sharing the Python object.
+    why: betterlite's responses travel as JSON and its logging state is owned while the handler runs; the payload builder reads _hidden_params from the response the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2604-L2676

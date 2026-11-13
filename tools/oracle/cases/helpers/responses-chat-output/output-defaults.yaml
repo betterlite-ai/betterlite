@@ -1,0 +1,26 @@
+kind: helper
+name: responses-chat-output-output-defaults
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request: {}
+    chat_completion_response:
+      id: chat_a
+      created: 1
+      model: m
+      _hidden_params:
+        provider_specific_fields: {trace: abc}
+      choices:
+        - finish_reason: stop
+          message:
+            role: assistant
+            content: hi
+            tool_calls: null
+            annotations: null
+            images: null
+            thinking_blocks: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: The message id is a random UUID.
