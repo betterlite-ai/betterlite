@@ -11,6 +11,8 @@ use super::support::value;
 #[case::object(r#"{"tokens":[1]}"#, None)]
 #[case::empty_list("[]", Some(0))]
 #[case::flat_ids("[1,2,3]", Some(3))]
+#[case::negative_id("[-1]", Some(1))]
+#[case::id_past_i64("[18446744073709551615]", Some(1))]
 #[case::nested_ids("[[1,2],[3]]", Some(3))]
 #[case::nested_empty("[[],[]]", Some(0))]
 #[case::mixed("[1,[2]]", None)]
