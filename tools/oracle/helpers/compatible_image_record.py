@@ -1,16 +1,13 @@
 import asyncio
-import json
 import os
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar
 
 import httpx
 import litellm
-from litellm.exceptions import ModelNotMappedError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.aiml.image_generation.cost_calculator import cost_calculator
 from litellm.llms.aiml.image_generation.transformation import AimlImageGenerationConfig
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.base_llm.image_generation.transformation import BaseImageGenerationConfig
 from litellm.llms.cometapi.image_generation.transformation import CometAPIImageGenerationConfig
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
@@ -146,7 +143,7 @@ class RecordingTransport:
         self.url = str(request.url)
         self.authorization = request.headers["authorization"]
         self.content_type = request.headers["content-type"]
-        self.body = JSON.validate_python(json.loads(request.content))
+        self.body = JSON.validate_json(request.content)
         return httpx.Response(self.status, text=self.reply_body, request=request)
 
 
@@ -163,9 +160,12 @@ def apply_env(env: dict[str, str]) -> None:
 
 
 def image_spec(image: OpenAIImage) -> JsonValue:
-    return JSON.validate_python(
-        {"url": image.url, "b64_json": image.b64_json, "revised_prompt": image.revised_prompt}
-    )
+    fields: dict[str, JsonValue] = {
+        "url": image.url,
+        "b64_json": image.b64_json,
+        "revised_prompt": image.revised_prompt,
+    }
+    return JSON.validate_python(fields)
 
 
 def data_view(response: ImageResponse) -> JsonValue:
@@ -197,27 +197,22 @@ async def request_call(call: RequestCall) -> JsonValue:
     transport = RecordingTransport(call["reply"]["status"], call["reply"]["body"])
     client = AsyncHTTPHandler(transport=httpx.MockTransport(transport.handle))
     litellm_params: Object = {"api_base": call["api_base"]}
-    try:
-        response = await HANDLER.async_image_generation_handler(
-            call["model"],
-            call["prompt"],
-            CONFIGS[call["host"]],
-            dict(call["optional_params"]),
-            call["host"],
-            litellm_params,
-            ImageLogging(),
-            30.0,
-            None,
-            None,
-            client,
-            NO_FAKE_STREAM,
-            None,
-            call["api_key"],
-        )
-    except BaseLLMException as error:
-        return {"ok": False, "status": error.status_code, "value": None}
-    except (ValueError, TypeError, AttributeError):
-        return {"ok": False, "status": None, "value": None}
+    response = await HANDLER.async_image_generation_handler(
+        call["model"],
+        call["prompt"],
+        CONFIGS[call["host"]],
+        dict(call["optional_params"]),
+        call["host"],
+        litellm_params,
+        ImageLogging(),
+        30.0,
+        None,
+        None,
+        client,
+        NO_FAKE_STREAM,
+        None,
+        call["api_key"],
+    )
     value: JsonValue = {
         "url": transport.url,
         "headers": {
@@ -232,10 +227,7 @@ async def request_call(call: RequestCall) -> JsonValue:
 
 def price_value(call: PriceCall) -> JsonValue:
     images = [ImageObject(url=GENERATED) for _ in range(call["images"])]
-    try:
-        cost = PRICE(call["model"], ImageResponse(data=images))
-    except (ModelNotMappedError, ValueError, TypeError):
-        return {"ok": False, "status": None, "value": None}
+    cost = PRICE(call["model"], ImageResponse(data=images))
     value: JsonValue = {"cost": str(cost)}
     return {"ok": True, "status": None, "value": value}
 

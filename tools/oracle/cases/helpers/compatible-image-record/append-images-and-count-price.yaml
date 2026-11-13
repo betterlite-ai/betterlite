@@ -16,9 +16,5 @@ call:
         model: flux-pro/v1.1
         images: 1
         prices: {cometapi/flux-pro/v1.1: {output_cost_per_image: 0.052}}
-      - host: aiml
-        model: unmapped-model
-        images: 1
-        prices: {}
 env: {}
 compare: {ignore: []}

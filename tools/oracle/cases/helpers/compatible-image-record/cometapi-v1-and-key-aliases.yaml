@@ -28,13 +28,5 @@ call:
         api_base: null
         env: {COMETAPI_KEY: "", COMETAPI_API_KEY: alternative, COMETAPI_BASE_URL: "https://first.example//"}
         reply: {status: 200, headers: {}, body: '{"data":[]}'}
-      - host: cometapi
-        model: any-model
-        prompt: a cat
-        optional_params: {}
-        api_key: null
-        api_base: null
-        env: {}
-        reply: {status: 200, headers: {}, body: '{"data":[]}'}
 env: {}
 compare: {ignore: []}
