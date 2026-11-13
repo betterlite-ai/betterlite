@@ -1,0 +1,38 @@
+kind: probe
+name: alias-and-deployment-id
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      deployment_catalog:
+        models:
+          - {model_name: gpt, model: "openai/gpt-4o", id: d1}
+          - {model_name: claude, model: "openai/claude-x", id: d2}
+          - {model_name: team-one, model: "openai/team-m", id: t1, team_id: team-a, team_public_model_name: shared}
+          - {model_name: "openai/*", model: "openai/*", id: w1}
+        model_group_alias: {smart: gpt, quick: claude}
+        lookups:
+          - {model: smart, specific_deployment: false}
+          - {model: d1, specific_deployment: false}
+          - {model: gpt, specific_deployment: false}
+          - {model: "openai/gpt-4o", specific_deployment: true}
+          - {model: "openai/claude-x", specific_deployment: false}
+          - {model: "openai/gpt-5", specific_deployment: false}
+          - {model: shared, specific_deployment: false, team_id: team-a}
+          - {model: team-one, specific_deployment: false}
+          - {model: gpt, specific_deployment: false, team_id: ""}
+          - {model: quick, specific_deployment: false, team_id: team-a}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    operation:
+      deployment_catalog:
+        models:
+          - {model_name: shared, model: "openai/one", id: s1, team_id: team-a, team_public_model_name: shared}
+          - {model_name: shared, model: "openai/two", id: s2, team_id: team-b, team_public_model_name: shared}
+        model_group_alias: {}
+        lookups:
+          - {model: shared, specific_deployment: false, team_id: team-a}
+          - {model: shared, specific_deployment: false, team_id: team-b}
+          - {model: s2, specific_deployment: false}
+compare:
+  ignore: []
