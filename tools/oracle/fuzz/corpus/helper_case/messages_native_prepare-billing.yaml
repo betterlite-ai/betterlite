@@ -2,16 +2,19 @@ kind: helper
 name: messages-native-prepare-billing-seed
 call:
   messages_native_prepare:
-    function: billing
-    systems:
-      - x-anthropic-billing-header: a
-      - keep
-    request:
-      system:
-        - type: text
-          text: base
-          cache_control:
-            type: ephemeral
-            scope: global
+    function: transform
+    calls:
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 8
+          system:
+            - type: text
+              text: "x-anthropic-billing-header: a"
+            - type: text
+              text: keep
+          messages:
+            - role: user
+              content: question
+        supports_mid_system: false
 env: {}
 compare: {ignore: []}

@@ -2,15 +2,16 @@ kind: helper
 name: messages-native-prepare-system-seed
 call:
   messages_native_prepare:
-    function: system
+    function: transform
     calls:
       - request:
+          model: claude-sonnet-4-5
+          max_tokens: 8
           messages:
             - role: user
               content: q
             - role: system
               content: reminder
-        model: claude-sonnet-4-5
         supports_mid_system: false
 env: {}
 compare: {ignore: []}

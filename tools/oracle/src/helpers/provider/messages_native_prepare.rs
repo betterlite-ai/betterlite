@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_config::sections::anthropic_credentials::Settings as ConfigSettings;
-use betterlite_core::api::messages_native_prepare::billing::{
-    filter_billing_headers, remove_cache_scope,
-};
+use betterlite_core::api::messages_native_prepare::billing::remove_cache_scope;
 use betterlite_core::api::messages_native_prepare::environment::validate_environment;
 use betterlite_core::api::messages_native_prepare::fields::{
     native_filters_betas, native_supported_fields,
@@ -12,11 +10,10 @@ use betterlite_core::api::messages_native_prepare::fields::{
 use betterlite_core::api::messages_native_prepare::system_turns::normalize_system_turns;
 use betterlite_core::api::messages_native_prepare::url::messages_url;
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::api::messages_native_prepare::error::MessagesContractError;
 use betterlite_provider::api::messages_native_prepare::{AnthropicMessagesConfig, Headers};
 use indexmap::IndexMap;
-use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -35,12 +32,8 @@ pub(crate) enum Input {
     Environment {
         calls: Vec<EnvironmentCall>,
     },
-    Billing {
-        systems: Vec<Json>,
-        request: Object,
-    },
-    System {
-        calls: Vec<SystemCall>,
+    Transform {
+        calls: Vec<TransformCall>,
     },
     BaseDefaults(BaseDefaultsCall),
 }
@@ -49,17 +42,13 @@ pub(crate) enum Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct EnvironmentCall {
     headers: IndexMap<String, String>,
-    api_key: Option<String>,
-    api_base: Option<String>,
     environment: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct SystemCall {
+pub(crate) struct TransformCall {
     request: Object,
-    #[serde(rename = "model")]
-    _model: String,
     supports_mid_system: bool,
 }
 
@@ -94,8 +83,7 @@ impl Helper for Op {
                 environment,
             } => url(api_bases, environment),
             Input::Environment { calls } => environment(calls),
-            Input::Billing { systems, request } => Ok(billing(systems, request)),
-            Input::System { calls } => Ok(system(calls)),
+            Input::Transform { calls } => Ok(transform(calls)),
             Input::BaseDefaults(case) => Ok(base_defaults(case)),
         }
     }
@@ -146,34 +134,24 @@ fn environment(calls: &[EnvironmentCall]) -> HelperResult {
 
 fn environment_answer(call: &EnvironmentCall, settings: &AnthropicSettings) -> Value {
     let mut headers: Headers = call.headers.clone();
-    match validate_environment(
-        &mut headers,
-        call.api_key.clone().map(SecretString::from),
-        call.api_base.as_deref(),
-        settings,
-    ) {
+    match validate_environment(&mut headers, None, None, settings) {
         Ok(api_base) => json!({ "headers": headers, "api_base": api_base }),
         Err(error) => json!({ "error": {"status": error.status_code()} }),
     }
 }
 
-fn billing(systems: &[Json], request: &Object) -> Value {
-    let mut updated = request.clone();
-    remove_cache_scope(&mut updated);
-    let filtered: Vec<Option<Json>> = systems.iter().map(filter_billing_headers).collect();
-    json!({
-        "systems": filtered,
-        "request": updated,
-    })
-}
-
-fn system(calls: &[SystemCall]) -> Value {
+fn transform(calls: &[TransformCall]) -> Value {
     let answers: Vec<Value> = calls
         .iter()
         .map(|call| {
-            let mut updated = call.request.clone();
-            normalize_system_turns(&mut updated, call.supports_mid_system);
-            json!({ "request": updated })
+            let mut body = call.request.clone();
+            normalize_system_turns(&mut body, call.supports_mid_system);
+            remove_cache_scope(&mut body);
+            json!({
+                "system": body.get("system"),
+                "messages": body.get("messages"),
+                "tools": body.get("tools"),
+            })
         })
         .collect();
     json!({ "calls": answers })
@@ -193,19 +171,11 @@ fn base_defaults(case: &BaseDefaultsCall) -> Value {
         "web_search": Base.handles_web_search_natively(),
         "uses_provider_base": Base.uses_provider_api_base(),
         "filters_betas": Base.filters_beta_headers(),
-        "stream_error": stream_error(),
         "error": {"status": error.status_code, "message": error.message},
         "max_retries": Base.max_http_retries(),
         "retried": Base.retries_http_error(case.status, &case.text),
         "request": updated,
     })
-}
-
-fn stream_error() -> Value {
-    match Base.stream_iterator() {
-        Ok(_) => Value::Null,
-        Err(error) => Value::String(error.to_string()),
-    }
 }
 
 fn failure<E>(error: E) -> Box<HelperError>

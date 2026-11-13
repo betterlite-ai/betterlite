@@ -6,37 +6,26 @@ call:
     calls:
       - headers:
           X-API-Key: caller
-        api_key: sk-test
-        api_base: null
-        environment: {}
+        environment:
+          ANTHROPIC_API_KEY: sk-test
       - headers:
           Authorization: Bearer caller
-        api_key: null
-        api_base: https://configured.test
         environment: {}
       - headers: {}
-        api_key: sk-test
-        api_base: null
-        environment: {}
+        environment:
+          ANTHROPIC_API_KEY: sk-test
       - headers:
           anthropic-version: "2024-01-01"
           content-type: text/plain
-        api_key: sk-test
-        api_base: null
-        environment: {}
+        environment:
+          ANTHROPIC_API_KEY: sk-test
       - headers:
           Anthropic-Version: "2024-01-01"
-        api_key: sk-test
-        api_base: null
-        environment: {}
+        environment:
+          ANTHROPIC_API_KEY: sk-test
       - headers: {}
-        api_key: sk-ant-oat-test
-        api_base: null
-        environment: {}
-      - headers: {}
-        api_key: null
-        api_base: null
-        environment: {}
+        environment:
+          ANTHROPIC_API_KEY: sk-ant-oat-test
 env: {}
 compare:
   ignore: []

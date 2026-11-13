@@ -1,11 +1,15 @@
 import os
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
-from litellm.exceptions import AuthenticationError
 from litellm.llms.anthropic.pass_through.messages.transformation import (
     AnthropicMessagesConfig,
 )
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
+from litellm.llms.vertex_ai.vertex_ai_partner_models.anthropic.experimental_pass_through import (
+    transformation as vertex_messages,
+)
+from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
@@ -15,6 +19,74 @@ MODEL: Final = "claude-sonnet-4-5"
 NO_PARAMS: Final[JsonObject] = {}
 NO_MESSAGES: Final[list[Json]] = []
 NO_HEADERS: Final[Headers] = {}
+
+
+class Config(Protocol):
+    @property
+    def max_retry_on_anthropic_messages_http_error(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> int: ...
+
+    def get_supported_anthropic_messages_params(  # ast-grep-ignore: no-long-names
+        self, model: str
+    ) -> list[Json]: ...
+
+    def should_filter_anthropic_beta_headers(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> bool: ...
+
+    def should_strip_billing_metadata(self) -> bool: ...
+
+    def handles_web_search_natively(self) -> bool: ...
+
+    def uses_get_llm_provider_api_base(self) -> bool: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: JsonObject,
+        litellm_params: JsonObject,
+    ) -> str: ...
+
+    def validate_anthropic_messages_environment(  # ast-grep-ignore: no-long-names
+        self,
+        headers: JsonObject,
+        model: str,
+        messages: list[Json],
+        optional_params: JsonObject,
+        litellm_params: JsonObject,
+    ) -> tuple[JsonObject, str | None]: ...
+
+    def sign_request(
+        self,
+        headers: JsonObject,
+        optional_params: JsonObject,
+        request_data: JsonObject,
+        api_base: str,
+    ) -> tuple[JsonObject, bytes | None]: ...
+
+    def get_error_class(
+        self, error_message: str, status_code: int, headers: JsonObject | httpx.Headers
+    ) -> BaseLLMException: ...
+
+    def should_retry_anthropic_messages_on_http_error(  # ast-grep-ignore: no-long-names
+        self, e: httpx.HTTPStatusError, litellm_params: JsonObject
+    ) -> bool: ...
+
+    def transform_anthropic_messages_request_on_http_error(  # ast-grep-ignore: no-long-names
+        self, e: httpx.HTTPStatusError, request_data: JsonObject
+    ) -> JsonObject: ...
+
+    def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        messages: list[JsonObject],
+        anthropic_messages_optional_request_params: JsonObject,  # ast-grep-ignore: no-long-names
+        litellm_params: GenericLiteLLMParams,
+        headers: JsonObject,
+    ) -> JsonObject: ...
 
 
 class BedrockConfig(AnthropicMessagesConfig):
@@ -31,7 +103,15 @@ class NullConfig(AnthropicMessagesConfig):
         return None
 
 
-def config_for(provider: str | None) -> AnthropicMessagesConfig:
+# Vertex's transform publicly calls the parent's normalization and scope removal
+class DriverConfig(vertex_messages.VertexAIPartnerModelsAnthropicMessagesConfig):
+    @property
+    @override
+    def custom_llm_provider(self) -> str | None:
+        return None
+
+
+def config_for(provider: str | None) -> Config:
     match provider:
         case None:
             return NullConfig()
@@ -56,8 +136,6 @@ class UrlCall(TypedDict):
 
 class EnvironmentStep(TypedDict):
     headers: Headers
-    api_key: str | None
-    api_base: str | None
     environment: dict[str, str]
 
 
@@ -66,21 +144,25 @@ class EnvironmentCall(TypedDict):
     calls: list[EnvironmentStep]
 
 
-class BillingCall(TypedDict):
-    function: Literal["billing"]
-    systems: list[Json]
-    request: JsonObject
+class TransformExtras(TypedDict, total=False):
+    system: Json
+    tools: list[Json]
 
 
-class SystemStep(TypedDict):
-    request: JsonObject
+class TransformBody(TransformExtras):
     model: str
+    max_tokens: int
+    messages: list[JsonObject]
+
+
+class TransformStep(TypedDict):
+    request: TransformBody
     supports_mid_system: bool
 
 
-class SystemCall(TypedDict):
-    function: Literal["system"]
-    calls: list[SystemStep]
+class TransformCall(TypedDict):
+    function: Literal["transform"]
+    calls: list[TransformStep]
 
 
 class BaseDefaultsCall(TypedDict):
@@ -97,17 +179,14 @@ Input: TypeAlias = (
     SupportedFieldsCall
     | UrlCall
     | EnvironmentCall
-    | BillingCall
-    | SystemCall
+    | TransformCall
     | BaseDefaultsCall
 )
 
 
-def field_projection(provider: str | None) -> Json:
-    config = config_for(provider)
-    fields: list[Json] = config.get_supported_anthropic_messages_params(MODEL)  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L66
+def field_projection(config: Config) -> Json:
     projection: JsonObject = {
-        "fields": fields,
+        "fields": config.get_supported_anthropic_messages_params(MODEL),
         "filters_betas": config.should_filter_anthropic_beta_headers(),
         "strips_billing": config.should_strip_billing_metadata(),
     }
@@ -119,56 +198,54 @@ def use_environment(values: dict[str, str]) -> None:
     os.environ.update(values)
 
 
-def url(call: UrlCall) -> Json:
-    config = AnthropicMessagesConfig()
+def url(config: Config, call: UrlCall) -> Json:
     use_environment(call["environment"])
     urls: list[Json] = [
-        config.get_complete_url(api_base, None, MODEL, NO_PARAMS, NO_PARAMS)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L232
+        config.get_complete_url(api_base, None, MODEL, NO_PARAMS, NO_PARAMS)
         for api_base in call["api_bases"]
     ]
     return {"urls": urls}
 
 
-def environment_answer(step: EnvironmentStep) -> Json:
-    config = AnthropicMessagesConfig()
-    given = step["headers"].copy()
+def environment_answer(config: Config, step: EnvironmentStep) -> Json:
     use_environment(step["environment"])
-    try:
-        answer: tuple[Headers, str | None] = config.validate_anthropic_messages_environment(  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L246
-            given,
-            MODEL,
-            NO_MESSAGES,
-            NO_PARAMS,
-            NO_PARAMS,
-            api_key=step["api_key"],
-            api_base=step["api_base"],
-        )
-    except AuthenticationError as error:  # type: ignore[misc]  # pyright: ignore[reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L259
-        return {"error": {"status": error.status_code}}
-    return {"headers": answer[0], "api_base": answer[1]}
+    headers, api_base = config.validate_anthropic_messages_environment(
+        step["headers"].copy(),
+        MODEL,
+        NO_MESSAGES,
+        NO_PARAMS,
+        NO_PARAMS,
+    )
+    return {"headers": headers, "api_base": api_base}
 
 
-def billing(call: BillingCall) -> Json:
-    config = AnthropicMessagesConfig()
-    request = dict(call["request"])
-    config._remove_scope_from_cache_control(request)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L94
-    filtered: list[Json | None] = [
-        config._filter_billing_headers_from_system(system)  # type: ignore[no-untyped-call, misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportAny]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L134
-        for system in call["systems"]
-    ]
-    return {"systems": filtered, "request": request}
-
-
-def system(call: SystemCall) -> Json:
-    answers: list[Json] = [system_answer(step) for step in call["calls"]]
+def environment(config: Config, call: EnvironmentCall) -> Json:
+    answers: list[Json] = [environment_answer(config, step) for step in call["calls"]]
     return {"calls": answers}
 
 
-def system_answer(step: SystemStep) -> Json:
-    config = AnthropicMessagesConfig()
-    request = dict(step["request"])
-    config._normalize_system_role_messages(request, model=step["model"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L167
-    return {"request": request}
+def transform_answer(config: Config, step: TransformStep) -> Json:
+    body = step["request"]
+    params: JsonObject = {"max_tokens": body["max_tokens"]}
+    system = body.get("system")
+    if system is not None:
+        params["system"] = system
+    tools = body.get("tools")
+    if tools is not None:
+        params["tools"] = tools
+    transformed = config.transform_anthropic_messages_request(
+        body["model"], body["messages"], params, GenericLiteLLMParams(), NO_PARAMS
+    )
+    return {
+        "system": transformed.get("system"),
+        "messages": transformed.get("messages"),
+        "tools": transformed.get("tools"),
+    }
+
+
+def transform(config: Config, call: TransformCall) -> Json:
+    answers: list[Json] = [transform_answer(config, step) for step in call["calls"]]
+    return {"calls": answers}
 
 
 def http_status_error(status: int, text: str) -> httpx.HTTPStatusError:
@@ -177,34 +254,24 @@ def http_status_error(status: int, text: str) -> httpx.HTTPStatusError:
     return httpx.HTTPStatusError("retry decision", request=request, response=response)
 
 
-def stream_error(config: AnthropicMessagesConfig) -> Json:
-    try:
-        config.get_async_streaming_response_iterator(MODEL, httpx.Response(200), NO_PARAMS, None)  # type: ignore[arg-type]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L134
-    except NotImplementedError as error:
-        return str(error)
-    return None
-
-
-def base_defaults(call: BaseDefaultsCall) -> Json:
-    config = BedrockConfig()
-    error = config.get_error_class(call["error_message"], call["error_status"], NO_HEADERS)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L143
+def base_defaults(config: Config, call: BaseDefaultsCall) -> Json:
+    error = config.get_error_class(call["error_message"], call["error_status"], NO_HEADERS)
     http_error = http_status_error(call["status"], call["text"])
-    signed: tuple[Headers, bytes | None] = config.sign_request(  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L87
+    signed = config.sign_request(
         call["headers"].copy(), NO_PARAMS, NO_PARAMS, "https://api.anthropic.com"
     )
-    retried: JsonObject = config.transform_anthropic_messages_request_on_http_error(  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L170
+    retried: JsonObject = config.transform_anthropic_messages_request_on_http_error(
         http_error, call["request"].copy()
     )
     projection: JsonObject = {
         "signed": {"headers": signed[0], "has_signed_body": signed[1] is not None},
-        "url": config.get_complete_url(None, None, MODEL, NO_PARAMS, NO_PARAMS),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L232
+        "url": config.get_complete_url(None, None, MODEL, NO_PARAMS, NO_PARAMS),
         "web_search": config.handles_web_search_natively(),
         "uses_provider_base": config.uses_get_llm_provider_api_base(),
         "filters_betas": config.should_filter_anthropic_beta_headers(),
-        "stream_error": stream_error(config),
         "error": {"status": error.status_code, "message": error.message},
         "max_retries": config.max_retry_on_anthropic_messages_http_error,
-        "retried": config.should_retry_anthropic_messages_on_http_error(http_error, NO_PARAMS),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/anthropic_messages/transformation.py#L159
+        "retried": config.should_retry_anthropic_messages_on_http_error(http_error, NO_PARAMS),
         "request": retried,
     }
     return projection
@@ -215,16 +282,14 @@ def run(argument: Input) -> Json:
         case "supported_fields":
             return {
                 "providers": [
-                    field_projection(provider) for provider in argument["providers"]
+                    field_projection(config_for(provider)) for provider in argument["providers"]
                 ]
             }
         case "url":
-            return url(argument)
+            return url(AnthropicMessagesConfig(), argument)
         case "environment":
-            return {"calls": [environment_answer(step) for step in argument["calls"]]}
-        case "billing":
-            return billing(argument)
-        case "system":
-            return system(argument)
+            return environment(AnthropicMessagesConfig(), argument)
+        case "transform":
+            return transform(DriverConfig(), argument)
         case "base_defaults":
-            return base_defaults(argument)
+            return base_defaults(BedrockConfig(), argument)
