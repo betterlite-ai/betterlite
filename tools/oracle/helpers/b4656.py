@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Mapping
-from typing import Literal, NotRequired, TypeAlias, TypedDict, TypeVar
+from typing import Literal, NotRequired, TypedDict, TypeVar
 
 from litellm.proxy._experimental.mcp_server.outbound_credentials.dual_cache_token_backend import (
     DualCacheTokenCacheBackend,
@@ -22,8 +22,8 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.token_cache_cod
 from litellm.proxy._experimental.mcp_server.outbound_credentials.v2_token_store import (
     V2PerUserTokenStore,
 )
+from pydantic import JsonValue as Json
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 T = TypeVar("T")
 
 
