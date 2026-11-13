@@ -1,0 +1,10 @@
+kind: helper
+name: qohash-allowed
+call:
+  b8212:
+    settings: {guardrail_name: qostodian_nexus, extra_headers: []}
+    inputs: {texts: ["hello"]}
+    input_type: request
+    answer: {status: 200, headers: {}, body: {action: NONE}}
+env: {}
+compare: {ignore: []}
