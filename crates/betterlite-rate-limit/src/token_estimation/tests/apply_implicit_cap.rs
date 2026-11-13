@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::output_cap::{CapEndpoint, apply_implicit_output_cap};
 use super::support::request;
 
@@ -47,6 +49,23 @@ fn a_configured_output_estimate_below_the_floor_keeps_the_floor() {
         CapEndpoint::Generic,
     );
     assert_eq!(data, request(r#"{"messages":[],"max_tokens":250}"#));
+}
+
+#[rstest]
+#[case::text(r#"{"messages":[],"max_tokens":"wide"}"#)]
+#[case::boolean(r#"{"messages":[],"max_tokens":true}"#)]
+#[case::list(r#"{"messages":[],"max_tokens":[5]}"#)]
+#[case::object(r#"{"messages":[],"max_tokens":{"n":5}}"#)]
+fn a_non_numeric_output_field_is_left_untouched(#[case] body: &str) {
+    let mut data = request(body);
+    apply_implicit_output_cap(
+        &mut data,
+        Some(1000),
+        Some("completion"),
+        None,
+        CapEndpoint::Generic,
+    );
+    assert_eq!(data, request(body));
 }
 
 #[test]
