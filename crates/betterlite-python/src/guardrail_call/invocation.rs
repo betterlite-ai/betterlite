@@ -26,9 +26,9 @@ impl NativeGuardrailInvocation {
         request_data: &str,
         inputs: Option<&str>,
     ) -> PyResult<Py<Self>> {
-        let selected_hook = convert::hook_from_name(hook)?;
+        let selected_hook = convert::hook_from_name(hook);
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", request_data)?;
-        let data = convert::exact_data(raw);
+        let data = convert::exact_data(raw)?;
         let api_inputs: Option<GuardrailApiInputs> =
             convert::read("guardrail inputs", inputs.unwrap_or("null"))?;
         let invocation = GuardrailInvocation::begin(
@@ -60,7 +60,7 @@ impl NativeGuardrailInvocation {
     ) -> PyResult<RecordUpdate> {
         let raw: Option<GuardrailValue> =
             convert::read("guardrail response", response.unwrap_or("null"))?;
-        let step = RecordStep::Finish(raw.map(convert::exact_value));
+        let step = RecordStep::Finish(raw.map(convert::exact_value).transpose()?);
         Ok(record_call(&mut self.invocation, step, data, context)?)
     }
 }

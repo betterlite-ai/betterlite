@@ -380,6 +380,13 @@ def test_native_records_own() -> None:
     assert first_record(data_json)["guardrail_status"] == "guardrail_flagged"
 
 
+def test_native_records_unknown() -> None:
+    invocation = _native.NativeGuardrailInvocation.begin("async_custom_hook", EMPTY, None)
+    data_json, _ = invocation.finish_success(EMPTY, None, json.dumps(record_context()))
+    record = first_record(data_json)
+    assert record["guardrail_mode"] == "pre_call"
+
+
 def test_native_records_apply() -> None:
     inputs: dict[str, JsonValue] = {"texts": ["hi"]}
     invocation = _native.NativeGuardrailInvocation.begin(

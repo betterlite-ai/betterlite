@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::error::CallError;
@@ -42,8 +41,11 @@ const HOOK_NAMES: [(&str, GuardrailHookName); 6] = [
         "async_post_call_streaming_hook",
         GuardrailHookName::PostCallStreaming,
     ),
+    (
+        "async_post_call_streaming_iterator_hook",
+        GuardrailHookName::StreamingIterator,
+    ),
     ("apply_guardrail", GuardrailHookName::ApplyGuardrail),
-    ("streaming_iterator", GuardrailHookName::StreamingIterator),
 ];
 
 fn find<T>(table: &[(&str, T)], name: &str) -> Option<T>
@@ -56,38 +58,52 @@ where
         .map(|(_wire, hook)| *hook)
 }
 
-fn number_from_text(text: &str) -> Option<GuardrailValue> {
+fn is_integer_literal(text: &str) -> bool {
+    let digits = text.strip_prefix('-').unwrap_or(text);
+    !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
+}
+
+fn number_from_text(text: &str) -> Result<Option<GuardrailValue>, CallError> {
     if let Ok(signed) = text.parse::<i64>() {
-        return Some(GuardrailValue::SignedInteger(signed));
+        return Ok(Some(GuardrailValue::SignedInteger(signed)));
     }
     if let Ok(unsigned) = text.parse::<u64>() {
-        return Some(GuardrailValue::UnsignedInteger(unsigned));
+        return Ok(Some(GuardrailValue::UnsignedInteger(unsigned)));
     }
-    text.parse::<f64>()
+    if is_integer_literal(text) {
+        return Err(CallError::Number {
+            text: text.to_owned(),
+        });
+    }
+    Ok(text
+        .parse::<f64>()
         .ok()
         .filter(|float| float.is_finite())
-        .map(GuardrailValue::Decimal)
+        .map(GuardrailValue::Decimal))
 }
 
-fn exact_object(fields: BTreeMap<String, GuardrailValue>) -> GuardrailValue {
+fn exact_object(fields: BTreeMap<String, GuardrailValue>) -> Result<GuardrailValue, CallError> {
     if fields.len() == 1
         && let Some(GuardrailValue::Text(digits)) = fields.get(NUMBER_KEY)
-        && let Some(number) = number_from_text(digits)
+        && let Some(number) = number_from_text(digits)?
     {
-        return number;
+        return Ok(number);
     }
-    GuardrailValue::Object(
-        fields
-            .into_iter()
-            .map(|(key, field)| (key, exact_value(field)))
-            .collect(),
-    )
+    let converted = fields
+        .into_iter()
+        .map(|(key, field)| Ok((key, exact_value(field)?)))
+        .collect::<Result<BTreeMap<_, _>, CallError>>()?;
+    Ok(GuardrailValue::Object(converted))
 }
 
-pub(crate) fn exact_value(value: GuardrailValue) -> GuardrailValue {
+pub(crate) fn exact_value(value: GuardrailValue) -> Result<GuardrailValue, CallError> {
     match value {
         GuardrailValue::Array(items) => {
-            GuardrailValue::Array(items.into_iter().map(exact_value).collect())
+            let converted = items
+                .into_iter()
+                .map(exact_value)
+                .collect::<Result<Vec<_>, CallError>>()?;
+            Ok(GuardrailValue::Array(converted))
         }
         GuardrailValue::Object(fields) => exact_object(fields),
         scalar @ (GuardrailValue::Null
@@ -95,16 +111,16 @@ pub(crate) fn exact_value(value: GuardrailValue) -> GuardrailValue {
         | GuardrailValue::SignedInteger(_)
         | GuardrailValue::UnsignedInteger(_)
         | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)) => scalar,
+        | GuardrailValue::Text(_)) => Ok(scalar),
     }
 }
 
 pub(crate) fn exact_data(
     entries: BTreeMap<String, GuardrailValue>,
-) -> BTreeMap<String, GuardrailValue> {
+) -> Result<BTreeMap<String, GuardrailValue>, CallError> {
     entries
         .into_iter()
-        .map(|(key, value)| (key, exact_value(value)))
+        .map(|(key, value)| Ok((key, exact_value(value)?)))
         .collect()
 }
 
@@ -116,15 +132,6 @@ where
         Ok(value) => Ok(value),
         Err(source) => Err(CallError::Json { field, source }),
     }
-}
-
-pub(crate) fn write<T>(field: &'static str, value: &T) -> Result<String, CallError>
-where
-    T: Serialize,
-{
-    let encoded = serde_json::to_string(value);
-    let text = encoded.map_err(|source| CallError::Json { field, source })?;
-    Ok(text)
 }
 
 pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, CallError> {
@@ -152,13 +159,15 @@ pub(crate) fn event_type_from_name(name: &str) -> Result<GuardrailEventHooks, Ca
     })
 }
 
-pub(crate) fn hook_from_name(name: &str) -> Result<GuardrailHookName, CallError> {
-    find(&HOOK_NAMES, name).ok_or_else(|| CallError::HookName {
-        name: name.to_owned(),
-    })
+// LiteLLM infers the event type from func.__name__ and gives every unknown name no event type and no baseline
+pub(crate) fn hook_from_name(name: &str) -> GuardrailHookName {
+    match find(&HOOK_NAMES, name) {
+        Some(hook) => hook,
+        None => GuardrailHookName::StreamingIterator,
+    }
 }
 
 pub(crate) fn settings_from_text(text: &str) -> Result<GuardrailSettings, CallError> {
     read::<settings::SettingsJson>("guardrail settings", text)
-        .and_then(settings::SettingsJson::into_settings)
+        .map(settings::SettingsJson::into_settings)
 }

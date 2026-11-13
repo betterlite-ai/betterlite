@@ -45,8 +45,13 @@ fn tool_cache() -> Result<DualLocalCache, CallError> {
 #[pyfunction]
 pub(crate) fn sanitize_guardrail_response(response: &str) -> PyResult<String> {
     let raw: GuardrailValue = convert::read("guardrail response", response)?;
-    let cleaned = sanitize_response(convert::exact_value(raw)).map_err(CallError::from)?;
-    Ok(convert::write("guardrail response", &cleaned)?)
+    let cleaned = sanitize_response(convert::exact_value(raw)?).map_err(CallError::from)?;
+    Ok(
+        serde_json::to_string(&cleaned).map_err(|source| CallError::Json {
+            field: "guardrail response",
+            source,
+        })?,
+    )
 }
 
 #[pyfunction]
@@ -67,7 +72,7 @@ pub(crate) fn add_guardrail_record(
 #[pyfunction]
 pub(crate) fn sync_log_target(data: &str, target: &str) -> PyResult<String> {
     let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
-    let body = convert::exact_data(raw);
+    let body = convert::exact_data(raw)?;
     let mut logging = log_target_from_text(target)?;
     sync_target(&body, &mut logging);
     Ok(log_target_to_text(&logging)?)
@@ -80,13 +85,18 @@ pub(crate) fn summarize_guardrail_response(
     event_type: Option<&str>,
 ) -> PyResult<String> {
     let raw: Option<GuardrailValue> = convert::read("guardrail response", response)?;
-    let kept = raw.map(convert::exact_value);
+    let kept = raw.map(convert::exact_value).transpose()?;
     let plain: Option<BTreeMap<String, GuardrailValue>> =
         convert::read("request data", baseline.unwrap_or("null"))?;
-    let original = plain.map(convert::exact_data);
+    let original = plain.map(convert::exact_data).transpose()?;
     let hook = event_type.map(convert::event_type_from_name).transpose()?;
     let summary = summarize_response(kept.as_ref(), original.as_ref(), hook);
-    Ok(convert::write("guardrail response", &summary)?)
+    Ok(
+        serde_json::to_string(&summary).map_err(|source| CallError::Json {
+            field: "guardrail response",
+            source,
+        })?,
+    )
 }
 
 #[pyfunction]
@@ -96,11 +106,16 @@ pub(crate) fn messages_for_call_type(
 ) -> PyResult<Option<String>> {
     let raw: Option<BTreeMap<String, GuardrailValue>> =
         convert::read("request data", data.unwrap_or("null"))?;
-    let body = raw.map(convert::exact_data);
+    let body = raw.map(convert::exact_data).transpose()?;
     let cache = tool_cache()?;
     let selected = messages_for_type(call_type, body.as_ref(), &cache).map_err(CallError::from)?;
     let Some(messages) = selected else {
         return Ok(None);
     };
-    Ok(Some(convert::write("guardrail messages", &messages)?))
+    Ok(Some(serde_json::to_string(&messages).map_err(
+        |source| CallError::Json {
+            field: "guardrail messages",
+            source,
+        },
+    )?))
 }

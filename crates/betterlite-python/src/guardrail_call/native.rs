@@ -29,13 +29,12 @@ impl NativeGuardrail {
     }
 
     fn mode(&self) -> PyResult<String> {
-        let mode = self
-            .base
-            .mode
-            .as_ref()
-            .map(convert::settings::mode_to_value);
-        let value = mode.unwrap_or(GuardrailValue::Null);
-        Ok(convert::write("guardrail mode", &value)?)
+        Ok(
+            serde_json::to_string(&self.base.mode).map_err(|source| CallError::Json {
+                field: "guardrail mode",
+                source,
+            })?,
+        )
     }
 
     fn update_params(&mut self, litellm_params: &str) -> PyResult<()> {
@@ -45,9 +44,14 @@ impl NativeGuardrail {
     }
 
     fn settings(&self) -> PyResult<String> {
-        let json = SettingsJson::from(&self.base.settings);
-        let text = convert::write("guardrail settings", &json)?;
-        Ok(text)
+        Ok(
+            serde_json::to_string(&SettingsJson::from(&self.base.settings)).map_err(|source| {
+                CallError::Json {
+                    field: "guardrail settings",
+                    source,
+                }
+            })?,
+        )
     }
 
     fn render_violation_message(&self, default: &str, context: &str) -> PyResult<String> {
@@ -62,9 +66,12 @@ impl NativeGuardrail {
     #[staticmethod]
     fn inject_advisory_message(data: &str, message: &str) -> PyResult<(bool, String)> {
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
-        let mut body = convert::exact_data(raw);
+        let mut body = convert::exact_data(raw)?;
         let written = inject_advisory_message(&mut body, message);
-        let text = convert::write("request data", &body)?;
+        let text = serde_json::to_string(&body).map_err(|source| CallError::Json {
+            field: "request data",
+            source,
+        })?;
         Ok((written, text))
     }
 
@@ -75,7 +82,7 @@ impl NativeGuardrail {
         suppressed: &str,
     ) -> PyResult<bool> {
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
-        let body = convert::exact_data(raw);
+        let body = convert::exact_data(raw)?;
         let hook = convert::event_type_from_name(event_type)?;
         let blocked = convert::suppressed_from_text(suppressed)?;
         let answer = self
@@ -86,18 +93,23 @@ impl NativeGuardrail {
     }
 
     fn event_hook_is_event_type(&self, event_type: &str) -> PyResult<bool> {
-        let hook = convert::event_type_from_name(event_type)?;
-        let answer = self.base.event_hook_is_event_type(hook);
-        Ok(answer)
+        Ok(self
+            .base
+            .event_hook_is_event_type(convert::event_type_from_name(event_type)?))
     }
 
     fn dynamic_request_body_params(&self, data: &str) -> PyResult<String> {
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
-        let body = convert::exact_data(raw);
+        let body = convert::exact_data(raw)?;
         let params = self
             .base
             .dynamic_request_body_params(&body)
             .map_err(|source| CallError::Selection { source })?;
-        Ok(convert::write("request data", &params)?)
+        Ok(
+            serde_json::to_string(&params).map_err(|source| CallError::Json {
+                field: "request data",
+                source,
+            })?,
+        )
     }
 }

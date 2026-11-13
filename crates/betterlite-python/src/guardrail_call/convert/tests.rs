@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
@@ -8,7 +9,9 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
-use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
+use betterlite_guardrails::guardrail_records::invocation::{
+    GuardrailHookName, GuardrailInvocation,
+};
 use betterlite_guardrails::guardrail_records::record::GuardrailStatus;
 use rstest::rstest;
 
@@ -17,13 +20,18 @@ use super::{
     event_type_from_name, exact_data, exact_value, hook_from_name, read, settings_from_text,
     suppressed_from_text, text_context_from_text, write,
 };
-use crate::guardrail_call::context::record_parts;
+use crate::guardrail_call::context::{RecordStep, record_call, record_parts};
 use crate::guardrail_call::convert::record_input::record_input_from_text;
 use crate::guardrail_call::error::CallError;
 use crate::guardrail_call::native::NativeGuardrail;
 
 fn value(text: &str) -> Result<GuardrailValue, CallError> {
-    read("guardrail response", text).map(exact_value)
+    read("guardrail response", text).and_then(exact_value)
+}
+
+fn body(text: &str) -> BTreeMap<String, GuardrailValue> {
+    let raw: BTreeMap<String, GuardrailValue> = read("request data", text).unwrap();
+    exact_data(raw).unwrap()
 }
 
 const FULL_SETTINGS: &str = r#"{
@@ -135,7 +143,7 @@ fn settings_read_the_switches() {
 #[test]
 fn settings_round_trip_through_the_json_shape() {
     let parsed: SettingsJson = serde_json::from_str(FULL_SETTINGS).unwrap();
-    let settings = parsed.clone().into_settings().unwrap();
+    let settings = parsed.clone().into_settings();
     assert_eq!(SettingsJson::from(&settings), parsed);
 }
 
@@ -172,11 +180,10 @@ fn settings_reject_an_unknown_key() {
 #[case::list_with_an_object("[{\"a\": 1}]")]
 #[case::object_without_tags("{\"default\": \"pre_call\"}")]
 #[case::tags_not_an_object("{\"tags\": 3}")]
-#[case::unknown_mode_key("{\"tags\": {}, \"mode\": \"pre_call\"}")]
 fn settings_reject_a_bad_event_hook(#[case] event_hook: &str) {
     let text = format!(r#"{{"event_hook": {event_hook}}}"#);
     let error = call_error(&text);
-    assert_eq!(error.kind(), "InvalidEventHook");
+    assert_eq!(error.kind(), "InvalidJson");
 }
 
 #[test]
@@ -221,7 +228,7 @@ fn settings_update_params_follow_the_given_params() {
     assert_eq!(updated.timeout, Some(4.5_f64));
     assert_eq!(
         updated.event_hook,
-        Some(GuardrailValue::Text("pre_call".to_owned()))
+        Some(LitellmParamsMode::One("pre_call".to_owned()))
     );
     assert_eq!(
         base.mode,
@@ -265,7 +272,10 @@ fn data_reads_null_and_a_list_wrongly() {
     assert_eq!(absent, None);
     let present: Option<BTreeMap<String, GuardrailValue>> =
         read("request data", r#"{"messages": []}"#).unwrap();
-    assert_eq!(present.map(exact_data).unwrap().len(), 1);
+    assert_eq!(
+        present.map(exact_data).transpose().unwrap().unwrap().len(),
+        1
+    );
     let error: CallError =
         read::<Option<BTreeMap<String, GuardrailValue>>>("request data", "[]").unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
@@ -279,7 +289,10 @@ fn data_reads_null_and_a_list_wrongly() {
     );
     let parsed: BTreeMap<String, GuardrailValue> =
         read("request data", r#"{"score": 0.5}"#).unwrap();
-    assert_eq!(exact_data(parsed)["score"], GuardrailValue::Decimal(0.5));
+    assert_eq!(
+        exact_data(parsed).unwrap()["score"],
+        GuardrailValue::Decimal(0.5)
+    );
 }
 
 #[test]
@@ -321,16 +334,50 @@ fn event_types_reject_an_unknown_name() {
 #[case("async_moderation_hook", GuardrailHookName::Moderation)]
 #[case("async_post_call_success_hook", GuardrailHookName::PostCallSuccess)]
 #[case("async_post_call_streaming_hook", GuardrailHookName::PostCallStreaming)]
+#[case(
+    "async_post_call_streaming_iterator_hook",
+    GuardrailHookName::StreamingIterator
+)]
 #[case("apply_guardrail", GuardrailHookName::ApplyGuardrail)]
-#[case("streaming_iterator", GuardrailHookName::StreamingIterator)]
 fn hook_names_read_every_wrapper(#[case] name: &str, #[case] hook: GuardrailHookName) {
-    assert_eq!(hook_from_name(name).unwrap(), hook);
+    assert_eq!(hook_from_name(name), hook);
 }
 
 #[test]
-fn hook_names_reject_an_unknown_name() {
-    let error = hook_from_name("pre_call").unwrap_err();
-    assert_eq!(error.kind(), "InvalidHookName");
+fn hook_names_fall_back_to_no_event_type() {
+    assert_eq!(
+        hook_from_name("async_custom_hook"),
+        GuardrailHookName::StreamingIterator
+    );
+}
+
+#[test]
+fn hooks_with_an_unknown_name_use_the_configured_mode() {
+    let text = r#"{"messages": []}"#;
+    let data = body(text);
+    let hook = hook_from_name("async_custom_hook");
+    let mut invocation =
+        Some(GuardrailInvocation::begin(hook, &data, None, SystemTime::now()).unwrap());
+    let context = r#"{
+        "settings": {"guardrail_name": "pii", "event_hook": "pre_call"},
+        "log_target": null
+    }"#;
+    let (recorded, _target) =
+        record_call(&mut invocation, RecordStep::Finish(None), text, context).unwrap();
+    assert!(
+        recorded.contains("\"guardrail_mode\":\"pre_call\""),
+        "{recorded}"
+    );
+}
+
+#[test]
+fn data_rejects_an_integer_past_u64() {
+    let error = value(r#"{"trace": 123456789012345678901234567890}"#).unwrap_err();
+    assert_eq!(error.kind(), "InvalidJson");
+    assert!(
+        error.to_string().contains("123456789012345678901234567890"),
+        "{error}"
+    );
 }
 
 #[test]

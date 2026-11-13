@@ -85,9 +85,13 @@ impl RecordParts {
         &self,
         data: &BTreeMap<String, GuardrailValue>,
     ) -> Result<RecordUpdate, CallError> {
-        let text = convert::write("request data", data)?;
-        let target = self.log_target_text()?;
-        Ok((text, target))
+        Ok((
+            serde_json::to_string(data).map_err(|source| CallError::Json {
+                field: "request data",
+                source,
+            })?,
+            self.log_target_text()?,
+        ))
     }
 
     pub(crate) fn log_target_text(&self) -> Result<String, CallError> {
@@ -99,7 +103,7 @@ impl RecordParts {
 
 pub(crate) fn record_parts(text: &str) -> Result<RecordParts, CallError> {
     let context: ContextJson = convert::read("guardrail record context", text)?;
-    let settings = context.settings.into_settings()?;
+    let settings = context.settings.into_settings();
     // the settings already passed the guardrail's own constructor, so validating them again would reject a guardrail built with strict modes off
     let base = GuardrailBase {
         settings,
@@ -119,7 +123,7 @@ pub(crate) fn record_call(
     context: &str,
 ) -> Result<RecordUpdate, CallError> {
     let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
-    let mut body = convert::exact_data(raw);
+    let mut body = convert::exact_data(raw)?;
     let mut parts = record_parts(context)?;
     let mut record_context = parts.context(&mut body);
     let outcome = match step {
@@ -138,13 +142,13 @@ pub(crate) fn record_call(
 }
 
 pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, CallError> {
-    let json: LogTargetJson = convert::read("guardrail logging target", text)?;
-    let target = json.into_target();
-    Ok(target)
+    convert::read::<LogTargetJson>("guardrail logging target object", text)
+        .map(LogTargetJson::into_target)
 }
 
 pub(crate) fn log_target_to_text(target: &GuardrailLogTarget) -> Result<String, CallError> {
-    let json = LogTargetJson::from_target(target);
-    let text = convert::write("guardrail logging target", &json)?;
-    Ok(text)
+    serde_json::to_string(&LogTargetJson::from_target(target)).map_err(|source| CallError::Json {
+        field: "guardrail logging target",
+        source,
+    })
 }

@@ -22,14 +22,8 @@ pub(crate) enum CallError {
     ContextValue { name: String },
     #[error("{name} is not a guardrail event type")]
     EventType { name: String },
-    #[error("{name} is not a guardrail hook name")]
-    HookName { name: String },
-    #[error(
-        "the event_hook must be a hook name, a list of hook names, or an object with tags and default"
-    )]
-    EventHookShape,
-    #[error("the event hook mode has an unknown key {name}")]
-    ModeKey { name: String },
+    #[error("the number {text} does not fit a 64-bit integer or an IEEE float")]
+    Number { text: String },
     #[error(transparent)]
     Base {
         #[from]
@@ -64,11 +58,9 @@ struct NativeErrorPayload<'name> {
 impl CallError {
     pub(crate) const fn kind(&self) -> &'static str {
         match self {
-            Self::Json { .. } => "InvalidJson",
+            Self::Json { .. } | Self::Number { .. } => "InvalidJson",
             Self::ContextValue { .. } => "ContextValueNotText",
             Self::EventType { .. } => "InvalidEventType",
-            Self::HookName { .. } => "InvalidHookName",
-            Self::EventHookShape | Self::ModeKey { .. } => "InvalidEventHook",
             Self::Base { source } => match source {
                 GuardrailBaseError::UnknownEventHook { .. } => "UnknownEventHook",
                 GuardrailBaseError::UnsupportedEventHook { .. } => "UnsupportedEventHook",
@@ -100,9 +92,7 @@ impl CallError {
             Self::Json { .. }
             | Self::ContextValue { .. }
             | Self::EventType { .. }
-            | Self::HookName { .. }
-            | Self::EventHookShape
-            | Self::ModeKey { .. }
+            | Self::Number { .. }
             | Self::Base { .. }
             | Self::Record { .. }
             | Self::Cache { .. }

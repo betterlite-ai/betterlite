@@ -1,22 +1,15 @@
-use std::collections::BTreeMap;
-
-use betterlite_config::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
-use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
+use betterlite_config::sections::guardrail_identity::item::GuardrailFlag;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use serde::{Deserialize, Serialize};
-
-use crate::guardrail_call::error::CallError;
-
-const TAGS: &str = "tags";
-const DEFAULT: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct SettingsJson {
     pub(crate) guardrail_name: Option<String>,
     pub(crate) supported_event_hooks: Option<Vec<GuardrailEventHooks>>,
-    pub(crate) event_hook: Option<GuardrailValue>,
+    pub(crate) event_hook: Option<LitellmParamsMode>,
     pub(crate) default_on: GuardrailFlag,
     pub(crate) mask_request_content: GuardrailFlag,
     pub(crate) mask_response_content: GuardrailFlag,
@@ -75,7 +68,7 @@ impl From<&GuardrailSettings> for SettingsJson {
         json.guardrail_name.clone_from(&settings.guardrail_name);
         json.supported_event_hooks
             .clone_from(&settings.supported_event_hooks);
-        json.event_hook = settings.event_hook.as_ref().map(mode_to_value);
+        json.event_hook.clone_from(&settings.event_hook);
         json.default_on = settings.default_on;
         json.mask_request_content = settings.mask_request_content;
         json.mask_response_content = settings.mask_response_content;
@@ -112,11 +105,11 @@ impl From<&GuardrailSwitches> for SwitchesJson {
 }
 
 impl SettingsJson {
-    pub(crate) fn into_settings(self) -> Result<GuardrailSettings, CallError> {
-        Ok(GuardrailSettings {
+    pub(crate) fn into_settings(self) -> GuardrailSettings {
+        GuardrailSettings {
             guardrail_name: self.guardrail_name,
             supported_event_hooks: self.supported_event_hooks,
-            event_hook: self.event_hook.map(mode_from_present).transpose()?,
+            event_hook: self.event_hook,
             default_on: self.default_on,
             mask_request_content: self.mask_request_content,
             mask_response_content: self.mask_response_content,
@@ -138,109 +131,6 @@ impl SettingsJson {
                 uses_apply_guardrail_interface: self.switches.uses_apply_guardrail_interface,
                 deny_text_on_error: self.switches.deny_text_on_error,
             },
-        })
-    }
-}
-
-pub(crate) fn mode_to_value(mode: &LitellmParamsMode) -> GuardrailValue {
-    match mode {
-        LitellmParamsMode::One(name) => GuardrailValue::Text(name.clone()),
-        LitellmParamsMode::Many(names) => target_to_value(ModeTarget::Many(names.clone())),
-        LitellmParamsMode::Tagged(configured) => {
-            let tags = configured
-                .tags
-                .iter()
-                .map(|(tag, target)| (tag.clone(), target_to_value(target.clone())))
-                .collect();
-            let mut fields = BTreeMap::from([(TAGS.to_owned(), GuardrailValue::Object(tags))]);
-            if let Some(default) = &configured.default {
-                fields.insert(DEFAULT.to_owned(), target_to_value(default.clone()));
-            }
-            GuardrailValue::Object(fields)
         }
     }
-}
-
-fn target_to_value(target: ModeTarget) -> GuardrailValue {
-    match target {
-        ModeTarget::One(name) => GuardrailValue::Text(name),
-        ModeTarget::Many(names) => names_to_value(names),
-    }
-}
-
-fn names_to_value(names: Vec<String>) -> GuardrailValue {
-    let mut items = Vec::with_capacity(names.len());
-    for name in names {
-        items.push(GuardrailValue::Text(name));
-    }
-    GuardrailValue::Array(items)
-}
-
-fn mode_from_present(value: GuardrailValue) -> Result<LitellmParamsMode, CallError> {
-    if let GuardrailValue::Object(fields) = &value {
-        return Ok(LitellmParamsMode::Tagged(mode_from_fields(fields.clone())?));
-    }
-    let target = target_from_value(value)?;
-    Ok(match target {
-        ModeTarget::One(name) => LitellmParamsMode::One(name),
-        ModeTarget::Many(names) => LitellmParamsMode::Many(names),
-    })
-}
-
-fn mode_from_fields(fields: BTreeMap<String, GuardrailValue>) -> Result<Mode, CallError> {
-    let mut gathered = None;
-    let mut default = None;
-    for (key, value) in fields {
-        match key.as_str() {
-            TAGS => gathered = Some(tags_from_value(value)?),
-            DEFAULT => default = default_target(value)?,
-            _unknown => return Err(CallError::ModeKey { name: key }),
-        }
-    }
-    let Some(tags) = gathered else {
-        return Err(CallError::EventHookShape);
-    };
-    Ok(Mode { tags, default })
-}
-
-fn tags_from_value(value: GuardrailValue) -> Result<BTreeMap<String, ModeTarget>, CallError> {
-    let GuardrailValue::Object(entries) = value else {
-        return Err(CallError::EventHookShape);
-    };
-    let mut tags = BTreeMap::new();
-    for (tag, target) in entries {
-        tags.insert(tag, target_from_value(target)?);
-    }
-    Ok(tags)
-}
-
-fn default_target(value: GuardrailValue) -> Result<Option<ModeTarget>, CallError> {
-    if value == GuardrailValue::Null {
-        return Ok(None);
-    }
-    target_from_value(value).map(Some)
-}
-
-fn target_from_value(value: GuardrailValue) -> Result<ModeTarget, CallError> {
-    match value {
-        GuardrailValue::Text(name) => Ok(ModeTarget::One(name)),
-        GuardrailValue::Array(items) => Ok(ModeTarget::Many(names_from_values(items)?)),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_) => Err(CallError::EventHookShape),
-    }
-}
-
-fn names_from_values(items: Vec<GuardrailValue>) -> Result<Vec<String>, CallError> {
-    let mut names = Vec::with_capacity(items.len());
-    for item in items {
-        let GuardrailValue::Text(name) = item else {
-            return Err(CallError::EventHookShape);
-        };
-        names.push(name);
-    }
-    Ok(names)
 }
