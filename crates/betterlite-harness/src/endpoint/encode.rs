@@ -90,7 +90,7 @@ fn frame_event(event_type: Option<&str>, data: &str) -> Vec<u8> {
     }
 }
 
-fn json<T: Serialize>(value: &T) -> Result<String, EncodeError> {
+fn json<T: ?Sized + Serialize>(value: &T) -> Result<String, EncodeError> {
     match serde_json::to_string(value) {
         Ok(data) => Ok(data),
         Err(source) => Err(EncodeError::Json { source }),
