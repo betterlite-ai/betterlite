@@ -309,7 +309,8 @@ jobs:
               # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
               export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
-              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
+              # a shard that stops at its first failure hides the rest: on 11-13 shard 3 ran 30 of 22702 tests in run 43451345497
+              UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --max-fail 20 --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
             task)
               export NEXTEST_PROFILE=task
               for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
