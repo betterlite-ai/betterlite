@@ -2,7 +2,6 @@ from collections.abc import Callable
 from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.stability.image_generation import get_stability_image_generation_config
 from litellm.types.utils import ImageObject, ImageResponse
 from openai.types.image import Image
@@ -194,19 +193,16 @@ def response_call(call: ResponseCall) -> JsonValue:
     model_response = ImageResponse(created=call["created"])
     if call["data"]:
         model_response.data = seeded_images(call["data"])
-    try:
-        finished = config.transform_image_generation_response(
-            MODEL,
-            httpx.Response(call["status"], headers=call["headers"], content=call["body"]),
-            model_response,
-            None,
-            EMPTY,
-            EMPTY,
-            EMPTY,
-            None,
-        )
-    except BaseLLMException as error:
-        return {"error_status": error.status_code}
+    finished = config.transform_image_generation_response(
+        MODEL,
+        httpx.Response(call["status"], headers=call["headers"], content=call["body"]),
+        model_response,
+        None,
+        EMPTY,
+        EMPTY,
+        EMPTY,
+        None,
+    )
     return {"response": response_value(finished)}
 
 

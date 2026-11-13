@@ -11,7 +11,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult};
+use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -73,16 +73,20 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let values: Vec<Value> = input.calls.iter().map(run_call).collect();
+        let values = input
+            .calls
+            .iter()
+            .map(run_call)
+            .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
         Ok(Value::Array(values))
     }
 }
 
-fn run_call(call: &Call) -> Value {
+fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::Supported { .. } => {
-            json!(StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS)
-        }
+        Call::Supported { .. } => Ok(json!(
+            StabilityImageGenerationConfig::SUPPORTED_OPENAI_PARAMS
+        )),
         Call::Map {
             model,
             non_default_params,
@@ -96,8 +100,8 @@ fn run_call(call: &Call) -> Value {
                 *drop_params,
             );
             match mapped {
-                Ok(mapped) => json!({"mapped": mapped}),
-                Err(_failure) => json!({"unsupported": true}),
+                Ok(mapped) => Ok(json!({"mapped": mapped})),
+                Err(_failure) => Ok(json!({"unsupported": true})),
             }
         }
         Call::Url {
@@ -106,7 +110,7 @@ fn run_call(call: &Call) -> Value {
             environment,
         } => {
             let config = generation_config(model, environment);
-            json!({"url": config.get_complete_url(api_base.as_deref(), model)})
+            Ok(json!({"url": config.get_complete_url(api_base.as_deref(), model)}))
         }
         Call::Environment {
             model,
@@ -117,8 +121,8 @@ fn run_call(call: &Call) -> Value {
             let config = generation_config(model, environment);
             let explicit = api_key.as_ref().map(|key| SecretString::from(key.clone()));
             match config.validate_environment(headers.clone(), explicit.as_ref()) {
-                Ok(headers) => json!({"headers": headers}),
-                Err(_failure) => json!({"missing_key": true}),
+                Ok(headers) => Ok(json!({"headers": headers})),
+                Err(_failure) => Ok(json!({"missing_key": true})),
             }
         }
         Call::Request {
@@ -131,8 +135,8 @@ fn run_call(call: &Call) -> Value {
                 optional_params,
             );
             match request {
-                Ok(request) => json!({"request": request}),
-                Err(_failure) => json!({"invalid": true}),
+                Ok(request) => Ok(json!({"request": request})),
+                Err(_failure) => Ok(json!({"invalid": true})),
             }
         }
         Call::Response {
@@ -153,8 +157,15 @@ fn run_call(call: &Call) -> Value {
                 usage: None,
             };
             match decode_stability_image(&upstream, &mut response) {
-                Ok(()) => json!({"response": response}),
-                Err(error) => json!({"error_status": error.status()}),
+                Ok(()) => Ok(json!({"response": response})),
+                Err(error) => Err(Box::new(HelperError {
+                    class: "BaseLLMException".to_owned(),
+                    status: Some(error.status()),
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })),
             }
         }
     }

@@ -10,35 +10,5 @@ call:
         body: '{"image":"abc","finish_reason":"CONTENT_FILTERED"}'
         created: 7
         data: []
-      - function: response
-        status: 200
-        headers: {}
-        body: '{"errors":{"message":"boom"},"image":"abc"}'
-        created: 7
-        data: []
-      - function: response
-        status: 503
-        headers: {}
-        body: '{"errors":null}'
-        created: 7
-        data: []
-      - function: response
-        status: 500
-        headers: {}
-        body: not json
-        created: 7
-        data: []
-      - function: response
-        status: 200
-        headers: {}
-        body: '{"image":"abc","finish_reason":"SUCCESS"}'
-        created: 7
-        data: []
-      - function: response
-        status: 200
-        headers: {}
-        body: '{"image":"abc","finish_reason":"ERROR"}'
-        created: 7
-        data: []
 env: {}
 compare: {ignore: []}
