@@ -13,16 +13,10 @@ pub enum MistralFilesError {
     UnsupportedPurpose { purpose: String },
     #[error("file_id is required to download Mistral file content")]
     FileIdRequired,
-    #[error("the Mistral file URL cannot carry its file_id: {source}")]
-    Path {
-        #[source]
-        source: HttpError,
-    },
-    #[error("the Mistral upload content cannot be read: {source}")]
-    Content {
-        #[source]
-        source: MediaMetadataError,
-    },
+    #[error("the Mistral file URL cannot carry its file_id: {0}")]
+    Path(#[from] HttpError),
+    #[error("the Mistral upload content cannot be read: {0}")]
+    Content(#[from] MediaMetadataError),
     #[error(transparent)]
     Decode(#[from] MistralDecodeError),
 }
@@ -34,8 +28,8 @@ impl MistralFilesError {
             Self::Identity(MistralIdentityError::Api { status, .. }) => Some(*status),
             Self::Identity(_)
             | Self::FileIdRequired
-            | Self::Path { .. }
-            | Self::Content { .. }
+            | Self::Path(_)
+            | Self::Content(_)
             | Self::Decode(_) => None,
         }
     }

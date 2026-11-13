@@ -29,10 +29,7 @@ pub fn create_batch(
         .clone()
         .ok_or(MistralBatchesError::InputFileRequired)?;
     let endpoint = data.endpoint.ok_or(MistralBatchesError::EndpointRequired)?;
-    let metadata = data
-        .metadata
-        .clone()
-        .filter(|metadata| !metadata.is_empty());
+    let metadata = data.metadata.clone().filter(|map| !map.is_empty());
     Ok(BatchCreatePlan {
         url: format!("{}/v1/batch/jobs", base_url(api_base, settings)),
         body: MistralCreateBatchJobRequest {
@@ -49,8 +46,7 @@ pub fn retrieve_batch(
     api_key: Option<&SecretString>,
     settings: &Settings,
 ) -> Result<MistralGetRequest, MistralBatchesError> {
-    let encoded = encode_segment(batch_id, "batch_id")
-        .map_err(|source| MistralBatchesError::Path { source })?;
+    let encoded = encode_segment(batch_id, "batch_id")?;
     let url = format!("{}/v1/batch/jobs/{encoded}", base_url(api_base, settings));
     let headers = auth_headers(&Headers::new(), api_key, settings)?;
     Ok(MistralGetRequest {
@@ -72,24 +68,20 @@ pub const fn openai_status(status: MistralBatchStatus) -> BatchStatus {
     }
 }
 fn to_batch_errors(errors: &[MistralBatchError]) -> Option<BatchFailures> {
-    if errors.is_empty() {
-        return None;
-    }
-    let mut data = Vec::with_capacity(errors.len());
-    for error in errors {
-        let message = if error.count > 1 {
-            format!("{} (x{})", error.message, error.count)
-        } else {
-            error.message.clone()
-        };
-        data.push(BatchFailure {
+    let data: Vec<BatchFailure> = errors
+        .iter()
+        .map(|error| BatchFailure {
             code: None,
             line: None,
-            message: Some(message),
+            message: Some(if error.count > 1 {
+                format!("{} (x{})", error.message, error.count)
+            } else {
+                error.message.clone()
+            }),
             param: None,
-        });
-    }
-    Some(BatchFailures {
+        })
+        .collect();
+    (!data.is_empty()).then(|| BatchFailures {
         data: Some(data),
         object: Some(String::from("list")),
     })
@@ -97,8 +89,8 @@ fn to_batch_errors(errors: &[MistralBatchError]) -> Option<BatchFailures> {
 #[must_use]
 pub fn to_batch_object(job: &MistralBatchJob) -> BatchObject {
     let status = openai_status(job.status);
-    let terminal_at = job.completed_at;
-    let terminal = |candidate: BatchStatus| (status == candidate).then_some(terminal_at).flatten();
+    let terminal =
+        |candidate: BatchStatus| (status == candidate).then_some(job.completed_at).flatten();
     BatchObject {
         id: job.id.clone(),
         completion_window: COMPLETION_WINDOW.to_owned(),

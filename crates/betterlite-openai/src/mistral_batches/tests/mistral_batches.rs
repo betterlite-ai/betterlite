@@ -3,14 +3,18 @@
 use crate::api::batch_records::BatchEndpoint;
 use crate::batches::records::{BatchObject, BatchStatus};
 use crate::mistral_batches::error::MistralBatchesError;
-use crate::mistral_batches::records::{MistralBatchJob, MistralBatchStatus, MistralGetRequest};
+use crate::mistral_batches::records::{
+    MistralBatchError, MistralBatchJob, MistralBatchStatus, MistralGetRequest,
+};
 use crate::mistral_batches::transformation::{
     create_batch, openai_status, retrieve_batch, to_batch_object,
 };
+use crate::mistral_identity::error::MistralIdentityError;
 use betterlite_config::sections::mistral_resources::Settings;
 use http::Method;
 use rstest::rstest;
 use secrecy::SecretString;
+use std::collections::BTreeMap;
 
 fn settings(api_base: Option<&str>, api_key: Option<&str>) -> Settings {
     Settings {
@@ -261,4 +265,21 @@ fn the_job_record_keeps_metadata_and_the_start_time() {
             .and_then(|metadata| metadata.get("team").cloned()),
         Some(String::from("a"))
     );
+}
+
+#[test]
+fn a_job_error_without_a_count_counts_once() {
+    let error: MistralBatchError = serde_json::from_str(r#"{"message": "bad"}"#).unwrap();
+    assert_eq!(error.count, 1);
+}
+
+#[test]
+fn an_api_failure_keeps_its_status_and_other_failures_have_none() {
+    let api = MistralBatchesError::Identity(MistralIdentityError::Api {
+        status: 401,
+        message: String::from("denied"),
+        headers: BTreeMap::new(),
+    });
+    assert_eq!(api.status_code(), Some(401));
+    assert_eq!(MistralBatchesError::InputFileRequired.status_code(), None);
 }

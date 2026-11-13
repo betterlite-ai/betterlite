@@ -41,7 +41,6 @@ fn helper_seeds_select_mistral_resources() {
 fn oracle_ocr_reads_back_as_user_data() {
     let result = run_case("ocr-user-data-round-trip.yaml");
     let files = &result["files"];
-    assert_eq!(files["authorization"], "Bearer Key");
     assert_eq!(files["uploads"][0]["purpose"], "batch");
     assert_eq!(files["uploads"][0]["filename"], "scan.pdf");
     assert_eq!(files["uploads"][0]["content_type"], "application/pdf");

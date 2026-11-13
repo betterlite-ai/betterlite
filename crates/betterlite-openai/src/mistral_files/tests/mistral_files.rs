@@ -124,7 +124,7 @@ fn upload_rejects_a_bare_string_body() {
         &settings(None, None),
     )
     .expect_err("a bare string is rejected");
-    assert!(matches!(error, MistralFilesError::Content { .. }));
+    assert!(matches!(error, MistralFilesError::Content(_)));
     assert_eq!(error.status_code(), None);
 }
 

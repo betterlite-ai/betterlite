@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::api::batch_records::WireDecodeLimits;
+use crate::api::batch_records::{BatchRecordsError, WireDecodeLimits};
 use crate::mistral_batches::records::MistralBatchJob;
 use crate::mistral_files::decode::{MistralDecodeError, decode_mistral_resource};
 use crate::mistral_files::records::{MistralFile, MistralFileDeleted, MistralFileList};
@@ -49,4 +49,23 @@ fn replays_mistral_resource_corpus() {
             assert!(decoded.is_err(), "{name}: {decoded:?}");
         }
     }
+}
+
+#[test]
+fn the_json_limit_rejects_one_byte_over() {
+    let body = br#"{"id": "f"}"#;
+    let at = WireDecodeLimits {
+        max_json_bytes: body.len(),
+        ..limits()
+    };
+    let below = WireDecodeLimits {
+        max_json_bytes: body.len() - 1,
+        ..limits()
+    };
+    assert!(decode_mistral_resource::<serde_json::Value>(body, &at).is_ok());
+    assert!(matches!(
+        decode_mistral_resource::<serde_json::Value>(body, &below),
+        Err(MistralDecodeError::Limit(BatchRecordsError::JsonTooLarge { limit }))
+            if limit == body.len() - 1
+    ));
 }

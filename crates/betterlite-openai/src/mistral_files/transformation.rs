@@ -5,13 +5,11 @@ use crate::mistral_identity::base_url;
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_http::url_path::encode_segment;
 use betterlite_prompts::media_metadata::{FileData, extract_file_data};
-// LiteLLM's CreateFileRequest: the purpose is the caller's create-file purpose, before mapping
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileUploadRequest {
     pub file: FileData,
     pub purpose: Option<String>,
 }
-#[must_use]
 pub fn upload_purpose(purpose: Option<&str>) -> Result<MistralPurpose, MistralFilesError> {
     match purpose {
         Some("fine-tune") => Ok(MistralPurpose::FineTune),
@@ -30,14 +28,12 @@ pub fn create_upload(
     settings: &Settings,
 ) -> Result<FileUpload, MistralFilesError> {
     let purpose = upload_purpose(request.purpose.as_deref())?;
-    let extracted =
-        extract_file_data(&request.file).map_err(|source| MistralFilesError::Content { source })?;
-    let filename = extracted
-        .filename
-        .unwrap_or_else(|| format!("file_{now}.jsonl"));
+    let extracted = extract_file_data(&request.file)?;
     Ok(FileUpload {
         url: format!("{}/v1/files", base_url(api_base, settings)),
-        filename,
+        filename: extracted
+            .filename
+            .unwrap_or_else(|| format!("file_{now}.jsonl")),
         content_type: extracted.content_type,
         content: extracted.content,
         purpose,
@@ -49,17 +45,13 @@ pub fn file_url(
     api_base: Option<&str>,
     settings: &Settings,
 ) -> Result<String, MistralFilesError> {
-    let Some(file_id) = file_id else {
-        return Err(MistralFilesError::FileIdRequired);
-    };
-    let encoded =
-        encode_segment(file_id, "file_id").map_err(|source| MistralFilesError::Path { source })?;
+    let file_id = file_id.ok_or(MistralFilesError::FileIdRequired)?;
+    let encoded = encode_segment(file_id, "file_id")?;
     Ok(format!(
         "{}/v1/files/{encoded}{suffix}",
         base_url(api_base, settings)
     ))
 }
-// An absent or empty purpose sends no filter, as LiteLLM's transform does
 pub fn list_request(
     purpose: Option<&str>,
     api_base: Option<&str>,
@@ -69,11 +61,8 @@ pub fn list_request(
     let Some(purpose) = purpose.filter(|text| !text.is_empty()) else {
         return Ok((url, Vec::new()));
     };
-    let mapped = upload_purpose(Some(purpose))?;
-    Ok((
-        url,
-        vec![(String::from("purpose"), mapped.wire_name().to_owned())],
-    ))
+    let mapped = upload_purpose(Some(purpose))?.wire_name();
+    Ok((url, vec![(String::from("purpose"), mapped.to_owned())]))
 }
 #[must_use]
 pub fn openai_purpose(purpose: &str) -> FilesPurpose {

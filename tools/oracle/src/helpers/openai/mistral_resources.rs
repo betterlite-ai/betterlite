@@ -1,6 +1,5 @@
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
-use betterlite_openai::files::records::FileObject;
 use betterlite_openai::mistral_batches::records::MistralBatchJob;
 use betterlite_openai::mistral_batches::transformation::{
     create_batch, retrieve_batch, to_batch_object,
@@ -33,7 +32,6 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 struct FilesSection {
     api_base: Option<String>,
-    api_key: Option<String>,
     now: i64,
     #[serde(default)]
     uploads: Vec<Upload>,
@@ -74,29 +72,13 @@ fn resource_settings(env: &BTreeMap<String, String>) -> Settings {
             .map(|value| SecretString::from(value.as_str())),
     }
 }
-fn file_data(upload: &Upload) -> FileData {
-    let content = FileBody::Bytes(upload.content.clone());
-    if let Some(content_type) = &upload.content_type {
-        return FileData::Tuple3 {
-            filename: upload.filename.clone(),
-            content,
-            content_type: Some(content_type.clone()),
-        };
-    }
-    if let Some(filename) = &upload.filename {
-        return FileData::Tuple2 {
-            filename: Some(filename.clone()),
-            content,
-        };
-    }
-    FileData::Direct(content)
-}
-fn file_view(file: &FileObject) -> Value {
-    json!({"id": file.id, "bytes": file.bytes, "created_at": file.created_at, "filename": file.filename, "object": file.object, "purpose": file.purpose, "status": file.status, "expires_at": file.expires_at, "status_details": file.status_details})
-}
 fn upload_outcome(upload: &Upload, section: &FilesSection, settings: &Settings) -> Value {
     let request = FileUploadRequest {
-        file: file_data(upload),
+        file: FileData::Tuple3 {
+            filename: upload.filename.clone(),
+            content: FileBody::Bytes(upload.content.clone()),
+            content_type: upload.content_type.clone(),
+        },
         purpose: Some(upload.purpose.clone()),
     };
     match create_upload(&request, section.now, section.api_base.as_deref(), settings) {
@@ -113,10 +95,6 @@ fn list_outcome(purpose: Option<&str>, section: &FilesSection, settings: &Settin
     }
 }
 fn files_outcome(section: &FilesSection, settings: &Settings) -> Value {
-    let key = section.api_key.as_deref().map(SecretString::from);
-    let Ok(headers) = auth_headers(&Headers::new(), key.as_ref(), settings) else {
-        return json!({"ok": false, "status": null});
-    };
     let mut uploads = Vec::with_capacity(section.uploads.len());
     for upload in &section.uploads {
         uploads.push(upload_outcome(upload, section, settings));
@@ -127,26 +105,19 @@ fn files_outcome(section: &FilesSection, settings: &Settings) -> Value {
     }
     let mut bodies = Vec::with_capacity(section.bodies.len());
     for body in &section.bodies {
-        bodies.push(file_view(&to_file_object(body, section.now)));
+        bodies.push(json!(to_file_object(body, section.now)));
     }
-    json!({"ok": true, "authorization": headers.get(AUTHORIZATION.as_str()), "uploads": uploads, "list": listed, "bodies": bodies})
+    json!({"uploads": uploads, "list": listed, "bodies": bodies})
 }
 fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
     let key = section.api_key.as_deref().map(SecretString::from);
-    let Ok(headers) = auth_headers(&Headers::new(), key.as_ref(), settings) else {
-        return json!({"ok": false, "status": null});
-    };
-    match create_batch(
-        &section.data,
-        &section.model,
-        section.api_base.as_deref(),
-        settings,
-    ) {
-        Ok(plan) => {
-            json!({"ok": true, "url": plan.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": plan.body})
-        }
-        Err(error) => json!({"ok": false, "status": error.status_code()}),
+    let headers = auth_headers(&Headers::new(), key.as_ref(), settings);
+    let api_base = section.api_base.as_deref();
+    let plan = create_batch(&section.data, &section.model, api_base, settings);
+    if let (Ok(headers), Ok(plan)) = (headers, plan) {
+        return json!({"ok": true, "url": plan.url, "authorization": headers.get(AUTHORIZATION.as_str()), "body": plan.body});
     }
+    json!({"ok": false, "status": null})
 }
 fn retrieve_outcome(call: &RetrieveCall, settings: &Settings) -> Value {
     let key = call.api_key.as_deref().map(SecretString::from);
