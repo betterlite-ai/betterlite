@@ -32,19 +32,14 @@ pub struct AimSocket {
     pub writer: Box<dyn AimFrameWriter>,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AimSocketTimeouts {
-    pub open: Duration,
-    pub read: Duration,
-}
-
 #[async_trait]
 pub trait AimSocketConnector: Send + Sync {
     async fn connect(
         &self,
         url: &str,
         headers: &HeaderMap,
-        timeouts: AimSocketTimeouts,
+        open: Duration,
+        read: Duration,
     ) -> Result<AimSocket, AimError>;
 }
 
@@ -55,10 +50,6 @@ pub struct AimStreamChunk(pub String);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct VerifiedChunk {
-    pub id: Option<String>,
-    pub object: Option<String>,
-    pub created: Option<i64>,
-    pub model: Option<String>,
     pub choices: Vec<VerifiedChoice>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, GuardrailValue>,
@@ -78,8 +69,6 @@ pub struct VerifiedChoice {
 #[serde(default)]
 pub struct VerifiedDelta {
     pub content: Option<String>,
-    pub role: Option<String>,
-    pub tool_calls: Option<GuardrailValue>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, GuardrailValue>,
 }
@@ -92,32 +81,32 @@ struct StreamFrame {
     blocking_message: Option<String>,
 }
 
-pub struct AimStreamCall<'context> {
-    pub request_data: &'context BTreeMap<String, GuardrailValue>,
-    pub key_alias: Option<&'context str>,
-}
-
 impl AimGuardrail {
     pub async fn inspect_output_stream<S>(
         &self,
         chunks: S,
-        call: AimStreamCall<'_>,
+        request_data: &BTreeMap<String, GuardrailValue>,
+        key_alias: Option<&str>,
     ) -> Result<impl Stream<Item = Result<VerifiedChunk, AimError>>, AimError>
     where
         S: Stream<Item = AimStreamChunk> + Send + 'static,
     {
         let headers = self.build_headers(
             AimHook::Output,
-            call.key_alias,
-            input::user_email(call.request_data),
-            input::call_id(call.request_data),
+            key_alias,
+            input::user_email(request_data),
+            input::call_id(request_data),
         )?;
-        let timeouts = AimSocketTimeouts {
-            open: CONNECT_TIMEOUT,
-            read: self.timeout.unwrap_or(DEFAULT_TIMEOUT),
-        };
         let url = format!("{}/fw/v1/analyze/stream", self.ws_api_base);
-        let socket = self.connector.connect(&url, &headers, timeouts).await?;
+        let socket = self
+            .connector
+            .connect(
+                &url,
+                &headers,
+                CONNECT_TIMEOUT,
+                self.timeout.unwrap_or(DEFAULT_TIMEOUT),
+            )
+            .await?;
         Ok(open_socket(socket, chunks))
     }
 }
@@ -186,7 +175,7 @@ impl StreamState {
             Ok(frame) => frame,
             Err(source) => {
                 self.finish();
-                return Some(Err(AimError::StreamJson { source }));
+                return Some(Err(AimError::StreamJson(source)));
             }
         };
         if let Some(chunk) = frame.verified_chunk {

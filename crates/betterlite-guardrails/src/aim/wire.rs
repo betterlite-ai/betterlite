@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
 
-use super::error::{AimError, RejectionCode};
+use super::error::{AimError, BAD_REQUEST_CODE};
 use crate::content_inspection::InspectionMessage;
 
 #[derive(Debug, Serialize)]
@@ -15,7 +13,6 @@ pub struct AnalyzeRequest<'messages> {
 #[serde(default)]
 pub struct AnalyzeResponse {
     pub required_action: Option<RequiredAction>,
-    pub analysis_result: Option<AnalysisResult>,
     pub redacted_chat: Option<RedactedChat>,
 }
 
@@ -24,12 +21,6 @@ pub struct AnalyzeResponse {
 pub struct RequiredAction {
     pub action_type: Option<String>,
     pub detection_message: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct AnalysisResult {
-    pub policy_drill_down: BTreeMap<String, GuardrailValue>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -74,7 +65,7 @@ pub fn action_of(response: &AnalyzeResponse) -> AimAction {
 pub fn malformed_redaction(message: &str) -> AimError {
     AimError::Rejected {
         message: message.to_owned(),
-        code: RejectionCode::BadRequest,
+        code: BAD_REQUEST_CODE,
     }
 }
 
@@ -85,7 +76,7 @@ pub fn redacted_messages(chat: &RedactedChat) -> Result<Vec<RedactedMessage>, Ai
         ));
     };
     let json = serde_json::to_value(value).map_err(|_error| {
-        malformed_redaction("Aim returned redacted messages that are not valid JSON")
+        malformed_redaction("Aim returned redacted messages that are not JSON")
     })?;
     serde_json::from_value(json).map_err(|_error| {
         malformed_redaction(

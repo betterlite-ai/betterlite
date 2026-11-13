@@ -62,6 +62,15 @@ impl Section for Raw {
     }
 }
 
+fn configured_value<L>(value: Option<String>, variable: &str, lookup: &L) -> Option<String>
+where
+    L: EnvironmentLookup,
+{
+    value
+        .filter(|value| !value.is_empty())
+        .or_else(|| lookup.lookup(variable).filter(|value| !value.is_empty()))
+}
+
 impl Entry {
     fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
     where
@@ -69,30 +78,24 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = match parameters
-            .api_key
-            .filter(|key| !key.expose_secret().is_empty())
-        {
-            Some(key) => SecretString::from(resolve_string(
-                key.expose_secret().to_owned(),
-                &format!("{prefix}.api_key"),
-                lookup,
-            )?),
-            None => lookup
-                .lookup("AIM_API_KEY")
-                .filter(|key| !key.is_empty())
-                .map(SecretString::from)
-                .ok_or_else(|| ConfigError::MissingEnvironment {
+        let api_key = match configured_value(
+            parameters.api_key.map(|key| key.expose_secret().to_owned()),
+            "AIM_API_KEY",
+            lookup,
+        ) {
+            Some(key) => {
+                SecretString::from(resolve_string(key, &format!("{prefix}.api_key"), lookup)?)
+            }
+            None => {
+                return Err(ConfigError::MissingEnvironment {
                     variable: "AIM_API_KEY".to_owned(),
                     path: format!("{prefix}.api_key"),
-                })?,
+                });
+            }
         };
-        let api_base = match parameters.api_base.filter(|value| !value.is_empty()) {
+        let api_base = match configured_value(parameters.api_base, "AIM_API_BASE", lookup) {
             Some(value) => resolve_string(value, &format!("{prefix}.api_base"), lookup)?,
-            None => lookup
-                .lookup("AIM_API_BASE")
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
+            None => DEFAULT_API_BASE.to_owned(),
         };
         Ok(Configured {
             guardrail_name: self.guardrail_name,

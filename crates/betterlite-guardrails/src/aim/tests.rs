@@ -15,12 +15,11 @@ use secrecy::ExposeSecret as _;
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use super::error::{AimError, RejectionCode};
+use super::error::{AimError, CONTENT_POLICY_VIOLATION};
 use super::output::AimOutput;
 use super::settings::{AimGuardrail, AimHook, AimParams};
 use super::stream::{
-    AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimSocketTimeouts,
-    AimStreamCall, AimStreamChunk,
+    AimFrameReader, AimFrameWriter, AimSocket, AimSocketConnector, AimStreamChunk,
 };
 use super::transport::{AimHttpResponse, AimPoster};
 
@@ -48,7 +47,11 @@ impl AimPoster for Fake {
         body: &[u8],
         _timeout: Option<Duration>,
     ) -> Result<AimHttpResponse, AimError> {
-        let mut posts = self.state.posts.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut posts = self
+            .state
+            .posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         posts.push((url.to_owned(), headers.clone(), body.to_vec()));
         Ok(AimHttpResponse {
             status: self.status,
@@ -72,7 +75,11 @@ impl AimFrameReader for Fake {
 #[async_trait]
 impl AimFrameWriter for Fake {
     async fn send_text(&mut self, text: String) -> Result<(), AimError> {
-        let mut sent = self.state.sent.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut sent = self
+            .state
+            .sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         sent.push(text);
         Ok(())
     }
@@ -84,9 +91,14 @@ impl AimSocketConnector for Fake {
         &self,
         url: &str,
         headers: &HeaderMap,
-        _timeouts: AimSocketTimeouts,
+        _open: Duration,
+        _read: Duration,
     ) -> Result<AimSocket, AimError> {
-        let mut posts = self.state.posts.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut posts = self
+            .state
+            .posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         posts.push((url.to_owned(), headers.clone(), Vec::new()));
         Ok(AimSocket {
             reader: Box::new(Fake {
@@ -159,7 +171,7 @@ fn header_of(state: &State, name: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn rejection(error: AimError) -> RejectionCode {
+fn rejection(error: AimError) -> &'static str {
     let AimError::Rejected { code, .. } = error else {
         panic!("expected a rejection");
     };
@@ -168,7 +180,10 @@ fn rejection(error: AimError) -> RejectionCode {
 
 #[tokio::test]
 async fn aim_guardrail_posts_role_projected_inspection_messages() {
-    let fixture = fixture(r#"{"required_action": {"action_type": "monitor_action"}}"#, &[]);
+    let fixture = fixture(
+        r#"{"required_action": {"action_type": "monitor_action"}}"#,
+        &[],
+    );
     let mut data: BTreeMap<String, GuardrailValue> = serde_json::from_value(json!({
         "messages": [
             {"role": "system", "content": "be nice"},
@@ -192,12 +207,30 @@ async fn aim_guardrail_posts_role_projected_inspection_messages() {
             {"role": "user", "content": "hello"}
         ]})
     );
-    assert_eq!(header_of(&fixture.state, "authorization").as_deref(), Some("Bearer aim-key"));
-    assert_eq!(header_of(&fixture.state, "x-aim-litellm-hook").as_deref(), Some("pre_call"));
-    assert_eq!(header_of(&fixture.state, "x-aim-litellm-version").as_deref(), Some("1.105.1"));
-    assert_eq!(header_of(&fixture.state, "x-aim-call-id").as_deref(), Some("call-1"));
-    assert_eq!(header_of(&fixture.state, "x-aim-user-email").as_deref(), Some("user@example.com"));
-    assert_eq!(header_of(&fixture.state, "x-aim-gateway-key-alias").as_deref(), Some("alias"));
+    assert_eq!(
+        header_of(&fixture.state, "authorization").as_deref(),
+        Some("Bearer aim-key")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-litellm-hook").as_deref(),
+        Some("pre_call")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-litellm-version").as_deref(),
+        Some("1.105.1")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-call-id").as_deref(),
+        Some("call-1")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-user-email").as_deref(),
+        Some("user@example.com")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-gateway-key-alias").as_deref(),
+        Some("alias")
+    );
 }
 
 #[tokio::test]
@@ -213,8 +246,8 @@ async fn aim_guardrail_block_action_is_a_content_policy_rejection() {
         .call_aim_guardrail(&mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::ContentPolicyViolation);
-    assert_eq!(RejectionCode::ContentPolicyViolation.as_str(), "content_policy_violation");
+    assert_eq!(rejection(error), CONTENT_POLICY_VIOLATION);
+    assert_eq!(CONTENT_POLICY_VIOLATION, "content_policy_violation");
 }
 
 #[tokio::test]
@@ -230,7 +263,7 @@ async fn aim_guardrail_block_action_survives_a_missing_analysis_result() {
         .call_aim_guardrail(&mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::ContentPolicyViolation);
+    assert_eq!(rejection(error), CONTENT_POLICY_VIOLATION);
 }
 
 #[tokio::test]
@@ -251,12 +284,20 @@ async fn aim_guardrail_anonymize_rewrites_messages_and_input() {
         .unwrap();
     assert_eq!(
         data.get("messages"),
-        Some(&GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-            ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
-            ("content".to_owned(), GuardrailValue::Text("redacted secret".to_owned())),
-        ]))]))
+        Some(&GuardrailValue::Array(vec![GuardrailValue::Object(
+            BTreeMap::from([
+                ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
+                (
+                    "content".to_owned(),
+                    GuardrailValue::Text("redacted secret".to_owned())
+                ),
+            ])
+        )]))
     );
-    assert_eq!(data.get("input"), Some(&GuardrailValue::Text("redacted secret".to_owned())));
+    assert_eq!(
+        data.get("input"),
+        Some(&GuardrailValue::Text("redacted secret".to_owned()))
+    );
 }
 
 #[tokio::test]
@@ -275,7 +316,7 @@ async fn aim_guardrail_anonymize_rejects_multimodal_input() {
         .call_aim_guardrail(&mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::BadRequest);
+    assert_eq!(rejection(error), "400");
     assert_eq!(data, before);
 }
 
@@ -317,7 +358,7 @@ async fn aim_guardrail_anonymize_rejects_a_different_batch_size() {
         .call_aim_guardrail(&mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::BadRequest);
+    assert_eq!(rejection(error), "400");
 }
 
 #[tokio::test]
@@ -333,7 +374,7 @@ async fn aim_guardrail_anonymize_rejects_malformed_redacted_messages() {
         .call_aim_guardrail(&mut data, AimHook::PreCall, None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::BadRequest);
+    assert_eq!(rejection(error), "400");
 }
 
 #[tokio::test]
@@ -350,8 +391,16 @@ async fn aim_guardrail_output_anonymize_returns_the_redacted_message() {
         .call_aim_guardrail_on_output(&request, "answer", None)
         .await
         .unwrap();
-    assert_eq!(output, AimOutput::Redacted { output: "redacted answer".to_owned() });
-    assert_eq!(body_of(&fixture.state)["messages"][1], json!({"role": "assistant", "content": "answer"}));
+    assert_eq!(
+        output,
+        AimOutput::Redacted {
+            output: "redacted answer".to_owned()
+        }
+    );
+    assert_eq!(
+        body_of(&fixture.state)["messages"][1],
+        json!({"role": "assistant", "content": "answer"})
+    );
 }
 
 #[tokio::test]
@@ -370,7 +419,9 @@ async fn aim_guardrail_output_block_returns_the_detection_message() {
         .unwrap();
     assert_eq!(
         output,
-        AimOutput::Blocked { detection_message: Some("blocked output".to_owned()) }
+        AimOutput::Blocked {
+            detection_message: Some("blocked output".to_owned())
+        }
     );
 }
 
@@ -388,7 +439,7 @@ async fn aim_guardrail_output_anonymize_rejects_bad_redactions() {
         .call_aim_guardrail_on_output(&request, "answer", None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::BadRequest);
+    assert_eq!(rejection(error), "400");
     let empty = fixture(
         r#"{"required_action": {"action_type": "anonymize_action"}, "redacted_chat": {"all_redacted_messages": [{"role": "user", "content": "question"}, {"role": "assistant", "content": ""}]}}"#,
         &[],
@@ -398,25 +449,28 @@ async fn aim_guardrail_output_anonymize_rejects_bad_redactions() {
         .call_aim_guardrail_on_output(&request, "answer", None)
         .await
         .unwrap_err();
-    assert_eq!(rejection(error), RejectionCode::BadRequest);
+    assert_eq!(rejection(error), "400");
 }
 
 #[tokio::test]
 async fn aim_guardrail_stream_yields_verified_chunks_in_order() {
     let first = r#"{"verified_chunk": {"id": "chatcmpl-1", "choices": [{"index": 0, "delta": {"content": "he"}}]}}"#;
     let second = r#"{"verified_chunk": {"id": "chatcmpl-1", "choices": [{"index": 0, "delta": {"content": "llo"}}]}}"#;
-    let fixture = fixture("{}", &[Some(first), Some(second), Some(r#"{"done": true}"#)]);
+    let fixture = fixture(
+        "{}",
+        &[Some(first), Some(second), Some(r#"{"done": true}"#)],
+    );
     let request: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
     let chunks = stream::iter(vec![
         AimStreamChunk(r#"{"choices":[]}"#.to_owned()),
         AimStreamChunk(r#"{"choices":[]}"#.to_owned()),
     ]);
-    let call = AimStreamCall { request_data: &request, key_alias: Some("alias") };
+    let call = Some("alias");
     let mut stream = Box::pin(
         fixture
             .guardrail
-            .inspect_output_stream(chunks, call)
+            .inspect_output_stream(chunks, &request, call)
             .await
             .unwrap(),
     );
@@ -430,7 +484,11 @@ async fn aim_guardrail_stream_yields_verified_chunks_in_order() {
         contents.push(content.unwrap_or_default());
     }
     assert_eq!(contents, ["he", "llo"]);
-    let sent = fixture.state.sent.lock().unwrap_or_else(PoisonError::into_inner);
+    let sent = fixture
+        .state
+        .sent
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     assert_eq!(sent.len(), 3);
     assert_eq!(sent.last().map(String::as_str), Some(r#"{"done":true}"#));
 }
@@ -447,11 +505,11 @@ async fn aim_guardrail_stream_blocking_message_is_an_error() {
     let request: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
     let chunks = stream::iter(vec![AimStreamChunk(r#"{"choices":[]}"#.to_owned())]);
-    let call = AimStreamCall { request_data: &request, key_alias: None };
+    let call = None;
     let mut stream = Box::pin(
         fixture
             .guardrail
-            .inspect_output_stream(chunks, call)
+            .inspect_output_stream(chunks, &request, call)
             .await
             .unwrap(),
     );
@@ -486,15 +544,17 @@ async fn aim_guardrail_stream_cancels_the_sender_when_aim_stops_sending_chunks()
     let request: BTreeMap<String, GuardrailValue> =
         serde_json::from_value(json!({"messages": [{"role": "user", "content": "hi"}]})).unwrap();
     let (sender, receiver) = mpsc::channel::<AimStreamChunk>(1);
-    assert!(sender
-        .try_send(AimStreamChunk(r#"{"choices":[]}"#.to_owned()))
-        .is_ok());
+    assert!(
+        sender
+            .try_send(AimStreamChunk(r#"{"choices":[]}"#.to_owned()))
+            .is_ok()
+    );
     let chunks = stream::poll_fn(move |context| receiver.poll_recv(context));
-    let call = AimStreamCall { request_data: &request, key_alias: None };
+    let call = None;
     let mut stream = Box::pin(
         fixture
             .guardrail
-            .inspect_output_stream(chunks, call)
+            .inspect_output_stream(chunks, &request, call)
             .await
             .unwrap(),
     );
@@ -517,24 +577,19 @@ fn aim_guardrail_missing_api_key_is_an_error() {
         status: StatusCode::OK,
         body: Vec::new(),
     });
-    let result =
-        AimGuardrail::new(AimParams::default(), &environment, poster, connector, None);
+    let result = AimGuardrail::new(AimParams::default(), &environment, poster, connector, None);
     assert!(matches!(result, Err(AimError::MissingSecrets)));
 }
 
 #[test]
 fn aim_guardrail_config_reads_the_api_key_and_default_base() {
-    let source = "guardrails:\n  - guardrail_name: aim-safety\n    litellm_params:\n      guardrail: aim\n";
+    let source =
+        "guardrails:\n  - guardrail_name: aim-safety\n    litellm_params:\n      guardrail: aim\n";
     let loader = ConfigLoader {
         lookup: BTreeMap::from([("AIM_API_KEY".to_owned(), "config-key".to_owned())]),
     };
     let config = loader.load(source).unwrap();
-    let configured = config
-        .sections
-        .aim_inspection
-        .guardrails
-        .first()
-        .unwrap();
+    let configured = config.sections.aim_inspection.guardrails.first().unwrap();
     assert_eq!(configured.api_key.expose_secret(), "config-key");
     assert_eq!(configured.api_base, "https://api.aim.security");
     assert!(!configured.inspect_embeddings);
@@ -547,12 +602,7 @@ fn aim_guardrail_config_reads_the_base_and_embedding_flag() {
         lookup: BTreeMap::new(),
     };
     let config = loader.load(source).unwrap();
-    let configured = config
-        .sections
-        .aim_inspection
-        .guardrails
-        .first()
-        .unwrap();
+    let configured = config.sections.aim_inspection.guardrails.first().unwrap();
     assert_eq!(configured.api_base, "https://aim.example");
     assert!(configured.inspect_embeddings);
 }

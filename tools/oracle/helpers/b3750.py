@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 from json import dumps, loads
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Protocol, TypedDict
 
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.aim.aim import (
@@ -16,54 +16,27 @@ from pydantic import TypeAdapter
 from websockets.asyncio.server import ServerConnection, serve
 
 HTTP_BAD_REQUEST = 400
+ANALYZE_PATH = "/fw/v1/analyze"
+DEFAULT_BASE = "https://api.aim.security"
 
 
 class Settings(TypedDict, total=False):
     api_key: str | None
     api_base: str | None
     inspect_embeddings: bool | None
-    guardrail_name: str | None
 
 
-class ConstructInput(TypedDict):
-    function: Literal["construct"]
+class CaseInput(TypedDict):
+    function: str
     settings: Settings
-    environment: dict[str, str]
-
-
-class RequestInput(TypedDict):
-    function: Literal["request"]
-    settings: Settings
-    environment: dict[str, str]
     request_data: dict[str, Json]
-    hook: Literal["pre_call", "moderation"]
+    hook: str
     key_alias: str | None
     answer: dict[str, Json]
     answer_status: int
-
-
-class OutputInput(TypedDict):
-    function: Literal["output"]
-    settings: Settings
-    environment: dict[str, str]
-    request_data: dict[str, Json]
     output: str
-    key_alias: str | None
-    answer: dict[str, Json]
-    answer_status: int
-
-
-class StreamInput(TypedDict):
-    function: Literal["stream"]
-    settings: Settings
-    environment: dict[str, str]
-    request_data: dict[str, Json]
-    key_alias: str | None
     chunks: list[dict[str, Json]]
     frames: list[dict[str, Json]]
-
-
-Input: TypeAlias = ConstructInput | RequestInput | OutputInput | StreamInput
 
 
 class RecordedCall(TypedDict):
@@ -77,6 +50,7 @@ class AimInspector(Protocol):
     api_base: str
     ws_api_base: str
     inspect_embeddings: bool
+
     async def call_aim_guardrail(
         self, data: dict[str, Json], hook: str, key_alias: str | None
     ) -> dict[str, Json]: ...
@@ -111,9 +85,7 @@ class AnalysisServer:
         length = 0 if length_text is None else int(length_text)
         payload = await reader.readexactly(length)
         body = TypeAdapter(Json).validate_python(loads(payload.decode()))
-        self.requests.append(
-            RecordedCall(url=request_line[1], headers=headers, body=body)
-        )
+        self.requests.append(RecordedCall(url=request_line[1], headers=headers, body=body))
         encoded = dumps(self.answer).encode()
         head = (
             f"HTTP/1.1 {self.status} OK\r\nContent-Type: application/json\r\n"
@@ -134,7 +106,7 @@ class FrameServer:
 
 
 async def streaming_chunks(
-    chunks: Sequence[dict[str, Json]]
+    chunks: Sequence[dict[str, Json]],
 ) -> AsyncIterator[ModelResponseStream]:
     for chunk in chunks:
         yield ModelResponseStream.model_validate(chunk)
@@ -148,7 +120,7 @@ def listening_port(server: asyncio.Server) -> int:
 
 
 def build_guardrail(settings: Settings, api_base: str | None) -> AimInspector:
-    base = "https://api.aim.security" if api_base is None else api_base
+    base = DEFAULT_BASE if api_base is None else api_base
     return AimGuardrail(
         api_key=settings.get("api_key"),
         api_base=base,
@@ -167,7 +139,7 @@ def request_output(server: AnalysisServer) -> Json:
         if name.startswith("x-aim-") or name == "authorization"
     }
     return TypeAdapter(Json).validate_python(
-        {"path": call["url"], "headers": headers, "body": call["body"]}
+        {"path_ok": call["url"] == ANALYZE_PATH, "headers": headers, "body": call["body"]}
     )
 
 
@@ -180,9 +152,9 @@ def rejection(error: ProxyException) -> Json:
     }
 
 
-def run_construct(input_value: ConstructInput) -> Json:
+def run_construct(input_value: CaseInput) -> Json:
+    settings = input_value["settings"]
     try:
-        settings = input_value["settings"]
         guardrail = build_guardrail(settings, settings.get("api_base"))
     except AimGuardrailMissingSecrets:
         return {"missing_secrets": True}
@@ -198,7 +170,7 @@ def run_construct(input_value: ConstructInput) -> Json:
     )
 
 
-async def run_request_async(input_value: RequestInput) -> Json:
+async def run_request_async(input_value: CaseInput) -> Json:
     server = AnalysisServer(input_value["answer"], input_value["answer_status"])
     http = await asyncio.start_server(server, "127.0.0.1", 0)
     try:
@@ -209,24 +181,18 @@ async def run_request_async(input_value: RequestInput) -> Json:
         blocked: Json = None
         try:
             await inspector.call_aim_guardrail(
-                data,
-                hook=input_value["hook"],
-                key_alias=input_value["key_alias"],
+                data, hook=input_value["hook"], key_alias=input_value["key_alias"]
             )
         except ProxyException as error:
             blocked = rejection(error)
     finally:
         http.close()
     return TypeAdapter(Json).validate_python(
-        {
-            "request": request_output(server),
-            "request_data": data,
-            "blocked": blocked,
-        }
+        {"request": request_output(server), "request_data": data, "blocked": blocked}
     )
 
 
-async def run_output_async(input_value: OutputInput) -> Json:
+async def run_output_async(input_value: CaseInput) -> Json:
     server = AnalysisServer(input_value["answer"], input_value["answer_status"])
     http = await asyncio.start_server(server, "127.0.0.1", 0)
     try:
@@ -258,7 +224,7 @@ async def run_output_async(input_value: OutputInput) -> Json:
     )
 
 
-async def run_stream_async(input_value: StreamInput) -> Json:
+async def run_stream_async(input_value: CaseInput) -> Json:
     frames = FrameServer(input_value["frames"])
     user = UserAPIKeyAuth(api_key="aim-oracle-key", key_alias=input_value["key_alias"])
     request_data = TypeAdapter(dict[str, Json]).validate_python(
@@ -290,11 +256,12 @@ async def run_stream_async(input_value: StreamInput) -> Json:
     return TypeAdapter(Json).validate_python({"chunks": contents, "blocked": blocked})
 
 
-def run(input_value: Input) -> Json:
-    if input_value["function"] == "construct":
+def run(input_value: CaseInput) -> Json:
+    function = input_value["function"]
+    if function == "construct":
         return run_construct(input_value)
-    if input_value["function"] == "request":
+    if function == "request":
         return asyncio.run(run_request_async(input_value))
-    if input_value["function"] == "output":
+    if function == "output":
         return asyncio.run(run_output_async(input_value))
     return asyncio.run(run_stream_async(input_value))

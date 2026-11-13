@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::HelperError;
 
 mod fakes;
 mod operations;
@@ -99,17 +99,4 @@ fn failure(class: &str, message: String) -> Box<HelperError> {
         code: None,
         message,
     })
-}
-
-impl Helper for Op {
-    type Input = Input;
-
-    fn run(input: &Self::Input) -> HelperResult {
-        match input {
-            Input::Construct(args) => operations::run_construct(args),
-            Input::Request(args) => operations::run_request(args),
-            Input::Output(args) => operations::run_output(args),
-            Input::Stream(args) => operations::run_stream(args),
-        }
-    }
 }

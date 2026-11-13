@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::wire::RedactedMessage;
-use crate::content_inspection::{
-    InspectionMessage, apply_redacted_messages_back, build_inspection_messages,
-};
+use crate::content_inspection::{InspectionMessage, build_inspection_messages};
 
 const SAFE_ROLES: [&str; 3] = ["system", "user", "assistant"];
 
@@ -29,6 +27,16 @@ pub fn projected_inspection_messages(
         .collect()
 }
 
+fn text_field<'data>(
+    data: &'data BTreeMap<String, GuardrailValue>,
+    name: &str,
+) -> Option<&'data str> {
+    match data.get(name) {
+        Some(GuardrailValue::Text(value)) if !value.is_empty() => Some(value),
+        _ => None,
+    }
+}
+
 #[must_use]
 pub fn user_email(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
     let Some(GuardrailValue::Object(metadata)) = data.get("metadata") else {
@@ -37,39 +45,24 @@ pub fn user_email(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
     let Some(GuardrailValue::Object(headers)) = metadata.get("headers") else {
         return None;
     };
-    match headers.get("x-aim-user-email") {
-        Some(GuardrailValue::Text(email)) if !email.is_empty() => Some(email),
-        _ => None,
-    }
+    text_field(headers, "x-aim-user-email")
 }
 
 #[must_use]
 pub fn call_id(data: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
-    match data.get("litellm_call_id") {
-        Some(GuardrailValue::Text(call_id)) if !call_id.is_empty() => Some(call_id),
-        _ => None,
-    }
+    text_field(data, "litellm_call_id")
 }
 
 #[must_use]
-pub fn apply_anonymize(
-    data: &mut BTreeMap<String, GuardrailValue>,
-    redacted: &[RedactedMessage],
-) -> bool {
-    let messages: Vec<GuardrailValue> = redacted
-        .iter()
-        .map(|message| {
-            GuardrailValue::Object(BTreeMap::from([
-                (
-                    "role".to_owned(),
-                    GuardrailValue::Text(message.role.clone()),
-                ),
-                (
-                    "content".to_owned(),
-                    GuardrailValue::Text(message.content.clone()),
-                ),
-            ]))
-        })
-        .collect();
-    apply_redacted_messages_back(data, &messages)
+pub fn redacted_value(message: &RedactedMessage) -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        (
+            "role".to_owned(),
+            GuardrailValue::Text(message.role.clone()),
+        ),
+        (
+            "content".to_owned(),
+            GuardrailValue::Text(message.content.clone()),
+        ),
+    ]))
 }

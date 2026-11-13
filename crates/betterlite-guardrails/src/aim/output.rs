@@ -38,46 +38,43 @@ impl AimGuardrail {
             call_id: call_id.as_deref(),
         };
         let response = self.analyze(&messages, &call).await?;
+        let required = response.required_action.as_ref();
         match wire::action_of(&response) {
             AimAction::Block => Ok(AimOutput::Blocked {
-                detection_message: response
-                    .required_action
-                    .as_ref()
-                    .and_then(|action| action.detection_message.clone()),
+                detection_message: required.and_then(|action| action.detection_message.clone()),
             }),
-            AimAction::Anonymize => self.redacted_output(&response, inspected.len()),
+            AimAction::Anonymize => redacted_output(&response, inspected.len()),
             AimAction::None | AimAction::Monitor | AimAction::Unknown => Ok(AimOutput::Unchanged),
         }
     }
+}
 
-    fn redacted_output(
-        &self,
-        response: &super::wire::AnalyzeResponse,
-        inspected_count: usize,
-    ) -> Result<AimOutput, AimError> {
-        let Some(chat) = response.redacted_chat.as_ref() else {
-            return Err(wire::malformed_redaction(
-                "Aim returned no redacted output, so the response can not be rewritten",
-            ));
-        };
-        let redacted = wire::redacted_messages(chat)?;
-        if redacted.len() != inspected_count.saturating_add(1) {
-            return Err(wire::malformed_redaction(
-                "Aim returned an invalid redacted output count, so the response can not be rewritten",
-            ));
-        }
-        let Some(last) = redacted.last() else {
-            return Err(wire::malformed_redaction(
-                "Aim returned no redacted output, so the response can not be rewritten",
-            ));
-        };
-        if last.content.is_empty() {
-            return Err(wire::malformed_redaction(
-                "Aim returned an empty redacted output, so the response can not be rewritten",
-            ));
-        }
-        Ok(AimOutput::Redacted {
-            output: last.content.clone(),
-        })
+fn redacted_output(
+    response: &wire::AnalyzeResponse,
+    inspected: usize,
+) -> Result<AimOutput, AimError> {
+    let Some(chat) = response.redacted_chat.as_ref() else {
+        return Err(AimError::bad_request(
+            "Aim returned no redacted output, so the response can not be rewritten",
+        ));
+    };
+    let redacted = wire::redacted_messages(chat)?;
+    if redacted.len() != inspected.saturating_add(1) {
+        return Err(AimError::bad_request(
+            "Aim returned an invalid redacted output count, so the response can not be rewritten",
+        ));
     }
+    let Some(last) = redacted.last() else {
+        return Err(AimError::bad_request(
+            "Aim returned no redacted output, so the response can not be rewritten",
+        ));
+    };
+    if last.content.is_empty() {
+        return Err(AimError::bad_request(
+            "Aim returned an empty redacted output, so the response can not be rewritten",
+        ));
+    }
+    Ok(AimOutput::Redacted {
+        output: last.content.clone(),
+    })
 }
