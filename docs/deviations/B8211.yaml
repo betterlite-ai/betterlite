@@ -1,0 +1,11 @@
+task: B8211
+deviations:
+  - what: The initializer returns PromptGuardArgs and registers nothing. LiteLLM builds the class and adds it to the callback manager.
+    why: B3682 owns the registry and the registration, as with B3681.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/__init__.py#L29-L31
+  - what: An answer whose JSON body is not an object (an array, a string or a number) is treated as a failed call, so block_on_error decides between raising and returning the inputs. LiteLLM parses the body inside its try block but calls result.get outside it, so a non-object body raises AttributeError as an unhandled server error whichever block_on_error says.
+    why: The settings rule says every guardrail survives an answer it cannot read; a 500 from an unhandled exception on input LiteLLM already fails is a bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py#L174-L191
+  - what: A guard answer larger than 1048576 bytes is refused as a failed call instead of being parsed in full.
+    why: The bounded-inputs rule gives every outbound read a cap; LiteLLM parses the whole body with response.json() without one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py#L173-L175
