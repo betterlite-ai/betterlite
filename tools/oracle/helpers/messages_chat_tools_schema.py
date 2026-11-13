@@ -7,7 +7,14 @@ from litellm.types.llms.anthropic import AnthropicMessagesToolChoice
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
-ADAPTER: Final = LiteLLMAnthropicMessagesAdapter()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L352
+
+class Adapter(LiteLLMAnthropicMessagesAdapter):
+    # the base __init__ has no annotations, so a typed subclass avoids an untyped-call suppression
+    def __init__(self) -> None:
+        ...
+
+
+ADAPTER: Final = Adapter()
 ANSWER: Final = TypeAdapter(Json)
 
 
