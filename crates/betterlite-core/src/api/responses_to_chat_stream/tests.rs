@@ -874,6 +874,7 @@ fn repr_matches_python_text() {
     assert_eq!(repr_value(&json!(false)), "False");
     assert_eq!(repr_value(&json!(1.5)), "1.5");
     assert_eq!(repr_value(&json!("it's")), "'it\\'s'");
+    assert_eq!(repr_value(&json!("a\\b\nc\rd\te")), "'a\\\\b\\nc\\rd\\te'");
     assert_eq!(repr_value(&json!(["a", 1])), "['a', 1]");
     assert_eq!(repr_value(&json!({"a": {"b": "c"}})), "{'a': {'b': 'c'}}");
 }
