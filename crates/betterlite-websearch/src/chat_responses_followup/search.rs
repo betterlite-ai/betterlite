@@ -26,9 +26,6 @@ pub trait SearchExecutor: Send + Sync {
     ) -> SearchResult;
 }
 
-// a newtype keeps SearchExecutor free of a second trait while clippy::same_name_method guards the inner type
-pub struct ExecutionSearch<Execution>(pub Execution);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchSurface {
     Chat,
@@ -120,7 +117,7 @@ fn hook_kwargs(kwargs: &JsonMap) -> Result<SearchHookKwargs, SearchFailure> {
 
 #[async_trait]
 impl<Search, Grants, Metadata, Capabilities> SearchExecutor
-    for ExecutionSearch<WebSearchExecution<Search, Grants, Metadata, Capabilities>>
+    for WebSearchExecution<Search, Grants, Metadata, Capabilities>
 where
     Search: SearchRunner,
     Grants: SearchToolGrants,
@@ -138,7 +135,7 @@ where
             Ok(hook_kwargs) => hook_kwargs,
             Err(failure) => return SearchResult::Failed(failure),
         };
-        match WebSearchExecution::execute_search(&self.0, query, Some(&hook_kwargs), rich.as_ref())
+        match WebSearchExecution::execute_search(self, query, Some(&hook_kwargs), rich.as_ref())
             .await
         {
             Ok((text, response)) => SearchResult::Succeeded { text, response },
