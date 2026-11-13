@@ -19,6 +19,7 @@ use crate::database_refresh::access::RefreshTrigger;
 use crate::database_refresh::handle::PoolHandle as _;
 use crate::database_refresh::replacement::ReplacementError;
 use crate::database_refresh_loop::clock::{RefreshClock as _, SystemClock};
+use crate::database_refresh_loop::endpoint::WriterEndpoint;
 use crate::database_refresh_loop::lifecycle::LoopTask;
 use crate::database_refresh_loop::minting::{DatabaseTokenMinter, TokenMinter as _};
 use crate::database_refresh_loop::port::RefreshError;
@@ -655,6 +656,24 @@ fn fresh_only_over_buffer() {
     })
     .expect("the token parses");
     assert!(fresh);
+}
+
+#[test]
+fn missing_writer_fields_are_named_in_order() {
+    let host_only = WriterEndpoint {
+        host: Some("db.example".to_owned()),
+        port: "5432".to_owned(),
+        user: None,
+        name: None,
+        schema: None,
+    };
+    assert_eq!(
+        host_only
+            .to_iam_endpoint()
+            .expect_err("user and name are missing")
+            .to_string(),
+        "Cannot mint a database token: DATABASE_USER, DATABASE_NAME unset. Set them so the connection URL can be reassembled around a freshly minted token."
+    );
 }
 
 #[tokio::test(start_paused = true)]
