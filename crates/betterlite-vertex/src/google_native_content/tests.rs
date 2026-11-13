@@ -480,6 +480,17 @@ fn an_oversized_response_is_refused() {
 }
 
 #[test]
+fn a_response_at_the_size_limit_is_accepted() {
+    let mut body = String::with_capacity(MAX_RESPONSE_BYTES);
+    body.push_str("{\"pad\":\"");
+    body.push_str(&"a".repeat(MAX_RESPONSE_BYTES - body.len() - 2));
+    body.push_str("\"}");
+    assert_eq!(body.len(), MAX_RESPONSE_BYTES);
+    let response = decode_google_native_content(body.as_bytes()).unwrap();
+    assert!(response.wire.contains_key("pad"));
+}
+
+#[test]
 fn the_transform_retains_the_raw_status_and_headers() {
     let mut headers = indexmap::IndexMap::new();
     headers.insert("x-request-id".to_owned(), "r1".to_owned());
