@@ -235,12 +235,10 @@ fn the_output_collector_gathers_text_tool_reasoning_and_citations() {
 
 #[test]
 fn the_output_collector_skips_signatures_and_sources() {
-    let collected = collect_output_texts(&array(RESPONSE_CONTENT));
-    for text in texts(&collected) {
-        assert_ne!(text, "sig");
-        assert_ne!(text, "source");
-        assert_ne!(text, "never");
-    }
+    let collected_texts = texts(&collect_output_texts(&array(RESPONSE_CONTENT)));
+    assert!(!collected_texts.contains(&"sig"));
+    assert!(!collected_texts.contains(&"source"));
+    assert!(!collected_texts.contains(&"never"));
 }
 
 #[test]

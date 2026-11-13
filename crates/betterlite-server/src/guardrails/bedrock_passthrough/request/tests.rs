@@ -196,16 +196,17 @@ async fn the_guardrail_receives_the_texts_the_whole_data_and_the_request_type() 
 }
 
 #[rstest]
-#[case::missing("{}")]
-#[case::empty(r#"{"model": ""}"#)]
-#[case::not_text(r#"{"model": 7}"#)]
+#[case::missing(None)]
+#[case::empty(Some(GuardrailValue::Text(String::new())))]
+#[case::not_text(Some(GuardrailValue::SignedInteger(7)))]
 #[tokio::test]
-async fn the_guardrail_gets_no_model_unless_it_is_non_empty_text(#[case] fixture: &str) {
+async fn the_guardrail_gets_no_model_unless_it_is_non_empty_text(
+    #[case] model: Option<GuardrailValue>,
+) {
     let guardrail = Scripted::new(Answer::Unchanged);
-    let overrides = data(fixture);
     let mut request = data(r#"{"data": {"messages": [{"content": [{"text": "hello"}]}]}}"#);
-    for (key, value) in overrides {
-        request.insert(key, value);
+    if let Some(model) = model {
+        request.insert("model".to_owned(), model);
     }
     process_input_messages(&mut request, &guardrail, SkipFlags::default(), None)
         .await

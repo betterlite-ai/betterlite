@@ -109,16 +109,18 @@ fn input_texts(input: &InputTextsInput) -> HelperResult {
         tool: input.skip_tool,
     };
     block_on(process_input_messages(&mut data, &guardrail, skip, None))?;
-    let (texts, model) = guardrail.seen();
+    let seen = guardrail.seen();
     Ok(json!({
-        "texts": texts,
-        "model": model,
+        "texts": seen.texts,
+        "model": seen.model,
         "data": serde_json::to_value(&data).or_value_error()?,
     }))
 }
 
 fn output_texts(input: &OutputTextsInput) -> HelperResult {
-    let mut response = guardrail(&input.response)?;
+    let response_text = input.response.to_string();
+    let mut response =
+        serde_json::from_slice::<GuardrailValue>(response_text.as_bytes()).or_value_error()?;
     let request_data = match &input.request_data {
         Some(value) => {
             let mut request_data = guardrail_map(value)?;
@@ -138,10 +140,10 @@ fn output_texts(input: &OutputTextsInput) -> HelperResult {
         BTreeMap::new(),
         request_data.as_ref(),
     ))?;
-    let (texts, model) = guardrail.seen();
+    let seen = guardrail.seen();
     Ok(json!({
-        "texts": texts,
-        "model": model,
+        "texts": seen.texts,
+        "model": seen.model,
         "data": serde_json::to_value(&response).or_value_error()?,
     }))
 }
@@ -225,16 +227,16 @@ fn header_value_json(value: &HeaderValue) -> Value {
     }
 }
 
-fn guardrail(value: &Value) -> Result<GuardrailValue, Box<HelperError>> {
-    serde_json::from_slice(value.to_string().as_bytes()).or_value_error()
-}
-
 fn guardrail_map(
     value: &BTreeMap<String, Value>,
 ) -> Result<BTreeMap<String, GuardrailValue>, Box<HelperError>> {
     let mut converted = BTreeMap::new();
     for (key, entry) in value {
-        converted.insert(key.clone(), guardrail(entry)?);
+        let text = entry.to_string();
+        converted.insert(
+            key.clone(),
+            serde_json::from_slice(text.as_bytes()).or_value_error()?,
+        );
     }
     Ok(converted)
 }
@@ -249,7 +251,7 @@ where
     Ok(runtime.block_on(future))
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Seen {
     texts: Vec<String>,
     model: Option<String>,
@@ -274,9 +276,11 @@ impl ScriptedGuardrail {
         seen.model = inputs.model.clone();
     }
 
-    fn seen(&self) -> (Vec<String>, Option<String>) {
-        let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        (seen.texts.clone(), seen.model.clone())
+    fn seen(&self) -> Seen {
+        match self.seen.lock() {
+            Ok(seen) => seen.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
     }
 }
 
