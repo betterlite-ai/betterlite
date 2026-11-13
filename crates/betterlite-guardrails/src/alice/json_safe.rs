@@ -64,3 +64,5 @@ pub(crate) fn json_safe(
         }
     }
 }
+
+mod tests;

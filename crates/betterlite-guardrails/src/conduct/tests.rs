@@ -355,7 +355,10 @@ fn conduct_guardrail_apply_raises_the_blocked_failure(#[case] verdict: &str) {
         ConductError::Blocked(GuardrailFailure::Http { status: 400, .. })
     ));
     assert!(recorded.is_empty(), "a blocked decision is not recorded");
-    assert_eq!(calls.lock().expect("the call log").len(), 1);
+    assert_eq!(
+        calls.lock().expect("the call log").as_slice(),
+        ["request:2".to_owned()]
+    );
 }
 
 #[test]

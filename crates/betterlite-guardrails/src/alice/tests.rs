@@ -24,12 +24,14 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::error::AliceError;
-use super::json_safe::{MAX_ITEMS, json_safe, safe_payload};
+use super::transport::MAX_RESPONSE_BYTES;
 use super::{
     AliceConfigModel, AliceGuardrail, AliceGuardrailParams, DEFAULT_API_BASE,
     DEFAULT_BLOCK_MESSAGE, EVALUATE_PATH, GUARDRAIL_NAME,
 };
-use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback};
+use crate::generic_guardrail_contracts::{
+    GuardrailInputType, GuardrailMessage, GuardrailToolParam, UnreachableFallback,
+};
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
@@ -51,7 +53,7 @@ enum Answer {
     },
     Raw {
         status: u16,
-        body: &'static str,
+        body: String,
     },
     Timeout,
 }
@@ -532,7 +534,7 @@ async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy()
 #[rstest]
 #[case::server_error(Answer::Json { status: 500, body: serde_json::json!({}) })]
 #[case::bad_gateway(Answer::Json { status: 502, body: serde_json::json!({}) })]
-#[case::decode_error(Answer::Raw { status: 200, body: "{not json" })]
+#[case::decode_error(Answer::Raw { status: 200, body: "{not json".to_owned() })]
 #[case::non_object_body(Answer::Json { status: 200, body: serde_json::json!("a string") })]
 #[case::malformed_verdict(Answer::Json { status: 200, body: serde_json::json!({"verdict": 7}) })]
 #[tokio::test]
@@ -799,97 +801,115 @@ guardrails:
     assert_eq!(DEFAULT_API_BASE, "https://api.alice.io");
 }
 
-#[test]
-fn alice_guardrail_json_safe_drops_a_container_at_the_depth_limit() {
-    let value = nested(
-        12,
-        GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]),
+#[rstest]
+#[case::texts(text_inputs(&["hi"]))]
+#[case::images(GuardrailApiInputs {
+    texts: None,
+    images: Some(vec!["data:image/png;base64,aGk=".to_owned()]),
+    tools: None,
+    tool_calls: None,
+    structured_messages: None,
+    model: None,
+    stream_holdback_chars: None,
+})]
+#[case::tools(GuardrailApiInputs {
+    texts: None,
+    images: None,
+    tools: Some(vec![GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::new(),
+    }]),
+    tool_calls: None,
+    structured_messages: None,
+    model: None,
+    stream_holdback_chars: None,
+})]
+#[case::tool_calls(GuardrailApiInputs {
+    texts: None,
+    images: None,
+    tools: None,
+    tool_calls: Some(vec![GuardrailValue::Object(BTreeMap::new())]),
+    structured_messages: None,
+    model: None,
+    stream_holdback_chars: None,
+})]
+#[case::structured_messages(GuardrailApiInputs {
+    texts: None,
+    images: None,
+    tools: None,
+    tool_calls: None,
+    structured_messages: Some(vec![GuardrailMessage {
+        role: "user".to_owned(),
+        extra: BTreeMap::from([(
+            "content".to_owned(),
+            GuardrailValue::Text("hello".to_owned()),
+        )]),
+    }]),
+    model: None,
+    stream_holdback_chars: None,
+})]
+#[tokio::test]
+async fn alice_guardrail_any_one_selectable_field_starts_the_call(
+    #[case] inputs: GuardrailApiInputs,
+) {
+    let harness = serve(answer(serde_json::json!({"verdict": "ALLOW"}))).await;
+    let instance = guardrail(
+        &harness.base,
+        UnreachableFallback::FailClosed,
+        Duration::from_secs(2),
     );
-    assert_eq!(safe_payload(&value, &[]), nested(12, GuardrailValue::Null));
+    let outcome = apply(&instance, inputs.clone(), &BTreeMap::new()).await;
+    assert_eq!(returned_inputs(outcome), inputs);
+    assert_eq!(harness.recorded.lock().expect("the recorder").len(), 1);
 }
 
-#[test]
-fn alice_guardrail_json_safe_keeps_a_container_just_inside_the_limit() {
-    let value = nested(
-        11,
-        GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]),
+#[tokio::test]
+async fn alice_guardrail_reads_a_body_at_the_response_cap() {
+    let harness = serve(Answer::Raw {
+        status: 200,
+        body: padded_verdict(MAX_RESPONSE_BYTES),
+    })
+    .await;
+    let instance = guardrail(
+        &harness.base,
+        UnreachableFallback::FailClosed,
+        Duration::from_secs(5),
     );
-    assert_eq!(safe_payload(&value, &[]), value);
+    let outcome = apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await;
+    assert_eq!(returned_inputs(outcome), text_inputs(&["x"]));
+}
+
+#[tokio::test]
+async fn alice_guardrail_refuses_a_body_over_the_response_cap() {
+    let harness = serve(Answer::Raw {
+        status: 200,
+        body: padded_verdict(MAX_RESPONSE_BYTES.saturating_add(1)),
+    })
+    .await;
+    let instance = guardrail(
+        &harness.base,
+        UnreachableFallback::FailClosed,
+        Duration::from_secs(5),
+    );
+    let (_name, status, blocked_content) =
+        raised(apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await);
+    assert_eq!(status, 400);
+    assert!(!blocked_content);
 }
 
 #[test]
-fn alice_guardrail_json_safe_drops_a_revisited_value() {
-    let value = GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]);
-    let mut seen = vec![std::ptr::from_ref(&value)];
-    assert_eq!(json_safe(&value, 0, &[], &mut seen), GuardrailValue::Null);
+fn alice_guardrail_a_non_object_body_is_reported_as_such() {
+    assert!(matches!(
+        super::transport::verdict_from_body(b"\"a string\""),
+        Err(AliceError::NonObjectBody)
+    ));
 }
 
-#[test]
-fn alice_guardrail_json_safe_caps_each_container_at_five_thousand_items() {
-    let items = (0..5001)
-        .map(GuardrailValue::SignedInteger)
-        .collect::<Vec<_>>();
-    let kept = safe_payload(&GuardrailValue::Array(items), &[]);
-    match kept {
-        GuardrailValue::Array(values) => {
-            assert_eq!(values.len(), MAX_ITEMS);
-            assert_eq!(values.last(), Some(&GuardrailValue::SignedInteger(4999)));
-        }
-        other => panic!("expected an array, got {other:?}"),
-    }
-}
-
-#[test]
-fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
-    let value = GuardrailValue::Object(BTreeMap::from([
-        (
-            "outer".to_owned(),
-            GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-                (
-                    "headers".to_owned(),
-                    GuardrailValue::Text("dropped".to_owned()),
-                ),
-                (
-                    "provider_specific_header".to_owned(),
-                    GuardrailValue::Text("dropped".to_owned()),
-                ),
-                ("keep".to_owned(), GuardrailValue::Text("kept".to_owned())),
-            ]))]),
-        ),
-        (
-            "headers".to_owned(),
-            GuardrailValue::Text("dropped".to_owned()),
-        ),
-    ]));
-    let stripped = safe_payload(&value, &super::json_safe::CREDENTIAL_KEYS_TO_STRIP);
-    match stripped {
-        GuardrailValue::Object(fields) => {
-            assert!(fields.get("headers").is_none());
-            match fields.get("outer") {
-                Some(GuardrailValue::Array(items)) => match items.first() {
-                    Some(GuardrailValue::Object(inner)) => {
-                        assert!(inner.get("headers").is_none());
-                        assert!(inner.get("provider_specific_header").is_none());
-                        assert_eq!(
-                            inner.get("keep"),
-                            Some(&GuardrailValue::Text("kept".to_owned()))
-                        );
-                    }
-                    other => panic!("expected an object, got {other:?}"),
-                },
-                other => panic!("expected an array, got {other:?}"),
-            }
-        }
-        other => panic!("expected an object, got {other:?}"),
-    }
-}
-
-fn nested(depth: usize, leaf: GuardrailValue) -> GuardrailValue {
-    let mut value = leaf;
-    for _ in 0..depth {
-        value = GuardrailValue::Array(vec![value]);
-    }
-    value
+fn padded_verdict(total: usize) -> String {
+    let prefix = r#"{"verdict":"ALLOW","message":""#;
+    let suffix = r#""}"#;
+    let padding = total.saturating_sub(prefix.len().saturating_add(suffix.len()));
+    format!("{prefix}{}{suffix}", "a".repeat(padding))
 }
 
 #[derive(Clone, Default)]
