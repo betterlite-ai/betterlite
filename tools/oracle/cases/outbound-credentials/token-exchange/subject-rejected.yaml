@@ -1,0 +1,31 @@
+{
+  "kind": "helper",
+  "name": "token-exchange-subject-rejected",
+  "call": {
+    "b4665": {
+      "config": {
+        "token_exchange_endpoint": "https://idp.example.com/token",
+        "client_id": "cid",
+        "client_secret": "csec"
+      },
+      "steps": [
+        {
+          "op": "exchange",
+          "subject_token": "expired-jwt",
+          "now_ms": 1000000,
+          "responses": [
+            {
+              "kind": "subject_rejected",
+              "detail": "IdP rejected the subject token (HTTP 401)",
+              "claims": "{\"access_token\":{\"acrs\":{\"essential\":true,\"value\":\"c1\"}}}"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

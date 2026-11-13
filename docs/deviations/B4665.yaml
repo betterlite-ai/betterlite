@@ -1,0 +1,32 @@
+task: B4665
+deviations:
+  - what: >-
+      exchange returns Result<OAuthToken, CredError> instead of raising SubjectTokenRejected or
+      TokenExchangeClientError; a rejected subject is CredError::Unauthorized carrying the IdP's claims blob and a
+      gateway-fault code is CredError::Misconfigured, so the caller handles an error value rather than an exception
+      that can slip past a type checker.
+    why: Rust has no exceptions, and the typed Result keeps the claims threadable to the 401 step-up challenge while
+      making every failure path visible at the call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L83-L108
+  - what: >-
+      token_endpoint_auth_method=client_secret_basic with an empty client_secret returns a misconfigured error (500)
+      instead of raising TokenEndpointAuthConfigError out of exchange, where nothing catches it.
+    why: LiteLLM's exchange builds the client authentication outside any handler, so this input ends the request with
+      an uncaught ValueError rather than a typed credential error; a bounded 500 for the operator's broken config is
+      the same status without the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/token_endpoint_auth.py#L63-L68
+  - what: >-
+      expires_in is read into a bounded i64: a float whose integer part exceeds 2^53 keeps the digits its decimal
+      form prints, a value outside the i64 range and a non-finite number read as no expiry (the default TTL), and a
+      numeric string must use ASCII digits, so Python's digit separators and non-ASCII digits read as no expiry.
+    why: LiteLLM's int() is unbounded and int() of an infinite float raises OverflowError past its ValueError catch,
+      which crashes the exchange; the TTL only ever gates a cache entry, and any of these values is far past the
+      expiry of an access token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L149-L159
+  - what: >-
+      The exchange POST runs through the pooled betterlite-http client: it follows redirects with each hop checked,
+      caps the response body and headers, and ends at a 30-second deadline; a body over the cap, a timeout or a
+      refused connection is a miss (upstream_unavailable) rather than being read without bound.
+    why: Every outbound call in betterlite carries a size cap and a deadline (bounded-inputs), and LiteLLM's handler
+      has no body cap and a much longer default timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchange_provider.py#L62-L106
