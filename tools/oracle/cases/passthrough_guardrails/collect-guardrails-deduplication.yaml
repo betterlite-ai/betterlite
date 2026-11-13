@@ -1,0 +1,11 @@
+kind: helper
+name: collect-guardrails-deduplication
+call:
+  b3601:
+    calls:
+      - function: collect_guardrails
+        key_metadata: {guardrails: [shared, key-only]}
+        team_metadata: {guardrails: [key-only, shared, team-only]}
+        config: [shared]
+env: {}
+compare: {ignore: []}

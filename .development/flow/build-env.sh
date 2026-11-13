@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dispatches and clippy-seed.sh build through this, since cargo rebuilds every unit whose profile or wrapper settings differ from the copied ones
+# dispatches run through this, so any cargo command they start shares the sccache wrapper and the lean profiles
 self=$(readlink -f "$0") || exit 1
 P=${self%/*}
 main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}

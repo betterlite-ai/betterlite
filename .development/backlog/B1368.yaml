@@ -1,7 +1,7 @@
 id: B1368
 milestone: M3 providers
 title: Native Google GenAI content preparation for Studio and Vertex
-status: todo
+status: done
 depends_on: [B1301, B1302, B1303, B1304, B1306, B1307, B1326, B1331, B171]
 file: tasks/B1368-google-native-content.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/gemini/google_genai/**"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1533
