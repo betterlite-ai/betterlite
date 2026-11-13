@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
-use std::io;
+use std::io::{self, Read as _, Write as _};
 use std::time::Duration;
 
 use axum::Router;
@@ -204,6 +204,27 @@ async fn a_body_over_one_mib_is_rejected_before_it_is_parsed() {
         .expect_err("a body over the cap is an error");
     assert!(matches!(error, PillarError::ResponseTooLarge { .. }));
     server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_announced_length_over_the_cap_is_rejected_before_the_body_is_read() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let server = std::thread::spawn(move || -> io::Result<()> {
+        let (mut stream, _peer) = listener.accept()?;
+        let mut request = [0_u8; 4096];
+        stream.set_read_timeout(Some(Duration::from_millis(300)))?;
+        let _read = stream.read(&mut request)?;
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2000000\r\n\r\n{}")?;
+        let _drained = stream.read(&mut request);
+        Ok(())
+    });
+    let client = reqwest::Client::new();
+    let error = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
+        .expect_err("an announced length over the cap is an error");
+    assert!(matches!(error, PillarError::ResponseTooLarge { .. }));
+    server.join().expect("server thread").expect("server io");
 }
 
 #[tokio::test]
