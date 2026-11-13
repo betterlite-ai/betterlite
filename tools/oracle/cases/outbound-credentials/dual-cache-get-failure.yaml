@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "dual-cache-get-failure",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "dual",
+      "cache_get": "error",
+      "operations": [
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 0
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

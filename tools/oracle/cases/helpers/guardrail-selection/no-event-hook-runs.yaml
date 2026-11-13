@@ -1,0 +1,6 @@
+kind: helper
+name: no-event-hook-runs
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": null, "default_on": false, "data": {}, "event_type": "post_call", "suppressed": []}
+env: {}
+compare: {ignore: []}

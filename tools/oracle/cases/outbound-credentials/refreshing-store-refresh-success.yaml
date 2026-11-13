@@ -1,0 +1,56 @@
+{
+  "kind": "helper",
+  "name": "refreshing-store-refresh-success",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "refreshing",
+      "inner": [
+        {
+          "kind": "token",
+          "token": {
+            "access_token": "stale-access",
+            "expires_at_ms": 1000000,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "kind": "token",
+          "token": {
+            "access_token": "stale-access",
+            "expires_at_ms": 1000000,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        }
+      ],
+      "refresher": [
+        {
+          "kind": "token",
+          "token": {
+            "access_token": "fresh-access",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        }
+      ],
+      "operations": [
+        {
+          "op": "fetch",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1000000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
