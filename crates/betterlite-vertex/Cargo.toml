@@ -8,10 +8,13 @@ publish.workspace = true
 [dependencies]
 base64 = "0.23.1"
 betterlite-bedrock = { path = "../betterlite-bedrock" }
+betterlite-cache = { path = "../betterlite-cache" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
@@ -38,9 +41,13 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
+betterlite-redact = { path = "../betterlite-redact" }
 google-cloud-wkt = "=1.11.0"
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "time"] }
+tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [lints]

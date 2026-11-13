@@ -1,0 +1,28 @@
+kind: helper
+name: anthropic-stream-events-accumulated-json-values
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: accumulated, fragment: '{"type":"ping"}', is_final: false}
+      - {function: accumulated, fragment: '{"type": "con', is_final: false}
+      - {function: accumulated, fragment: 'tent_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}}', is_final: false}
+      - {function: accumulated, fragment: '{"type":"error","error":{"message":"boom"}}', is_final: false}
+      - {function: accumulated, fragment: '[1,2] {"type":"ping"}', is_final: false}
+      - {function: accumulated, fragment: '{"type":"ping"}{"type":"message_stop"}', is_final: false}
+      - {function: accumulated, fragment: '', is_final: false}
+      - {function: accumulated, fragment: '', is_final: false}
+      - {function: accumulated, fragment: '{"ty', is_final: false}
+      - {function: accumulated, fragment: '', is_final: true}
+      - {function: accumulated, fragment: 'pe":"ping"}', is_final: false}
+      - {function: accumulated, fragment: '{"type":"ping"}   ', is_final: false}
+      - {function: accumulated, fragment: '{"type":"ping"}{"ty', is_final: false}
+      - {function: accumulated, fragment: 'pe":"message_stop"}', is_final: false}
+      - {function: accumulated, fragment: '', is_final: false}
+      - {function: accumulated, fragment: '{"type":"ping"}x', is_final: true}
+      - {function: accumulated, fragment: '', is_final: true}
+      - {function: state}
+env: {}
+compare: {ignore: []}

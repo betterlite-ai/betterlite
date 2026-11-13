@@ -1,0 +1,13 @@
+kind: helper
+name: messages-chat-tools-schema-tool-choice-variants
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tool_choice: {type: tool, name: lookup}
+      tools:
+        - {name: lookup, input_schema: {type: object}}
+env: {}
+compare: {ignore: []}
