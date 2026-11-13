@@ -31,10 +31,6 @@ call:
       - kind: image_url
         api_base: "https://base.example/v1"
         env_base: "https://env.example/v1"
-      - kind: image_headers
-        api_key: "ms-key"
-      - kind: image_headers
-        env_key: "env-key"
       - kind: speech_url
       - kind: speech_url
         api_base: "https://speech.example/"
