@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-modify-response
+call:
+  b5471: {"function": "intervention", "kind": "modify_response", "status": 400}
+env: {}
+compare: {ignore: []}

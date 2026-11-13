@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-consumes-openai
+call: {"messages_content_primitives": {"operation": "consumes_cache_control", "model": "gpt-4o"}}
+env: {}
+compare: {ignore: []}

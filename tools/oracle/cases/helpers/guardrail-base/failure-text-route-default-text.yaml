@@ -1,0 +1,6 @@
+kind: helper
+name: failure-text-route-default-text
+call:
+  b5471: {"function": "failure_text", "kind": "sensitive_route", "guardrail_name": "pii", "message": "", "wrap_default_message": true}
+env: {}
+compare: {ignore: []}

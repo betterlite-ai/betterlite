@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-translatable-params
+call: {"messages_content_primitives": {"operation": "translatable_params"}}
+env: {}
+compare: {ignore: []}

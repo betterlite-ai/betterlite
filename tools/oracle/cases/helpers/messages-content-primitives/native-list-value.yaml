@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-native-list-value
+call: {"messages_content_primitives": {"operation": "is_provider_native_tool_dict", "tool": {"web_search": []}}}
+env: {}
+compare: {ignore: []}

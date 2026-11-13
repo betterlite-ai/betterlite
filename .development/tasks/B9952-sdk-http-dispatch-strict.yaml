@@ -1,0 +1,56 @@
+id: B9952
+title: Oracle SDK HTTP dispatcher off the legacy list
+description: >-
+  tools/oracle/sdk_http/dispatch.py reads one SDK call from stdin, runs it through LiteLLM's Python SDK and prints the
+  answer. It is on python-legacy.txt, so mypy and the Python rules skip it, and 79 open tasks will each add a call class
+  and a branch to it. Max decided on 2026-11-13 that legacy files open tasks will edit get cleaned first, so those tasks
+  extend a file the strict checks hold.
+
+
+  Off the list, the file fails mypy strict where it reads stdin (`sys.stdin` is typed `TextIO | MaybeNone`, and
+  `MaybeNone` is Any) and three Python rules: no-isinstance on the dispatch branches and no-long-names. Take it off
+  python-legacy.txt and fix it. Route the call with a `match` on `request.call` and one class pattern per call type, so
+  mypy's exhaustive-match check names a call class that has no arm, and the next task adds one arm. Read the request from
+  file descriptor 0 in a form mypy types as bytes. Keep the request JSON, the size limit, the stdout redirect and every
+  answer the same: the 26 sdk-http cases pass unchanged.
+scope:
+  paths:
+  - python-legacy.txt
+  - tools/oracle/sdk_http/dispatch.py
+  lint_tables: false
+references:
+- url: https://github.com/python/mypy/blob/ad02a35e623d105ab7340f75558716bc09f8242e/mypy/typeshed/stdlib/sys/__init__.pyi#L79
+  why: In the typeshed of mypy 2.4.1, the version uv.lock pins, sys.stdin is `TextIO | MaybeNone`, the Any that disallow_any_expr rejects.
+dod:
+- text: dispatch.py is off python-legacy.txt and passes ruff, the Python rules and mypy strict.
+  proof: [off-legacy, python-legacy, hooks]
+- text: dispatch.py passes basedpyright strict with the sdk_http configuration.
+  proof: [pyright]
+- text: Every sdk-http case still gives the same answer.
+  proof: [sdk-http-cases]
+checks:
+  optional: []
+  commands:
+  - id: off-legacy
+    why: The dispatcher is still on the legacy list or unchanged.
+    run: |-
+      ! grep -q -x -F tools/oracle/sdk_http/dispatch.py python-legacy.txt &&
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/sdk_http/dispatch.py)"
+  - id: pyright
+    why: The dispatcher fails the type checker the sdk_http tasks run.
+    run: uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json tools/oracle/sdk_http/dispatch.py
+  - id: sdk-http-cases
+    why: A call no longer reaches LiteLLM the same way.
+    run: cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/sdk-http
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The call modules next to it (openai_chat.py, vector_query_embedding.py, vector_store_embedding_executor.py) stay on the legacy list; no open task edits them.
+- The Rust side in tools/oracle/src/sdk_http does not change.
+pitfalls:
+- The modules run as scripts, so dispatch.py imports its neighbors by bare name (`from openai_chat import ...`). Keep that; a package import breaks how the oracle starts the file.
+- A `case _:` or a bare-name catch-all fails no-match-wildcard. The last call type gets its own class pattern.
+review_level: standard
+budget:
+  max_changed_lines: 200
+  max_new_expects: 0

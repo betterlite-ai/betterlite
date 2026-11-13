@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-sensitive-route
+call:
+  b5471: {"function": "intervention", "kind": "sensitive_route", "status": 400}
+env: {}
+compare: {ignore: []}

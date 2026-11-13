@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-part-image-invalid
+call: {"messages_content_primitives": {"operation": "tool_result_part", "item": {"type": "image", "source": {"type": "file"}}}}
+env: {}
+compare: {ignore: []}
