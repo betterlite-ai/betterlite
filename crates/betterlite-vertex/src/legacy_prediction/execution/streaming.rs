@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use betterlite_models::decisions::Json;
-use futures_util::StreamExt as _;
+use futures_util::StreamExt;
 
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
@@ -10,7 +10,7 @@ use super::super::client::{
     EndpointPredictRequest, PredictionClient, PredictionStream, PublisherPredictRequest,
 };
 use super::super::error::{LegacyPredictionError, PredictionError};
-use super::super::invocation::{LegacyInvocation, remove_instance_stream, remove_stream_option};
+use super::super::invocation::{LegacyInvocation, remove_instance_stream};
 use super::super::records::{LegacyChunk, Prediction, PredictionsReply, strip_output_separator};
 use super::super::streamer::TextStreamer;
 use super::scope::{RpcScope, require_custom, resolve_scope};
@@ -130,7 +130,7 @@ where
     match invocation {
         LegacyInvocation::CustomEndpoint {
             model,
-            mut instances,
+            instances,
             mut options,
             ..
         } => {
@@ -178,9 +178,10 @@ where
 {
     let reply = client.predict_endpoint(request).await?;
     let text = streaming_text(&reply)?;
-    Ok(TextStreamer::new(&text)
-        .map(|word| Ok(LegacyChunk { text: word }))
-        .boxed())
+    Ok(StreamExt::map(TextStreamer::new(&text), |word| {
+        Ok(LegacyChunk { text: word })
+    })
+    .boxed())
 }
 
 fn streaming_text(reply: &PredictionsReply) -> Result<String, PredictionError> {

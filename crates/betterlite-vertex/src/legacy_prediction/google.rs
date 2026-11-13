@@ -268,3 +268,5 @@ impl Stream for PredictionChunks {
         }
     }
 }
+
+mod tests;

@@ -95,13 +95,21 @@ impl Tensor {
             return floats(&self.double_val, "doubleVal").map(Some);
         }
         if !self.int_val.is_empty() {
-            return scalars(self.int_val.iter().copied().map(Json::Number).collect()).map(Some);
+            let numbers = self
+                .int_val
+                .iter()
+                .map(|value| Json::Number(Number::from(*value)));
+            return scalars(numbers.collect()).map(Some);
         }
         if !self.int64_val.is_empty() {
             return integers64(&self.int64_val, "int64Val").map(Some);
         }
         if !self.uint_val.is_empty() {
-            return scalars(self.uint_val.iter().copied().map(Json::Number).collect()).map(Some);
+            let numbers = self
+                .uint_val
+                .iter()
+                .map(|value| Json::Number(Number::from(*value)));
+            return scalars(numbers.collect()).map(Some);
         }
         if !self.uint64_val.is_empty() {
             return unsigned64(&self.uint64_val).map(Some);

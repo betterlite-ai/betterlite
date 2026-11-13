@@ -79,7 +79,7 @@ fn legacy_prediction_frames_split_across_reads() {
     let ready = frames.push(br#"llo"]}}}]}"#).expect("the object close");
     assert_eq!(ready.len(), 1);
     assert!(frames.push(b"]").expect("the array close").is_empty());
-    assert!(!frames.unfinished());
+    assert!(frames.finish().is_ok());
     let chunk = chunk_of(ChunkKind::Text, &ready[0]).expect("a chunk");
     assert_eq!(
         chunk,
@@ -92,13 +92,12 @@ fn legacy_prediction_frames_split_across_reads() {
 #[test]
 fn legacy_prediction_frames_reject_unfinished() {
     let mut frames = PredictionFrames::default();
-    assert!(
-        frames
-            .push(br#"[{"outputs":[]}"#)
-            .expect("an object")
-            .is_empty()
-    );
-    assert!(frames.unfinished());
+    let ready = frames.push(br#"[{"outputs":[]}"#).expect("an object");
+    assert_eq!(ready, vec![br#"{"outputs":[]}"#.to_vec()]);
+    assert!(matches!(
+        frames.finish(),
+        Err(PredictionError::StreamUnfinished)
+    ));
     assert!(matches!(
         PredictionFrames::default().push(b"{}"),
         Err(PredictionError::StreamShape)
