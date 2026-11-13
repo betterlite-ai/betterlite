@@ -21,6 +21,7 @@ pub(crate) struct Input {
     settings: ThinkingSettings,
     #[serde(default)]
     catalog: Catalog,
+    max_recurse_depth: Option<i64>,
     steps: Vec<Step>,
 }
 
@@ -69,7 +70,7 @@ pub(super) fn run(input: &Input) -> Value {
         .map(|step| match step.op {
             Operation::ReasoningEffort => reasoning_effort(step, input),
             Operation::Thinking => thinking_answer(step, input),
-            Operation::Format => format_answer(step),
+            Operation::Format => format_answer(step, input),
             Operation::Modalities => json!(map_response_modalities(&step.modalities)),
             Operation::Audio => audio_answer(step),
             Operation::ServerFlags => server_flags(step),
@@ -110,18 +111,18 @@ fn thinking_answer(step: &Step, input: &Input) -> Value {
     ))
 }
 
-fn format_answer(step: &Step) -> Value {
+fn format_answer(step: &Step, input: &Input) -> Value {
+    let mut settings = SchemaSettings::default();
+    if let Some(depth) = input.max_recurse_depth {
+        settings.max_recurse_depth = depth;
+    }
     let mut mapped = step.optional_params.clone();
     let model = step.model.as_deref().unwrap_or_default();
-    match apply_response_format(
-        &step.response_format,
-        model,
-        &mut mapped,
-        &SchemaSettings::default(),
-    ) {
-        Ok(()) => json!(mapped),
-        Err(error) => json!({"error": {"status": error.status()}}),
-    }
+    let applied = apply_response_format(&step.response_format, model, &mut mapped, &settings);
+    applied.map_or_else(
+        |error| json!({"error": {"status": error.status()}}),
+        |()| json!(mapped),
+    )
 }
 
 fn audio_answer(step: &Step) -> Value {

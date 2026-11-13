@@ -14,6 +14,7 @@ call:
         disable: 0
       default_thinking_level_low: false
     catalog: {}
+    max_recurse_depth: 3
     steps:
       - op: format
         model: "gemini-1.5-pro"
@@ -22,29 +23,15 @@ call:
           type: json_schema
           json_schema:
             schema:
-              {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items:
-               {type: string}
-               }}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
-               }}}}}}}}}}
+              {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: string}}}}}}}
+      - op: format
+        model: "gemini-1.5-pro"
+        optional_params: {}
+        response_format:
+          type: json_schema
+          json_schema:
+            schema:
+              {type: array, items: {type: array, items: {type: string}}}
       - op: format
         model: "gemini-2.5-flash"
         optional_params: {}
@@ -52,7 +39,7 @@ call:
           type: json_schema
           json_schema:
             schema:
-              {type: array, items: {type: array, items: {type: string}}}
+              {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: array, items: {type: string}}}}}}}
 env:
   DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
   DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH: "1"
@@ -62,5 +49,6 @@ env:
   DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "2048"
   DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "4096"
   DEFAULT_REASONING_EFFORT_DISABLE_THINKING_BUDGET: "0"
+  DEFAULT_MAX_RECURSE_DEPTH: "3"
 compare:
   ignore: []

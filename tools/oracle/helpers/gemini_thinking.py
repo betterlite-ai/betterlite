@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.exceptions import UnsupportedParamsError
@@ -59,6 +59,7 @@ Step: TypeAlias = (
 class Input(TypedDict):
     settings: Settings
     catalog: dict[str, bool]
+    max_recurse_depth: NotRequired[int]
     steps: list[Step]
 
 
