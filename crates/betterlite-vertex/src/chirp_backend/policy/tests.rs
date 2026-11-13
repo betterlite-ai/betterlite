@@ -5,42 +5,63 @@ use std::time::Duration;
 
 use betterlite_core::api::realtime_contracts::close::CloseFrame;
 
-use super::{Deliverable, Delivery, NORMAL_CLOSURE_CODE, RotationLimits, deliver, rotation_due};
-
-const LIMITS: RotationLimits = RotationLimits {
-    rotation_seconds: 240.0,
-    deadline_seconds: 280.0,
-};
-
-#[test]
-fn the_default_limits_are_the_litellm_thresholds() {
-    assert_eq!(RotationLimits::default(), LIMITS);
-}
+use super::{Deliverable, NORMAL_CLOSURE_CODE, deliver, rotation_due};
+use crate::chirp_stream::limits::{STREAM_DEADLINE_SECONDS, STREAM_ROTATION_SECONDS};
 
 #[test]
 fn a_stream_below_the_soft_threshold_is_reused() {
-    assert!(!rotation_due(Duration::from_millis(239_999), false, LIMITS));
+    assert!(!rotation_due(
+        Duration::from_millis(239_999),
+        false,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
 }
 
 #[test]
 fn an_inactive_stream_rotates_at_the_soft_threshold() {
-    assert!(rotation_due(Duration::from_secs(240), false, LIMITS));
+    assert!(rotation_due(
+        Duration::from_secs(240),
+        false,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
 }
 
 #[test]
 fn speech_blocks_the_soft_threshold() {
-    assert!(!rotation_due(Duration::from_secs(240), true, LIMITS));
-    assert!(!rotation_due(Duration::from_secs(279), true, LIMITS));
+    assert!(!rotation_due(
+        Duration::from_secs(240),
+        true,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
+    assert!(!rotation_due(
+        Duration::from_secs(279),
+        true,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
 }
 
 #[test]
 fn the_hard_deadline_rotates_a_speaking_stream() {
-    assert!(rotation_due(Duration::from_secs(280), true, LIMITS));
+    assert!(rotation_due(
+        Duration::from_secs(280),
+        true,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
 }
 
 #[test]
 fn the_hard_deadline_rotates_an_idle_stream() {
-    assert!(rotation_due(Duration::from_secs(280), false, LIMITS));
+    assert!(rotation_due(
+        Duration::from_secs(280),
+        false,
+        STREAM_ROTATION_SECONDS,
+        STREAM_DEADLINE_SECONDS,
+    ));
 }
 
 #[test]
@@ -48,7 +69,7 @@ fn an_event_is_delivered_as_is() {
     let mut discarded = BTreeSet::new();
     assert_eq!(
         deliver(Deliverable::Event("event"), &mut discarded),
-        Delivery::Delivered("event".to_owned())
+        Ok(Some("event".to_owned()))
     );
 }
 
@@ -63,7 +84,7 @@ fn a_discarded_turns_result_is_hidden() {
             },
             &mut discarded,
         ),
-        Delivery::Suppressed
+        Ok(None)
     );
     assert_eq!(
         deliver(
@@ -73,7 +94,7 @@ fn a_discarded_turns_result_is_hidden() {
             },
             &mut discarded,
         ),
-        Delivery::Delivered("result".to_owned())
+        Ok(Some("result".to_owned()))
     );
 }
 
@@ -88,7 +109,7 @@ fn the_discard_marker_clears_the_turn_and_is_delivered() {
             },
             &mut discarded,
         ),
-        Delivery::Delivered("marker".to_owned())
+        Ok(Some("marker".to_owned()))
     );
     assert!(discarded.is_empty());
     assert_eq!(
@@ -99,7 +120,7 @@ fn the_discard_marker_clears_the_turn_and_is_delivered() {
             },
             &mut discarded,
         ),
-        Delivery::Delivered("result".to_owned())
+        Ok(Some("result".to_owned()))
     );
 }
 
@@ -108,7 +129,7 @@ fn the_closed_sentinel_closes_normally() {
     let mut discarded = BTreeSet::new();
     assert_eq!(
         deliver(Deliverable::Closed, &mut discarded),
-        Delivery::Close(CloseFrame {
+        Err(CloseFrame {
             code: NORMAL_CLOSURE_CODE,
             reason: String::new(),
         })
@@ -121,7 +142,7 @@ fn a_short_failure_reason_is_kept_whole() {
     let reason = "the stream failed";
     assert_eq!(
         deliver(Deliverable::StreamFailure { reason }, &mut discarded,),
-        Delivery::Close(CloseFrame {
+        Err(CloseFrame {
             code: 1011,
             reason: reason.to_owned(),
         })
@@ -136,7 +157,7 @@ fn a_long_failure_reason_is_cut_at_the_first_hundred_and_twenty_characters() {
         Deliverable::StreamFailure { reason: &reason },
         &mut discarded,
     ) {
-        Delivery::Close(frame) => {
+        Err(frame) => {
             assert_eq!(frame.code, 1011);
             assert_eq!(frame.reason.chars().count(), 120);
             assert_eq!(frame.reason, "é".repeat(120));

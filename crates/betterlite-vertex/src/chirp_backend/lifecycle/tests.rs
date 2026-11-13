@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 
-use super::{ChirpBackend, ChirpClock, ChirpMessage, SpeechClientFactory};
+use super::{ChirpBackend, ChirpClock, SpeechClientFactory};
 use crate::chirp_backend::error::ChirpBackendError;
 use crate::chirp_backend::policy::NORMAL_CLOSURE_CODE;
 use crate::chirp_stream::client::{
@@ -289,14 +289,14 @@ fn harness(scripts: Vec<Script>) -> Harness {
 impl Harness {
     async fn send_text(&mut self, text: &str) {
         self.backend
-            .send(ChirpMessage::Text(text.to_owned()))
+            .send(text)
             .await
             .expect("the command is accepted");
     }
 
     async fn send_audio(&mut self, byte: u8) {
         self.backend
-            .send(ChirpMessage::Audio(vec![byte]))
+            .send_audio(vec![byte])
             .await
             .expect("the audio is accepted");
     }
@@ -340,7 +340,7 @@ async fn audio_before_configuration_fails() {
     let mut harness = harness(Vec::new());
     let error = harness
         .backend
-        .send(ChirpMessage::Audio(vec![1]))
+        .send_audio(vec![1])
         .await
         .expect_err("unconfigured audio is refused");
     assert!(matches!(error, ChirpBackendError::NotConfigured));
@@ -653,7 +653,7 @@ async fn a_closed_backend_refuses_further_messages() {
     harness.backend.close().await;
     let error = harness
         .backend
-        .send(ChirpMessage::Text(CONFIGURE.to_owned()))
+        .send(CONFIGURE)
         .await
         .expect_err("a closed backend refuses commands");
     assert!(matches!(

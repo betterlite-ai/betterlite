@@ -10,8 +10,6 @@ from websockets.exceptions import ConnectionClosed
 
 _TURN_RESULT, _TURN_DISCARDED_EVENT, _STREAM_FAILURE, _CLOSED, _RECOGNIZE_STREAM = realtime_backend._TurnResult, realtime_backend._TurnDiscardedEvent, realtime_backend._StreamFailure, realtime_backend._Closed, realtime_backend._RecognizeStream  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L82-L96
 
-RECOGNIZER = "projects/project/locations/us-central1/recognizers/_"
-
 
 class Input(TypedDict):
     kind: Literal["deadline", "deliver"]
@@ -56,7 +54,7 @@ class UnreachableToken:
 def build_target() -> SpeechStreamingTarget:
     return SpeechStreamingTarget(
         api_endpoint="speech.googleapis.com",
-        recognizer=RECOGNIZER,
+        recognizer="projects/project/locations/us-central1/recognizers/_",
         resolve_access_token=UnreachableToken(),
     )
 
@@ -99,13 +97,6 @@ class PolicyBackend(realtime_backend.SpeechStreamingBackend):
         return turns
 
 
-def closed_outcome(closed: ConnectionClosed) -> Json:
-    frame = closed.rcvd
-    if frame is None:
-        return {"kind": "closed", "code": 1000, "reason": ""}
-    return {"kind": "closed", "code": frame.code, "reason": frame.reason}
-
-
 def deadline_answer(input_value: Input) -> Json:
     backend = PolicyBackend(build_target(), clock=FixedClock(input_value["elapsed_seconds"]))
     return {"expired": backend.expired(speech_active=input_value["speech_active"])}
@@ -117,7 +108,12 @@ def deliver_answer(input_value: Input) -> Json:
     try:
         event = backend.deliver(input_value)
     except ConnectionClosed as closed:
-        outcome = closed_outcome(closed)
+        frame = closed.rcvd
+        outcome = (
+            {"kind": "closed", "code": 1000, "reason": ""}
+            if frame is None
+            else {"kind": "closed", "code": frame.code, "reason": frame.reason}
+        )
     else:
         outcome = (
             {"kind": "suppressed"}

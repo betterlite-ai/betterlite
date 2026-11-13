@@ -1,4 +1,3 @@
-use crate::chirp_backend::commands::ChirpCommandError;
 use crate::chirp_stream::error::ChirpStreamError;
 use crate::chirp_stream::target::AccessTokenError;
 
@@ -7,7 +6,7 @@ pub enum ChirpBackendError {
     #[error("the Speech-to-Text session closed with code {code}")]
     Closed { code: u16, reason: String },
     #[error("the Speech-to-Text command was rejected")]
-    Command(#[source] ChirpCommandError),
+    Command(#[source] serde_json::Error),
     #[error("the Speech-to-Text event could not be encoded")]
     Encode(#[source] serde_json::Error),
     #[error("audio was sent before the Speech-to-Text stream was configured")]

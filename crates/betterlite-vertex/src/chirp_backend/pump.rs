@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use jiff::SignedDuration;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -27,6 +28,25 @@ pub(super) async fn run_pump(
     outcome
 }
 
+async fn relay_stream(
+    stream: &Arc<RecognizeStream>,
+    outbox: &mpsc::Sender<OutboxItem>,
+    shutdown: &CancellationToken,
+    billed_before: f64,
+) -> SignedDuration {
+    let relayed = shutdown
+        .run_until_cancelled(stream.relay(outbox.clone(), billed_before))
+        .await;
+    match relayed {
+        Some(billed) => billed,
+        None => {
+            // cancelling the stream closes its connection before the relay reports
+            stream.halt.cancel();
+            stream.relay(outbox.clone(), billed_before).await
+        }
+    }
+}
+
 async fn pump_links(
     links: &mut mpsc::Receiver<Link>,
     outbox: &mpsc::Sender<OutboxItem>,
@@ -34,9 +54,6 @@ async fn pump_links(
 ) -> Result<(), serde_json::Error> {
     let mut billed_before = 0.0_f64;
     loop {
-        if shutdown.is_cancelled() {
-            break;
-        }
         let received = tokio::select! {
             biased;
             () = shutdown.cancelled() => break,
@@ -52,17 +69,7 @@ async fn pump_links(
                     .await;
             }
             Link::Stream(stream) => {
-                let relayed = shutdown
-                    .run_until_cancelled(stream.relay(outbox.clone(), billed_before))
-                    .await;
-                let billed = match relayed {
-                    Some(billed) => billed,
-                    None => {
-                        // cancelling the stream closes its connection before the relay reports
-                        stream.halt.cancel();
-                        stream.relay(outbox.clone(), billed_before).await
-                    }
-                };
+                let billed = relay_stream(&stream, outbox, shutdown, billed_before).await;
                 billed_before = billed_before.mul_add(1.0, billed.as_secs_f64());
             }
             Link::TurnDiscarded(turn) => {

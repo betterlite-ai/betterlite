@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use super::{ChirpCommand, ChirpCommandError, ChirpEvent, decode_chirp_command};
+use super::{ChirpCommand, ChirpEvent, decode_chirp_command};
 
 #[test]
 fn decodes_a_configure_command() {
@@ -42,24 +42,16 @@ fn decodes_a_unit_command(#[case] message: &[u8], #[case] expected: ChirpCommand
     br#"{"kind":"configure","language_codes":["en-US"],"sample_rate_hertz":16000}"#
 )]
 #[case::wrong_type(br#"{"kind":"configure","model":"chirp_2","language_codes":["en-US"],"sample_rate_hertz":"16000"}"#)]
-#[case::unknown_field(br#"{"kind":"finish_turn","reason":"done"}"#)]
-#[case::unknown_configure_field(br#"{"kind":"configure","model":"chirp_2","language_codes":["en-US"],"sample_rate_hertz":16000,"extra":true}"#)]
 #[case::not_an_object(br#""configure""#)]
 #[case::trailing_data(br#"{"kind":"finish_turn"} {"kind":"finish_turn"}"#)]
 #[case::empty(b"")]
 fn rejects_an_invalid_command(#[case] message: &[u8]) {
-    assert!(matches!(
-        decode_chirp_command(message),
-        Err(ChirpCommandError::Json(_))
-    ));
+    assert!(decode_chirp_command(message).is_err());
 }
 
 #[test]
 fn rejects_a_command_that_is_not_utf8() {
-    assert!(matches!(
-        decode_chirp_command(&[0x7b, 0xff, 0x7d]),
-        Err(ChirpCommandError::Utf8(_))
-    ));
+    assert!(decode_chirp_command(&[0x7b, 0xff, 0x7d]).is_err());
 }
 
 #[test]

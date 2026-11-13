@@ -9,13 +9,12 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::chirp_backend::commands::{ChirpCommand, ChirpEvent, decode_chirp_command};
-use crate::chirp_backend::error::ChirpBackendError;
-use crate::chirp_backend::policy::{self, Delivery, NORMAL_CLOSURE_CODE, RotationLimits};
+use crate::chirp_backend::policy::{self, NORMAL_CLOSURE_CODE};
 use crate::chirp_backend::pump::{Link, run_pump};
 use crate::chirp_stream::client::{ClientFuture, SpeechStreamingClient};
 use crate::chirp_stream::error::ChirpStreamError;
 use crate::chirp_stream::lifecycle::RecognizeStream;
-use crate::chirp_stream::limits::OUTBOX_SIZE;
+use crate::chirp_stream::limits::{OUTBOX_SIZE, STREAM_DEADLINE_SECONDS, STREAM_ROTATION_SECONDS};
 use crate::chirp_stream::outbox::OutboxItem;
 use crate::chirp_stream::records::{StreamingConfigure, first_request, streaming_config};
 use crate::chirp_stream::target::SpeechStreamingTarget;
@@ -23,6 +22,11 @@ use crate::chirp_stream::target::SpeechStreamingTarget;
 mod tests;
 
 const LINK_QUEUE_SIZE: usize = 64;
+
+const NORMAL_CLOSURE: ChirpBackendError = ChirpBackendError::Closed {
+    code: NORMAL_CLOSURE_CODE,
+    reason: String::new(),
+};
 
 pub trait ChirpClock: Send + Sync {
     fn now(&self) -> Instant;
@@ -36,17 +40,12 @@ pub trait SpeechClientFactory: Send + Sync {
     ) -> ClientFuture<'client, Result<Arc<dyn SpeechStreamingClient>, ChirpStreamError>>;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ChirpMessage {
-    Text(String),
-    Audio(Vec<u8>),
-}
-
 pub struct ChirpBackend {
     target: SpeechStreamingTarget,
     clients: Arc<dyn SpeechClientFactory>,
     clock: Arc<dyn ChirpClock>,
-    limits: RotationLimits,
+    rotation_seconds: f64,
+    deadline_seconds: f64,
     links: mpsc::Sender<Link>,
     link_queue: Option<mpsc::Receiver<Link>>,
     outbox: mpsc::Receiver<OutboxItem>,
@@ -73,7 +72,8 @@ impl ChirpBackend {
             target,
             clients,
             clock,
-            limits: RotationLimits::default(),
+            rotation_seconds: STREAM_ROTATION_SECONDS,
+            deadline_seconds: STREAM_DEADLINE_SECONDS,
             links,
             link_queue: Some(link_queue),
             outbox,
@@ -88,47 +88,30 @@ impl ChirpBackend {
         }
     }
 
-    pub async fn send(&mut self, message: ChirpMessage) -> Result<(), ChirpBackendError> {
-        if self.closed {
-            return Err(ChirpBackendError::Closed {
-                code: NORMAL_CLOSURE_CODE,
-                reason: String::new(),
-            });
-        }
-        match message {
-            ChirpMessage::Audio(audio) => {
-                let stream = self.turn_stream().await?;
-                stream.send_audio(audio).await?;
-                Ok(())
-            }
-            ChirpMessage::Text(text) => {
-                let command =
-                    decode_chirp_command(text.as_bytes()).map_err(ChirpBackendError::Command)?;
-                self.send_command(command).await
-            }
-        }
+    pub async fn send(&mut self, text: &str) -> Result<(), ChirpBackendError> {
+        self.ensure_open()?;
+        let command = decode_chirp_command(text.as_bytes()).map_err(ChirpBackendError::Command)?;
+        self.send_command(command).await
+    }
+
+    pub async fn send_audio(&mut self, audio: Vec<u8>) -> Result<(), ChirpBackendError> {
+        self.ensure_open()?;
+        let stream = self.turn_stream().await?;
+        stream.send_audio(audio).await?;
+        Ok(())
     }
 
     pub async fn recv(&mut self) -> Result<String, ChirpBackendError> {
         loop {
             if self.closed && self.outbox.is_empty() {
-                return Err(ChirpBackendError::Closed {
-                    code: NORMAL_CLOSURE_CODE,
-                    reason: String::new(),
-                });
+                return Err(NORMAL_CLOSURE);
             }
             let Some(item) = self.outbox.recv().await else {
                 return Err(ChirpBackendError::QueueClosed);
             };
             match self.next_delivery(item)? {
-                Delivery::Delivered(event) => return Ok(event),
-                Delivery::Suppressed => {}
-                Delivery::Close(frame) => {
-                    return Err(ChirpBackendError::Closed {
-                        code: frame.code,
-                        reason: frame.reason,
-                    });
-                }
+                Some(event) => return Ok(event),
+                None => {}
             }
         }
     }
@@ -141,12 +124,8 @@ impl ChirpBackend {
         self.turn.clear();
         self.shutdown.cancel();
         while let Some(joined) = self.pump.join_next().await {
-            match joined {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "the Speech-to-Text link pump stopped");
-                }
-                Err(error) => tracing::warn!(%error, "the Speech-to-Text link pump failed"),
+            if let Ok(Err(error)) = joined {
+                tracing::warn!(%error, "the Speech-to-Text link pump stopped");
             }
         }
         if self.outbox.capacity() > 0 {
@@ -183,7 +162,12 @@ impl ChirpBackend {
             let active = stream
                 .speech_active
                 .load(std::sync::atomic::Ordering::SeqCst);
-            if !policy::rotation_due(elapsed, active, self.limits) {
+            if !policy::rotation_due(
+                elapsed,
+                active,
+                self.rotation_seconds,
+                self.deadline_seconds,
+            ) {
                 return Ok(stream);
             }
             stream.half_close().await?;
@@ -200,10 +184,11 @@ impl ChirpBackend {
         let token = self.target.token.resolve_access_token().await?;
         let client = self.clients.open(&self.target, token).await?;
         let request = first_request(&self.target.recognizer, config);
+        let opened_at = self.clock.now();
         let stream = Arc::new(RecognizeStream::new(
             client,
             request,
-            self.clock.now(),
+            opened_at,
             self.turn_index,
         )?);
         self.link(Link::Stream(Arc::clone(&stream))).await?;
@@ -246,7 +231,14 @@ impl ChirpBackend {
             .map_err(|_source| ChirpBackendError::QueueClosed)
     }
 
-    fn next_delivery(&mut self, item: OutboxItem) -> Result<Delivery, ChirpBackendError> {
+    fn ensure_open(&self) -> Result<(), ChirpBackendError> {
+        if self.closed {
+            return Err(NORMAL_CLOSURE);
+        }
+        Ok(())
+    }
+
+    fn next_delivery(&mut self, item: OutboxItem) -> Result<Option<String>, ChirpBackendError> {
         let delivery = match item {
             OutboxItem::Text(event) => {
                 policy::deliver(policy::Deliverable::Event(&event), &mut self.discarded)
@@ -274,6 +266,9 @@ impl ChirpBackend {
             ),
             OutboxItem::Closed => policy::deliver(policy::Deliverable::Closed, &mut self.discarded),
         };
-        Ok(delivery)
+        delivery.map_err(|frame| ChirpBackendError::Closed {
+            code: frame.code,
+            reason: frame.reason,
+        })
     }
 }

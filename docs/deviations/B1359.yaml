@@ -1,5 +1,0 @@
-task: B1359
-deviations:
-  - what: A Speech-to-Text streaming command that carries a key the command model does not declare is refused with an error that names the key.
-    why: LiteLLM's pydantic command models ignore an undeclared key, which silently drops client input; rule no-silent-drops makes betterlite name it instead.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L45-L66

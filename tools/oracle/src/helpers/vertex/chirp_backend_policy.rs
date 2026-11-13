@@ -1,9 +1,8 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use betterlite_vertex::chirp_backend::policy::{
-    Deliverable, Delivery, RotationLimits, deliver, rotation_due,
-};
+use betterlite_vertex::chirp_backend::policy::{Deliverable, Delivery, deliver, rotation_due};
+use betterlite_vertex::chirp_stream::limits::{STREAM_DEADLINE_SECONDS, STREAM_ROTATION_SECONDS};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -51,7 +50,12 @@ impl Helper for Op {
             Kind::Deadline => {
                 let elapsed = Duration::try_from_secs_f64(input.elapsed_seconds)
                     .map_err(|_source| failure("elapsed_seconds is out of range"))?;
-                let expired = rotation_due(elapsed, input.speech_active, RotationLimits::default());
+                let expired = rotation_due(
+                    elapsed,
+                    input.speech_active,
+                    STREAM_ROTATION_SECONDS,
+                    STREAM_DEADLINE_SECONDS,
+                );
                 Ok(json!({ "expired": expired }))
             }
             Kind::Deliver => {
