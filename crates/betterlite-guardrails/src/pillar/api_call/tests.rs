@@ -17,6 +17,7 @@ use tokio::task::JoinSet;
 use super::api_call::call_pillar_api;
 use super::error::PillarError;
 use super::payload::{ProtectMetadata, ProtectPayload};
+use super::response::ProtectResponse;
 use super::settings::{FallbackAction, OnFlaggedAction, PillarSettings};
 
 struct Captured {
@@ -166,14 +167,14 @@ fn a_body_of_the_wrong_type_is_an_error() {
 fn unknown_response_keys_are_kept_so_the_body_is_not_treated_as_empty() {
     let parsed =
         super::api_call::parse_protect_response(br#"{"unknown": 1}"#).expect("the body parses");
-    assert!(!parsed.is_empty());
+    assert_ne!(parsed, ProtectResponse::default());
     assert_eq!(parsed.other.len(), 1);
 }
 
 #[test]
 fn an_empty_object_is_empty() {
     let parsed = super::api_call::parse_protect_response(b"{}").expect("the body parses");
-    assert!(parsed.is_empty());
+    assert_eq!(parsed, ProtectResponse::default());
 }
 
 #[tokio::test]

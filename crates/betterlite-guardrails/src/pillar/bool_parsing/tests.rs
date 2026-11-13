@@ -181,27 +181,25 @@ fn a_lookup_is_used_rather_than_the_process_environment() {
     assert_eq!(env.lookup("PILLAR_PERSIST"), Some("1".to_owned()));
 }
 
-#[rstest]
-#[case::block("block", Some(OnFlaggedAction::Block))]
-#[case::monitor("monitor", Some(OnFlaggedAction::Monitor))]
-#[case::mask("mask", Some(OnFlaggedAction::Mask))]
-#[case::unknown("drop", None)]
-#[case::empty("", None)]
-fn the_flagged_action_parses_its_supported_words(
-    #[case] text: &str,
-    #[case] expected: Option<OnFlaggedAction>,
-) {
-    assert_eq!(OnFlaggedAction::parse(text), expected);
+#[test]
+fn the_flagged_action_parses_its_supported_words() {
+    assert_eq!(
+        OnFlaggedAction::parse("block"),
+        Some(OnFlaggedAction::Block)
+    );
+    assert_eq!(
+        OnFlaggedAction::parse("monitor"),
+        Some(OnFlaggedAction::Monitor)
+    );
+    assert_eq!(OnFlaggedAction::parse("mask"), Some(OnFlaggedAction::Mask));
+    assert_eq!(OnFlaggedAction::parse("drop"), None);
+    assert_eq!(OnFlaggedAction::parse(""), None);
 }
 
-#[rstest]
-#[case::allow("allow", Some(FallbackAction::Allow))]
-#[case::block("block", Some(FallbackAction::Block))]
-#[case::unknown("drop", None)]
-#[case::empty("", None)]
-fn the_fallback_action_parses_its_supported_words(
-    #[case] text: &str,
-    #[case] expected: Option<FallbackAction>,
-) {
-    assert_eq!(FallbackAction::parse(text), expected);
+#[test]
+fn the_fallback_action_parses_its_supported_words() {
+    assert_eq!(FallbackAction::parse("allow"), Some(FallbackAction::Allow));
+    assert_eq!(FallbackAction::parse("block"), Some(FallbackAction::Block));
+    assert_eq!(FallbackAction::parse("drop"), None);
+    assert_eq!(FallbackAction::parse(""), None);
 }
