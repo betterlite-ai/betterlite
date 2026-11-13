@@ -1,7 +1,7 @@
 use secrecy::SecretString;
 
 use super::support::{
-    Cache, ClientRun, Inputs, KeyedCache, Run, Script, get_client, initialize, initialize_result,
+    Cache, Inputs, KeyedCache, Run, Script, get_client, initialize, initialize_result,
 };
 use crate::credentials::headers::{ClientAuthParams, get_azure_request_auth_headers};
 use crate::credentials::source::TokenReply;
@@ -63,7 +63,7 @@ fn identity_cache_entries() {
     let second = Inputs::default().with_client_secret(&secret("client-secret-b"));
     let key = secret("fixture-api-key");
     let mut cache = KeyedCache::empty();
-    let run = ClientRun::default().with_key(&key);
+    let run = Run::for_client().with_key(&key);
     let first_outcome = get_client(&first, &run, &mut cache).unwrap();
     let second_outcome = get_client(&second, &run, &mut cache).unwrap();
     assert_ne!(first_outcome.identity, second_outcome.identity);
@@ -131,7 +131,7 @@ fn outcome_debug_redacts() {
     let inputs = secret_inputs();
     let key = secret("fixture-api-key");
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_key(&key);
+    let run = Run::for_client().with_key(&key);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert_no_secrets(&format!("{outcome:?}"));
     assert!(

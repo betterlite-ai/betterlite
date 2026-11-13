@@ -45,20 +45,20 @@ pub(super) fn client_report(
 }
 
 pub(super) fn cloudflare_report(outcome: &CloudflareOutcome<'_>, calls: &[Value]) -> Value {
-    let mut value =
-        json!({"kind": "", "supplied": Value::Null, "client": Value::Null, "calls": calls});
     match outcome {
-        CloudflareOutcome::Supplied(client) => {
-            value["kind"] = json!("supplied");
-            value["supplied"] =
-                json!({"kind": kind_name(client.kind), "custom_query": &client.custom_query});
-        }
-        CloudflareOutcome::Constructed(client) => {
-            value["kind"] = json!("constructed");
-            value["client"] = constructed_json(client);
-        }
+        CloudflareOutcome::Supplied(client) => json!({
+            "kind": "supplied",
+            "supplied": {"kind": kind_name(client.kind), "custom_query": &client.custom_query},
+            "client": Value::Null,
+            "calls": calls,
+        }),
+        CloudflareOutcome::Constructed(client) => json!({
+            "kind": "constructed",
+            "supplied": Value::Null,
+            "client": constructed_json(client),
+            "calls": calls,
+        }),
     }
-    value
 }
 
 fn constructed_json(client: &CloudflareClient<'_>) -> Value {
@@ -97,12 +97,13 @@ fn azure_json(inputs: &AzureClientInputs<'_>) -> Value {
 }
 
 fn v1_json(inputs: &OpenAiV1ClientInputs<'_>) -> Value {
-    let mut value = json!({"key": key_json(inputs.key.as_ref()), "base_url": &inputs.base_url});
-    value["timeout"] = json!(inputs.timeout);
-    value["max_retries"] = json!(inputs.max_retries);
-    value["http_client"] =
-        json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared});
-    value
+    json!({
+        "key": key_json(inputs.key.as_ref()),
+        "base_url": &inputs.base_url,
+        "timeout": inputs.timeout,
+        "max_retries": inputs.max_retries,
+        "http_client": {"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared},
+    })
 }
 
 fn key_json(key: Option<&V1Key<'_>>) -> Value {

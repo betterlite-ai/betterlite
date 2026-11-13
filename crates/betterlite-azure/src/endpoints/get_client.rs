@@ -153,7 +153,8 @@ fn construct<'data>(
     })
 }
 
-fn initialize_request<'data>(request: &GetClientRequest<'data>) -> InitializeRequest<'data> {
+#[must_use]
+pub fn initialize_request<'data>(request: &GetClientRequest<'data>) -> InitializeRequest<'data> {
     InitializeRequest {
         params: request.params.clone(),
         provider: request.provider.clone(),

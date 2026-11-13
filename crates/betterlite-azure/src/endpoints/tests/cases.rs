@@ -5,8 +5,8 @@ use betterlite_config::sections::azure_credentials::DEFAULT_SCOPE;
 use secrecy::SecretString;
 
 use super::support::{
-    Cache, ClientRun, DEFAULT_API_BASE, DEFAULT_VERSION, Env, Inputs, KeyedCache, Run, Script,
-    SourceCall, Sources, callable, get_client, initialize, initialize_result, revealed,
+    Cache, DEFAULT_API_BASE, DEFAULT_VERSION, Env, Inputs, KeyedCache, Run, Script, SourceCall,
+    Sources, callable, get_client, initialize, initialize_result, revealed,
 };
 use crate::endpoints::cloudflare::{
     CloudflareClient, CloudflareOutcome, CloudflareParams, CloudflareRequest, ParamValue,
@@ -66,7 +66,7 @@ fn api_version_precedence() {
         .0
         .insert("AZURE_API_VERSION".to_owned(), String::new());
     assert_eq!(initialize(&inputs, &Run::default()).api_version, "");
-    let explicit = Run::default().with_version("2024-02-01");
+    let explicit = Run::default().with_version(Some("2024-02-01"));
     assert_eq!(initialize(&inputs, &explicit).api_version, "2024-02-01");
 }
 
@@ -229,49 +229,44 @@ fn cloudflare_dict_get() {
     );
 }
 
-fn cloudflare_null_scope() {
-    let params = CloudflareParams {
+fn cloudflare_oidc_scope() {
+    let null_scope = CloudflareParams {
         tenant_id: Some(ParamValue::Value("explicit-tenant".to_owned())),
         client_id: Some(ParamValue::Value("explicit-client".to_owned())),
         azure_scope: Some(ParamValue::Null),
     };
-    let environment = Env::default();
-    let sources = Sources::default();
-    let oidc = secret("oidc/assertion");
-    let mut request = cloudflare(&params, &environment, &sources);
-    request.azure_ad_token = Some(&oidc);
-    gateway_client(&request);
-    assert_eq!(
-        sources.calls(),
-        vec![SourceCall::Oidc {
-            azure_ad_token: "oidc/assertion".to_owned(),
-            client_id: Some("explicit-client".to_owned()),
-            tenant_id: Some("explicit-tenant".to_owned()),
-            scope: None,
-        }]
-    );
-}
-
-fn cloudflare_empty_scope_environment() {
-    let mut environment = Env::default();
-    environment
-        .0
-        .insert("AZURE_SCOPE".to_owned(), String::new());
-    let params = CloudflareParams::default();
-    let sources = Sources::default();
-    let oidc = secret("oidc/assertion");
-    let mut request = cloudflare(&params, &environment, &sources);
-    request.azure_ad_token = Some(&oidc);
-    gateway_client(&request);
-    assert_eq!(
-        sources.calls(),
-        vec![SourceCall::Oidc {
-            azure_ad_token: "oidc/assertion".to_owned(),
-            client_id: None,
-            tenant_id: None,
-            scope: Some(String::new()),
-        }]
-    );
+    let rows = [
+        (
+            null_scope,
+            None,
+            (Some("explicit-client"), Some("explicit-tenant"), None),
+        ),
+        (
+            CloudflareParams::default(),
+            Some(String::new()),
+            (None, None, Some(String::new())),
+        ),
+    ];
+    for (params, scope_environment, (client_id, tenant_id, scope)) in rows {
+        let mut environment = Env::default();
+        if let Some(value) = scope_environment {
+            environment.0.insert("AZURE_SCOPE".to_owned(), value);
+        }
+        let sources = Sources::default();
+        let oidc = secret("oidc/assertion");
+        let mut request = cloudflare(&params, &environment, &sources);
+        request.azure_ad_token = Some(&oidc);
+        gateway_client(&request);
+        assert_eq!(
+            sources.calls(),
+            vec![SourceCall::Oidc {
+                azure_ad_token: "oidc/assertion".to_owned(),
+                client_id: client_id.map(str::to_owned),
+                tenant_id: tenant_id.map(str::to_owned),
+                scope,
+            }]
+        );
+    }
 }
 
 fn cloudflare_async_and_shared() {
@@ -319,8 +314,7 @@ pub(crate) fn cloudflare_base_model() {
     cloudflare_api_key_wins();
     cloudflare_plain_token();
     cloudflare_dict_get();
-    cloudflare_null_scope();
-    cloudflare_empty_scope_environment();
+    cloudflare_oidc_scope();
     cloudflare_async_and_shared();
     cloudflare_supplied_client();
 }
@@ -343,7 +337,7 @@ fn constructed_identity() {
     let inputs = identity_inputs();
     let key = secret("fixture-api-key");
     let supplied_provider = callable(Script::Token("passed-token".to_owned()), 4242);
-    let run = ClientRun::default()
+    let run = Run::for_client()
         .with_key(&key)
         .with_provider(&supplied_provider);
     let mut cache = Cache::empty();
@@ -374,7 +368,7 @@ fn constructed_identity_owned_by_session() {
     let inputs = identity_inputs();
     let key = secret("fixture-api-key");
     let supplied_provider = callable(Script::Token("passed-token".to_owned()), 4242);
-    let mut run = ClientRun::default()
+    let mut run = Run::for_client()
         .with_key(&key)
         .with_provider(&supplied_provider);
     run.session = SessionKind::Shared;
@@ -388,7 +382,7 @@ fn identities_stay_separate() {
     let second = Inputs::default().with_tenant("tenant-b");
     let key = secret("fixture-api-key");
     let mut cache = KeyedCache::empty();
-    let run = ClientRun::default().with_key(&key);
+    let run = Run::for_client().with_key(&key);
     let first_outcome = get_client(&first, &run, &mut cache).unwrap();
     let second_outcome = get_client(&second, &run, &mut cache).unwrap();
     assert_ne!(first_outcome.identity, second_outcome.identity);
@@ -410,23 +404,12 @@ fn cached_clients_are_reused() {
     let key = secret("fixture-api-key");
     let mut cache = Cache::empty();
     cache.preloaded = Some(ClientKind::AzureOpenAi);
-    let run = ClientRun::default().with_version(Some("v1")).with_key(&key);
+    let run = Run::for_client().with_version(Some("v1")).with_key(&key);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert_eq!(outcome.source, ClientSource::Cached);
     assert_eq!(outcome.kind, ClientKind::AzureOpenAi);
     assert!(cache.sets.is_empty());
     assert!(inputs.sources.calls().is_empty());
-}
-
-fn other_cached_kind_is_ignored() {
-    let inputs = identity_inputs();
-    let key = secret("fixture-api-key");
-    let mut cache = Cache::empty();
-    cache.preloaded = Some(ClientKind::Other);
-    let run = ClientRun::default().with_key(&key);
-    let outcome = get_client(&inputs, &run, &mut cache).unwrap();
-    assert_eq!(outcome.source, ClientSource::Constructed);
-    assert_eq!(outcome.kind, ClientKind::AzureOpenAi);
 }
 
 fn supplied_client_keeps_custom_query() {
@@ -439,7 +422,7 @@ fn supplied_client_keeps_custom_query() {
         )])),
     };
     let mut cache = Cache::empty();
-    let run = ClientRun::default()
+    let run = Run::for_client()
         .with_supplied(explicit)
         .with_version(Some("2024-02-01"));
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
@@ -462,7 +445,7 @@ fn supplied_openai_client_has_no_query() {
         custom_query: None,
     };
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_supplied(supplied);
+    let run = Run::for_client().with_supplied(supplied);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert!(outcome.custom_query.is_none());
 }
@@ -472,7 +455,6 @@ pub(crate) fn separate_token_client_identity() {
     constructed_identity_owned_by_session();
     identities_stay_separate();
     cached_clients_are_reused();
-    other_cached_kind_is_ignored();
     supplied_client_keeps_custom_query();
     supplied_openai_client_has_no_query();
 }
@@ -481,7 +463,7 @@ fn v1_versions_pick_openai() {
     let inputs = Inputs::default();
     for version in ["v1", "latest", "preview"] {
         for is_async in [false, true] {
-            let mut run = ClientRun::default().with_version(Some(version));
+            let mut run = Run::for_client().with_version(Some(version));
             run.is_async = is_async;
             let mut cache = Cache::empty();
             let outcome = get_client(&inputs, &run, &mut cache).unwrap();
@@ -499,7 +481,7 @@ fn v1_versions_pick_openai() {
 fn other_versions_pick_azure() {
     let inputs = Inputs::default();
     for version in ["V1", "Latest", "2024-02-01"] {
-        let run = ClientRun::default().with_version(Some(version));
+        let run = Run::for_client().with_version(Some(version));
         let mut cache = Cache::empty();
         let outcome = get_client(&inputs, &run, &mut cache).unwrap();
         assert_eq!(outcome.kind, ClientKind::AzureOpenAi, "{version}");
@@ -514,7 +496,7 @@ fn environment_version_keeps_azure() {
         .0
         .insert("AZURE_API_VERSION".to_owned(), "v1".to_owned());
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_version(None);
+    let run = Run::for_client().with_version(None);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert_eq!(outcome.kind, ClientKind::AzureOpenAi);
     match outcome.inputs.as_ref().unwrap() {
@@ -527,7 +509,7 @@ fn cached_before_initialize() {
     let inputs = Inputs::default();
     let mut cache = Cache::empty();
     cache.preloaded = Some(ClientKind::AsyncOpenAi);
-    let mut run = ClientRun::default().with_version(Some("v1"));
+    let mut run = Run::for_client().with_version(Some("v1"));
     run.is_async = true;
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert_eq!(outcome.source, ClientSource::Cached);
@@ -536,13 +518,19 @@ fn cached_before_initialize() {
 }
 
 fn ignored_cached_kind_constructs() {
-    let inputs = Inputs::default();
-    let mut cache = Cache::empty();
-    cache.preloaded = Some(ClientKind::Other);
-    let run = ClientRun::default().with_version(Some("v1"));
-    let outcome = get_client(&inputs, &run, &mut cache).unwrap();
-    assert_eq!(outcome.source, ClientSource::Constructed);
-    assert_eq!(outcome.kind, ClientKind::OpenAi);
+    let inputs = identity_inputs();
+    let key = secret("fixture-api-key");
+    for (version, kind) in [
+        (Some("2024-02-01"), ClientKind::AzureOpenAi),
+        (Some("v1"), ClientKind::OpenAi),
+    ] {
+        let mut cache = Cache::empty();
+        cache.preloaded = Some(ClientKind::Other);
+        let run = Run::for_client().with_version(version).with_key(&key);
+        let outcome = get_client(&inputs, &run, &mut cache).unwrap();
+        assert_eq!(outcome.source, ClientSource::Constructed);
+        assert_eq!(outcome.kind, kind);
+    }
 }
 
 pub(crate) fn azure_sdk_client_mode() {
@@ -809,7 +797,7 @@ fn v1_key_precedence() {
     let key = secret("fixture-api-key");
     let inputs = Inputs::default().with_ad_token(&secret("fixture-ad-token"));
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_version(Some("v1")).with_key(&key);
+    let run = Run::for_client().with_version(Some("v1")).with_key(&key);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert_eq!(outcome.kind, ClientKind::OpenAi);
     match v1_inputs(&outcome).key.as_ref().unwrap() {
@@ -829,7 +817,7 @@ fn v1_provider_key() {
     let inputs = Inputs::default().with_ad_token(&secret("fixture-ad-token"));
     let supplied = callable(Script::Token("passed-token".to_owned()), 1);
     let mut cache = Cache::empty();
-    let run = ClientRun::default()
+    let run = Run::for_client()
         .with_version(Some("v1"))
         .with_provider(&supplied);
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
@@ -838,7 +826,7 @@ fn v1_provider_key() {
         V1Key::Static(_) => panic!("the provider lost to the token"),
     }
     let mut async_cache = Cache::empty();
-    let mut async_run = ClientRun::default()
+    let mut async_run = Run::for_client()
         .with_version(Some("latest"))
         .with_provider(&supplied);
     async_run.is_async = true;
@@ -853,7 +841,7 @@ fn v1_provider_key() {
 fn v1_token_key() {
     let inputs = Inputs::default().with_ad_token(&secret("fixture-ad-token"));
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_version(Some("preview"));
+    let run = Run::for_client().with_version(Some("preview"));
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     match v1_inputs(&outcome).key.as_ref().unwrap() {
         V1Key::Static(value) => assert_eq!(revealed(value), "fixture-ad-token"),
@@ -864,7 +852,7 @@ fn v1_token_key() {
 fn v1_absent_key() {
     let inputs = Inputs::default();
     let mut cache = Cache::empty();
-    let run = ClientRun::default().with_version(Some("v1"));
+    let run = Run::for_client().with_version(Some("v1"));
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();
     assert!(v1_inputs(&outcome).key.is_none());
 }
@@ -874,7 +862,7 @@ fn v1_forwards_parameters() {
         .with_timeout(Some(2.5_f64))
         .with_max_retries(Some(4));
     let mut cache = Cache::empty();
-    let run = ClientRun::default()
+    let run = Run::for_client()
         .with_version(Some("v1"))
         .with_api_base("https://x.openai.azure.com/openai/deployments/gpt")
         .async_shared();
@@ -894,7 +882,7 @@ fn v1_forwards_parameters() {
 fn v1_base_url_is_literal() {
     let inputs = Inputs::default();
     let mut cache = Cache::empty();
-    let run = ClientRun::default()
+    let run = Run::for_client()
         .with_version(Some("v1"))
         .with_api_base("https://x.openai.azure.com/");
     let outcome = get_client(&inputs, &run, &mut cache).unwrap();

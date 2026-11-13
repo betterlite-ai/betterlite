@@ -81,57 +81,50 @@ impl Sources {
             .clone()
     }
 
-    fn provider(
-        &self,
-        script: Option<&Script>,
-        default_token: &str,
-        call: Value,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+    fn scripted(&self, source: Source, call: Value) -> Result<String, SourceFailure> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-        scripted(script.cloned().unwrap_or_else(|| Script::Token {
-            token: default_token.to_owned(),
-        }))
-    }
-}
-
-fn scripted(script: Script) -> Result<Arc<dyn CallableTokenProvider + 'static>, SourceFailure> {
-    match script {
-        Script::Token { token } => {
-            let provider: Arc<dyn CallableTokenProvider> = Arc::new(Provider {
-                script: Script::Token { token },
-            });
-            Ok(provider)
+        let (script, default_token) = match source {
+            Source::ClientSecret => (&self.scripts.client_secret, "client-secret-token"),
+            Source::UsernamePassword => (&self.scripts.username_password, "username-token"),
+            Source::Refresh => (&self.scripts.refresh, "refresh-token"),
+            Source::Oidc => (&self.scripts.oidc, "oidc-token"),
+        };
+        match script {
+            None => Ok(default_token.to_owned()),
+            Some(Script::Token { token }) => Ok(token.clone()),
+            Some(Script::Raise {
+                class_name,
+                message,
+            }) => Err(SourceFailure {
+                class: class_name.clone(),
+                status: None,
+                message: message.clone(),
+            }),
         }
-        Script::Raise {
-            class_name,
-            message,
-        } => Err(SourceFailure {
-            class: class_name,
-            status: None,
-            message,
-        }),
+    }
+
+    fn token_provider(
+        &self,
+        source: Source,
+        call: Value,
+    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+        let token = self.scripted(source, call)?;
+        let provider: Arc<dyn CallableTokenProvider> = Arc::new(Provider {
+            script: Script::Token { token },
+        });
+        Ok(provider)
     }
 }
 
-fn secret_call(record: &ClientSecretRecord) -> Value {
-    json!({
-        "source": "client_secret",
-        "tenant_id": record.tenant_id,
-        "client_id": record.client_id,
-        "client_secret": record.client_secret.expose_secret(),
-        "scope": record.scope,
-    })
-}
-
-fn password_call(record: &UsernamePasswordRecord) -> Value {
-    let mut value = json!({"source": "username_password", "client_id": record.client_id});
-    value["azure_username"] = json!(record.username);
-    value["azure_password"] = json!(record.password.expose_secret());
-    value["scope"] = json!(record.scope);
-    value
+#[derive(Clone, Copy)]
+enum Source {
+    ClientSecret,
+    UsernamePassword,
+    Refresh,
+    Oidc,
 }
 
 impl CredentialSources for Sources {
@@ -139,10 +132,15 @@ impl CredentialSources for Sources {
         &self,
         record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.provider(
-            self.scripts.client_secret.as_ref(),
-            "client-secret-token",
-            secret_call(record),
+        self.token_provider(
+            Source::ClientSecret,
+            json!({
+                "source": "client_secret",
+                "tenant_id": record.tenant_id,
+                "client_id": record.client_id,
+                "client_secret": record.client_secret.expose_secret(),
+                "scope": record.scope,
+            }),
         )
     }
 
@@ -150,10 +148,15 @@ impl CredentialSources for Sources {
         &self,
         record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.provider(
-            self.scripts.username_password.as_ref(),
-            "username-token",
-            password_call(record),
+        self.token_provider(
+            Source::UsernamePassword,
+            json!({
+                "source": "username_password",
+                "client_id": record.client_id,
+                "azure_username": record.username,
+                "azure_password": record.password.expose_secret(),
+                "scope": record.scope,
+            }),
         )
     }
 
@@ -161,9 +164,8 @@ impl CredentialSources for Sources {
         &self,
         scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.provider(
-            self.scripts.refresh.as_ref(),
-            "refresh-token",
+        self.token_provider(
+            Source::Refresh,
             json!({"source": "refresh", "scope": scope}),
         )
     }
@@ -173,29 +175,17 @@ impl CredentialSources for Sources {
     }
 
     fn oidc(&self, input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(json!({
+        self.scripted(
+            Source::Oidc,
+            json!({
                 "source": "oidc",
                 "azure_ad_token": input.azure_ad_token.expose_secret(),
                 "azure_client_id": input.azure_client_id,
                 "azure_tenant_id": input.azure_tenant_id,
                 "scope": input.scope,
-            }));
-        match self.scripts.oidc.clone().unwrap_or_else(|| Script::Token {
-            token: "oidc-token".to_owned(),
-        }) {
-            Script::Token { token } => Ok(SecretString::from(token)),
-            Script::Raise {
-                class_name,
-                message,
-            } => Err(SourceFailure {
-                class: class_name,
-                status: None,
-                message,
             }),
-        }
+        )
+        .map(SecretString::from)
     }
 }
 

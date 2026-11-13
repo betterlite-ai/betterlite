@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use betterlite_azure::endpoints::cloudflare::CloudflareParams;
 use betterlite_azure::endpoints::projection::{LiteLlmParams, SessionKind};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::helpers::HelperResult;
@@ -22,40 +23,13 @@ pub(crate) struct Defaults {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct InitializeStep {
-    #[serde(default)]
-    pub(crate) defaults: Option<Defaults>,
-    #[serde(default)]
-    pub(crate) params: LiteLlmParams,
-    #[serde(default)]
-    pub(crate) api_key: Option<String>,
-    #[serde(default)]
-    pub(crate) api_base: Option<String>,
-    #[serde(default)]
-    pub(crate) api_version: Option<String>,
-    #[serde(default)]
-    pub(crate) is_async: bool,
-    #[serde(default)]
-    pub(crate) session: SessionChoice,
-    #[serde(default)]
-    pub(crate) refresh: bool,
-    #[serde(default)]
-    pub(crate) provider: Option<ProviderScript>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(crate) sources: SourceScripts,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ClientStep {
     #[serde(default)]
     pub(crate) defaults: Option<Defaults>,
     #[serde(default)]
     pub(crate) params: LiteLlmParams,
     #[serde(default)]
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     #[serde(default)]
     pub(crate) api_base: Option<String>,
     #[serde(default)]
@@ -89,9 +63,9 @@ pub(crate) struct CloudflareStep {
     #[serde(default)]
     pub(crate) params: CloudflareParams,
     #[serde(default)]
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     #[serde(default)]
-    pub(crate) azure_ad_token: Option<String>,
+    pub(crate) azure_ad_token: Option<SecretString>,
     #[serde(default)]
     pub(crate) provider: Option<ProviderScript>,
     #[serde(default)]
@@ -174,11 +148,11 @@ impl SessionChoice {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
-    DefaultApiVersion(Vec<InitializeStep>),
+    DefaultApiVersion(Vec<ClientStep>),
     CloudflareBaseModel(Vec<CloudflareStep>),
     SeparateTokenClientIdentity(Vec<ClientStep>),
     AzureSdkClientMode(Vec<ClientStep>),
-    AzureInitializerCredentials(Vec<InitializeStep>),
+    AzureInitializerCredentials(Vec<ClientStep>),
     AzureV1ClientProjection(Vec<ClientStep>),
     DynamicApiVersion(Vec<DynamicStep>),
 }

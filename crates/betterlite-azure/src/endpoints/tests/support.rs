@@ -11,8 +11,10 @@ use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::{
     CallableTokenProvider, CredentialSources, ProviderFailure, SourceFailure, TokenReply,
 };
-use crate::endpoints::get_client::{ClientCache, GetClientRequest, get_azure_openai_client};
-use crate::endpoints::initialize::{EndpointError, InitializeRequest, initialize_azure_sdk_client};
+use crate::endpoints::get_client::{
+    ClientCache, GetClientRequest, get_azure_openai_client, initialize_request,
+};
+use crate::endpoints::initialize::{EndpointError, initialize_azure_sdk_client};
 use crate::endpoints::projection::{
     AzureClientInputs, CallableProvider, ClientIdentity, ClientKind, ClientOutcome, LiteLlmParams,
     SessionKind, SuppliedClient,
@@ -112,33 +114,34 @@ impl Sources {
             .clone()
     }
 
-    fn record(&self, call: SourceCall) {
+    fn scripted(&self, call: SourceCall) -> Result<String, SourceFailure> {
+        let (name, default_token) = match &call {
+            SourceCall::ClientSecret { .. } => ("client_secret", "client-secret-token"),
+            SourceCall::UsernamePassword { .. } => ("username_password", "username-token"),
+            SourceCall::Refresh { .. } => ("refresh", "refresh-token"),
+            SourceCall::Oidc { .. } => ("oidc", "oidc-token"),
+        };
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
-    }
-
-    fn script(&self, name: &'static str, default_token: &str) -> Script {
-        self.scripts
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| Script::Token(default_token.to_owned()))
-    }
-
-    fn provider(
-        &self,
-        name: &'static str,
-        default_token: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        match self.script(name, default_token) {
-            Script::Token(token) => Ok(provider(Script::Token(token))),
-            Script::Raise { class, message } => Err(SourceFailure {
-                class,
+        match self.scripts.get(name) {
+            None => Ok(default_token.to_owned()),
+            Some(Script::Token(token)) => Ok(token.clone()),
+            Some(Script::Raise { class, message }) => Err(SourceFailure {
+                class: class.clone(),
                 status: None,
-                message,
+                message: message.clone(),
             }),
         }
+    }
+
+    fn token_provider(
+        &self,
+        call: SourceCall,
+    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+        self.scripted(call)
+            .map(|token| provider(Script::Token(token)))
     }
 }
 
@@ -147,34 +150,31 @@ impl CredentialSources for Sources {
         &self,
         record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.record(SourceCall::ClientSecret {
+        self.token_provider(SourceCall::ClientSecret {
             tenant_id: record.tenant_id.clone(),
             client_id: record.client_id.clone(),
             scope: record.scope.clone(),
-        });
-        self.provider("client_secret", "client-secret-token")
+        })
     }
 
     fn username_password(
         &self,
         record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.record(SourceCall::UsernamePassword {
+        self.token_provider(SourceCall::UsernamePassword {
             client_id: record.client_id.clone(),
             username: record.username.clone(),
             scope: record.scope.clone(),
-        });
-        self.provider("username_password", "username-token")
+        })
     }
 
     fn sdk_refresh(
         &self,
         scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.record(SourceCall::Refresh {
+        self.token_provider(SourceCall::Refresh {
             scope: scope.to_owned(),
-        });
-        self.provider("refresh", "refresh-token")
+        })
     }
 
     fn default_credential(&self, _scope: &str) -> Option<Arc<dyn CallableTokenProvider + '_>> {
@@ -182,42 +182,22 @@ impl CredentialSources for Sources {
     }
 
     fn oidc(&self, input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        self.record(SourceCall::Oidc {
+        self.scripted(SourceCall::Oidc {
             azure_ad_token: input.azure_ad_token.expose_secret().to_owned(),
             client_id: input.azure_client_id.clone(),
             tenant_id: input.azure_tenant_id.clone(),
             scope: input.scope.clone(),
-        });
-        match self.script("oidc", "oidc-token") {
-            Script::Token(token) => Ok(SecretString::from(token)),
-            Script::Raise { class, message } => Err(SourceFailure {
-                class,
-                status: None,
-                message,
-            }),
-        }
+        })
+        .map(SecretString::from)
     }
 }
 
+#[derive(Default)]
 pub(crate) struct Inputs {
     pub(crate) params: LiteLlmParams,
     pub(crate) settings: Settings,
     pub(crate) environment: Env,
     pub(crate) sources: Sources,
-}
-
-impl Default for Inputs {
-    fn default() -> Self {
-        Self {
-            params: LiteLlmParams::default(),
-            settings: Settings {
-                default_max_retries: 2,
-                azure_default_api_version: DEFAULT_VERSION.to_owned(),
-            },
-            environment: Env::default(),
-            sources: Sources::default(),
-        }
-    }
 }
 
 impl Inputs {
@@ -291,6 +271,7 @@ pub(crate) struct Run {
     pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
     pub(crate) provider: Option<CallableProvider>,
+    pub(crate) supplied: Option<SuppliedClient>,
     pub(crate) is_async: bool,
     pub(crate) session: SessionKind,
     pub(crate) refresh_enabled: bool,
@@ -303,96 +284,6 @@ impl Default for Run {
             api_key: None,
             api_base: Some(DEFAULT_API_BASE.to_owned()),
             provider: None,
-            is_async: false,
-            session: SessionKind::Dedicated,
-            refresh_enabled: false,
-        }
-    }
-}
-
-impl Run {
-    #[must_use]
-    pub(crate) fn with_version(mut self, version: &str) -> Self {
-        self.api_version = Some(version.to_owned());
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_key(mut self, key: &SecretString) -> Self {
-        self.api_key = Some(key.clone());
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_provider(mut self, provider: &CallableProvider) -> Self {
-        self.provider = Some(provider.clone());
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn with_api_base(mut self, base: &str) -> Self {
-        self.api_base = Some(base.to_owned());
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn async_shared(mut self) -> Self {
-        self.is_async = true;
-        self.session = SessionKind::Shared;
-        self
-    }
-
-    #[must_use]
-    pub(crate) fn refresh(mut self) -> Self {
-        self.refresh_enabled = true;
-        self
-    }
-}
-
-pub(crate) fn initialize<'data>(inputs: &'data Inputs, run: &Run) -> AzureClientInputs<'data> {
-    initialize_result(inputs, run).unwrap()
-}
-
-pub(crate) fn initialize_result<'data>(
-    inputs: &'data Inputs,
-    run: &Run,
-) -> Result<AzureClientInputs<'data>, EndpointError> {
-    let mut refresh = RefreshProviderCache::new(&inputs.sources);
-    let request = InitializeRequest {
-        params: inputs.params.clone(),
-        provider: run.provider.clone(),
-        api_key: run.api_key.clone(),
-        api_base: run.api_base.clone(),
-        model_name: Some("gpt-4o".to_owned()),
-        api_version: run.api_version.clone(),
-        is_async: run.is_async,
-        session: run.session,
-        refresh_enabled: run.refresh_enabled,
-        settings: &inputs.settings,
-        environment: &inputs.environment,
-        sources: &inputs.sources,
-    };
-    initialize_azure_sdk_client(&request, &mut refresh)
-}
-
-pub(crate) struct ClientRun {
-    pub(crate) api_version: Option<String>,
-    pub(crate) api_key: Option<SecretString>,
-    pub(crate) api_base: Option<String>,
-    pub(crate) provider: Option<CallableProvider>,
-    pub(crate) supplied: Option<SuppliedClient>,
-    pub(crate) is_async: bool,
-    pub(crate) session: SessionKind,
-    pub(crate) refresh_enabled: bool,
-}
-
-impl Default for ClientRun {
-    fn default() -> Self {
-        Self {
-            api_version: Some("2024-02-01".to_owned()),
-            api_key: None,
-            api_base: Some(DEFAULT_API_BASE.to_owned()),
-            provider: None,
             supplied: None,
             is_async: false,
             session: SessionKind::Dedicated,
@@ -401,7 +292,11 @@ impl Default for ClientRun {
     }
 }
 
-impl ClientRun {
+impl Run {
+    pub(crate) fn for_client() -> Self {
+        Self::default().with_version(Some("2024-02-01"))
+    }
+
     #[must_use]
     pub(crate) fn with_version(mut self, version: Option<&str>) -> Self {
         self.api_version = version.map(str::to_owned);
@@ -438,15 +333,40 @@ impl ClientRun {
         self.session = SessionKind::Shared;
         self
     }
+
+    #[must_use]
+    pub(crate) fn refresh(mut self) -> Self {
+        self.refresh_enabled = true;
+        self
+    }
+}
+
+pub(crate) fn initialize<'data>(inputs: &'data Inputs, run: &Run) -> AzureClientInputs<'data> {
+    initialize_result(inputs, run).unwrap()
+}
+
+pub(crate) fn initialize_result<'data>(
+    inputs: &'data Inputs,
+    run: &Run,
+) -> Result<AzureClientInputs<'data>, EndpointError> {
+    let mut refresh = RefreshProviderCache::new(&inputs.sources);
+    initialize_azure_sdk_client(
+        &initialize_request(&client_request(inputs, run)),
+        &mut refresh,
+    )
 }
 
 pub(crate) fn get_client<'data>(
     inputs: &'data Inputs,
-    run: &ClientRun,
+    run: &Run,
     cache: &mut dyn ClientCache,
 ) -> Result<ClientOutcome<'data>, EndpointError> {
     let mut refresh = RefreshProviderCache::new(&inputs.sources);
-    let request = GetClientRequest {
+    get_azure_openai_client(&client_request(inputs, run), cache, &mut refresh)
+}
+
+fn client_request<'data>(inputs: &'data Inputs, run: &Run) -> GetClientRequest<'data> {
+    GetClientRequest {
         api_key: run.api_key.clone(),
         api_base: run.api_base.clone(),
         api_version: run.api_version.clone(),
@@ -460,8 +380,7 @@ pub(crate) fn get_client<'data>(
         refresh_enabled: run.refresh_enabled,
         session: run.session,
         sources: &inputs.sources,
-    };
-    get_azure_openai_client(&request, cache, &mut refresh)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

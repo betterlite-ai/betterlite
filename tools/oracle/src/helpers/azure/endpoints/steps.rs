@@ -1,24 +1,19 @@
 use betterlite_azure::credentials::cache::RefreshProviderCache;
 use betterlite_azure::endpoints::cloudflare::{CloudflareRequest, init_cloudflare_gateway_client};
+use betterlite_azure::endpoints::get_client::initialize_request;
 use betterlite_azure::endpoints::get_client::{GetClientRequest, get_azure_openai_client};
-use betterlite_azure::endpoints::initialize::{
-    EndpointError, InitializeRequest, initialize_azure_sdk_client,
-};
+use betterlite_azure::endpoints::initialize::{EndpointError, initialize_azure_sdk_client};
 use betterlite_azure::endpoints::projection::{ClientKind, SuppliedClient};
 use betterlite_config::sections::azure_endpoints::{
     AZURE_DEFAULT_API_VERSION, DEFAULT_MAX_RETRIES, Settings,
 };
-use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
 
 use super::fixture::{Cache, Sources, callable};
 use super::reports;
-use super::{
-    ClientStep, CloudflareStep, Defaults, DynamicStep, InitializeStep, Input, SuppliedKind,
-    SuppliedStep,
-};
+use super::{ClientStep, CloudflareStep, Defaults, DynamicStep, Input, SuppliedKind, SuppliedStep};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
@@ -60,7 +55,7 @@ fn settings(configured: Option<&Defaults>) -> Settings {
     )
 }
 
-fn initialize_steps(steps: &[InitializeStep]) -> HelperResult {
+fn initialize_steps(steps: &[ClientStep]) -> HelperResult {
     let mut reports = Vec::with_capacity(steps.len());
     for step in steps {
         reports.push(initialize_step(step)?);
@@ -68,10 +63,10 @@ fn initialize_steps(steps: &[InitializeStep]) -> HelperResult {
     Ok(json!({"steps": reports}))
 }
 
-fn initialize_step(step: &InitializeStep) -> Result<Value, Box<HelperError>> {
+fn initialize_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
     let sources = Sources::new(&step.sources);
     let settings = settings(step.defaults.as_ref());
-    let request = initialize_request(step, &settings, &sources);
+    let request = initialize_request(&client_request(step, &settings, &sources));
     let mut refresh = RefreshProviderCache::new(&sources);
     let inputs = initialize_azure_sdk_client(&request, &mut refresh)
         .map_err(|error| endpoint_error(&error))?;
@@ -80,33 +75,6 @@ fn initialize_step(step: &InitializeStep) -> Result<Value, Box<HelperError>> {
         step.provider.is_some(),
         &sources,
     ))
-}
-
-fn initialize_request<'data>(
-    step: &InitializeStep,
-    settings: &'data Settings,
-    sources: &'data Sources,
-) -> InitializeRequest<'data> {
-    InitializeRequest {
-        params: step.params.clone(),
-        provider: step
-            .provider
-            .as_ref()
-            .map(|provider| callable(provider.script.clone(), provider.identity)),
-        api_key: step
-            .api_key
-            .as_ref()
-            .map(|value| SecretString::from(value.clone())),
-        api_base: step.api_base.clone(),
-        model_name: None,
-        api_version: step.api_version.clone(),
-        is_async: step.is_async,
-        session: step.session.session(),
-        refresh_enabled: step.refresh,
-        settings,
-        environment: &step.environment,
-        sources,
-    }
 }
 
 fn client_steps(steps: &[ClientStep]) -> HelperResult {
@@ -130,21 +98,16 @@ fn client_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
 }
 
 fn client_request<'data>(
-    step: &ClientStep,
+    step: &'data ClientStep,
     settings: &'data Settings,
     sources: &'data Sources,
 ) -> GetClientRequest<'data> {
-    let api_key = step
-        .api_key
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
-    let provider = step
-        .provider
-        .as_ref()
-        .map(|provider| callable(provider.script.clone(), provider.identity));
     GetClientRequest {
-        api_key,
-        provider,
+        api_key: step.api_key.clone(),
+        provider: step
+            .provider
+            .as_ref()
+            .map(|provider| callable(provider.script.clone(), provider.identity)),
         supplied: step.supplied.as_ref().map(supplied_client),
         api_base: step.api_base.clone(),
         api_version: step.api_version.clone(),
@@ -185,45 +148,30 @@ fn cloudflare_steps(steps: &[CloudflareStep]) -> HelperResult {
 
 fn cloudflare_step(step: &CloudflareStep) -> Result<Value, Box<HelperError>> {
     let sources = Sources::new(&step.sources);
-    let request = cloudflare_request(step, &sources);
-    let outcome =
-        init_cloudflare_gateway_client(&request).map_err(|error| endpoint_error(&error))?;
-    Ok(reports::cloudflare_report(&outcome, &sources.calls()))
-}
-
-fn cloudflare_request<'data>(
-    step: &'data CloudflareStep,
-    sources: &'data Sources,
-) -> CloudflareRequest<'data> {
-    let api_key = step
-        .api_key
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
-    let azure_ad_token = step
-        .azure_ad_token
-        .as_ref()
-        .map(|value| SecretString::from(value.clone()));
     let provider = step
         .provider
         .as_ref()
         .map(|provider| callable(provider.script.clone(), provider.identity).provider);
     let supplied = step.client.as_ref().map(supplied_client);
-    CloudflareRequest {
+    let request = CloudflareRequest {
         api_base: &step.api_base,
         model: &step.model,
         api_version: &step.api_version,
         max_retries: step.max_retries,
         timeout: step.timeout,
         params: &step.params,
-        api_key: api_key.as_ref(),
-        azure_ad_token: azure_ad_token.as_ref(),
+        api_key: step.api_key.as_ref(),
+        azure_ad_token: step.azure_ad_token.as_ref(),
         token_provider: provider.as_ref(),
         shared_session: step.shared_session,
         is_async: step.is_async,
         client: supplied.as_ref(),
         environment: &step.environment,
-        sources,
-    }
+        sources: &sources,
+    };
+    let outcome =
+        init_cloudflare_gateway_client(&request).map_err(|error| endpoint_error(&error))?;
+    Ok(reports::cloudflare_report(&outcome, &sources.calls()))
 }
 
 fn endpoint_error(error: &EndpointError) -> Box<HelperError> {
