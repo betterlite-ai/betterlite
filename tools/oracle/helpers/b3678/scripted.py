@@ -5,11 +5,20 @@ from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.utils import ProxyLogging
-from litellm.types.utils import GenericGuardrailAPIInputs, LLMResponseTypes
+from litellm.types.utils import LLMResponseTypes
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict, override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+
+
+class ScanInputs(TypedDict, total=False):
+    texts: list[str]
+    model: str | None
+
+
+class Answer(TypedDict):
+    texts: list[str]
 
 
 class ContentBlock(TypedDict):
@@ -34,12 +43,19 @@ SYNTHETIC: Final[TypeAdapter[Synthetic]] = TypeAdapter(Synthetic)
 
 
 class ScriptedGuardrail(CustomGuardrail):
+    # ast-grep-ignore: no-long-names
     records_own_guardrail_information: ClassVar[bool] = True
+    # ast-grep-ignore: no-long-names
     skip_system_message_in_guardrail: bool | None = None
     skip_tool_message_in_guardrail: bool | None = None
 
-    def __init__(self, answer: list[str] | None, skip_system: bool, skip_tool: bool) -> None:
-        super().__init__(guardrail_name="scripted")
+    def __init__(
+        self,
+        answer: list[str] | None,
+        *,
+        skip_system: bool,
+        skip_tool: bool,
+    ) -> None:
         self.answer = answer
         self.texts: list[str] = []
         self.model: str | None = None
@@ -49,16 +65,16 @@ class ScriptedGuardrail(CustomGuardrail):
     @override
     async def apply_guardrail(
         self,
-        inputs: GenericGuardrailAPIInputs,
+        inputs: ScanInputs,
         request_data: dict[str, JsonValue],
         input_type: Literal["request", "response"],
         logging_obj: Logging | None = None,
-    ) -> GenericGuardrailAPIInputs:
+    ) -> Answer:
         texts = inputs.get("texts")
         self.texts = [] if texts is None else list(texts)
         self.model = inputs.get("model")
         if self.answer is None:
-            return inputs
+            return {"texts": self.texts}
         return {"texts": self.answer}
 
 
@@ -72,10 +88,12 @@ class ScriptedHook(ProxyLogging):
     async def post_call_success_hook(
         self,
         data: Mapping[str, JsonValue],
-        response: JsonValue | LLMResponseTypes,
+        response: LLMResponseTypes,
         user_api_key_dict: UserAPIKeyAuth,
-    ) -> JsonValue | LLMResponseTypes:
+    ) -> JsonValue:
         synthetic = SYNTHETIC.validate_python(response)
         for block in synthetic["output"]["message"]["content"]:
-            block["text"] = self.replace.get(block["text"], block["text"])
+            replacement = self.replace.get(block["text"])
+            if replacement is not None:
+                block["text"] = replacement
         return JSON.validate_python(synthetic)

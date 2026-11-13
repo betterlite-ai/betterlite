@@ -235,7 +235,8 @@ fn the_output_collector_gathers_text_tool_reasoning_and_citations() {
 
 #[test]
 fn the_output_collector_skips_signatures_and_sources() {
-    let collected_texts = texts(&collect_output_texts(&array(RESPONSE_CONTENT)));
+    let collected = collect_output_texts(&array(RESPONSE_CONTENT));
+    let collected_texts = texts(&collected);
     assert!(!collected_texts.contains(&"sig"));
     assert!(!collected_texts.contains(&"source"));
     assert!(!collected_texts.contains(&"never"));

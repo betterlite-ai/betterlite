@@ -205,8 +205,8 @@ async fn the_guardrail_gets_no_model_unless_it_is_non_empty_text(
 ) {
     let guardrail = Scripted::new(Answer::Unchanged);
     let mut request = data(r#"{"data": {"messages": [{"content": [{"text": "hello"}]}]}}"#);
-    if let Some(model) = model {
-        request.insert("model".to_owned(), model);
+    if let Some(value) = model {
+        request.insert("model".to_owned(), value);
     }
     process_input_messages(&mut request, &guardrail, SkipFlags::default(), None)
         .await

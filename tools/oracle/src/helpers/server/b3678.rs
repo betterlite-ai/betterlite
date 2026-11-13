@@ -22,7 +22,7 @@ use betterlite_server::guardrails::bedrock_passthrough::text_paths::SkipFlags;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 pub(crate) struct Op;
 
@@ -30,8 +30,10 @@ pub(crate) struct Op;
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Routing(RoutingInput),
-    InputTexts(InputTextsInput),
-    OutputTexts(OutputTextsInput),
+    #[serde(rename = "input_texts")]
+    Request(TextsRequest),
+    #[serde(rename = "output_texts")]
+    Response(TextsResponse),
     Stream(StreamInput),
 }
 
@@ -44,7 +46,7 @@ pub(crate) struct RoutingInput {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct InputTextsInput {
+pub(crate) struct TextsRequest {
     endpoint: String,
     data: BTreeMap<String, Value>,
     skip_system: bool,
@@ -54,7 +56,7 @@ pub(crate) struct InputTextsInput {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OutputTextsInput {
+pub(crate) struct TextsResponse {
     endpoint: String,
     response: Value,
     request_data: Option<BTreeMap<String, Value>>,
@@ -81,10 +83,10 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Routing(input) => Ok(routing(input)),
-            Input::InputTexts(input) => input_texts(input),
-            Input::OutputTexts(input) => output_texts(input),
-            Input::Stream(input) => stream(input),
+            Input::Routing(routing_input) => Ok(routing(routing_input)),
+            Input::Request(texts_request) => input_texts(texts_request),
+            Input::Response(texts_response) => output_texts(texts_response),
+            Input::Stream(stream_input) => stream(stream_input),
         }
     }
 }
@@ -97,7 +99,7 @@ fn routing(input: &RoutingInput) -> Value {
     })
 }
 
-fn input_texts(input: &InputTextsInput) -> HelperResult {
+fn input_texts(input: &TextsRequest) -> HelperResult {
     let mut data = guardrail_map(&input.data)?;
     data.insert(
         "endpoint".to_owned(),
@@ -108,7 +110,8 @@ fn input_texts(input: &InputTextsInput) -> HelperResult {
         system: input.skip_system,
         tool: input.skip_tool,
     };
-    block_on(process_input_messages(&mut data, &guardrail, skip, None))?;
+    let outcome = block_on(process_input_messages(&mut data, &guardrail, skip, None))?;
+    outcome.or_value_error()?;
     let seen = guardrail.seen();
     Ok(json!({
         "texts": seen.texts,
@@ -117,7 +120,7 @@ fn input_texts(input: &InputTextsInput) -> HelperResult {
     }))
 }
 
-fn output_texts(input: &OutputTextsInput) -> HelperResult {
+fn output_texts(input: &TextsResponse) -> HelperResult {
     let response_text = input.response.to_string();
     let mut response =
         serde_json::from_slice::<GuardrailValue>(response_text.as_bytes()).or_value_error()?;
@@ -133,13 +136,14 @@ fn output_texts(input: &OutputTextsInput) -> HelperResult {
         None => None,
     };
     let guardrail = ScriptedGuardrail::new(input.returned_texts.clone());
-    block_on(process_output_response(
+    let outcome = block_on(process_output_response(
         &mut response,
         &guardrail,
         None,
         BTreeMap::new(),
         request_data.as_ref(),
     ))?;
+    outcome.or_value_error()?;
     let seen = guardrail.seen();
     Ok(json!({
         "texts": seen.texts,
@@ -157,12 +161,13 @@ fn stream(input: &StreamInput) -> HelperResult {
     let hook = ScriptedHook {
         replace: input.replace.clone(),
     };
-    let rewritten = block_on(de_anonymize_event_stream(
+    let outcome = block_on(de_anonymize_event_stream(
         &body,
         &hook,
         &BTreeMap::new(),
         &BTreeMap::new(),
     ))?;
+    let rewritten = outcome.or_value_error()?;
     decode_stream(&rewritten)
 }
 
@@ -183,9 +188,8 @@ fn decode_stream(body: &[u8]) -> HelperResult {
     let mut offset = 0_usize;
     while let Some(total) = frame_total_length(body, offset) {
         let end = offset.saturating_add(total);
-        let raw = match body.get(offset..end) {
-            Some(raw) => raw,
-            None => break,
+        let Some(raw) = body.get(offset..end) else {
+            break;
         };
         let message = read_message_from(raw).or_value_error()?;
         frames.push(frame_json(&message)?);
@@ -221,10 +225,10 @@ fn frame_json(message: &Message) -> Result<Value, Box<HelperError>> {
 }
 
 fn header_value_json(value: &HeaderValue) -> Value {
-    match value.as_string() {
-        Ok(text) => Value::String(text.as_str().to_owned()),
-        Err(_) => Value::String(format!("{value:?}")),
-    }
+    value.as_string().map_or_else(
+        |_| Value::String(format!("{value:?}")),
+        |text| Value::String(text.as_str().to_owned()),
+    )
 }
 
 fn guardrail_map(
@@ -272,8 +276,8 @@ impl ScriptedGuardrail {
 
     fn record(&self, inputs: &GuardrailApiInputs) {
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        seen.texts = inputs.texts.clone().unwrap_or_default();
-        seen.model = inputs.model.clone();
+        seen.texts.clone_from(&inputs.texts.clone().unwrap_or_default());
+        seen.model.clone_from(&inputs.model);
     }
 
     fn seen(&self) -> Seen {
