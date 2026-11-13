@@ -96,14 +96,17 @@ fn map_media_param(
     optional: &mut Object,
     context: &OptionsContext<'_>,
 ) -> Result<(), GeminiOptionsError> {
-    if param == "response_format" {
-        let format: Object = decode(value, param)?;
-        return apply_response_format(&format, context.model, optional, context.schema)
-            .map_err(GeminiOptionsError::Format);
+    match param {
+        "response_format" => {
+            let format: Object = decode(value, param)?;
+            apply_response_format(&format, context.model, optional, context.schema)?;
+        }
+        _ => {
+            let audio: AudioParam = decode(value, param)?;
+            let speech = map_audio_params(&audio)?;
+            optional.insert("speechConfig".to_owned(), Json::Object(speech));
+        }
     }
-    let audio: AudioParam = decode(value, param)?;
-    let speech = map_audio_params(&audio)?;
-    optional.insert("speechConfig".to_owned(), Json::Object(speech));
     Ok(())
 }
 
