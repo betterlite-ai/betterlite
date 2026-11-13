@@ -28,6 +28,8 @@ const LOG_METADATA_STATE: &str = "SELECT concat_ws('|', \"status\", \"metadata\"
 
 const COLUMN_NAMES: &str = "SELECT column_name::text FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1";
 
+const GOVERNANCE_TABLES: &str = "SELECT table_name::text FROM information_schema.tables WHERE table_schema = current_schema() AND table_name IN ('LiteLLM_DailyGuardrailMetrics', 'LiteLLM_ToolTable') ORDER BY table_name";
+
 const SCHEMA: &[(&str, &[&str])] = &[
     (
         "LiteLLM_GuardrailsTable",
@@ -336,47 +338,41 @@ async fn governance_databases_are_independent() {
     second.close_async().await.unwrap();
 }
 
-async fn assert_without_dashboard(admin_url: &SecretString) {
-    let baseline = provision(admin_url, &seed_with(None, None)).await;
-    let (baseline_client, baseline_driver) = connect(&baseline.options.url).await;
-    assert!(
-        strings(&baseline_client, COLUMN_NAMES, &[&"LiteLLM_ToolTable"])
-            .await
-            .is_empty()
-    );
-    assert!(
-        strings(
-            &baseline_client,
-            COLUMN_NAMES,
-            &[&"LiteLLM_DailyGuardrailMetrics"]
-        )
-        .await
-        .is_empty()
-    );
-    assert_eq!(
-        strings(&baseline_client, USER_TEAMS_STATE, &[]).await,
-        ["alice|", "bob|"],
-        "without governance nothing rewrites the user teams"
-    );
-    disconnect(baseline_client, baseline_driver).await;
-    baseline.close_async().await.unwrap();
+async fn tables_and_teams(
+    admin_url: &SecretString,
+    seed: &FixtureSeed,
+) -> (Vec<String>, Vec<String>) {
+    let fixture = provision(admin_url, seed).await;
+    let (client, driver) = connect(&fixture.options.url).await;
+    let tables = strings(&client, GOVERNANCE_TABLES, &[]).await;
+    let teams = strings(&client, USER_TEAMS_STATE, &[]).await;
+    disconnect(client, driver).await;
+    fixture.close_async().await.unwrap();
+    (tables, teams)
 }
 
 async fn assert_without_governance(admin_url: &SecretString) {
-    let dashboard = provision(admin_url, &seed_with(Some(empty_dashboard()), None)).await;
-    let (dashboard_client, dashboard_driver) = connect(&dashboard.options.url).await;
+    let (tables, teams) = tables_and_teams(admin_url, &seed_with(None, None)).await;
     assert!(
-        !strings(&dashboard_client, COLUMN_NAMES, &[&"LiteLLM_ToolTable"])
-            .await
-            .is_empty()
+        tables.is_empty(),
+        "without dashboard, no governance table exists: {tables:?}"
     );
     assert_eq!(
-        strings(&dashboard_client, USER_TEAMS_STATE, &[]).await,
+        teams,
+        ["alice|", "bob|"],
+        "without governance nothing rewrites the user teams"
+    );
+    let dashboard = seed_with(Some(empty_dashboard()), None);
+    let (tables, teams) = tables_and_teams(admin_url, &dashboard).await;
+    assert_eq!(
+        tables,
+        ["LiteLLM_DailyGuardrailMetrics", "LiteLLM_ToolTable"]
+    );
+    assert_eq!(
+        teams,
         ["alice|", "bob|"],
         "governance absent leaves the user teams alone"
     );
-    disconnect(dashboard_client, dashboard_driver).await;
-    dashboard.close_async().await.unwrap();
 }
 
 async fn assert_empty_governance(admin_url: &SecretString) {
@@ -409,7 +405,6 @@ async fn assert_empty_governance(admin_url: &SecretString) {
 #[tokio::test]
 async fn governance_empty_and_absent() {
     let (_server, admin_url) = postgres_server().await;
-    assert_without_dashboard(&admin_url).await;
     assert_without_governance(&admin_url).await;
     assert_empty_governance(&admin_url).await;
 }
