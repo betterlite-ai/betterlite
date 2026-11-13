@@ -45,47 +45,30 @@ pub fn initialize_singulr(
             .or_else(|| params.base.fields.api_base.clone()),
         singulr_application_id: extra_text(params, APPLICATION_ID_KEY)?,
         singulr_guardrail_id: extra_text(params, GUARDRAIL_ID_KEY)?,
-        block_on_error: extra_flag(params, BLOCK_ON_ERROR_KEY)?,
+        block_on_error: match params.base.extra.0.get(BLOCK_ON_ERROR_KEY) {
+            None | Some(GuardrailValue::Null) => None,
+            Some(GuardrailValue::Boolean(flag)) => Some(*flag),
+            Some(_other) => {
+                return Err(SingulrInitError::Flag {
+                    field: BLOCK_ON_ERROR_KEY,
+                });
+            }
+        },
         timeout: params.base.fields.timeout,
         event_hook: params.mode.clone(),
         default_on: params.base.fields.default_on.unwrap_or_default(),
     })
 }
 
-fn extra_value<'params>(
-    params: &'params LitellmParams,
-    key: &str,
-) -> Option<&'params GuardrailValue> {
-    params.base.extra.0.get(key)
-}
-
 fn extra_text(
     params: &LitellmParams,
     key: &'static str,
 ) -> Result<Option<String>, SingulrInitError> {
-    let Some(value) = extra_value(params, key) else {
-        return Ok(None);
-    };
-    if let GuardrailValue::Text(text) = value {
-        return Ok(Some(text.clone()));
+    match params.base.extra.0.get(key) {
+        None | Some(GuardrailValue::Null) => Ok(None),
+        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
+        Some(_other) => Err(SingulrInitError::Text { field: key }),
     }
-    if matches!(value, GuardrailValue::Null) {
-        return Ok(None);
-    }
-    Err(SingulrInitError::Text { field: key })
-}
-
-fn extra_flag(params: &LitellmParams, key: &'static str) -> Result<Option<bool>, SingulrInitError> {
-    let Some(value) = extra_value(params, key) else {
-        return Ok(None);
-    };
-    if let GuardrailValue::Boolean(flag) = value {
-        return Ok(Some(*flag));
-    }
-    if matches!(value, GuardrailValue::Null) {
-        return Ok(None);
-    }
-    Err(SingulrInitError::Flag { field: key })
 }
 
 mod tests;

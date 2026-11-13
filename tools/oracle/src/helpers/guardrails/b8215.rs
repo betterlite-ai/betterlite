@@ -7,6 +7,7 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::singulr::SingulrGuardrail;
 use betterlite_guardrails::singulr::error::STATUS_CODE;
+use betterlite_guardrails::singulr::error::SingulrError;
 use betterlite_guardrails::singulr::init::SingulrArgs;
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
@@ -102,7 +103,7 @@ fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
         }),
         Err(error) => json!({
             "name": scenario.name,
-            "outcome": if error.blocked_content() { "blocked" } else { "error" },
+            "outcome": if matches!(error, SingulrError::Blocked { .. }) { "blocked" } else { "error" },
             "status": STATUS_CODE,
             "calls": failed_calls,
             "inputs": Value::Null,
@@ -110,10 +111,12 @@ fn scenario_value(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
     })
 }
 
-fn start_mock(answer: Option<&UpstreamAnswer>) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
+fn start_mock(
+    answer: Option<&UpstreamAnswer>,
+) -> Result<(Option<MockProvider>, String), Box<HelperError>> {
     let Some(answer) = answer else {
-        let listener =
-            TcpListener::bind(("127.0.0.1", 0)).map_err(|error| failure("OSError", error.to_string()))?;
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .map_err(|error| failure("OSError", error.to_string()))?;
         let address = listener
             .local_addr()
             .map_err(|error| failure("OSError", error.to_string()))?;

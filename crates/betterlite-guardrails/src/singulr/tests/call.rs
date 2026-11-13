@@ -112,7 +112,7 @@ async fn a_blocked_answer_raises_with_status_400_and_the_reason() {
         .await
         .unwrap_err();
     assert!(matches!(error, SingulrError::Blocked { .. }));
-    assert!(error.blocked_content());
+    assert!(matches!(error, SingulrError::Blocked { .. }));
     assert_eq!(
         error.to_string(),
         "Blocked by Singulr, Blocking due to policy"
@@ -156,7 +156,7 @@ async fn an_http_error_keeps_the_status_and_the_body() {
         error,
         SingulrError::HttpStatus { status: 500, .. }
     ));
-    assert!(!error.blocked_content());
+    assert!(!matches!(error, SingulrError::Blocked { .. }));
     assert_eq!(
         error.to_string(),
         r#"Singulr API returned HTTP 500: {"detail": "boom"}"#

@@ -133,8 +133,4 @@ fn text_value(value: &GuardrailValue) -> Option<&str> {
     None
 }
 
-fn text_field<'data>(request_data: &'data RequestData, name: &str) -> Option<&'data str> {
-    request_data.get(name).and_then(text_value)
-}
-
 mod tests;

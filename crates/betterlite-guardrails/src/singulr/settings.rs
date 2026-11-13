@@ -56,7 +56,7 @@ impl SingulrSettings {
         let api_base = api_base.trim().trim_end_matches('/').to_owned();
         if let Ok(url) = Url::parse(&api_base)
             && url.scheme() == "http"
-            && !is_local_host(url.host_str())
+            && !matches!(url.host_str(), Some(host) if LOCAL_HOSTS.contains(&host))
         {
             return Err(SettingsError::PlainHttp { api_base });
         }
@@ -90,10 +90,6 @@ impl SingulrSettings {
             timeout,
         })
     }
-}
-
-fn is_local_host(host: Option<&str>) -> bool {
-    host.is_some_and(|host| LOCAL_HOSTS.contains(&host))
 }
 
 // an explicit value is used as given; only an absent one reads the environment, where an empty value counts as unset

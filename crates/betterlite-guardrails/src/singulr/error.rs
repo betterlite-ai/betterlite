@@ -34,12 +34,6 @@ pub enum SingulrError {
 }
 
 impl SingulrError {
-    // LiteLLM sets blocked_content only when the guardrail reached a verdict
-    #[must_use]
-    pub const fn blocked_content(&self) -> bool {
-        matches!(self, Self::Blocked { .. })
-    }
-
     // The body stays out of the log; LiteLLM logs the status and the exception text, not the payload
     pub fn log(&self) {
         match self {

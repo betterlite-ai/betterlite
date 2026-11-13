@@ -1,5 +1,8 @@
 use rstest::rstest;
 
+const KEPT_CALL: &str =
+    r#"[{"id": "call-1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]"#;
+
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::singulr::SingulrLoggingObject;
 use crate::singulr::is_mcp_call;
@@ -339,49 +342,43 @@ fn no_metadata_field_keeps_the_metadata_null() {
 }
 
 #[rstest]
-#[case::missing_id(r#"{"function": {"name": "f", "arguments": "{}"}}"#)]
-#[case::empty_id(r#"{"id": "", "function": {"name": "f", "arguments": "{}"}}"#)]
-#[case::numeric_id(r#"{"id": 5, "function": {"name": "f", "arguments": "{}"}}"#)]
-#[case::missing_function(r#"{"id": "call-1"}"#)]
-#[case::missing_name(r#"{"id": "call-1", "function": {"arguments": "{}"}}"#)]
-#[case::empty_name(r#"{"id": "call-1", "function": {"name": "", "arguments": "{}"}}"#)]
-#[case::missing_arguments(r#"{"id": "call-1", "function": {"name": "f"}}"#)]
-#[case::null_arguments(r#"{"id": "call-1", "function": {"name": "f", "arguments": null}}"#)]
-#[case::not_an_object("\"call-1\"")]
-fn a_tool_call_without_its_parts_is_dropped(#[case] tool_call: &str) {
-    let body = format!(r#"{{"texts": ["x"], "tool_calls": [{tool_call}]}}"#);
-    let payload = sent(&body, "{}", GuardrailInputType::Response, false);
-    assert_eq!(
-        support::encoded(&payload),
-        support::json_value(
-            r#"{"correlation_id": null, "model_name": null, "model_provider_name": null,
-                "guardrail_scope": "response", "messages": null, "images": null, "tools": null,
-                "response": {"role": "assistant", "content": "x", "tool_calls": []},
-                "metadata": null}"#
-        )
-    );
-}
-
-#[rstest]
-#[case::missing_type(r#"{"id": "call-1", "function": {"name": "f", "arguments": "{}"}}"#)]
-#[case::empty_type(r#"{"id": "call-1", "type": "", "function": {"name": "f", "arguments": "{}"}}"#)]
-#[case::numeric_type(
-    r#"{"id": "call-1", "type": 5, "function": {"name": "f", "arguments": "{}"}}"#
+#[case::missing_id(r#"{"function": {"name": "f", "arguments": "{}"}}"#, "[]")]
+#[case::empty_id(r#"{"id": "", "function": {"name": "f", "arguments": "{}"}}"#, "[]")]
+#[case::numeric_id(r#"{"id": 5, "function": {"name": "f", "arguments": "{}"}}"#, "[]")]
+#[case::missing_function(r#"{"id": "call-1"}"#, "[]")]
+#[case::missing_name(r#"{"id": "call-1", "function": {"arguments": "{}"}}"#, "[]")]
+#[case::empty_name(
+    r#"{"id": "call-1", "function": {"name": "", "arguments": "{}"}}"#,
+    "[]"
 )]
-fn a_tool_call_without_a_usable_type_defaults_to_function(#[case] tool_call: &str) {
+#[case::missing_arguments(r#"{"id": "call-1", "function": {"name": "f"}}"#, "[]")]
+#[case::null_arguments(
+    r#"{"id": "call-1", "function": {"name": "f", "arguments": null}}"#,
+    "[]"
+)]
+#[case::not_an_object("\"call-1\"", "[]")]
+#[case::missing_type(
+    r#"{"id": "call-1", "function": {"name": "f", "arguments": "{}"}}"#,
+    KEPT_CALL
+)]
+#[case::empty_type(
+    r#"{"id": "call-1", "type": "", "function": {"name": "f", "arguments": "{}"}}"#,
+    KEPT_CALL
+)]
+#[case::numeric_type(
+    r#"{"id": "call-1", "type": 5, "function": {"name": "f", "arguments": "{}"}}"#,
+    KEPT_CALL
+)]
+fn a_tool_call_is_normalized_or_dropped(#[case] tool_call: &str, #[case] tool_calls: &str) {
     let body = format!(r#"{{"texts": ["x"], "tool_calls": [{tool_call}]}}"#);
     let payload = sent(&body, "{}", GuardrailInputType::Response, false);
-    assert_eq!(
-        support::encoded(&payload),
-        support::json_value(
-            r#"{"correlation_id": null, "model_name": null, "model_provider_name": null,
-                "guardrail_scope": "response", "messages": null, "images": null, "tools": null,
-                "response": {"role": "assistant", "content": "x",
-                             "tool_calls": [{"id": "call-1", "type": "function",
-                                             "function": {"name": "f", "arguments": "{}"}}]},
-                "metadata": null}"#
-        )
+    let expected = format!(
+        r#"{{"correlation_id": null, "model_name": null, "model_provider_name": null,
+            "guardrail_scope": "response", "messages": null, "images": null, "tools": null,
+            "response": {{"role": "assistant", "content": "x", "tool_calls": {tool_calls}}},
+            "metadata": null}}"#
     );
+    assert_eq!(support::encoded(&payload), support::json_value(&expected));
 }
 
 #[test]

@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use super::RequestData;
 use super::metadata;
-use super::text_field;
+use super::text_value;
 use super::tool_calls;
 use crate::generic_guardrail_contracts::{
     GuardrailInputType, GuardrailMessage, GuardrailToolParam,
@@ -78,7 +78,24 @@ pub(super) fn build(
     match input_type {
         GuardrailInputType::Request if mcp => Some(SingulrPayload::Mcp(mcp_request(request_data))),
         GuardrailInputType::Request => chat_request(inputs, request_data),
-        GuardrailInputType::Response if mcp => mcp_response(inputs, request_data),
+        GuardrailInputType::Response if mcp => {
+            let texts = inputs.texts.as_deref().unwrap_or_default();
+            if texts.is_empty() {
+                return None;
+            }
+            Some(SingulrPayload::Mcp(McpPayload {
+                model_name: request_data
+                    .get("model")
+                    .and_then(text_value)
+                    .map(str::to_owned),
+                guardrail_scope: MCP_RESPONSE_SCOPE,
+                tool_name: None,
+                tool_arguments: GuardrailValue::Null,
+                mcp_server_name: None,
+                tool_result: Some(texts.to_vec()),
+                metadata: metadata::build(request_data),
+            }))
+        }
         GuardrailInputType::Response => {
             Some(SingulrPayload::Chat(chat_response(inputs, request_data)))
         }
@@ -99,7 +116,10 @@ fn chat_request(inputs: &GuardrailApiInputs, request_data: &RequestData) -> Opti
         return None;
     }
     Some(SingulrPayload::Chat(ChatPayload {
-        correlation_id: call_id(request_data),
+        correlation_id: request_data
+            .get("litellm_call_id")
+            .and_then(text_value)
+            .map(str::to_owned),
         model_name: inputs.model.clone(),
         model_provider_name: None,
         guardrail_scope: REQUEST_SCOPE,
@@ -122,8 +142,14 @@ fn chat_response(inputs: &GuardrailApiInputs, request_data: &RequestData) -> Cha
         .filter_map(tool_calls::convert)
         .collect();
     ChatPayload {
-        correlation_id: call_id(request_data),
-        model_name: text_field(request_data, "model").map(str::to_owned),
+        correlation_id: request_data
+            .get("litellm_call_id")
+            .and_then(text_value)
+            .map(str::to_owned),
+        model_name: request_data
+            .get("model")
+            .and_then(text_value)
+            .map(str::to_owned),
         model_provider_name: None,
         guardrail_scope: RESPONSE_SCOPE,
         messages: request_data
@@ -152,34 +178,19 @@ fn mcp_request(request_data: &RequestData) -> McpPayload {
     McpPayload {
         model_name: None,
         guardrail_scope: MCP_REQUEST_SCOPE,
-        tool_name: text_field(request_data, "mcp_tool_name")
-            .or_else(|| text_field(request_data, "name"))
+        tool_name: request_data
+            .get("mcp_tool_name")
+            .and_then(text_value)
+            .or_else(|| request_data.get("name").and_then(text_value))
             .map(str::to_owned),
         tool_arguments,
-        mcp_server_name: text_field(request_data, "mcp_server_name").map(str::to_owned),
+        mcp_server_name: request_data
+            .get("mcp_server_name")
+            .and_then(text_value)
+            .map(str::to_owned),
         tool_result: None,
         metadata: metadata::build(request_data),
     }
-}
-
-fn mcp_response(inputs: &GuardrailApiInputs, request_data: &RequestData) -> Option<SingulrPayload> {
-    let texts = inputs.texts.as_deref().unwrap_or_default();
-    if texts.is_empty() {
-        return None;
-    }
-    Some(SingulrPayload::Mcp(McpPayload {
-        model_name: text_field(request_data, "model").map(str::to_owned),
-        guardrail_scope: MCP_RESPONSE_SCOPE,
-        tool_name: None,
-        tool_arguments: GuardrailValue::Null,
-        mcp_server_name: None,
-        tool_result: Some(texts.to_vec()),
-        metadata: metadata::build(request_data),
-    }))
-}
-
-fn call_id(request_data: &RequestData) -> Option<String> {
-    text_field(request_data, "litellm_call_id").map(str::to_owned)
 }
 
 fn message_value(message: &GuardrailMessage) -> GuardrailValue {
