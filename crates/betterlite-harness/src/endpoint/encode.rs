@@ -33,14 +33,18 @@ pub fn stream_trailer(route: &str) -> Option<&'static [u8]> {
 }
 
 pub fn encode_chunk(route: &str, chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    match route {
-        ROUTE_MESSAGES => encode_anthropic(chunk),
-        ROUTE_CHAT => encode_chat(chunk),
-        ROUTE_RESPONSES => encode_responses(chunk),
-        _ => Err(EncodeError::UnknownRoute {
-            route: route.to_owned(),
-        }),
+    if route == ROUTE_MESSAGES {
+        return encode_anthropic(chunk);
     }
+    if route == ROUTE_CHAT {
+        return encode_chat(chunk);
+    }
+    if route == ROUTE_RESPONSES {
+        return encode_responses(chunk);
+    }
+    Err(EncodeError::UnknownRoute {
+        route: route.to_owned(),
+    })
 }
 
 fn encode_anthropic(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
