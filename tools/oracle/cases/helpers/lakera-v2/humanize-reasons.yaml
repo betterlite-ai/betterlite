@@ -1,0 +1,11 @@
+kind: helper
+name: humanize-reasons
+call:
+  b8522:
+    function: humanize_lakera_block_reasons
+    breakdown:
+      - {detector_type: pii/credit_card, detected: true}
+      - {detector_type: prompt_attack/jailbreak, detected: true}
+      - {detector_type: moderated_content/hate, detected: false}
+env: {}
+compare: {ignore: []}
