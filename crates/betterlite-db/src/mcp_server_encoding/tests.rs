@@ -27,6 +27,8 @@ use crate::managed_resource_rows::mcp::{McpEnvVar, McpEnvVarScope};
 use crate::mcp_stored_contracts::{JsonValue, MCPAuth};
 use crate::stored_cipher::DbCipher;
 
+mod warnings;
+
 const SALT: &str = "test-salt";
 const NONCE: [u8; 24] = [9; 24];
 
