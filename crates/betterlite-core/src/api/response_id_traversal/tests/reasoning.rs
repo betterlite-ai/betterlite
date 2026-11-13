@@ -75,6 +75,8 @@ fn summary_readability(#[case] summary: Record, #[case] readable: bool) {
 #[case::non_reasoning_type(dict(vec![("type", text("message")), ("encrypted_content", text("cipher"))]))]
 #[case::missing_type(dict(vec![("encrypted_content", text("cipher"))]))]
 #[case::empty_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", text(""))]))]
+#[case::empty_mapping_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", dict(vec![]))]))]
+#[case::empty_list_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", list(vec![]))]))]
 #[case::null_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", null())]))]
 #[case::missing_cipher(dict(vec![("type", text("reasoning"))]))]
 fn keeps_items_that_are_not_encrypted_reasoning(#[case] item: Record) {
