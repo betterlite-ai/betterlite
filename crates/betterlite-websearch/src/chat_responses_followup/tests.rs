@@ -12,6 +12,7 @@
         reason = "the fixtures state the provider JSON LiteLLM hands the builders, and each test reads as one scenario"
     )
 )]
+mod port;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
