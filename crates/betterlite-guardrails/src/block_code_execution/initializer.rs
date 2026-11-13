@@ -25,7 +25,7 @@ pub const DEFAULT_ACTION: BlockCodeAction = BlockCodeAction::Block;
 
 pub const DEFAULT_CONFIDENCE_THRESHOLD: f64 = 0.5;
 
-pub const DEFAULT_DETECT_EXECUTION_INTENT: bool = true;
+pub const DEFAULT_EXECUTION_INTENT: bool = true;
 
 #[derive(Debug, Error)]
 pub enum InitializerError {
@@ -113,9 +113,13 @@ pub fn initialize_guardrail(
             blocked_languages: blocked_languages(params)?,
             action: action(params)?,
             confidence_threshold: confidence_threshold(params)?,
-            detect_execution_intent: detect_execution_intent(params)?,
+            detect_execution_intent: read_flag(
+                params,
+                ParamKey::DetectExecutionIntent,
+                DEFAULT_EXECUTION_INTENT,
+            )?,
             event_hook: Some(event_hook(params)?),
-            default_on: default_on(params),
+            default_on: read_flag(params, ParamKey::DefaultOn, false)?,
             clock: SystemTime::now,
         },
         strict_modes,
@@ -187,19 +191,25 @@ fn confidence_threshold(params: &LitellmParams) -> Result<f64, InitializerError>
     }
 }
 
-fn detect_execution_intent(params: &LitellmParams) -> Result<bool, InitializerError> {
-    match get_param(params, ParamKey::DetectExecutionIntent) {
-        None | Some(GuardrailValue::Null) => Ok(DEFAULT_DETECT_EXECUTION_INTENT),
-        Some(GuardrailValue::Boolean(value)) => Ok(value),
-        Some(
-            GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        ) => Err(InitializerError::InvalidParam {
-            field: ParamKey::DetectExecutionIntent.name().to_owned(),
+// LiteLLM's bool(_get_param(...)) reads with a default: an absent or null key takes the fallback
+fn read_flag(
+    params: &LitellmParams,
+    key: ParamKey,
+    fallback: bool,
+) -> Result<bool, InitializerError> {
+    let Some(value) = get_param(params, key) else {
+        return Ok(fallback);
+    };
+    match value {
+        GuardrailValue::Null => Ok(fallback),
+        GuardrailValue::Boolean(value) => Ok(value),
+        GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => Err(InitializerError::InvalidParam {
+            field: key.name().to_owned(),
         }),
     }
 }
@@ -211,22 +221,6 @@ fn event_hook(params: &LitellmParams) -> Result<EventHookSelection, InitializerE
         LitellmParamsMode::Tagged(_mode) => Err(InitializerError::InvalidParam {
             field: ParamKey::Mode.name().to_owned(),
         }),
-    }
-}
-
-fn default_on(params: &LitellmParams) -> bool {
-    match get_param(params, ParamKey::DefaultOn) {
-        Some(GuardrailValue::Boolean(value)) => value,
-        Some(
-            GuardrailValue::Null
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        )
-        | None => false,
     }
 }
 
