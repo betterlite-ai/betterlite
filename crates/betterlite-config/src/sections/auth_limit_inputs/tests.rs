@@ -15,39 +15,27 @@ fn settings(source: &str) -> Result<Settings, ConfigError> {
     .map(|config| config.sections.auth_limit_inputs)
 }
 
-fn integer(value: Option<&Json>) -> Option<i64> {
-    match value {
-        Some(Json::Number(number)) => number.as_i64(),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Text(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_))
-        | None => None,
-    }
+#[derive(Debug, PartialEq)]
+enum Scalar<'json> {
+    Integer(i64),
+    Float(f64),
+    Text(&'json str),
+    Other,
 }
 
-fn float(value: Option<&Json>) -> Option<f64> {
+fn scalar(value: Option<&Json>) -> Scalar<'_> {
     match value {
-        Some(Json::Number(number)) => number.as_f64(),
+        Some(Json::Number(number)) => match (number.as_i64(), number.as_f64()) {
+            (Some(integer), _) => Scalar::Integer(integer),
+            (None, Some(float)) => Scalar::Float(float),
+            (None, None) => Scalar::Other,
+        },
+        Some(Json::Text(text)) => Scalar::Text(text.as_str()),
         Some(Json::Null)
         | Some(Json::Bool(_))
-        | Some(Json::Text(_))
         | Some(Json::List(_))
         | Some(Json::Object(_))
-        | None => None,
-    }
-}
-
-fn text(value: Option<&Json>) -> Option<&str> {
-    match value {
-        Some(Json::Text(text)) => Some(text.as_str()),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Number(_))
-        | Some(Json::List(_))
-        | Some(Json::Object(_))
-        | None => None,
+        | None => Scalar::Other,
     }
 }
 
@@ -80,36 +68,36 @@ model_list:
         }
     );
     assert_eq!(
-        integer(loaded.deployments[0].default_api_key_rpm_limit.as_ref()),
-        Some(10)
+        scalar(loaded.deployments[0].default_api_key_rpm_limit.as_ref()),
+        Scalar::Integer(10)
     );
     assert_eq!(
-        integer(loaded.deployments[0].default_api_key_tpm_limit.as_ref()),
-        Some(100)
+        scalar(loaded.deployments[0].default_api_key_tpm_limit.as_ref()),
+        Scalar::Integer(100)
     );
     assert_eq!(
-        text(loaded.deployments[1].default_api_key_rpm_limit.as_ref()),
-        Some("20")
+        scalar(loaded.deployments[1].default_api_key_rpm_limit.as_ref()),
+        Scalar::Text("20")
     );
     assert_eq!(
-        integer(loaded.deployments[1].default_api_key_tpm_limit.as_ref()),
-        None
+        scalar(loaded.deployments[1].default_api_key_tpm_limit.as_ref()),
+        Scalar::Other
     );
     assert_eq!(
-        integer(loaded.deployments[2].default_api_key_rpm_limit.as_ref()),
-        None
+        scalar(loaded.deployments[2].default_api_key_rpm_limit.as_ref()),
+        Scalar::Other
     );
     assert_eq!(
-        integer(loaded.deployments[2].default_api_key_tpm_limit.as_ref()),
-        Some(0)
+        scalar(loaded.deployments[2].default_api_key_tpm_limit.as_ref()),
+        Scalar::Integer(0)
     );
     assert_eq!(
-        text(loaded.deployments[3].default_api_key_rpm_limit.as_ref()),
-        Some("not-a-number")
+        scalar(loaded.deployments[3].default_api_key_rpm_limit.as_ref()),
+        Scalar::Text("not-a-number")
     );
     assert_eq!(
-        float(loaded.deployments[3].default_api_key_tpm_limit.as_ref()),
-        Some(1.5)
+        scalar(loaded.deployments[3].default_api_key_tpm_limit.as_ref()),
+        Scalar::Float(1.5)
     );
     assert_eq!(loaded.deployments[4].default_api_key_rpm_limit, None);
     assert_eq!(loaded.deployments[5].default_api_key_rpm_limit, None);

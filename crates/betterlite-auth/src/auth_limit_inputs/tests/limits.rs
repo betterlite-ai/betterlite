@@ -5,13 +5,10 @@ use rstest::rstest;
 
 use crate::auth_limit_inputs::deployment::DeploymentLimitValue;
 use crate::auth_limit_inputs::error::AuthLimitInputsError;
-use crate::auth_limit_inputs::key_limits::{
-    ModelRateLimitKey, get_key_model_rpm_limit, get_key_model_tpm_limit,
-    get_key_own_model_rate_limit,
-};
+use crate::auth_limit_inputs::key_limits::{ModelRateLimitKey, get_key_own_model_rate_limit};
 use crate::auth_limit_inputs::metadata_limits::{
-    MetadataAccessor, get_key_mcp_rpm_limit, get_key_tag_rpm_limit,
-    get_model_rate_limit_from_metadata, get_team_mcp_rpm_limit,
+    MetadataAccessor, get_key_mcp_rpm_limit, get_key_tag_rpm_limit, get_team_mcp_rpm_limit,
+    model_limit_from_metadata,
 };
 use crate::auth_limit_inputs::tests::support;
 
@@ -42,7 +39,7 @@ fn key_metadata_truthy_first() {
             None,
         )],
     );
-    let limits = get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&catalog)).unwrap();
+    let limits = support::model_limits(&auth, Some("gpt-4"), Some(&catalog), true).unwrap();
     assert_eq!(limits, Some(support::limits(&[("gpt-4", 10)])));
 }
 
@@ -55,7 +52,7 @@ fn empty_key_map_falls_through() {
             limit_field("model_rpm_limit", &[("gpt-4", 7)]),
         ),
     ]);
-    let limits = get_key_model_rpm_limit(&auth, Some("gpt-4"), None).unwrap();
+    let limits = support::model_limits(&auth, Some("gpt-4"), None, true).unwrap();
     assert_eq!(limits, Some(support::limits(&[("gpt-4", 7)])));
 }
 
@@ -75,9 +72,9 @@ fn budget_nested_dict_nonnull() {
             ("other", support::text("not-a-dict")),
         ]),
     )]);
-    let rpm = get_key_model_rpm_limit(&auth, Some("gpt-4"), None).unwrap();
+    let rpm = support::model_limits(&auth, Some("gpt-4"), None, true).unwrap();
     assert_eq!(rpm, Some(support::limits(&[("gpt-4", 5)])));
-    let tpm = get_key_model_tpm_limit(&auth, Some("gpt-4"), None).unwrap();
+    let tpm = support::tpm_limits(&auth, Some("gpt-4"), None).unwrap();
     assert_eq!(tpm, None);
 }
 
@@ -91,7 +88,7 @@ fn team_empty_map_wins() {
             None,
         )],
     );
-    let limits = get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&catalog)).unwrap();
+    let limits = support::model_limits(&auth, Some("gpt-4"), Some(&catalog), true).unwrap();
     assert_eq!(limits, Some(BTreeMap::new()));
 }
 
@@ -112,9 +109,9 @@ fn deployment_minimum() {
             support::deployment(None, None),
         ],
     );
-    let rpm = get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&catalog)).unwrap();
+    let rpm = support::model_limits(&auth, Some("gpt-4"), Some(&catalog), true).unwrap();
     assert_eq!(rpm, Some(support::limits(&[("gpt-4", 4)])));
-    let tpm = get_key_model_tpm_limit(&auth, Some("gpt-4"), Some(&catalog)).unwrap();
+    let tpm = support::tpm_limits(&auth, Some("gpt-4"), Some(&catalog)).unwrap();
     assert_eq!(tpm, Some(support::limits(&[("gpt-4", 7)])));
 }
 
@@ -122,12 +119,12 @@ fn deployment_minimum() {
 fn absent_router_or_models() {
     let auth = support::auth(&[]);
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), None).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), None, true).unwrap(),
         None
     );
     let absent = support::no_router();
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&absent)).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), Some(&absent), true).unwrap(),
         None
     );
     let other_model = support::catalog(
@@ -138,16 +135,16 @@ fn absent_router_or_models() {
         )],
     );
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&other_model)).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), Some(&other_model), true).unwrap(),
         None
     );
     let unset = support::catalog("gpt-4", vec![support::deployment(None, None)]);
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&unset)).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), Some(&unset), true).unwrap(),
         None
     );
     assert_eq!(
-        get_key_model_rpm_limit(&auth, None, Some(&other_model)).unwrap(),
+        support::model_limits(&auth, None, Some(&other_model), true).unwrap(),
         None
     );
 }
@@ -161,7 +158,7 @@ fn absent_router_or_models() {
 #[case::unsigned(DeploymentLimitValue::Unsigned(12), 12)]
 fn integer_string_bytes_bool(value: DeploymentLimitValue, expected: i64) {
     let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
-    let limits = get_key_model_rpm_limit(&support::auth(&[]), Some("gpt-4"), Some(&catalog));
+    let limits = support::model_limits(&support::auth(&[]), Some("gpt-4"), Some(&catalog), true);
     assert_eq!(
         limits.unwrap(),
         Some(support::limits(&[("gpt-4", expected)]))
@@ -182,7 +179,7 @@ fn decimal_truncation(value: f64, expected: i64) {
             None,
         )],
     );
-    let limits = get_key_model_rpm_limit(&support::auth(&[]), Some("gpt-4"), Some(&catalog));
+    let limits = support::model_limits(&support::auth(&[]), Some("gpt-4"), Some(&catalog), true);
     assert_eq!(
         limits.unwrap(),
         Some(support::limits(&[("gpt-4", expected)]))
@@ -201,7 +198,7 @@ fn malformed_limit_skipped() {
         ],
     );
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&catalog)).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), Some(&catalog), true).unwrap(),
         None
     );
     let mixed = support::catalog(
@@ -212,7 +209,7 @@ fn malformed_limit_skipped() {
         ],
     );
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), Some(&mixed)).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), Some(&mixed), true).unwrap(),
         Some(support::limits(&[("gpt-4", 5)]))
     );
 }
@@ -222,7 +219,7 @@ fn malformed_limit_skipped() {
 #[case::unsigned_too_large(DeploymentLimitValue::Unsigned(u64::MAX))]
 fn overflow_propagates(value: DeploymentLimitValue) {
     let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
-    let failure = get_key_model_rpm_limit(&support::auth(&[]), Some("gpt-4"), Some(&catalog));
+    let failure = support::model_limits(&support::auth(&[]), Some("gpt-4"), Some(&catalog), true);
     assert!(matches!(
         failure.unwrap_err(),
         AuthLimitInputsError::LimitOverflow { .. }
@@ -238,7 +235,8 @@ fn zero_negative_kept() {
             support::deployment(Some(DeploymentLimitValue::Integer(-5)), None),
         ],
     );
-    let deployment = get_key_model_rpm_limit(&support::auth(&[]), Some("gpt-4"), Some(&catalog));
+    let deployment =
+        support::model_limits(&support::auth(&[]), Some("gpt-4"), Some(&catalog), true);
     assert_eq!(deployment.unwrap(), Some(support::limits(&[("gpt-4", -5)])));
     let metadata = support::auth(&[("metadata", limit_field("model_rpm_limit", &[("gpt-4", 0)]))]);
     let key = get_key_own_model_rate_limit(&metadata, ModelRateLimitKey::Rpm);
@@ -251,7 +249,7 @@ fn returned_map_not_model_filtered() {
         "metadata",
         limit_field("model_rpm_limit", &[("gpt-4", 10), ("gpt-3", 5)]),
     )]);
-    let limits = get_key_model_rpm_limit(&auth, Some("gpt-4"), None).unwrap();
+    let limits = support::model_limits(&auth, Some("gpt-4"), None, true).unwrap();
     assert_eq!(
         limits,
         Some(support::limits(&[("gpt-4", 10), ("gpt-3", 5)]))
@@ -269,7 +267,7 @@ fn returned_map_not_model_filtered() {
             ),
         ]),
     )]);
-    let limits = get_key_model_rpm_limit(&budget, Some("gpt-4"), None).unwrap();
+    let limits = support::model_limits(&budget, Some("gpt-4"), None, true).unwrap();
     assert_eq!(
         limits,
         Some(support::limits(&[("gpt-4", 10), ("gpt-3", 5)]))
@@ -297,41 +295,37 @@ fn tenant_accessor_fields() {
             limit_field("model_tpm_limit", &[("gpt-4", 6)]),
         ),
     ]);
-    let team =
-        get_model_rate_limit_from_metadata(&auth, MetadataAccessor::Team, ModelRateLimitKey::Rpm);
+    let team = model_limit_from_metadata(&auth, MetadataAccessor::Team, ModelRateLimitKey::Rpm);
     assert_eq!(team, Some(support::limits(&[("gpt-4", 1)])));
-    let org_rpm = get_model_rate_limit_from_metadata(
+    let org_rpm = model_limit_from_metadata(
         &auth,
         MetadataAccessor::Organization,
         ModelRateLimitKey::Rpm,
     );
     assert_eq!(org_rpm, Some(support::limits(&[("gpt-4", 2)])));
-    let org_itpm = get_model_rate_limit_from_metadata(
+    let org_itpm = model_limit_from_metadata(
         &auth,
         MetadataAccessor::Organization,
         ModelRateLimitKey::Itpm,
     );
     assert_eq!(org_itpm, Some(support::limits(&[("gpt-4", 4)])));
-    let org_otpm = get_model_rate_limit_from_metadata(
+    let org_otpm = model_limit_from_metadata(
         &auth,
         MetadataAccessor::Organization,
         ModelRateLimitKey::Otpm,
     );
     assert_eq!(org_otpm, Some(support::limits(&[("gpt-4", 5)])));
-    let project = get_model_rate_limit_from_metadata(
-        &auth,
-        MetadataAccessor::Project,
-        ModelRateLimitKey::Tpm,
-    );
+    let project =
+        model_limit_from_metadata(&auth, MetadataAccessor::Project, ModelRateLimitKey::Tpm);
     assert_eq!(project, Some(support::limits(&[("gpt-4", 6)])));
     let absent = support::auth(&[]);
     assert_eq!(
-        get_model_rate_limit_from_metadata(&absent, MetadataAccessor::Team, ModelRateLimitKey::Rpm),
+        model_limit_from_metadata(&absent, MetadataAccessor::Team, ModelRateLimitKey::Rpm),
         None
     );
     let empty = support::auth(&[("team_metadata", support::object(&[]))]);
     assert_eq!(
-        get_model_rate_limit_from_metadata(&empty, MetadataAccessor::Team, ModelRateLimitKey::Rpm),
+        model_limit_from_metadata(&empty, MetadataAccessor::Team, ModelRateLimitKey::Rpm),
         None
     );
     let missing = support::auth(&[(
@@ -339,11 +333,7 @@ fn tenant_accessor_fields() {
         limit_field("model_rpm_limit", &[("gpt-4", 1)]),
     )]);
     assert_eq!(
-        get_model_rate_limit_from_metadata(
-            &missing,
-            MetadataAccessor::Project,
-            ModelRateLimitKey::Tpm
-        ),
+        model_limit_from_metadata(&missing, MetadataAccessor::Project, ModelRateLimitKey::Tpm),
         None
     );
 }
@@ -406,10 +396,10 @@ fn tag_key_only() {
 #[test]
 fn model_tpm_reader_uses_tpm_field() {
     let auth = support::auth(&[("metadata", limit_field("model_tpm_limit", &[("gpt-4", 11)]))]);
-    let limits = get_key_model_tpm_limit(&auth, Some("gpt-4"), None).unwrap();
+    let limits = support::tpm_limits(&auth, Some("gpt-4"), None).unwrap();
     assert_eq!(limits, Some(support::limits(&[("gpt-4", 11)])));
     assert_eq!(
-        get_key_model_rpm_limit(&auth, Some("gpt-4"), None).unwrap(),
+        support::model_limits(&auth, Some("gpt-4"), None, true).unwrap(),
         None
     );
 }

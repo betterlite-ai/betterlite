@@ -5,7 +5,7 @@ use crate::resolved_key::auth::UserAPIKeyAuth;
 // The caller identity and organization ceilings the rate-limit descriptor builders key their counters by.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct AccountLimits<'auth> {
-    pub api_key: Option<&'auth str>,
+    pub hashed_api_key: Option<&'auth str>,
     pub org_id: Option<&'auth str>,
     pub team_id: Option<&'auth str>,
     pub project_id: Option<&'auth str>,
@@ -17,7 +17,7 @@ impl UserAPIKeyAuth {
     #[must_use]
     pub fn account_limits(&self) -> AccountLimits<'_> {
         AccountLimits {
-            api_key: self
+            hashed_api_key: self
                 .extra
                 .api_key
                 .0

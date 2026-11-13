@@ -11,38 +11,38 @@ use crate::user_roles::UserRole;
 use super::error::{AuthLimitInputsError, ManagementEntity};
 
 pub const ESTIMATED_OUTPUT_TOKENS_FIELD: &str = "default_estimated_output_tokens";
-pub const ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD: &str =
-    "default_estimated_output_tokens_per_model";
+pub const ESTIMATE_PER_MODEL_FIELD: &str = "default_estimated_output_tokens_per_model";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
-#[serde(rename_all = "snake_case")]
 pub enum OutputTokenEstimateField {
+    #[serde(rename = "metadata")]
     Metadata,
-    DefaultEstimatedOutputTokens,
-    DefaultEstimatedOutputTokensPerModel,
+    #[serde(rename = "default_estimated_output_tokens")]
+    Estimate,
+    #[serde(rename = "default_estimated_output_tokens_per_model")]
+    EstimatePerModel,
 }
 
 // The request members the admin gate reads, with model_fields_set saying which ones the caller sent.
 #[derive(Clone, Copy, Debug)]
 pub struct OutputTokenEstimateRequest<'request> {
     pub metadata: Option<&'request BTreeMap<String, JsonData>>,
-    pub default_estimated_output_tokens: Option<i64>,
-    pub default_estimated_output_tokens_per_model: Option<&'request BTreeMap<String, i64>>,
+    pub estimate: Option<i64>,
+    pub estimate_per_model: Option<&'request BTreeMap<String, i64>>,
     pub model_fields_set: &'request BTreeSet<OutputTokenEstimateField>,
 }
 
 #[must_use]
 pub fn get_estimated_output_tokens(auth: &UserAPIKeyAuth, model_name: Option<&str>) -> Option<i64> {
-    let key_estimate =
-        estimated_output_tokens_from_metadata(&auth.view.token.metadata.0, model_name);
+    let key_estimate = estimate_from_metadata(&auth.view.token.metadata.0, model_name);
     if key_estimate.is_some() {
         return key_estimate;
     }
     let team_metadata = auth.view.team_metadata.as_ref()?;
-    estimated_output_tokens_from_metadata(&team_metadata.0, model_name)
+    estimate_from_metadata(&team_metadata.0, model_name)
 }
 
-pub fn enforce_output_token_estimates_are_admin_only(
+pub fn enforce_estimate_admin_only(
     request: &OutputTokenEstimateRequest<'_>,
     existing_metadata: Option<&BTreeMap<String, JsonData>>,
     caller: &UserAPIKeyAuth,
@@ -53,34 +53,32 @@ pub fn enforce_output_token_estimates_are_admin_only(
     }
     let empty = BTreeMap::new();
     let stored = existing_metadata.unwrap_or(&empty);
-    let (requested_global, requested_per_model) = requested_output_token_estimates(request, stored);
+    let (requested_global, requested_per_model) = requested_estimates(request, stored);
     let stored_global = stored
         .get(ESTIMATED_OUTPUT_TOKENS_FIELD)
         .and_then(present_value);
-    let stored_per_model = stored
-        .get(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD)
-        .and_then(present_value);
+    let stored_per_model = stored.get(ESTIMATE_PER_MODEL_FIELD).and_then(present_value);
     let unchanged = same_value(requested_global.as_ref(), stored_global.as_ref())
         && same_value(requested_per_model.as_ref(), stored_per_model.as_ref());
     if unchanged {
         return Ok(());
     }
-    Err(AuthLimitInputsError::OutputTokenEstimatesAdminOnly { entity })
+    Err(AuthLimitInputsError::EstimateAdminOnly { entity })
 }
 
-fn estimated_output_tokens_from_metadata(
+fn estimate_from_metadata(
     metadata: &BTreeMap<String, JsonData>,
     model_name: Option<&str>,
 ) -> Option<i64> {
     let declares_estimate = metadata.contains_key(ESTIMATED_OUTPUT_TOKENS_FIELD)
-        || metadata.contains_key(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD);
+        || metadata.contains_key(ESTIMATE_PER_MODEL_FIELD);
     if !declares_estimate {
         return None;
     }
     if let Some(requested) = model_name {
-        let per_model = match metadata.get(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD) {
+        let per_model = match metadata.get(ESTIMATE_PER_MODEL_FIELD) {
             None | Some(JsonData::Null) => None,
-            Some(raw) => validated_output_token_estimates_per_model(raw),
+            Some(raw) => validated_estimates(raw),
         };
         if let Some(estimate) = per_model.as_ref().and_then(|limits| limits.get(requested)) {
             return Some(*estimate);
@@ -88,11 +86,11 @@ fn estimated_output_tokens_from_metadata(
     }
     match metadata.get(ESTIMATED_OUTPUT_TOKENS_FIELD) {
         None | Some(JsonData::Null) => None,
-        Some(raw) => validated_output_token_estimate(raw),
+        Some(raw) => validated_estimate(raw),
     }
 }
 
-fn validated_output_token_estimate(raw: &JsonData) -> Option<i64> {
+fn validated_estimate(raw: &JsonData) -> Option<i64> {
     match positive_int(raw) {
         Some(estimate) => Some(estimate),
         None => {
@@ -102,15 +100,15 @@ fn validated_output_token_estimate(raw: &JsonData) -> Option<i64> {
     }
 }
 
-fn validated_output_token_estimates_per_model(raw: &JsonData) -> Option<BTreeMap<String, i64>> {
+fn validated_estimates(raw: &JsonData) -> Option<BTreeMap<String, i64>> {
     let JsonData::Object(fields) = raw else {
-        warn_ignored(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD);
+        warn_ignored(ESTIMATE_PER_MODEL_FIELD);
         return None;
     };
     let mut estimates = BTreeMap::new();
     for (model, value) in fields {
         let Some(estimate) = positive_int(value) else {
-            warn_ignored(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD);
+            warn_ignored(ESTIMATE_PER_MODEL_FIELD);
             return None;
         };
         estimates.insert(model.clone(), estimate);
@@ -174,7 +172,7 @@ fn warn_ignored(field: &'static str) {
     );
 }
 
-fn requested_output_token_estimates(
+fn requested_estimates(
     request: &OutputTokenEstimateRequest<'_>,
     existing_metadata: &BTreeMap<String, JsonData>,
 ) -> (Option<JsonData>, Option<JsonData>) {
@@ -187,17 +185,15 @@ fn requested_output_token_estimates(
     } else {
         existing_metadata
     };
-    let global = match request.default_estimated_output_tokens {
+    let global = match request.estimate {
         Some(estimate) => Some(JsonData::Number(Number::from(estimate))),
         None => base
             .get(ESTIMATED_OUTPUT_TOKENS_FIELD)
             .and_then(present_value),
     };
-    let per_model = match request.default_estimated_output_tokens_per_model {
+    let per_model = match request.estimate_per_model {
         Some(estimates) => Some(estimate_map_value(estimates)),
-        None => base
-            .get(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD)
-            .and_then(present_value),
+        None => base.get(ESTIMATE_PER_MODEL_FIELD).and_then(present_value),
     };
     (global, per_model)
 }

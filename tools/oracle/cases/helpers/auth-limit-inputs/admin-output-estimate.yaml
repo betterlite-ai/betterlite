@@ -5,7 +5,7 @@ call:
     function: enforce_output_estimates
     request:
       model_fields_set: [default_estimated_output_tokens]
-      default_estimated_output_tokens: 1
+      estimate: 1
     existing_metadata:
       default_estimated_output_tokens: 2000
     caller:

@@ -81,9 +81,9 @@ pub(crate) struct OutputEstimateRequestInput {
     #[serde(default)]
     pub(crate) model_fields_set: BTreeSet<OutputTokenEstimateField>,
     #[serde(default)]
-    pub(crate) default_estimated_output_tokens: Option<i64>,
+    pub(crate) estimate: Option<i64>,
     #[serde(default)]
-    pub(crate) default_estimated_output_tokens_per_model: Option<BTreeMap<String, i64>>,
+    pub(crate) estimate_per_model: Option<BTreeMap<String, i64>>,
 }
 
 #[derive(Debug, Deserialize)]

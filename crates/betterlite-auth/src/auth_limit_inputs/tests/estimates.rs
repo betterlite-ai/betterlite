@@ -2,8 +2,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
 use crate::auth_limit_inputs::estimates::{
-    ESTIMATED_OUTPUT_TOKENS_FIELD, ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
-    get_estimated_output_tokens,
+    ESTIMATE_PER_MODEL_FIELD, ESTIMATED_OUTPUT_TOKENS_FIELD, get_estimated_output_tokens,
 };
 use crate::auth_limit_inputs::tests::support;
 
@@ -12,7 +11,7 @@ fn global_metadata(value: JsonData) -> JsonData {
 }
 
 fn per_model_metadata(value: JsonData) -> JsonData {
-    support::object(&[(ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD, value)])
+    support::object(&[(ESTIMATE_PER_MODEL_FIELD, value)])
 }
 
 fn estimate(
@@ -67,7 +66,7 @@ fn any_bad_map_entry_drops_map() {
         "metadata",
         support::object(&[
             (
-                ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
+                ESTIMATE_PER_MODEL_FIELD,
                 support::object(&[
                     ("gpt-4", support::number(5)),
                     ("gpt-3", support::text("bad")),
@@ -78,10 +77,7 @@ fn any_bad_map_entry_drops_map() {
     )]);
     let (estimate, warnings) = estimate(&auth, Some("gpt-4"));
     assert_eq!(estimate, Some(2002));
-    assert_eq!(
-        warnings,
-        vec![ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD.to_owned()]
-    );
+    assert_eq!(warnings, vec![ESTIMATE_PER_MODEL_FIELD.to_owned()]);
 }
 
 #[test]
@@ -90,7 +86,7 @@ fn map_before_global() {
         "metadata",
         support::object(&[
             (
-                ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
+                ESTIMATE_PER_MODEL_FIELD,
                 support::number_object(&[("gpt-4", 3001)]),
             ),
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
@@ -107,7 +103,7 @@ fn no_model_skips_map_validation() {
         "metadata",
         support::object(&[
             (
-                ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
+                ESTIMATE_PER_MODEL_FIELD,
                 support::object(&[("gpt-4", support::text("bad"))]),
             ),
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
@@ -124,7 +120,7 @@ fn malformed_fields_independent() {
         "metadata",
         support::object(&[
             (
-                ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
+                ESTIMATE_PER_MODEL_FIELD,
                 support::object(&[("gpt-4", support::text("bad"))]),
             ),
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
@@ -132,15 +128,12 @@ fn malformed_fields_independent() {
     )]);
     let (estimate, warnings) = estimate(&broken_map, Some("gpt-4"));
     assert_eq!(estimate, Some(2002));
-    assert_eq!(
-        warnings,
-        vec![ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD.to_owned()]
-    );
+    assert_eq!(warnings, vec![ESTIMATE_PER_MODEL_FIELD.to_owned()]);
     let broken_global = support::auth(&[(
         "metadata",
         support::object(&[
             (
-                ESTIMATED_OUTPUT_TOKENS_PER_MODEL_FIELD,
+                ESTIMATE_PER_MODEL_FIELD,
                 support::number_object(&[("gpt-4", 3001)]),
             ),
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(-5)),

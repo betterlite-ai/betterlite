@@ -9,7 +9,7 @@ use crate::user_roles::UserRole;
 use super::error::{AuthLimitInputsError, ManagementEntity};
 use super::estimates::{present_value, same_value};
 
-pub const BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY: &str = "batch_enqueued_token_limit";
+pub const BATCH_LIMIT_KEY: &str = "batch_enqueued_token_limit";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(rename_all = "snake_case")]
@@ -19,13 +19,13 @@ pub enum BatchEnqueuedTokenLimitField {
 
 // The request members the batch admin gate reads, with model_fields_set saying whether metadata was sent.
 #[derive(Clone, Copy, Debug)]
-pub struct BatchEnqueuedTokenLimitRequest<'request> {
+pub struct BatchLimitRequest<'request> {
     pub metadata: Option<&'request BTreeMap<String, JsonData>>,
     pub model_fields_set: &'request BTreeSet<BatchEnqueuedTokenLimitField>,
 }
 
-pub fn enforce_batch_enqueued_token_limit_is_admin_only(
-    request: &BatchEnqueuedTokenLimitRequest<'_>,
+pub fn enforce_batch_admin_only(
+    request: &BatchLimitRequest<'_>,
     existing_metadata: Option<&BTreeMap<String, JsonData>>,
     caller: &UserAPIKeyAuth,
     entity: ManagementEntity,
@@ -43,14 +43,10 @@ pub fn enforce_batch_enqueued_token_limit_is_admin_only(
     } else {
         stored
     };
-    let requested_limit = requested
-        .get(BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY)
-        .and_then(present_value);
-    let stored_limit = stored
-        .get(BATCH_ENQUEUED_TOKEN_LIMIT_METADATA_KEY)
-        .and_then(present_value);
+    let requested_limit = requested.get(BATCH_LIMIT_KEY).and_then(present_value);
+    let stored_limit = stored.get(BATCH_LIMIT_KEY).and_then(present_value);
     if same_value(requested_limit.as_ref(), stored_limit.as_ref()) {
         return Ok(());
     }
-    Err(AuthLimitInputsError::BatchEnqueuedTokenLimitAdminOnly { entity })
+    Err(AuthLimitInputsError::BatchLimitAdminOnly { entity })
 }

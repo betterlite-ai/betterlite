@@ -60,38 +60,45 @@ pub fn get_key_own_model_rate_limit(
     model_max_budget_limits(model_max_budget, rate_limit_key.budget_field())
 }
 
-pub fn get_key_model_rpm_limit(
-    auth: &UserAPIKeyAuth,
-    model_name: Option<&str>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
-) -> Result<Option<ModelLimits>, AuthLimitInputsError> {
-    model_limit_with_deployment_default(auth, model_name, catalog, DeploymentLimit::Rpm)
+// The key, its requested model and the deployment catalog the model default is read from.
+#[derive(Clone, Copy, Debug)]
+pub struct ModelLimitQuery<'query> {
+    pub auth: &'query UserAPIKeyAuth,
+    pub model_name: Option<&'query str>,
+    pub catalog: Option<&'query dyn DeploymentLimitCatalog>,
 }
 
-pub fn get_key_model_tpm_limit(
-    auth: &UserAPIKeyAuth,
-    model_name: Option<&str>,
-    catalog: Option<&dyn DeploymentLimitCatalog>,
-) -> Result<Option<ModelLimits>, AuthLimitInputsError> {
-    model_limit_with_deployment_default(auth, model_name, catalog, DeploymentLimit::Tpm)
+pub type ModelLimitResult = Result<Option<ModelLimits>, AuthLimitInputsError>;
+
+pub fn get_key_model_rpm_limit(query: &ModelLimitQuery<'_>) -> ModelLimitResult {
+    if let Some(limits) = key_or_team_limit(query.auth, ModelRateLimitKey::Rpm) {
+        return Ok(Some(limits));
+    }
+    default_model_limit(query.model_name, query.catalog, DeploymentLimit::Rpm)
 }
 
-fn model_limit_with_deployment_default(
+pub fn get_key_model_tpm_limit(query: &ModelLimitQuery<'_>) -> ModelLimitResult {
+    let Some(limits) = key_or_team_limit(query.auth, ModelRateLimitKey::Tpm) else {
+        return default_model_limit(query.model_name, query.catalog, DeploymentLimit::Tpm);
+    };
+    Ok(Some(limits))
+}
+
+fn key_or_team_limit(
     auth: &UserAPIKeyAuth,
+    rate_limit_key: ModelRateLimitKey,
+) -> Option<ModelLimits> {
+    if let Some(limits) = get_key_own_model_rate_limit(auth, rate_limit_key) {
+        return Some(limits);
+    }
+    team_model_limit(auth, rate_limit_key)
+}
+
+fn default_model_limit(
     model_name: Option<&str>,
     catalog: Option<&dyn DeploymentLimitCatalog>,
     limit: DeploymentLimit,
 ) -> Result<Option<ModelLimits>, AuthLimitInputsError> {
-    let rate_limit_key = match limit {
-        DeploymentLimit::Rpm => ModelRateLimitKey::Rpm,
-        DeploymentLimit::Tpm => ModelRateLimitKey::Tpm,
-    };
-    if let Some(limits) = get_key_own_model_rate_limit(auth, rate_limit_key) {
-        return Ok(Some(limits));
-    }
-    if let Some(limits) = team_model_limit(auth, rate_limit_key) {
-        return Ok(Some(limits));
-    }
     let Some(requested) = model_name else {
         return Ok(None);
     };

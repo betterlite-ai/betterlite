@@ -13,7 +13,27 @@ use tracing_subscriber::registry;
 use crate::auth_limit_inputs::deployment::{
     DeploymentLimitCatalog, DeploymentLimitValue, DeploymentLimits,
 };
+use crate::auth_limit_inputs::key_limits::{
+    ModelLimitQuery, ModelLimitResult, get_key_model_rpm_limit, get_key_model_tpm_limit,
+};
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+
+pub(crate) fn model_limits(
+    auth: &UserAPIKeyAuth,
+    model_name: Option<&str>,
+    catalog: Option<&dyn DeploymentLimitCatalog>,
+    rpm: bool,
+) -> ModelLimitResult {
+    let query = ModelLimitQuery {
+        auth,
+        model_name,
+        catalog,
+    };
+    if rpm {
+        return get_key_model_rpm_limit(&query);
+    }
+    get_key_model_tpm_limit(&query)
+}
 
 pub(crate) fn fields(entries: &[(&str, JsonData)]) -> BTreeMap<String, JsonData> {
     entries
