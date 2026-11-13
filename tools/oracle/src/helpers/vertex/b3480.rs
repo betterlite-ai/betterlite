@@ -49,7 +49,6 @@ pub(crate) struct ErrorCall {
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Record {
     Response,
-    Config,
     Request,
 }
 
@@ -80,10 +79,6 @@ fn construct(record: Record, fields: &Value) -> Result<Value, Box<HelperError>> 
         Record::Response => {
             let response: GenerateContentResponse = serde_json::from_value(fields.clone())?;
             Ok(json!({ "value": serde_json::to_value(&response)? }))
-        }
-        Record::Config => {
-            let config: GenerateContentConfigDict = serde_json::from_value(fields.clone())?;
-            Ok(json!({ "value": config }))
         }
         Record::Request => {
             let request: GenerateContentRequestDict = serde_json::from_value(fields.clone())?;

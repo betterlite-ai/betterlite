@@ -1,18 +1,13 @@
 from typing import Literal, TypedDict
 
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.types.google_genai.main import (
-    GenerateContentConfigDict,
-    GenerateContentRequestDict,
-    GenerateContentResponse,
-)
+from litellm.types.google_genai.main import GenerateContentRequestDict, GenerateContentResponse
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 
 class ConstructCall(TypedDict):
-    record: Literal["response", "config", "request"]
+    record: Literal["response", "request"]
     fields: dict[str, JsonValue]
 
 
@@ -27,10 +22,16 @@ class ErrorCall(TypedDict):
     headers: dict[str, JsonValue]
 
 
-class Input(TypedDict, total=False):
+class Input(TypedDict):
     constructs: list[ConstructCall]
     top_level: list[TopLevelCall]
     errors: list[ErrorCall]
+
+
+class ErrorRecord(BaseModel):
+    status_code: int
+    message: str
+    headers: JsonValue
 
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -45,10 +46,8 @@ def construct(call: ConstructCall) -> JsonValue:
     fields = call["fields"]
     if call["record"] == "response":
         response = GenerateContentResponse(**fields)
-        return {"value": response.model_dump()}
-    if call["record"] == "config":
-        config = GenerateContentConfigDict(**fields)
-        return {"value": dict(config)}
+        dumped = response.model_dump_json()
+        return {"value": JSON.validate_json(dumped)}
     request = GenerateContentRequestDict(**fields)
     return {"value": dict(request)}
 
@@ -60,7 +59,9 @@ def top_level(call: TopLevelCall) -> JsonValue:
     if selected is None:
         raise ValueError(f"no native GenAI config for {call['model']}")
     fields = list(selected.get_generate_content_request_top_level_fields())
-    return {"provider": call["provider"], "model": call["model"], "fields": fields}
+    answer: dict[str, JsonValue] = {"provider": call["provider"], "model": call["model"]}
+    answer["fields"] = JSON.validate_python(fields)
+    return answer
 
 
 def error(call: ErrorCall) -> JsonValue:
@@ -69,18 +70,18 @@ def error(call: ErrorCall) -> JsonValue:
     )
     if selected is None:
         raise ValueError("no native GenAI config for gemini-2.5-flash")
-    try:
-        raise selected.get_error_class(
-            error_message=call["message"],
-            status_code=call["status_code"],
-            headers=call["headers"],
-        )
-    except BaseLLMException as raised:
-        return {
-            "status_code": raised.status_code,
-            "message": raised.message,
-            "headers": JSON.validate_python(raised.headers),
-        }
+    raised = selected.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/google_genai/transformation.py#L198-L216
+        error_message=call["message"],
+        status_code=call["status_code"],
+        headers=call["headers"],
+    )
+    record = ErrorRecord.model_validate(raised, from_attributes=True)
+    answer: dict[str, JsonValue] = {
+        "status_code": record.status_code,
+        "message": record.message,
+    }
+    answer["headers"] = record.headers
+    return answer
 
 
 def run(input_value: JsonValue) -> JsonValue:
