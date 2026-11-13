@@ -78,10 +78,6 @@ class GuardrailRecord(TypedDict):
     guardrail_status: str
 
 
-class MetadataBucket(TypedDict):
-    standard_logging_guardrail_information: list[GuardrailRecord]
-
-
 class RecordingTransport:
     def __init__(self, answer: Answer) -> None:
         self.answer = answer
@@ -115,27 +111,25 @@ def construct(settings: Settings) -> ConstructOutput:
     }
 
 
-def header(request: httpx.Request, name: str) -> str | None:
-    return request.headers.get(name)
-
-
 def view(request: httpx.Request) -> RequestView:
     body = TypeAdapter(DetectBody).validate_json(request.content)
     return {
         "method": request.method,
         "path": request.url.path,
         "headers": {
-            "content_type": header(request, "content-type"),
-            "apikey": header(request, "apikey"),
-            "x_enkrypt_policy": header(request, "x-enkrypt-policy"),
+            "content_type": request.headers.get("content-type"),
+            "apikey": request.headers.get("apikey"),
+            "x_enkrypt_policy": request.headers.get("x-enkrypt-policy"),
         },
         "body": body,
     }
 
 
 def statuses(request_data: dict[str, JsonValue]) -> list[str]:
-    bucket = TypeAdapter(MetadataBucket).validate_python(request_data["metadata"])
-    records = bucket["standard_logging_guardrail_information"]
+    bucket = TypeAdapter(dict[str, JsonValue]).validate_python(request_data["metadata"])
+    records = TypeAdapter(list[GuardrailRecord]).validate_python(
+        bucket["standard_logging_guardrail_information"]
+    )
     return [record["guardrail_status"] for record in records]
 
 

@@ -65,7 +65,7 @@ async fn serve(replies: Vec<Reply>) -> (String, TestState, JoinSet<io::Result<()
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
     let state = TestState {
-        replies: Arc::new(Mutex::new(replies.into())),
+        replies: Arc::new(Mutex::new(VecDeque::from(replies))),
         captured: Arc::new(Mutex::new(Vec::new())),
     };
     let router = Router::new().fallback(handle).with_state(state.clone());
