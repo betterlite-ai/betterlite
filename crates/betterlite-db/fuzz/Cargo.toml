@@ -91,3 +91,10 @@ path = "fuzz_targets/daily_values.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "token_record"
+path = "fuzz_targets/token_record.rs"
+test = false
+doc = false
+bench = false
