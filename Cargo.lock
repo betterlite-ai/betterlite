@@ -1597,6 +1597,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -1630,6 +1631,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
+ "whoami",
 ]
 
 [[package]]
