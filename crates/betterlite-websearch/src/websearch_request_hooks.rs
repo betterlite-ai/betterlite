@@ -4,14 +4,13 @@ mod tests;
 pub mod tool_rewrite;
 
 use betterlite_anthropic::feature_flags::tools::is_native_web_search_tool;
-use betterlite_config::agentic_loop_ceiling::AgenticLoopCeilingError;
 use betterlite_config::sections::websearch_request_hooks::Settings;
 use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 use thiserror::Error;
 
-use self::config::{ResolvedParams, WebSearchInterceptionParams};
+use self::config::{ConfigError, ResolvedParams, WebSearchInterceptionParams};
 use self::provider::ProviderError;
 use self::tool_rewrite::{RewriteError, ToolFormat};
 
@@ -22,12 +21,6 @@ const MAX_LOOPS: &str = "max_agentic_loops";
 const STREAM: &str = "stream";
 const TOOL_CHOICE: &str = "tool_choice";
 const TOOLS: &str = "tools";
-
-#[derive(Debug, Error)]
-pub enum ConfigError {
-    #[error(transparent)]
-    Ceiling(#[from] AgenticLoopCeilingError),
-}
 
 #[derive(Debug, Error)]
 pub enum WebSearchError {
