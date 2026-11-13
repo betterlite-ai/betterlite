@@ -194,6 +194,33 @@ fn a_deployment_metadata_name_wins_over_the_model() {
 }
 
 #[test]
+fn a_deployment_name_without_a_slash_is_ignored() {
+    let mut case = fixture();
+    case.inputs.provider = Some("bedrock");
+    case.inputs
+        .set_metadata("deployment", Json::Text("claude-3-deploy".to_owned()));
+    let outcome = run(case.assemble());
+    let generation = outcome.generation().expect("a generation span");
+    assert_ne!(
+        text(generation, "langfuse.observation.model.name").as_deref(),
+        Some("claude-3-deploy")
+    );
+}
+
+#[test]
+fn an_empty_model_gets_no_bedrock_prefix() {
+    let mut case = fixture();
+    case.inputs.provider = Some("bedrock");
+    case.inputs.model = "";
+    let outcome = run(case.assemble());
+    let generation = outcome.generation().expect("a generation span");
+    assert_ne!(
+        text(generation, "langfuse.observation.model.name").as_deref(),
+        Some("bedrock/")
+    );
+}
+
+#[test]
 fn the_system_fingerprint_reaches_the_model_parameters() {
     let mut case = fixture();
     case.inputs
