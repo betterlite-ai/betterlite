@@ -1,0 +1,17 @@
+task: B5655
+deviations:
+  - what: A litellm_logging_obj or custom_prompt_dict object passed by a Python caller is not accepted as a live object; only its JSON fields reach prepare_completion.
+    why: This layer takes data, and the Python layer owns the object boundary as B158 describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5300-L5310
+  - what: The provider affinity header comes from the trusted CompletionSettings.optional snapshot, not from a request kwarg.
+    why: B176 owns provider_affinity_header as trusted deployment configuration, so a request cannot impersonate it; LiteLLM's get_litellm_params would copy a request kwarg into litellm_params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L248-L253
+  - what: A message list over the shared 1024-message bound, or file parts over the shared part bound, returns a 400 that names the field.
+    why: The bounds come from betterlite's bounded-inputs rule; LiteLLM raises a plain exception there, which its mapper turns into a 500.
+    link: ""
+  - what: The prompt hook's returned non_default_params are used, where LiteLLM discards the third return value and only sees in-place mutations of the dict it passed.
+    why: Rust has no shared mutable dict, so the returned value is the only way the hook's parameter changes can reach the later steps; a hook that mutates rather than replaces behaves identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5424-L5445
+  - what: prepare_acompletion validates the messages and converts them to the typed form before the acompletion cache and prompt hooks, so a message without a role reaches those hooks already fixed.
+    why: The prompt port takes typed messages, and completion applies the same fix immediately afterwards; only malformed input observes the earlier fix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5394-L5445
