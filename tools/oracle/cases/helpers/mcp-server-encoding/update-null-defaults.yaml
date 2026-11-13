@@ -1,0 +1,30 @@
+kind: helper
+name: mcp-server-encoding-update-null-defaults
+call:
+  b4710:
+    function: prepare_update
+    salt_key: encoding-salt
+    request:
+      server_id: s1
+      allowed_tools: null
+      tool_name_to_display_name: null
+      tool_name_to_description: null
+      mcp_info: null
+      static_headers: null
+    model_fields:
+      - server_id
+      - allowed_tools
+      - tool_name_to_display_name
+      - tool_name_to_description
+      - mcp_info
+      - static_headers
+    original_fields:
+      - server_id
+      - allowed_tools
+      - tool_name_to_display_name
+      - tool_name_to_description
+      - mcp_info
+      - static_headers
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

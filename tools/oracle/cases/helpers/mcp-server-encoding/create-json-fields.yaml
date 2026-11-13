@@ -1,0 +1,20 @@
+kind: helper
+name: mcp-server-encoding-create-json-fields
+call:
+  b4710:
+    function: prepare_create
+    salt_key: encoding-salt
+    request:
+      server_name: srv
+      mcp_info:
+        protocol_version: auto
+        custom:
+          keep: null
+          values: [null, true, text]
+      tool_name_to_display_name:
+        search: Search
+      tool_name_to_description:
+        search: Finds things
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

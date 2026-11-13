@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-server-encoding-create-defaults
+call:
+  b4710:
+    function: prepare_create
+    salt_key: encoding-salt
+    request:
+      server_name: srv
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}
