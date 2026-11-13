@@ -1,7 +1,7 @@
 id: B3810
 milestone: M6 guardrails
 title: Compile tool permission rules and expose validated configuration
-status: todo
+status: in-progress
 depends_on: [B002, B3660, B3664]
 file: tasks/B3810-tool-permission-rules.yaml
 covers:
