@@ -34,12 +34,12 @@ class Config(Protocol):
                          optional_params: dict[str, JsonValue],
                          litellm_params: dict[str, JsonValue]) -> str: ...
 
-    def transform_audio_transcription_request(
+    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
         self, model: str, audio_file: bytes,
         optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
     ) -> RequestData: ...
 
-    def transform_audio_transcription_response(
+    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
         self, raw_response: httpx.Response
     ) -> ReplyData: ...
 

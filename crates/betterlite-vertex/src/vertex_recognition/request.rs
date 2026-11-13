@@ -1,6 +1,5 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::api::audio_file_input::language::normalize_language_to_bcp47;
 use betterlite_openai::openai_base_config::Object;

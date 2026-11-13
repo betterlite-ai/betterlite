@@ -368,6 +368,9 @@ fn the_response_hides_the_provider_envelope() {
 #[case::integral(Some("2s"), Some("2"))]
 #[case::negative(Some("-1.5s"), Some("-1.5"))]
 #[case::scientific(Some("1e3s"), Some("1000"))]
+#[case::not_a_number(Some("nans"), None)]
+#[case::infinity(Some("infs"), None)]
+#[case::infinity_word(Some("infinitys"), None)]
 fn duration_cases(#[case] duration: Option<&str>, #[case] expected: Option<&str>) {
     let parsed = parse_duration_seconds(duration).map(|seconds| seconds.to_string());
     assert_eq!(parsed.as_deref(), expected);
