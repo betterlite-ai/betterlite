@@ -1,0 +1,29 @@
+kind: helper
+name: gemini-tools-native-order
+call:
+  gemini_tools:
+    call:
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: Find a city
+            parameters:
+              type: object
+              properties:
+                city:
+                  type: string
+        - google_search: {}
+        - googleMaps:
+            latitude: 1.5
+            longitude: 2.5
+            languageCode: en
+      functions: []
+      web_search_options: {}
+      tool_choice: auto
+      service_tier: auto
+      server_side_invocations: false
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}
