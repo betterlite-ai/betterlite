@@ -68,24 +68,28 @@ fn write_repr_text(text: &str, out: &mut String) {
     out.push(quote);
 }
 
+const SHORT_ESCAPES: [(char, &str); 7] = [
+    ('"', "\\\""),
+    ('\\', "\\\\"),
+    ('\n', "\\n"),
+    ('\r', "\\r"),
+    ('\t', "\\t"),
+    ('\u{8}', "\\b"),
+    ('\u{c}', "\\f"),
+];
+
 // json.dumps with its default ensure_ascii: every character past ASCII becomes \uXXXX, in surrogate pairs above the BMP.
 fn write_json_text(text: &str, out: &mut String) {
     out.push('"');
     for character in text.chars() {
-        match character {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{8}' => out.push_str("\\b"),
-            '\u{c}' => out.push_str("\\f"),
-            _ if character.is_ascii() && !character.is_ascii_control() => out.push(character),
-            _ => {
-                for unit in character.encode_utf16(&mut [0; 2]) {
-                    let escaped = format!("\\u{unit:04x}");
-                    out.push_str(&escaped);
-                }
+        if let Some((_, escape)) = SHORT_ESCAPES.iter().find(|(plain, _)| *plain == character) {
+            out.push_str(escape);
+        } else if character.is_ascii() && !character.is_ascii_control() {
+            out.push(character);
+        } else {
+            for unit in character.encode_utf16(&mut [0; 2]) {
+                let escaped = format!("\\u{unit:04x}");
+                out.push_str(&escaped);
             }
         }
     }
