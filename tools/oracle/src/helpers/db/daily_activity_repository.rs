@@ -1,8 +1,10 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::daily_activity_contracts::{ExportRow, ExportType};
+use betterlite_db::daily_activity_repository::USAGE_EXPORT_BATCH_SIZE;
 use betterlite_db::daily_activity_repository::export::next_cursor;
 use betterlite_db::daily_activity_repository::metadata::{metadata_row, metadata_tags};
 use betterlite_db::daily_activity_repository::rows::VerificationTokenRow;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -29,7 +31,7 @@ enum Case {
     },
     NextCursor {
         export_type: ExportType,
-        batch: Vec<ExportRow>,
+        last: ExportRow,
     },
 }
 
@@ -77,8 +79,38 @@ fn answer(case: &Case) -> serde_json::Value {
             };
             serde_json::json!({ "row": metadata_row(&row, *key_exists) })
         }
-        Case::NextCursor { export_type, batch } => {
-            serde_json::json!({ "cursor": next_cursor(batch, *export_type) })
+        Case::NextCursor { export_type, last } => {
+            serde_json::json!({ "cursor": next_cursor(&export_batch(last), *export_type) })
         }
+    }
+}
+
+fn export_batch(last: &ExportRow) -> Vec<ExportRow> {
+    let mut batch: Vec<ExportRow> = (0..USAGE_EXPORT_BATCH_SIZE.saturating_sub(1))
+        .map(|_| default_export_row())
+        .collect();
+    batch.push(last.clone());
+    batch
+}
+
+fn default_export_row() -> ExportRow {
+    ExportRow {
+        date: "2026-08-01".to_owned(),
+        entity_id: "entity".to_owned(),
+        entity_alias: None,
+        api_key: None,
+        key_alias: None,
+        user_id: None,
+        user_email: None,
+        model: None,
+        spend: Decimal::ZERO,
+        flat_cost: Decimal::ZERO,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        api_requests: 0,
+        successful_requests: 0,
+        failed_requests: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
     }
 }
