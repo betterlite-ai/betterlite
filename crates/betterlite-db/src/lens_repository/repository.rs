@@ -25,27 +25,7 @@ pub struct LensRepository<Db> {
 }
 
 impl<Db: Database> LensRepository<Db> {
-    async fn one<Record, Decode>(
-        &self,
-        query: &str,
-        args: &[SqlBind],
-        decode_record: Decode,
-    ) -> Result<Option<Record>, LensRepositoryError>
-    where
-        Decode: Fn(&str) -> Result<Record, DecodeError>,
-    {
-        let row = self
-            .database
-            .query_raw(query, args)
-            .await?
-            .into_iter()
-            .next();
-        row.map(|row| decode_record(&row.data))
-            .transpose()
-            .map_err(LensRepositoryError::Record)
-    }
-
-    async fn many<Record, Decode>(
+    async fn records<Record, Decode>(
         &self,
         query: &str,
         args: &[SqlBind],
@@ -60,14 +40,16 @@ impl<Db: Database> LensRepository<Db> {
     }
 
     pub async fn lenses(&self) -> Result<Vec<Lens>, LensRepositoryError> {
-        self.many(sql::LENSES, &[], |data| decode::<Lens>(data.as_bytes()))
+        self.records(sql::LENSES, &[], |data| decode::<Lens>(data.as_bytes()))
             .await
     }
 
     pub async fn get(&self, lens_id: &str) -> Result<Option<Lens>, LensRepositoryError> {
         let id = SqlBind::Text(Some(lens_id.to_owned()));
-        self.one(sql::LENS, &[id], |data| decode::<Lens>(data.as_bytes()))
-            .await
+        let found = self
+            .records(sql::LENS, &[id], |data| decode::<Lens>(data.as_bytes()))
+            .await?;
+        Ok(found.into_iter().next())
     }
 
     pub async fn create(&self, lens: Lens) -> Result<Lens, LensRepositoryError> {
@@ -82,7 +64,7 @@ impl<Db: Database> LensRepository<Db> {
     pub async fn jobs(&self, lens_id: &str, offset: i64) -> Result<Vec<Job>, LensRepositoryError> {
         let lens = SqlBind::Text(Some(lens_id.to_owned()));
         let args = [lens, SqlBind::Integer(Some(offset))];
-        self.many(sql::JOBS, &args, |data| decode::<Job>(data.as_bytes()))
+        self.records(sql::JOBS, &args, |data| decode::<Job>(data.as_bytes()))
             .await
     }
 
@@ -95,21 +77,25 @@ impl<Db: Database> LensRepository<Db> {
             SqlBind::Text(Some(lens_id.to_owned())),
             SqlBind::Text(Some(job_id.to_owned())),
         ];
-        self.one(sql::JOB, &args, |data| decode::<Job>(data.as_bytes()))
-            .await
+        let found = self
+            .records(sql::JOB, &args, |data| decode::<Job>(data.as_bytes()))
+            .await?;
+        Ok(found.into_iter().next())
     }
 
     pub async fn workers(&self) -> Result<Vec<Worker>, LensRepositoryError> {
-        self.many(sql::WORKERS, &[], |data| decode::<Worker>(data.as_bytes()))
+        self.records(sql::WORKERS, &[], |data| decode::<Worker>(data.as_bytes()))
             .await
     }
 
     pub async fn worker(&self, token_hash: &str) -> Result<Option<Worker>, LensRepositoryError> {
         let hash = SqlBind::Text(Some(token_hash.to_owned()));
-        self.one(sql::WORKER, &[hash], |data| {
-            decode::<Worker>(data.as_bytes())
-        })
-        .await
+        let found = self
+            .records(sql::WORKER, &[hash], |data| {
+                decode::<Worker>(data.as_bytes())
+            })
+            .await?;
+        Ok(found.into_iter().next())
     }
 
     pub async fn save_worker(
@@ -155,10 +141,12 @@ impl<Db: Database> LensRepository<Db> {
             SqlBind::Text(Some(key_id.to_owned())),
             SqlBind::Text(Some(worker_id.to_owned())),
         ];
-        self.one(sql::SET_WORKER_BILLING, &args, |data| {
-            decode::<Worker>(data.as_bytes())
-        })
-        .await
+        let found = self
+            .records(sql::SET_WORKER_BILLING, &args, |data| {
+                decode::<Worker>(data.as_bytes())
+            })
+            .await?;
+        Ok(found.into_iter().next())
     }
 
     pub async fn revoke_worker(&self, worker_id: &str) -> Result<(), LensRepositoryError> {

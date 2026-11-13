@@ -63,7 +63,7 @@ where
         query: &'database str,
         args: &'database [SqlBind],
     ) -> ExecuteFuture<'database> {
-        execute_statement(&self.writer, query, args)
+        Box::pin(execute_prepared(&self.writer, query, args))
     }
 }
 
@@ -109,21 +109,19 @@ where
     })
 }
 
-fn execute_statement<'database, Client>(
-    writer: &'database Client,
-    query: &'database str,
-    args: &'database [SqlBind],
-) -> ExecuteFuture<'database>
+async fn execute_prepared<Client>(
+    writer: &Client,
+    query: &str,
+    args: &[SqlBind],
+) -> Result<u64, DatabaseError>
 where
-    Client: GenericClient + Send + Sync,
+    Client: GenericClient,
 {
-    Box::pin(async move {
-        let (statement, values) = prepared(writer, query, args).await?;
-        writer
-            .execute(&statement, &values)
-            .await
-            .map_err(DatabaseError::Query)
-    })
+    let (statement, values) = prepared(writer, query, args).await?;
+    writer
+        .execute(&statement, &values)
+        .await
+        .map_err(DatabaseError::Query)
 }
 
 mod tests;

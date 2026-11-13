@@ -95,3 +95,12 @@ pub(crate) enum Transform {
     DropJob { job_id: String },
     Failing,
 }
+
+impl Call {
+    pub(crate) fn conflicts(&self) -> u32 {
+        match self {
+            Self::Update { conflicts, .. } => *conflicts,
+            _ => 0,
+        }
+    }
+}

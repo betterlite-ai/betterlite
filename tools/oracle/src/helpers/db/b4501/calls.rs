@@ -8,56 +8,87 @@ use serde_json::Value;
 
 use super::failure;
 use super::input::{Call, Input, Transform};
-use super::store::{FakeDatabase, build, snapshot};
+use super::store::{FakeDatabase, Store, build, snapshot};
 use crate::helpers::{HelperError, HelperResult};
 
 pub(crate) async fn run(input: &Input) -> HelperResult {
-    let conflicts = match &input.call {
-        Call::Update { conflicts, .. } => *conflicts,
-        _ => 0,
-    };
-    let store = Arc::new(Mutex::new(build(&input.seed, conflicts)?));
+    let store = Arc::new(Mutex::new(build(&input.seed, input.call.conflicts())?));
     let repository = LensRepository {
         database: FakeDatabase {
             store: Arc::clone(&store),
         },
     };
     let (result, transform_calls) = match &input.call {
-        Call::Lenses
-        | Call::Get { .. }
-        | Call::Jobs { .. }
-        | Call::Job { .. }
-        | Call::Workers
-        | Call::Worker { .. } => read_call(&repository, &input.call).await?,
+        Call::Lenses => lens_list(&repository).await?,
+        Call::Get { lens_id } => lens_get(&repository, lens_id).await?,
+        Call::Jobs { lens_id, offset } => lens_jobs(&repository, lens_id, *offset).await?,
+        Call::Job { lens_id, job_id } => lens_job(&repository, lens_id, job_id).await?,
+        Call::Workers => worker_list(&repository).await?,
+        Call::Worker { token_hash } => worker_get(&repository, token_hash).await?,
         _ => write_call(&repository, &input.call).await?,
     };
-    let output = match store.lock() {
-        Ok(guard) => snapshot(&guard, result, transform_calls),
-        Err(poisoned) => snapshot(&poisoned.into_inner(), result, transform_calls),
-    };
-    Ok(output)
+    Ok(lock(&store, result, transform_calls))
 }
 
-async fn read_call(
+fn lock(store: &Mutex<Store>, result: Value, transform_calls: u32) -> Value {
+    match store.lock() {
+        Ok(guard) => snapshot(&guard, result, transform_calls),
+        Err(poisoned) => snapshot(&poisoned.into_inner(), result, transform_calls),
+    }
+}
+
+async fn lens_list(
     repository: &LensRepository<FakeDatabase>,
-    call: &Call,
 ) -> Result<(Value, u32), Box<HelperError>> {
-    let records = match call {
-        Call::Lenses => serde_json::to_value(repository.lenses().await.map_err(failure)?),
-        Call::Get { lens_id } => serde_json::to_value(repository.get(lens_id).await.map_err(failure)?),
-        Call::Jobs { lens_id, offset } => {
-            serde_json::to_value(repository.jobs(lens_id, *offset).await.map_err(failure)?)
-        }
-        Call::Job { lens_id, job_id } => {
-            serde_json::to_value(repository.job(lens_id, job_id).await.map_err(failure)?)
-        }
-        Call::Workers => serde_json::to_value(repository.workers().await.map_err(failure)?),
-        Call::Worker { token_hash } => {
-            serde_json::to_value(repository.worker(token_hash).await.map_err(failure)?)
-        }
-        _ => return Err(failure("the call reads no record")),
-    };
-    Ok((records.map_err(failure)?, 0))
+    let records = repository.lenses().await.map_err(failure)?;
+    let value = serde_json::to_value(records).map_err(failure)?;
+    Ok((value, 0))
+}
+
+async fn lens_get(
+    repository: &LensRepository<FakeDatabase>,
+    lens_id: &str,
+) -> Result<(Value, u32), Box<HelperError>> {
+    let found = repository.get(lens_id).await.map_err(failure)?;
+    let value = serde_json::to_value(found).map_err(failure)?;
+    Ok((value, 0))
+}
+
+async fn lens_jobs(
+    repository: &LensRepository<FakeDatabase>,
+    lens_id: &str,
+    offset: i64,
+) -> Result<(Value, u32), Box<HelperError>> {
+    let found = repository.jobs(lens_id, offset).await.map_err(failure)?;
+    let value = serde_json::to_value(found).map_err(failure)?;
+    Ok((value, 0))
+}
+
+async fn lens_job(
+    repository: &LensRepository<FakeDatabase>,
+    lens_id: &str,
+    job_id: &str,
+) -> Result<(Value, u32), Box<HelperError>> {
+    let found = repository.job(lens_id, job_id).await.map_err(failure)?;
+    let value = serde_json::to_value(found).map_err(failure)?;
+    Ok((value, 0))
+}
+
+async fn worker_list(
+    repository: &LensRepository<FakeDatabase>,
+) -> Result<(Value, u32), Box<HelperError>> {
+    let found = repository.workers().await.map_err(failure)?;
+    let value = serde_json::to_value(found).map_err(failure)?;
+    Ok((value, 0))
+}
+
+async fn worker_get(
+    repository: &LensRepository<FakeDatabase>,
+    token_hash: &str,
+) -> Result<(Value, u32), Box<HelperError>> {
+    let found = repository.worker(token_hash).await.map_err(failure)?;
+    let value = serde_json::to_value(found).map_err(failure)?;
+    Ok((value, 0))
 }
 
 async fn write_call(
@@ -97,7 +128,10 @@ async fn write_call(
             Ok((Value::Null, 0))
         }
         Call::Heartbeat { worker_id, now } => {
-            repository.heartbeat(worker_id, now).await.map_err(failure)?;
+            repository
+                .heartbeat(worker_id, now)
+                .await
+                .map_err(failure)?;
             Ok((Value::Null, 0))
         }
         _ => Err(failure("the call writes no record")),
