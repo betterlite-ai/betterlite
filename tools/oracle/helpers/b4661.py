@@ -12,6 +12,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.client_credenti
 )
 from litellm.proxy._experimental.mcp_server.outbound_credentials.oauth_token_store import (
     OAuthToken,
+    TokenCacheBackend,
 )
 from litellm.proxy._experimental.mcp_server.outbound_credentials.result import Error, Ok
 from litellm.proxy._experimental.mcp_server.outbound_credentials.types import (
@@ -20,6 +21,7 @@ from litellm.proxy._experimental.mcp_server.outbound_credentials.types import (
 )
 from pydantic import JsonValue as Json
 from pydantic import SecretStr
+from typing_extensions import override
 
 NOW_MS = 1_000_000
 
@@ -60,11 +62,16 @@ class GrantInput(TypedDict):
     configs: list[ConfigSpec]
 
 
+class OperationSpec(TypedDict):
+    server_id: str
+    advance_ms: NotRequired[int]
+
+
 class MintInput(TypedDict):
     function: Literal["mint"]
     config: ConfigSpec
     outcomes: list[OutcomeSpec]
-    servers: list[str]
+    operations: list[OperationSpec]
 
 
 class ScenarioSpec(TypedDict):
@@ -82,24 +89,24 @@ Input = GrantInput | MintInput | BearerInput
 
 
 class ManualClock:
-    def __init__(self, now_ms: int) -> None:
-        self.now_ms = now_ms
+    def __init__(self) -> None:
+        self.now_ms = NOW_MS
 
     def __call__(self) -> float:
         return self.now_ms / 1000
 
 
-class RecordingBackend:
+class CapturingBackend(TokenCacheBackend):
     def __init__(self) -> None:
-        self.entries: dict[tuple[str, str], OAuthToken] = {}
-        self.writes: list[tuple[str, str, float]] = []
-        self.reads: list[str] = []
-        self.deletes = 0
+        self.keys: list[str] = []
 
+    @override
     async def get(self, user_id: str, server_id: str) -> OAuthToken | None:
-        self.reads.append(user_id)
-        return self.entries.get((user_id, server_id))
+        del server_id
+        self.keys.append(user_id)
+        return None
 
+    @override
     async def set(
         self,
         user_id: str,
@@ -107,13 +114,11 @@ class RecordingBackend:
         token: OAuthToken,
         ttl_seconds: float,
     ) -> None:
-        key = (user_id, server_id)
-        self.entries[key] = token
-        self.writes.append((user_id, server_id, ttl_seconds))
+        del user_id, server_id, token, ttl_seconds
 
+    @override
     async def delete(self, user_id: str, server_id: str) -> None:
-        self.deletes += 1
-        self.entries.pop((user_id, server_id), None)
+        del user_id, server_id
 
 
 class ScriptedPost:
@@ -177,14 +182,13 @@ def token_view(token: OAuthToken) -> Json:
 
 
 class ScriptedTransport:
-    def __init__(self, statuses: list[int], carrier: HeaderCarrier) -> None:
+    def __init__(self, statuses: list[int]) -> None:
         self.statuses = statuses
-        self.carrier = carrier
         self.sent: list[Json] = []
 
     async def __call__(self, request: httpx2.Request) -> httpx2.Response:
-        value = request.headers.get(self.carrier.header_name)
-        self.sent.append([] if value is None else [[self.carrier.header_name.lower(), value]])
+        value = request.headers.get("Authorization")
+        self.sent.append([] if value is None else [["authorization", value]])
         status = self.statuses.pop(0) if self.statuses else 0
         return httpx2.Response(status, request=request)
 
@@ -201,8 +205,8 @@ async def grant_view(spec: ConfigSpec) -> Json:
     config = build_config(spec)
     granted = TokenEndpointSuccess.model_validate_json('{"body": {"access_token": "oracle"}}')
     post = ScriptedPost([granted])
-    backend = RecordingBackend()
-    source = ClientCredentialsTokenSource(post.post, backend=backend, clock=ManualClock(0))
+    backend = CapturingBackend()
+    source = ClientCredentialsTokenSource(post.post, backend=backend, clock=ManualClock())
     fetch = source.get
     result = await fetch("server", config)
     match result:
@@ -221,23 +225,21 @@ async def grant_view(spec: ConfigSpec) -> Json:
                 "token_url": url,
                 "form": [[name, value] for name, value in form],
                 "headers": [[name, value] for name, value in headers],
-                "identity_key": backend.reads[0],
+                "identity_key": backend.keys[0],
             }
 
 
 async def mint_view(input_value: MintInput) -> Json:
     config = build_config(input_value["config"])
-    backend = RecordingBackend()
+    clock = ManualClock()
     post = ScriptedPost([build_outcome(spec) for spec in input_value["outcomes"]])
-    source = ClientCredentialsTokenSource(
-        post.post,
-        backend=backend,
-        clock=ManualClock(NOW_MS),
-    )
+    source = ClientCredentialsTokenSource(post.post, clock=clock)
     fetch = source.get
     results: list[Json] = []
-    for server in input_value["servers"]:
-        result = await fetch(server, config)
+    for operation in input_value["operations"]:
+        advance = operation.get("advance_ms")
+        clock.now_ms += 0 if advance is None else advance
+        result = await fetch(operation["server_id"], config)
         match result:
             case Ok(ok=token):
                 results.append({"op": "get", "token": token_view(token)})
@@ -249,22 +251,24 @@ async def mint_view(input_value: MintInput) -> Json:
             {"url": url, "form": [[name, value] for name, value in form]}
             for url, form, _headers in post.calls
         ],
-        "writes": [
-            {"identity_key": key, "server_id": server, "ttl_ms": round(seconds * 1000)}
-            for key, server, seconds in backend.writes
-        ],
-        "deletes": backend.deletes,
     }
 
 
-async def scenario_view(carrier: HeaderCarrier, scenario: ScenarioSpec) -> Json:
+async def scenario_view(scenario: ScenarioSpec) -> Json:
     answers = scenario.get("refetch")
     refetcher = ScriptedRefetch([] if answers is None else list(answers))
-    auth = ClientCredentialsBearerAuth(scenario["access_token"], refetcher, carrier)
-    transport = ScriptedTransport(list(scenario["statuses"]), carrier)
+    auth = ClientCredentialsBearerAuth(scenario["access_token"], refetcher, HeaderCarrier())
+    transport = ScriptedTransport(list(scenario["statuses"]))
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(transport), auth=auth) as client:
         response = await client.post("https://upstream.example/mcp")
     return scenario_result(transport.sent, response.status_code, refetcher.asked)
+
+
+async def bearer_scenarios(input_value: BearerInput) -> Json:
+    scenarios: list[Json] = [
+        await scenario_view(scenario) for scenario in input_value["scenarios"]
+    ]
+    return {"scenarios": scenarios}
 
 
 def run(input_value: Input) -> Json:
@@ -273,8 +277,4 @@ def run(input_value: Input) -> Json:
         return {"grants": views}
     if input_value["function"] == "mint":
         return asyncio.run(mint_view(input_value))
-    carrier = HeaderCarrier()
-    scenarios: list[Json] = [
-        asyncio.run(scenario_view(carrier, scenario)) for scenario in input_value["scenarios"]
-    ]
-    return {"scenarios": scenarios}
+    return asyncio.run(bearer_scenarios(input_value))

@@ -11,13 +11,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
-use super::support::{CarrierSpec, runtime, value_error};
+use super::support::{runtime, value_error};
 use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BearerInput {
-    #[serde(default)]
-    carrier: Option<CarrierSpec>,
     scenarios: Vec<ScenarioSpec>,
 }
 
@@ -105,23 +103,15 @@ impl Refetch for ScriptedRefetch {
 }
 
 pub(super) fn run(input: &BearerInput) -> HelperResult {
-    let carrier = match input.carrier.as_ref() {
-        Some(spec) => HeaderCarrier::new(
-            spec.header_name.as_deref().unwrap_or("Authorization"),
-            spec.value_prefix.as_deref().unwrap_or("Bearer"),
-        )
-        .map_err(|error| value_error(error.to_string()))?,
-        None => HeaderCarrier::default(),
-    };
     let executor = runtime()?;
     let mut scenarios = Vec::with_capacity(input.scenarios.len());
     for scenario in &input.scenarios {
-        scenarios.push(executor.block_on(scenario_view(&carrier, scenario))??);
+        scenarios.push(executor.block_on(scenario_view(scenario))??);
     }
     Ok(json!({"scenarios": scenarios}))
 }
 
-async fn scenario_view(carrier: &HeaderCarrier, scenario: &ScenarioSpec) -> HelperResult {
+async fn scenario_view(scenario: &ScenarioSpec) -> HelperResult {
     let mut answers = VecDeque::new();
     answers.extend(
         scenario
@@ -135,8 +125,9 @@ async fn scenario_view(carrier: &HeaderCarrier, scenario: &ScenarioSpec) -> Help
     });
     let refetcher: Arc<dyn Refetch> = Arc::<ScriptedRefetch>::clone(&refetch);
     let access_token = SecretString::from(scenario.access_token.clone());
-    let bearer = ClientCredentialsBearerAuth::new(&access_token, refetcher, carrier.clone())
-        .map_err(|error| value_error(error.to_string()))?;
+    let bearer =
+        ClientCredentialsBearerAuth::new(&access_token, refetcher, HeaderCarrier::default())
+            .map_err(|error| value_error(error.to_string()))?;
     let call = ScriptedCall {
         statuses: Mutex::new(VecDeque::from(scenario.statuses.clone())),
         sends: Mutex::new(Vec::new()),

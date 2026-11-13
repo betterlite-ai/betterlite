@@ -14,6 +14,12 @@ call:
       - {kind: success, body: '{"access_token": "tok-null", "expires_in": null}'}
       - {kind: success, body: '{"access_token": "tok-underscored", "expires_in": " 3_600 "}'}
       - {kind: success, body: '{"access_token": "tok-words", "expires_in": "soon"}'}
-    servers: [text, float, truthy, null, underscored, words]
+    operations:
+      - {server_id: text}
+      - {server_id: float}
+      - {server_id: truthy}
+      - {server_id: null}
+      - {server_id: underscored}
+      - {server_id: words}
 env: {}
 compare: {ignore: []}

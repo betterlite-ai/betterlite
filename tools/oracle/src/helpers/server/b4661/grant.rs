@@ -1,7 +1,8 @@
 use betterlite_server::mcp::outbound_credentials::client_credentials::grant::prepare_grant;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use super::support::{ConfigSpec, config_from, pairs};
+use super::support::{ConfigSpec, config_from};
 use crate::helpers::{HelperError, HelperResult};
 
 pub(super) fn run(configs: &[ConfigSpec]) -> HelperResult {
@@ -10,6 +11,13 @@ pub(super) fn run(configs: &[ConfigSpec]) -> HelperResult {
         .map(grant_view)
         .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(json!({"grants": grants}))
+}
+
+fn pairs(fields: &[(String, SecretString)]) -> Vec<[String; 2]> {
+    fields
+        .iter()
+        .map(|(name, value)| [name.clone(), value.expose_secret().to_owned()])
+        .collect()
 }
 
 fn grant_view(spec: &ConfigSpec) -> Result<Value, Box<HelperError>> {

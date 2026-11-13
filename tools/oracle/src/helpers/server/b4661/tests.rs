@@ -56,27 +56,24 @@ fn grant_names_every_missing_field() {
 }
 
 #[test]
-fn mint_caches_one_grant_and_reports_the_ttl_and_the_denial() {
+fn mint_serves_the_cache_until_the_ttl_lapses_and_reports_the_denial() {
     let output = run(json!({
         "function": "mint",
         "config": config(),
         "now_ms": 1_000_000_i64,
         "outcomes": [
             {"kind": "success", "body": "{\"access_token\":\"tok-0\",\"expires_in\":3600}"},
+            {"kind": "success", "body": "{\"access_token\":\"tok-1\",\"expires_in\":3600}"},
             {"kind": "denied", "status_code": 400_u16, "detail": "token endpoint returned HTTP 400"},
         ],
         "operations": [
-            {"op": "get", "server_id": "s1"},
-            {"op": "get", "server_id": "s1"},
-            {"op": "get", "server_id": "s2"},
+            {"server_id": "s1"},
+            {"server_id": "s1", "advance_ms": 1_000_i64},
+            {"server_id": "s1", "advance_ms": 3_540_000_i64},
+            {"server_id": "s2"},
         ],
     }));
-    assert_eq!(output["post_calls"].as_array().map(Vec::len), Some(2));
-    let writes = output["writes"].as_array().expect("writes is a list");
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0]["server_id"], json!("s1"));
-    assert_eq!(writes[0]["ttl_ms"], json!(3_540_000_i64));
-    assert_eq!(writes[0]["identity_key"].as_str().map(str::len), Some(64));
+    assert_eq!(output["post_calls"].as_array().map(Vec::len), Some(3));
     assert_eq!(
         output["results"][0]["token"]["expires_at_ms"],
         json!(4_600_000_i64)
@@ -86,7 +83,11 @@ fn mint_caches_one_grant_and_reports_the_ttl_and_the_denial() {
         json!("tok-0")
     );
     assert_eq!(
-        output["results"][2]["error"],
+        output["results"][2]["token"]["access_token"],
+        json!("tok-1")
+    );
+    assert_eq!(
+        output["results"][3]["error"],
         json!(
             "misconfigured: OAuth2 client_credentials grant rejected: token endpoint returned HTTP 400"
         )

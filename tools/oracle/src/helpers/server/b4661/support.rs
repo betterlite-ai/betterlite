@@ -1,6 +1,5 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsConfig;
@@ -9,10 +8,8 @@ use betterlite_mcp::credential_contracts::token_endpoint_auth::normalize_token_a
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome,
 };
-use betterlite_server::mcp::outbound_credentials::{
-    OAuthToken, TokenCacheBackend, TokenKey, WallClock,
-};
-use chrono::{DateTime, Utc};
+use betterlite_server::mcp::outbound_credentials::{OAuthToken, WallClock};
+use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -35,14 +32,6 @@ pub(crate) struct ConfigSpec {
     pub(super) upstream_resource: Option<String>,
     #[serde(default)]
     pub(super) token_endpoint_auth_method: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub(crate) struct CarrierSpec {
-    #[serde(default)]
-    pub(super) header_name: Option<String>,
-    #[serde(default)]
-    pub(super) value_prefix: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,41 +63,14 @@ pub(super) fn config_from(spec: &ConfigSpec) -> Result<ClientCredentialsConfig, 
     })
 }
 
-pub(super) fn pairs(fields: &[(String, SecretString)]) -> Vec<[String; 2]> {
-    fields
-        .iter()
-        .map(|(name, value)| [name.clone(), value.expose_secret().to_owned()])
-        .collect()
-}
-
 pub(super) fn token_view(token: &OAuthToken) -> Value {
-    let mut view = serde_json::Map::new();
-    view.insert(
-        "access_token".to_owned(),
-        Value::from(token.access_token.as_str()),
-    );
-    view.insert(
-        "expires_at_ms".to_owned(),
-        token
-            .expires_at
-            .map_or(Value::Null, |at| Value::from(at.timestamp_millis())),
-    );
-    view.insert(
-        "refresh_token".to_owned(),
-        token
-            .refresh_token
-            .as_deref()
-            .map_or(Value::Null, Value::from),
-    );
-    view.insert("scopes".to_owned(), json!(token.scopes));
-    view.insert(
-        "identity_binding_proof".to_owned(),
-        token
-            .identity_binding_proof
-            .as_deref()
-            .map_or(Value::Null, Value::from),
-    );
-    Value::Object(view)
+    json!({
+        "access_token": token.access_token,
+        "expires_at_ms": token.expires_at.map(|at| at.timestamp_millis()),
+        "refresh_token": token.refresh_token,
+        "scopes": token.scopes,
+        "identity_binding_proof": token.identity_binding_proof,
+    })
 }
 
 pub(super) fn value_error(message: String) -> Box<HelperError> {
@@ -135,70 +97,22 @@ pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
 }
 
 pub(super) struct ManualClock {
-    pub(super) now: DateTime<Utc>,
+    pub(super) now: Mutex<DateTime<Utc>>,
+}
+
+impl ManualClock {
+    pub(super) fn advance(&self, millis: i64) {
+        let delta = TimeDelta::try_milliseconds(millis).unwrap_or_default();
+        let mut now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
+        *now = now
+            .checked_add_signed(delta)
+            .unwrap_or(DateTime::<Utc>::MAX_UTC);
+    }
 }
 
 impl WallClock for ManualClock {
     fn now(&self) -> DateTime<Utc> {
-        self.now
-    }
-}
-
-#[derive(Default)]
-pub(super) struct RecordingBackend {
-    entries: Mutex<HashMap<TokenKey, OAuthToken>>,
-    writes: Mutex<Vec<(TokenKey, Duration)>>,
-    deletes: Mutex<u64>,
-}
-
-impl RecordingBackend {
-    pub(super) fn state_view(&self) -> (Value, u64) {
-        let writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
-        let rows = Value::Array(
-            writes
-                .iter()
-                .map(|(key, ttl)| {
-                    json!({
-                        "identity_key": key.user_id,
-                        "server_id": key.server_id,
-                        "ttl_ms": i64::try_from(ttl.as_millis()).unwrap_or(i64::MAX),
-                    })
-                })
-                .collect(),
-        );
-        let deletes = *self.deletes.lock().unwrap_or_else(PoisonError::into_inner);
-        (rows, deletes)
-    }
-}
-
-#[async_trait]
-impl TokenCacheBackend for RecordingBackend {
-    async fn get(&self, key: &TokenKey) -> Option<OAuthToken> {
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned()
-    }
-
-    async fn set(&self, key: &TokenKey, token: &OAuthToken, ttl: Duration) {
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.clone(), token.clone());
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((key.clone(), ttl));
-    }
-
-    async fn delete(&self, key: &TokenKey) {
-        self.entries
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(key);
-        let mut deletes = self.deletes.lock().unwrap_or_else(PoisonError::into_inner);
-        *deletes = deletes.saturating_add(1);
+        *self.now.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

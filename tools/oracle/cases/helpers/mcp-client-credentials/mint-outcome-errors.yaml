@@ -14,6 +14,12 @@ call:
       - {kind: success, body: '{}'}
       - {kind: success, body: '{"access_token": ""}'}
       - {kind: success, body: '{"access_token": 7}'}
-    servers: [unreachable, server-error, client-error, no-token, empty-token, number-token]
+    operations:
+      - {server_id: unreachable}
+      - {server_id: server-error}
+      - {server_id: client-error}
+      - {server_id: no-token}
+      - {server_id: empty-token}
+      - {server_id: number-token}
 env: {}
 compare: {ignore: []}
