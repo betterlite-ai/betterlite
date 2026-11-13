@@ -36,6 +36,7 @@ ignores:
   - tools/oracle/helpers/b5364/stubs.py
   - tools/oracle/helpers/b5365/registration.py
   - tools/oracle/helpers/b5367/markers.py
+  - tools/oracle/helpers/b5471/__init__.py
   - tools/oracle/helpers/b8101/views.py
   - tools/oracle/helpers/b8105/views.py
   - tools/oracle/helpers/b8156/support.py
@@ -76,6 +77,7 @@ ignores:
   - tools/oracle/helpers/responses_chat_options.py
   - tools/oracle/helpers/responses_codex_tools.py
   - tools/oracle/helpers/responses_input_messages.py
+  - tools/oracle/helpers/responses_parameters.py
   - tools/oracle/helpers/responses_provider_contract.py
   - tools/oracle/helpers/responses_tool_namespaces.py
   - tools/oracle/helpers/responses_tool_repair.py
@@ -90,6 +92,7 @@ ignores:
   - tools/oracle/helpers/vertex_aws_federation.py
   - tools/oracle/helpers/vertex_gcs_access.py
   - tools/oracle/helpers/vertex_schema.py
+  - tools/oracle/helpers/xai_batches.py
 rule:
   kind: assignment
   has:
