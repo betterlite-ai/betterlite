@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-passthrough-stream-trailing-and-bad-frame
+call:
+  b3678:
+    function: stream
+    frames:
+      - event_type: contentBlockDelta
+        payload: {delta: {text: body}}
+    replace: {body: BODY}
+    trailing_hex: "000000080000005600000020e91fc5ca0b3a6576656e742d74797065070011636f6e74656e74426c6f636b44656c74617b2264656c7461223a7b22746f6f6c557365223a7b22696e707574223a22626f6479227d7d7d07c1f9b7"
+env: {}
+compare: {ignore: []}

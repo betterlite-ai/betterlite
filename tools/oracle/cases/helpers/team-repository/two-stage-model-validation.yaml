@@ -1,0 +1,26 @@
+kind: helper
+name: two_stage_model_validation
+call:
+  team_repository:
+    cases:
+      overlapping-fields:
+        records:
+          - {"team_id":"t","metadata":"\"{\\\"a\\\": 1}\"","model_max_budget":"\"{\\\"b\\\": 2}\"","router_settings":"\"{\\\"rpm\\\": 3}\"","budget_limits":"\"[{\\\"budget_duration\\\": \\\"1d\\\", \\\"max_budget\\\": 1.5}]\""}
+      overlapping-scalars:
+        records:
+          - {"team_id":"t","metadata":"\"5\""}
+          - {"team_id":"t","metadata":"\"{bad\""}
+      second-parse-absent:
+        records:
+          - {"team_id":"t","model_spend":"\"{\\\"a\\\": 1}\""}
+          - {"team_id":"t","members_with_roles":"\"[{\\\"user_id\\\": \\\"u\\\", \\\"role\\\": \\\"admin\\\"}]\""}
+      unlisted-extras:
+        records:
+          - {"team_id":"t","aliases":"\"{\\\"a\\\": 1}\"","config":"\"{\\\"c\\\": true}\"","permissions":"[]","model_aliases":"\"{\\\"m\\\": \\\"x\\\"}\""}
+          - {"team_id":"t","whatever":"bad"}
+          - {"team_id":"t","aliases":"bad"}
+          - {"team_id":"t","config":"bad"}
+          - {"team_id":"t","permissions":"bad"}
+          - {"team_id":"t","model_aliases":"bad"}
+env: {}
+compare: {ignore: []}
