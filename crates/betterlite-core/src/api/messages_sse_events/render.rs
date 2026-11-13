@@ -125,7 +125,21 @@ fn content_block_events(
 
 fn block_start_and_deltas(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
     match fields.get("type") {
-        Some(Json::Text(kind)) if kind == "tool_use" => tool_use_block(fields),
+        Some(Json::Text(kind)) if kind == "tool_use" => {
+            let input = given_or(fields.get("input"), Json::Object(IndexMap::new()));
+            (
+                object(vec![
+                    ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
+                    ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
+                    ("input", Json::Object(IndexMap::new())),
+                    ("type", Json::Text("tool_use".to_owned())),
+                ]),
+                vec![object(vec![
+                    ("partial_json", Json::Text(dumps(&input))),
+                    ("type", Json::Text("input_json_delta".to_owned())),
+                ])],
+            )
+        }
         Some(Json::Text(kind)) if kind == "thinking" => thinking_block(fields),
         Some(Json::Text(kind)) if kind == "redacted_thinking" => redacted_block(fields),
         Some(
@@ -136,23 +150,30 @@ fn block_start_and_deltas(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) 
             | Json::List(_)
             | Json::Object(_),
         )
-        | None => text_block(fields),
+        | None => (
+            object(vec![
+                ("type", Json::Text("text".to_owned())),
+                ("text", Json::Text(String::new())),
+            ]),
+            vec![object(vec![
+                ("type", Json::Text("text_delta".to_owned())),
+                (
+                    "text",
+                    given_or(fields.get("text"), Json::Text(String::new())),
+                ),
+            ])],
+        ),
     }
 }
 
-fn tool_use_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
-    let input = given_or(fields.get("input"), Json::Object(IndexMap::new()));
-    let start = object(vec![
-        ("id", fields.get("id").cloned().unwrap_or(Json::Null)),
-        ("name", fields.get("name").cloned().unwrap_or(Json::Null)),
-        ("input", Json::Object(IndexMap::new())),
-        ("type", Json::Text("tool_use".to_owned())),
-    ]);
-    let delta = object(vec![
-        ("partial_json", Json::Text(dumps(&input))),
-        ("type", Json::Text("input_json_delta".to_owned())),
-    ]);
-    (start, vec![delta])
+fn redacted_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
+    (
+        object(vec![
+            ("type", Json::Text("redacted_thinking".to_owned())),
+            ("data", fields.get("data").cloned().unwrap_or(Json::Null)),
+        ]),
+        Vec::new(),
+    )
 }
 
 fn thinking_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
@@ -177,29 +198,6 @@ fn thinking_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
         ("type", Json::Text("thinking".to_owned())),
     ]);
     (start, deltas)
-}
-
-fn redacted_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
-    let start = object(vec![
-        ("type", Json::Text("redacted_thinking".to_owned())),
-        ("data", fields.get("data").cloned().unwrap_or(Json::Null)),
-    ]);
-    (start, Vec::new())
-}
-
-fn text_block(fields: &IndexMap<String, Json>) -> (Json, Vec<Json>) {
-    let start = object(vec![
-        ("type", Json::Text("text".to_owned())),
-        ("text", Json::Text(String::new())),
-    ]);
-    let delta = object(vec![
-        ("type", Json::Text("text_delta".to_owned())),
-        (
-            "text",
-            given_or(fields.get("text"), Json::Text(String::new())),
-        ),
-    ]);
-    (start, vec![delta])
 }
 
 fn indexed_event(event: &str, index: usize, extra: Vec<(&str, Json)>) -> Vec<u8> {
