@@ -14,7 +14,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -163,7 +163,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "body": body_json(&call.body),
             "headers": pairs(&call.headers),
             "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
+            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
             "timeout": call.timeout,
             "is_async": call.is_async,
         }),
@@ -171,7 +171,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "xai",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
+            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
             "timeout": call.timeout,
             "is_async": call.is_async,
         }),
@@ -179,7 +179,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "openai_compatible",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
+            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
             "organization": call.organization,
             "timeout": call.timeout,
             "max_retries": call.max_retries,
@@ -189,7 +189,7 @@ fn call_json(call: &BatchProviderCreateCall) -> Value {
             "branch": "azure",
             "body": body_json(&call.body),
             "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(ExposeSecret::expose_secret),
+            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
             "api_version": call.api_version,
             "timeout": call.timeout,
             "max_retries": call.max_retries,
