@@ -16,6 +16,8 @@ fuzz_target!(|body: &[u8]| {
         .iter()
         .map(|group| group.fragments.concat().to_uppercase())
         .collect();
-    let new_texts = redistribute(&groups, &returned);
+    let Ok(new_texts) = redistribute(&groups, &returned) else {
+        return;
+    };
     let _rebuilt = rebuild_event_stream(&parsed, &new_texts);
 });

@@ -298,7 +298,11 @@ fn an_empty_delta_text_is_a_cell_and_the_group_stays_inactive() {
     );
     let groups = group_texts(&parsed.frames);
     assert_eq!(groups.groups.len(), 1);
-    assert!(redistribute(&groups, &["REPLACED".to_owned()]).is_empty());
+    assert!(
+        redistribute(&groups, &["REPLACED".to_owned()])
+            .expect("shares")
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -315,8 +319,10 @@ async fn a_stream_without_active_groups_is_returned_unchanged() {
 
 #[tokio::test]
 async fn a_frame_that_is_not_a_content_block_delta_is_copied() {
-    let start = event_frame("messageStart", b"{\"role\": \"assistant\"}");
+    let start = event_frame("contentBlockStart", br#"{"delta": {"text": "hello"}}"#);
     let body = [start.clone(), delta_frame(r#"{"text": "hello"}"#)].concat();
+    let parsed = parse_event_stream(&body);
+    assert!(parsed.frames[0].texts.is_empty());
     let hook = Hook::replacing(&[("hello", "HELLO")]);
     let output = anonymize_with(&body, &hook).await;
     assert_eq!(output.get(0..start.len()), Some(start.as_slice()));
@@ -467,11 +473,11 @@ fn redistribute_rounds_halves_to_even() {
     ];
     let groups = group_texts(&frames);
     assert_eq!(
-        redistribute(&groups, &["12345".to_owned()]),
+        redistribute(&groups, &["12345".to_owned()]).expect("shares"),
         BTreeMap::from([((0, 0), "12".to_owned()), ((1, 0), "345".to_owned())])
     );
     assert_eq!(
-        redistribute(&groups, &["1234567".to_owned()]),
+        redistribute(&groups, &["1234567".to_owned()]).expect("shares"),
         BTreeMap::from([((0, 0), "1234".to_owned()), ((1, 0), "567".to_owned())])
     );
 }
@@ -487,7 +493,7 @@ fn redistribute_counts_characters_not_bytes() {
     }];
     let groups = group_texts(&frames);
     assert_eq!(
-        redistribute(&groups, &["\u{f1}\u{f1}\u{f1}".to_owned()]),
+        redistribute(&groups, &["\u{f1}\u{f1}\u{f1}".to_owned()]).expect("shares"),
         BTreeMap::from([
             ((0, 0), "\u{f1}\u{f1}".to_owned()),
             ((0, 1), "\u{f1}".to_owned())
@@ -505,7 +511,7 @@ fn redistribute_clamps_a_shorter_replacement_and_gives_a_single_member_all() {
         ],
     }];
     assert_eq!(
-        redistribute(&group_texts(&two), &["xy".to_owned()]),
+        redistribute(&group_texts(&two), &["xy".to_owned()]).expect("shares"),
         BTreeMap::from([((0, 0), "x".to_owned()), ((0, 1), "y".to_owned())])
     );
     let one = vec![Frame {
@@ -513,7 +519,7 @@ fn redistribute_clamps_a_shorter_replacement_and_gives_a_single_member_all() {
         texts: vec![(GroupKey::Text, "ab".to_owned())],
     }];
     assert_eq!(
-        redistribute(&group_texts(&one), &["whole".to_owned()]),
+        redistribute(&group_texts(&one), &["whole".to_owned()]).expect("shares"),
         BTreeMap::from([((0, 0), "whole".to_owned())])
     );
 }
@@ -529,7 +535,7 @@ fn redistribute_skips_inactive_groups() {
     }];
     let groups = group_texts(&frames);
     assert_eq!(
-        redistribute(&groups, &["REPLACED".to_owned()]),
+        redistribute(&groups, &["REPLACED".to_owned()]).expect("shares"),
         BTreeMap::from([((0, 1), "REPLACED".to_owned())])
     );
 }
@@ -594,7 +600,7 @@ fn replay(body: &[u8]) {
         .iter()
         .map(|group| group.fragments.concat().to_uppercase())
         .collect();
-    let new_texts = redistribute(&groups, &returned);
+    let new_texts = redistribute(&groups, &returned).expect("shares");
     drop(rebuild_event_stream(&parsed, &new_texts));
 }
 

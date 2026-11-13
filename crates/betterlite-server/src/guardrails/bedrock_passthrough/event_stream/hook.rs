@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use thiserror::Error;
 
 use super::frames::{parse_event_stream, rebuild_event_stream};
-use super::groups::{Group, group_texts, redistribute};
+use super::groups::{Group, RedistributeError, group_texts, redistribute};
 
 // Stands in for LiteLLM's ProxyLogging.post_call_success_hook; B8656's ProxyPostCallHook implements it.
 pub trait PostCallSuccessHook: Sync {
@@ -27,6 +27,8 @@ where
 {
     #[error("the post call hook failed: {0}")]
     Hook(#[source] E),
+    #[error("the returned text could not be split over the stream")]
+    Share(#[from] RedistributeError),
 }
 
 pub async fn de_anonymize_event_stream<H>(
@@ -68,7 +70,7 @@ where
     let Some(returned) = returned_texts(&answer, active.len()) else {
         return Ok(body.to_vec());
     };
-    let new_texts = redistribute(&groups, &returned);
+    let new_texts = redistribute(&groups, &returned)?;
     Ok(rebuild_event_stream(&parsed, &new_texts))
 }
 

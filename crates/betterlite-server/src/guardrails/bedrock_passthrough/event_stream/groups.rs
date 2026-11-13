@@ -3,8 +3,15 @@ use std::ops::{Div as _, Mul as _};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use num_traits::ToPrimitive as _;
+use thiserror::Error;
 
 use super::frames::Frame;
+
+#[derive(Debug, Error)]
+pub enum RedistributeError {
+    #[error("a text length does not fit the share computation")]
+    Length,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupKey {
@@ -83,20 +90,26 @@ pub(super) fn delta_text_cells(delta: &GuardrailValue) -> Vec<(GroupKey, String)
     cells
 }
 
-#[must_use]
-pub fn redistribute(groups: &Groups, returned: &[String]) -> BTreeMap<(usize, usize), String> {
+pub fn redistribute(
+    groups: &Groups,
+    returned: &[String],
+) -> Result<BTreeMap<(usize, usize), String>, RedistributeError> {
     let mut new_texts = BTreeMap::new();
     let active = groups
         .groups
         .iter()
         .filter(|group| !group.fragments.concat().is_empty());
     for (group, replacement) in active.zip(returned) {
-        split_group(group, replacement, &mut new_texts);
+        split_group(group, replacement, &mut new_texts)?;
     }
-    new_texts
+    Ok(new_texts)
 }
 
-fn split_group(group: &Group, replacement: &str, new_texts: &mut BTreeMap<(usize, usize), String>) {
+fn split_group(
+    group: &Group,
+    replacement: &str,
+    new_texts: &mut BTreeMap<(usize, usize), String>,
+) -> Result<(), RedistributeError> {
     let originals: Vec<usize> = group
         .fragments
         .iter()
@@ -113,25 +126,23 @@ fn split_group(group: &Group, replacement: &str, new_texts: &mut BTreeMap<(usize
     let mut position = 0_usize;
     for (index, (member, original)) in group.members.iter().zip(&originals).enumerate() {
         let fragment: String = if index == last {
-            characters
-                .get(position..)
-                .unwrap_or_default()
-                .iter()
-                .collect()
+            characters.iter().skip(position).copied().collect()
         } else {
             let end = position
-                .saturating_add(rounded_share(new_len, *original, total))
+                .saturating_add(rounded_share(new_len, *original, total)?)
                 .min(new_len);
             let text = characters
-                .get(position..end)
-                .unwrap_or_default()
                 .iter()
+                .skip(position)
+                .take(end.saturating_sub(position))
+                .copied()
                 .collect();
             position = end;
             text
         };
         new_texts.insert(*member, fragment);
     }
+    Ok(())
 }
 
 pub(super) fn write_delta_cells(
@@ -186,12 +197,16 @@ fn apply_replacement(
 }
 
 // Python's round() breaks a tie toward the even integer, and the quotient is a float there.
-fn rounded_share(new_len: usize, original: usize, total: usize) -> usize {
+fn rounded_share(
+    new_len: usize,
+    original: usize,
+    total: usize,
+) -> Result<usize, RedistributeError> {
     let share = new_len
         .to_f64()
-        .unwrap_or_default()
-        .mul(original.to_f64().unwrap_or_default())
-        .div(total.to_f64().unwrap_or_default())
+        .ok_or(RedistributeError::Length)?
+        .mul(original.to_f64().ok_or(RedistributeError::Length)?)
+        .div(total.to_f64().ok_or(RedistributeError::Length)?)
         .round_ties_even();
-    share.to_usize().unwrap_or_default()
+    share.to_usize().ok_or(RedistributeError::Length)
 }

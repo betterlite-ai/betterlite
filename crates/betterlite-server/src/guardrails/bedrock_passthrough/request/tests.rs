@@ -150,9 +150,13 @@ async fn a_converse_endpoint_without_a_body_is_handled_without_a_call() {
 }
 
 #[rstest]
-#[case::messages_not_a_list(r#"{"data": {"messages": {"role": "user"}}}"#)]
-#[case::body_a_string(r#"{"data": "text"}"#)]
-#[case::no_messages(r#"{"data": {"system": [{"text": "be nice"}]}}"#)]
+#[case::messages_not_a_list(
+    r#"{"endpoint": "model/x/converse", "data": {"messages": {"role": "user"}}}"#
+)]
+#[case::body_a_string(r#"{"endpoint": "model/x/converse", "data": "text"}"#)]
+#[case::no_messages(
+    r#"{"endpoint": "model/x/converse", "data": {"system": [{"text": "be nice"}]}}"#
+)]
 #[tokio::test]
 async fn a_body_without_a_messages_array_is_handled_without_a_call(#[case] fixture: &str) {
     let guardrail = Scripted::new(Answer::Unchanged);
@@ -167,7 +171,9 @@ async fn a_body_without_a_messages_array_is_handled_without_a_call(#[case] fixtu
 #[tokio::test]
 async fn no_text_means_no_guardrail_call() {
     let guardrail = Scripted::new(Answer::Unchanged);
-    let mut request = data(r#"{"data": {"messages": [{"content": [{"text": ""}]}]}}"#);
+    let mut request = data(
+        r#"{"endpoint": "model/x/converse", "data": {"messages": [{"content": [{"text": ""}]}]}}"#,
+    );
     let routed = process_input_messages(&mut request, &guardrail, SkipFlags::default(), None)
         .await
         .expect("no guardrail call");
@@ -204,13 +210,16 @@ async fn the_guardrail_gets_no_model_unless_it_is_non_empty_text(
     #[case] model: Option<GuardrailValue>,
 ) {
     let guardrail = Scripted::new(Answer::Unchanged);
-    let mut request = data(r#"{"data": {"messages": [{"content": [{"text": "hello"}]}]}}"#);
+    let mut request = data(
+        r#"{"endpoint": "model/x/converse", "data": {"messages": [{"content": [{"text": "hello"}]}]}}"#,
+    );
     if let Some(value) = model {
         request.insert("model".to_owned(), value);
     }
     process_input_messages(&mut request, &guardrail, SkipFlags::default(), None)
         .await
         .expect("guardrail answers");
+    assert_eq!(guardrail.calls(), 1);
     assert_eq!(guardrail.model(), None);
 }
 

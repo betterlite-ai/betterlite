@@ -38,6 +38,7 @@ fn other_endpoints_do_not_match(#[case] endpoint: &str) {
 #[case::with_charset("application/vnd.amazon.eventstream; charset=utf-8")]
 #[case::fragment_alone("vnd.amazon.eventstream")]
 #[case::surrounded("x-application/vnd.amazon.eventstream-x")]
+#[case::suffix_after_the_fragment("application/vnd.amazon.eventstream2")]
 fn event_stream_content_types_match(#[case] content_type: &str) {
     assert!(is_event_stream_content_type(content_type));
 }
@@ -45,7 +46,6 @@ fn event_stream_content_types_match(#[case] content_type: &str) {
 #[rstest]
 #[case::json("application/json")]
 #[case::empty("")]
-#[case::close_but_not_the_fragment("application/vnd.amazon.eventstream2")]
 #[case::dashes("application-vnd.amazon.event-stream")]
 fn other_content_types_do_not_match(#[case] content_type: &str) {
     assert!(!is_event_stream_content_type(content_type));

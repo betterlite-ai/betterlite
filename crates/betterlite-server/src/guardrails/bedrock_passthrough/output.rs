@@ -61,14 +61,17 @@ where
         .await?;
     if let Some(returned) = guardrailed.texts
         && !returned.is_empty()
+        && let Some(content) = content_blocks_mut(response)
     {
-        write_back_texts(response, &holders, &returned);
+        write_back_texts(content, &holders, &returned);
     }
     Ok(Routed::Handled)
 }
 
-fn output_texts(response: &GuardrailValue) -> Option<Vec<(TextPath, String)>> {
-    let blocks = content_blocks(response)?;
+fn output_texts(response: &mut GuardrailValue) -> Option<Vec<(TextPath, String)>> {
+    let Some(GuardrailValue::Array(blocks)) = content_blocks_mut(response) else {
+        return None;
+    };
     let collected = collect_output_texts(blocks);
     if collected.is_empty() {
         return None;
@@ -101,18 +104,18 @@ fn request_data_with_metadata(
     copied
 }
 
-fn content_blocks(response: &GuardrailValue) -> Option<&[GuardrailValue]> {
+fn content_blocks_mut(response: &mut GuardrailValue) -> Option<&mut GuardrailValue> {
     let GuardrailValue::Object(fields) = response else {
         return None;
     };
-    let Some(GuardrailValue::Object(output)) = fields.get("output") else {
+    let Some(GuardrailValue::Object(output)) = fields.get_mut("output") else {
         return None;
     };
-    let Some(GuardrailValue::Object(message)) = output.get("message") else {
+    let Some(GuardrailValue::Object(message)) = output.get_mut("message") else {
         return None;
     };
-    match message.get("content") {
-        Some(GuardrailValue::Array(blocks)) => Some(blocks),
+    match message.get_mut("content") {
+        Some(content @ GuardrailValue::Array(_)) => Some(content),
         _ => None,
     }
 }

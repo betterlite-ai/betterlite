@@ -246,7 +246,7 @@ async fn returned_texts_are_written_back_into_the_content_blocks() {
     process_output_response(&mut response, &guardrail, None, BTreeMap::new(), None)
         .await
         .expect("guardrail answers");
-    assert_eq!(response_texts(&response), vec!["ONE", "TOOL"]);
+    assert_eq!(response_texts(&response), vec!["ONE"]);
     assert_eq!(
         serde_json::to_string(&response).expect("serializes"),
         r#"{"output":{"message":{"content":[{"text":"ONE"},{"toolUse":{"input":{"q":"TOOL"}}}],"role":"assistant"}},"stopReason":"end_turn"}"#
@@ -352,11 +352,31 @@ async fn a_guardrail_failure_is_returned() {
 #[tokio::test]
 async fn an_empty_reply_leaves_the_response_alone() {
     let guardrail = Scripted::new(Answer::Texts(Vec::new()));
-    let mut response = value(RESPONSE);
+    let before = value(RESPONSE);
+    let mut response = before.clone();
     process_output_response(&mut response, &guardrail, None, BTreeMap::new(), None)
         .await
         .expect("guardrail answers");
-    assert_eq!(response_texts(&response), vec!["one", "tool"]);
+    assert_eq!(guardrail.calls(), 1);
+    assert_eq!(response, before);
+}
+
+#[tokio::test]
+async fn an_empty_request_model_is_not_sent() {
+    let guardrail = Scripted::new(Answer::Unchanged);
+    let mut response = value(RESPONSE);
+    let request_data = data(r#"{"endpoint": "model/x/converse", "model": ""}"#);
+    process_output_response(
+        &mut response,
+        &guardrail,
+        None,
+        BTreeMap::new(),
+        Some(&request_data),
+    )
+    .await
+    .expect("guardrail answers");
+    assert_eq!(guardrail.calls(), 1);
+    assert_eq!(guardrail.model(), None);
 }
 
 fn text(value: &GuardrailValue) -> Option<&str> {
