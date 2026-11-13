@@ -91,7 +91,10 @@ pub fn routing_strategy_pre_call_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    checks.iter().try_for_each(|check| check.check(deployment))
+    checks.iter().try_for_each(|check| {
+        check.check(deployment)?;
+        Ok(())
+    })
 }
 
 fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
