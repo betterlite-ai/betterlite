@@ -13,5 +13,5 @@ call:
         - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: env-key, api_base: null, identity: false}
         - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: null, identity: false}
         - {headers: {}, api_key: '', litellm_api_key: fallback-key, litellm_openai_key: null, env_api_key: '', api_base: null, identity: false}
-        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: https://identity.example/v1, identity: true}
+        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: https://api.openai.com/v1, identity: true}
         - {headers: {}, api_key: static-key, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: https://base.example/v1, identity: false}
