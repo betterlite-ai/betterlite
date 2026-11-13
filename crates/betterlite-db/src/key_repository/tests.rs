@@ -902,7 +902,7 @@ async fn postgres_typed_upsert_and_delete_bind_values() {
     };
     assert_eq!(
         inserted_fields.get("key_alias"),
-        Some(&JsonData::String(String::from("first")))
+        Some(&JsonData::String(String::from("aliased")))
     );
     let replacement = TokenWrite(BTreeMap::from([(
         TokenColumn::KeyAlias,
