@@ -3,12 +3,15 @@ from collections.abc import Sized
 from typing import Final, Literal, TypedDict
 
 from fastapi.exceptions import HTTPException
+from litellm.proxy.guardrails.guardrail_hooks.unified_guardrail.unified_guardrail import (
+    UnifiedLLMGuardrails,
+)
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
 from .chunks import Hooks
 
-GUARDRAILS: Final = Hooks()
+GUARDRAILS: Final[UnifiedLLMGuardrails] = Hooks()
 
 
 class TranslationScript(TypedDict):

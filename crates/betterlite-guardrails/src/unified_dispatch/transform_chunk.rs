@@ -44,7 +44,6 @@ pub fn build_transform_chunk(
         is_final,
     )?;
     let choices = round_choices(
-        mutated_text_per_choice,
         &deltas,
         emitted_text_per_choice,
         finish_reason_per_choice,
@@ -55,6 +54,23 @@ pub fn build_transform_chunk(
     }
     add_deltas(mutated_text_per_choice, &deltas, emitted_text_per_choice);
     Ok(Some(response_chunk(reference_chunk, choices)))
+}
+
+fn underflow(index: i64, already_chars: usize) -> StreamHttpError {
+    let message = format!(
+        "Guardrail streaming transform for choice {index} is not a forward extension of the {already_chars} chars already streamed to the client (it is shorter than, or rewrites, the emitted prefix); emitted bytes cannot be retracted. Withhold recent output via stream_holdback_chars before rewriting it."
+    );
+    let detail = BTreeMap::from([
+        (
+            "error".to_owned(),
+            GuardrailValue::Text("stream_transform_underflow".to_owned()),
+        ),
+        ("message".to_owned(), GuardrailValue::Text(message)),
+    ]);
+    StreamHttpError {
+        status_code: 400,
+        detail: HttpErrorDetail::Object(detail),
+    }
 }
 
 // on the final round a deferred finish_reason still reaches the client when the guardrail sent no text
@@ -103,20 +119,7 @@ fn round_deltas(
         let already_chars = already.chars().count();
         let text_chars = text.chars().count();
         if !text.starts_with(already) {
-            let message = format!(
-                "Guardrail streaming transform for choice {index} is not a forward extension of the {already_chars} chars already streamed to the client (it is shorter than, or rewrites, the emitted prefix); emitted bytes cannot be retracted. Withhold recent output via stream_holdback_chars before rewriting it."
-            );
-            let detail = BTreeMap::from([
-                (
-                    "error".to_owned(),
-                    GuardrailValue::Text("stream_transform_underflow".to_owned()),
-                ),
-                ("message".to_owned(), GuardrailValue::Text(message)),
-            ]);
-            return Err(StreamHttpError {
-                status_code: 400,
-                detail: HttpErrorDetail::Object(detail),
-            });
+            return Err(underflow(*index, already_chars));
         }
         let window = if is_final {
             0
@@ -140,37 +143,49 @@ fn round_deltas(
 }
 
 fn round_choices(
-    mutated: &IndexMap<i64, String>,
     deltas: &IndexMap<i64, String>,
     emitted: &IndexMap<i64, String>,
     reasons: &IndexMap<i64, Option<String>>,
     is_final: bool,
 ) -> Vec<GuardrailValue> {
-    let mut choices = Vec::new();
-    for index in mutated.keys() {
-        let text = deltas.get(index).cloned().unwrap_or_default();
-        let stored = if is_final { reasons.get(index) } else { None };
-        // an empty reason still counts as a reason for the skip rule; StreamingChoices nulls it in the chunk
-        if text.is_empty() && !stored.is_some_and(Option::is_some) {
-            continue;
-        }
-        let reason = stored
-            .and_then(|given| given.as_ref().map(String::as_str))
-            .filter(|candidate| !candidate.is_empty())
-            .map(|candidate| map_finish_reason(candidate).reason.as_str().to_owned());
-        let role = match emitted.get(index) {
-            Some(already) if !already.is_empty() => GuardrailValue::Null,
-            Some(_) | None => GuardrailValue::Text("assistant".to_owned()),
-        };
-        choices.push(stream_choice(
-            *index,
-            GuardrailValue::Text(text),
-            role,
-            GuardrailValue::Null,
-            reason,
-        ));
+    deltas
+        .iter()
+        .filter_map(|(index, delta)| choice_for(*index, delta, emitted, reasons, is_final))
+        .collect()
+}
+
+fn choice_for(
+    index: i64,
+    delta: &str,
+    emitted: &IndexMap<i64, String>,
+    reasons: &IndexMap<i64, Option<String>>,
+    is_final: bool,
+) -> Option<GuardrailValue> {
+    let stored = if is_final { reasons.get(&index) } else { None };
+    // an empty reason still counts for the skip rule; StreamingChoices nulls it in the chunk
+    if delta.is_empty() && !stored.is_some_and(Option::is_some) {
+        return None;
     }
-    choices
+    Some(stream_choice(
+        index,
+        GuardrailValue::Text(delta.to_owned()),
+        round_role(emitted.get(&index)),
+        GuardrailValue::Null,
+        round_reason(stored),
+    ))
+}
+
+fn round_reason(stored: Option<&Option<String>>) -> Option<String> {
+    let reason = stored.and_then(|given| given.as_ref().map(String::as_str));
+    let given = reason.filter(|candidate| !candidate.is_empty())?;
+    Some(map_finish_reason(given).reason.as_str().to_owned())
+}
+
+fn round_role(emitted: Option<&String>) -> GuardrailValue {
+    match emitted {
+        Some(already) if !already.is_empty() => GuardrailValue::Null,
+        Some(_) | None => GuardrailValue::Text("assistant".to_owned()),
+    }
 }
 
 fn add_deltas(
