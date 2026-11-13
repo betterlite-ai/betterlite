@@ -71,23 +71,28 @@ pub fn map_openai_params(
     kwargs: &SpeechKwargs,
 ) -> SpeechMapping {
     let (voice, voice_dict) = map_voice(voice);
-    let encoding = optional_params.response_format.as_deref().map_or_else(
-        || DEFAULT_AUDIO_ENCODING.to_owned(),
-        |format| {
-            FORMAT_MAPPINGS
-                .iter()
-                .find_map(|(name, mapped)| (*name == format).then_some(*mapped))
-                .map_or_else(|| format.to_owned(), str::to_owned)
-        },
-    );
+    let encoding = optional_params
+        .response_format
+        .as_deref()
+        .map_or(DEFAULT_AUDIO_ENCODING, |format| {
+            lookup(&FORMAT_MAPPINGS, format)
+        });
     SpeechMapping {
         voice,
         voice_dict,
-        audio_encoding: encoding,
+        audio_encoding: encoding.to_owned(),
         speaking_rate: optional_params.speed.map(|speed| speed.to_string()),
         audio_config: kwargs.audio_config.clone(),
         use_ssml: kwargs.use_ssml,
     }
+}
+
+// an unmapped key passes through unchanged
+fn lookup<'a>(table: &[(&'static str, &'static str)], key: &'a str) -> &'a str {
+    table
+        .iter()
+        .find(|(source, _)| *source == key)
+        .map_or(key, |&(_, target)| target)
 }
 
 fn map_voice(voice: Option<&SpeechVoice>) -> (Option<String>, Option<Object>) {
@@ -95,10 +100,7 @@ fn map_voice(voice: Option<&SpeechVoice>) -> (Option<String>, Option<Object>) {
         None => (None, None),
         Some(SpeechVoice::Options(options)) => (None, Some(options.clone())),
         Some(SpeechVoice::Name(name)) => {
-            let mapped: &str = VOICE_MAPPINGS
-                .iter()
-                .find_map(|(source, target)| (*source == name.as_str()).then_some(*target))
-                .unwrap_or(name);
+            let mapped = lookup(&VOICE_MAPPINGS, name);
             let mut settings = Object::new();
             settings.insert(
                 "languageCode".to_owned(),

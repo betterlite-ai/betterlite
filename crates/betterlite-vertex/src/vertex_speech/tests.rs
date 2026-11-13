@@ -423,8 +423,28 @@ fn rejects_a_non_string_voice_field() {
     );
     assert!(matches!(
         request_for(&call("hi", &mapped)),
-        Err(VertexSpeechError::VoiceFieldType { .. })
+        Err(VertexSpeechError::VoiceRecord(_))
     ));
+}
+
+#[test]
+fn rejects_an_unknown_voice_field() {
+    let mut options = Object::new();
+    options.insert("pitch".to_owned(), Json::Text("low".to_owned()));
+    let mapped = map_openai_params(
+        Some(&SpeechVoice::Options(options)),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
+    );
+    assert!(matches!(
+        request_for(&call("hi", &mapped)),
+        Err(VertexSpeechError::VoiceRecord(_))
+    ));
+}
+
+#[test]
+fn rejects_an_unknown_audio_config_field() {
+    assert!(serde_json::from_str::<SpeechAudioConfig>(r#"{"pitch": "low"}"#).is_err());
 }
 
 #[test]

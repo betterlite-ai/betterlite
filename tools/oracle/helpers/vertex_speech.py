@@ -43,13 +43,8 @@ CONFIG = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc
 
 
 class Voices(TypedDict):
-    function: Literal["alloy_voice"]
+    function: Literal["alloy_voice", "custom_voice_language"]
     voices: list[Voice]
-
-
-class Languages(TypedDict):
-    function: Literal["custom_voice_language"]
-    voices: list[str]
 
 
 class Formats(TypedDict):
@@ -67,7 +62,7 @@ class Bodies(TypedDict):
     bodies: list[str]
 
 
-Input: TypeAlias = Voices | Languages | Formats | Cases | Bodies
+Input: TypeAlias = Voices | Formats | Cases | Bodies
 
 MAPPED = TypeAdapter(Params)
 
@@ -82,7 +77,9 @@ def fixed_token(
 
 
 def sniff(audio: bytes) -> str | None:
-    return "audio/x-test" if audio[:1] == PREFIX else None
+    if audio[:1] == PREFIX:
+        return "audio/x-test"
+    return None
 
 
 def mapped(voice: Voice, optional: Params, kwargs: Params) -> Params:
@@ -104,10 +101,6 @@ def alloy_voice(voices: list[Voice]) -> JsonValue:
     }
 
 
-def custom_voice_language(voices: list[str]) -> JsonValue:
-    return {"voices": [mapped(v, {}, {}).get("vertex_voice_dict") for v in voices]}
-
-
 def aac_maps_mp3(formats: list[str | None]) -> JsonValue:
     return {
         "encodings": [
@@ -117,48 +110,28 @@ def aac_maps_mp3(formats: list[str | None]) -> JsonValue:
     }
 
 
-def ssml_case(case: dict[str, JsonValue]) -> JsonValue:
-    kwargs: Params = {"use_ssml": case.get("use_ssml")}
+def prepared(
+    value: str, voice: str | None, optional: Params, params: Params, field: str
+) -> JsonValue:
     try:
-        body = transform(str(case.get("input")), None, mapped(None, {}, kwargs), {})
+        return transform(value, voice, optional, params)[field]
     except ValueError:
         return FAILED
-    return {"input": body["input"]}
 
 
-def ssml_substring(cases: list[dict[str, JsonValue]]) -> JsonValue:
-    return {"inputs": [ssml_case(case) for case in cases]}
-
-
-def audio_case(case: dict[str, JsonValue]) -> JsonValue:
-    keys = ("response_format", "speed")
-    optional: Params = {key: case[key] for key in keys if case.get(key) is not None}
-    audio_config = case.get("audio_config")
-    kwargs: Params = {} if audio_config is None else {"audioConfig": audio_config}
-    return transform("hi", None, mapped(None, optional, kwargs), {})["audioConfig"]
-
-
-def full_audio_config(cases: list[dict[str, JsonValue]]) -> JsonValue:
-    return {"configs": [audio_case(case) for case in cases]}
-
-
-def voice_case(case: dict[str, JsonValue]) -> JsonValue:
+def case_view(case: dict[str, JsonValue], field: str) -> JsonValue:
     voice = case.get("voice")
     spoken = None if voice is None else str(voice)
-    optional = mapped(spoken, {}, {})
+    optional: Params = {k: case[k] for k in ("response_format", "speed") if case.get(k) is not None}
+    renamed = (("audio_config", "audioConfig"), ("use_ssml", "use_ssml"))
+    kwargs: Params = {name: case[key] for key, name in renamed if case.get(key) is not None}
+    params = mapped(spoken, optional, kwargs)
     mapped_voice = case.get("mapped_voice")
     if mapped_voice is not None:
-        optional["vertex_voice_dict"] = mapped_voice
+        params["vertex_voice_dict"] = mapped_voice
     litellm_voice = case.get("litellm_voice")
-    params: Params = {} if litellm_voice is None else {"vertex_voice_dict": litellm_voice}
-    try:
-        return transform("hi", spoken, optional, params)["voice"]
-    except ValueError:
-        return FAILED
-
-
-def voice_dict_precedence(cases: list[dict[str, JsonValue]]) -> JsonValue:
-    return {"voices": [voice_case(case) for case in cases]}
+    litellm_params: Params = {} if litellm_voice is None else {"vertex_voice_dict": litellm_voice}
+    return prepared(str(case.get("input", "hi")), spoken, params, litellm_params, field)
 
 
 def response_view(text: str) -> JsonValue:
@@ -167,9 +140,10 @@ def response_view(text: str) -> JsonValue:
         reply = CONFIG.transform_text_to_speech_response("m", raw, None)
     except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
         return FAILED
+    headers = reply.response.headers
     return {
         "status": reply.response.status_code,
-        "contentType": reply.response.headers.get("content-type"),
+        "contentType": next(iter(headers.get_list("content-type")), None),
         "bytes": list(reply.content),
     }
 
@@ -179,14 +153,11 @@ def decoded_status_200(bodies: list[str]) -> JsonValue:
         return {"bodies": [response_view(body) for body in bodies]}
 
 
-def cases_view(input_value: Cases) -> JsonValue:
-    match input_value["function"]:
-        case "ssml_substring":
-            return ssml_substring(input_value["cases"])
-        case "full_audio_config":
-            return full_audio_config(input_value["cases"])
-        case "voice_dict_precedence":
-            return voice_dict_precedence(input_value["cases"])
+VIEWS = {
+    "ssml_substring": ("inputs", "input"),
+    "full_audio_config": ("configs", "audioConfig"),
+    "voice_dict_precedence": ("voices", "voice"),
+}
 
 
 def run(input_value: Input) -> JsonValue:
@@ -195,10 +166,12 @@ def run(input_value: Input) -> JsonValue:
             case "alloy_voice":
                 return alloy_voice(input_value["voices"])
             case "custom_voice_language":
-                return custom_voice_language(input_value["voices"])
+                voices = [mapped(v, {}, {}).get("vertex_voice_dict") for v in input_value["voices"]]
+                return {"voices": voices}
             case "aac_maps_mp3":
                 return aac_maps_mp3(input_value["formats"])
             case "ssml_substring" | "full_audio_config" | "voice_dict_precedence":
-                return cases_view(input_value)
+                key, field = VIEWS[input_value["function"]]
+                return {key: [case_view(case, field) for case in input_value["cases"]]}
             case "decoded_status_200":
                 return decoded_status_200(input_value["bodies"])

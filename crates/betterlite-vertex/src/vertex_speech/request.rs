@@ -1,8 +1,8 @@
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::endpoint_target::region::DEFAULT_LOCATION;
 use crate::model_urls::base_url::validate_vertex_location;
@@ -25,7 +25,8 @@ pub struct SpeechInput {
     pub ssml: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SpeechVoiceSettings {
     #[serde(rename = "languageCode", skip_serializing_if = "Option::is_none")]
     pub language_code: Option<String>,
@@ -94,13 +95,9 @@ pub fn validate_input(
     match (text, ssml) {
         (None, None) => Err(VertexSpeechError::InputRequired),
         (Some(_), Some(_)) => Err(VertexSpeechError::BothInputs),
-        (Some(value), None) => Ok(SpeechInput {
-            text: Some(value.to_owned()),
-            ssml: None,
-        }),
-        (None, Some(value)) => Ok(SpeechInput {
-            text: None,
-            ssml: Some(value.to_owned()),
+        _ => Ok(SpeechInput {
+            text: text.map(str::to_owned),
+            ssml: ssml.map(str::to_owned),
         }),
     }
 }
@@ -168,7 +165,9 @@ fn voice_settings(call: &SpeechCall<'_>) -> Result<SpeechVoiceSettings, VertexSp
         .filter(|dict| !dict.is_empty())
         .or(call.mapping.voice_dict.as_ref());
     if let Some(dict) = chosen {
-        return voice_record(dict);
+        return serde_json::to_value(dict)
+            .and_then(serde_json::from_value)
+            .map_err(VertexSpeechError::VoiceRecord);
     }
     let Some(name) = call.voice else {
         return Ok(SpeechVoiceSettings {
@@ -180,29 +179,4 @@ fn voice_settings(call: &SpeechCall<'_>) -> Result<SpeechVoiceSettings, VertexSp
         language_code: Some(voice_language(name)),
         name: Some(name.to_owned()),
     })
-}
-
-fn voice_record(dict: &Object) -> Result<SpeechVoiceSettings, VertexSpeechError> {
-    let mut settings = SpeechVoiceSettings::default();
-    for (field, value) in dict {
-        let target = match field.as_str() {
-            "languageCode" => &mut settings.language_code,
-            "name" => &mut settings.name,
-            unknown => {
-                return Err(VertexSpeechError::UnknownVoiceField {
-                    field: unknown.to_owned(),
-                });
-            }
-        };
-        *target = match value {
-            Json::Null => None,
-            Json::Text(text) => Some(text.clone()),
-            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                return Err(VertexSpeechError::VoiceFieldType {
-                    field: field.clone(),
-                });
-            }
-        };
-    }
-    Ok(settings)
 }

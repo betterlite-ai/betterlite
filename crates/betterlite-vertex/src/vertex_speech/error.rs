@@ -38,8 +38,6 @@ pub enum VertexSpeechError {
     InputRequired,
     #[error("only one of text and ssml may be provided")]
     BothInputs,
-    #[error("the vertex voice record does not hold the field {field}")]
-    UnknownVoiceField { field: String },
-    #[error("the {field} entry of the vertex voice record is not a string")]
-    VoiceFieldType { field: String },
+    #[error("the vertex voice record is not a valid voice")]
+    VoiceRecord(#[source] JsonError),
 }
