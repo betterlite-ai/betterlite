@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-openai = { path = ".." }
 betterlite-prompts = { path = "../../betterlite-prompts" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
@@ -455,6 +456,20 @@ bench = false
 [[bin]]
 name = "openai_response_events"
 path = "fuzz_targets/openai_response_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "voxtral_reply"
+path = "fuzz_targets/voxtral_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_uploads"
+path = "fuzz_targets/xai_uploads.rs"
 test = false
 doc = false
 bench = false
