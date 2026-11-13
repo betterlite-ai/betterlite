@@ -1,7 +1,8 @@
-use super::rows::{
-    DatabaseRow, DeletedVerificationTokenRow, RowError, VerificationTokenRow, daily_activity_row,
+use super::rows::records::{
+    DeletedVerificationTokenRow, VerificationTokenRow, daily_activity_row,
     deleted_verification_token_row, verification_token_row,
 };
+use super::rows::{DatabaseRow, RowError};
 use crate::daily_activity_contracts::{
     DailyActivityRow, DailyActivityTable, SqlParameter, SqlQuery,
 };

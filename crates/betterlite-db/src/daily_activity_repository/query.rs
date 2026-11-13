@@ -1,5 +1,6 @@
 use super::database::{DailyActivityDatabase, DailyRowFilter};
-use super::rows::{self, DatabaseRow};
+use super::rows::DatabaseRow;
+use super::rows::adapters::{entity_rows, grouping_rows, key_page, key_spend_rows};
 use super::{
     DailyActivityRepository, DailyActivityRepositoryError, Result, USAGE_CACHE_LEAKAGE_KEYS_MAX,
     USAGE_KEY_SEARCH_MAX, USAGE_MODEL_TOP_KEYS_MAX,
@@ -56,9 +57,9 @@ where
             }
         };
         let (grouping_read, entity_read) = join(self.query(&grouping), entity_read).await;
-        let grouping_rows = rows::grouping_rows(&grouping_read?)?;
+        let grouping_rows = grouping_rows(&grouping_read?)?;
         let entity_rows = match entity_read? {
-            Some(found) => Some(rows::entity_rows(&found)?),
+            Some(found) => Some(entity_rows(&found)?),
             None => None,
         };
         let distinct_api_keys = grouping_rows
@@ -85,7 +86,7 @@ where
         }
         let query = build_key_search_sql(scope, search, limit, &self.clock)?;
         let rows = self.query(&query).await?;
-        let decoded = rows::key_spend_rows(&rows)?;
+        let decoded = key_spend_rows(&rows)?;
         Ok(decoded.into_iter().map(|row| row.api_key).collect())
     }
 
@@ -104,7 +105,7 @@ where
         let query =
             build_model_top_keys_sql(scope, model_group, by_model_group, limit, &self.clock)?;
         let rows = self.query(&query).await?;
-        Ok(rows::key_spend_rows(&rows)?)
+        Ok(key_spend_rows(&rows)?)
     }
 
     pub async fn cache_leakage_keys(
@@ -119,7 +120,7 @@ where
         }
         let query = build_cache_leakage_keys_sql(scope, limit, &self.clock)?;
         let rows = self.query(&query).await?;
-        Ok(rows::key_spend_rows(&rows)?)
+        Ok(key_spend_rows(&rows)?)
     }
 
     pub async fn key_page(
@@ -130,7 +131,7 @@ where
     ) -> Result<KeyPage> {
         let query = build_key_page_sql(scope, offset, limit, &self.clock)?;
         let rows = self.query(&query).await?;
-        Ok(rows::key_page(&rows)?)
+        Ok(key_page(&rows)?)
     }
 
     pub async fn daily_rows(

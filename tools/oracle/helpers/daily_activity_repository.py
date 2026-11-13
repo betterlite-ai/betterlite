@@ -18,25 +18,6 @@ from pydantic import JsonValue, TypeAdapter
 JSON: Final = TypeAdapter(JsonValue)
 BATCH_SIZE: Final = 1000
 DELETED_AT: Final = datetime(2026, 1, 1, tzinfo=UTC)
-DEFAULT_ROW: Final[dict[str, object]] = {
-    "date": "2026-08-01",
-    "entity_id": "entity",
-    "entity_alias": None,
-    "api_key": None,
-    "key_alias": None,
-    "user_id": None,
-    "user_email": None,
-    "model": None,
-    "spend": 0.0,
-    "flat_cost": 0.0,
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "api_requests": 0,
-    "successful_requests": 0,
-    "failed_requests": 0,
-    "cache_read_input_tokens": 0,
-    "cache_creation_input_tokens": 0,
-}
 
 
 @dataclass(slots=True)
@@ -85,11 +66,9 @@ class FakeDatabase:
             return None
         return self.batches.pop(0)
 
-
-class FakePrisma:
-    def __init__(self, database: FakeDatabase) -> None:
-        self.database = database
-        self.db = database
+    @property
+    def db(self) -> "FakeDatabase":
+        return self
 
 
 class PassthroughReads:
@@ -109,7 +88,7 @@ class PassthroughReads:
 class FakeRepository(DailyActivityRepository):
     @typing.no_type_check
     def __init__(self, database: FakeDatabase) -> None:
-        self._prisma_client = FakePrisma(database)
+        self._prisma_client = database
         self._proxy_reads = PassthroughReads()
 
 
@@ -128,30 +107,10 @@ class RowCase(TypedDict):
     key_exists: bool
 
 
-class ExportRowInput(TypedDict):
-    date: str
-    entity_id: str
-    entity_alias: str | None
-    api_key: str | None
-    key_alias: str | None
-    user_id: str | None
-    user_email: str | None
-    model: str | None
-    spend: float
-    flat_cost: float
-    prompt_tokens: int
-    completion_tokens: int
-    api_requests: int
-    successful_requests: int
-    failed_requests: int
-    cache_read_input_tokens: int
-    cache_creation_input_tokens: int
-
-
 class CursorCase(TypedDict):
     function: Literal["next_cursor"]
     export_type: Literal["daily", "daily_with_keys", "daily_with_models", "daily_with_users"]
-    last: ExportRowInput
+    last: dict[str, JsonValue]
 
 
 Call = TagsCase | RowCase | CursorCase
@@ -176,22 +135,20 @@ def row_json(row: KeyMetadataRow) -> JsonValue:
 
 
 async def resolved_row(record: TokenRecord, *, key_exists: bool) -> KeyMetadataRow:
-    active: list[TokenRecord] = []
-    deleted: list[DeletedTokenRecord] = []
-    if key_exists:
-        active.append(record)
-    else:
-        deleted.append(
+    active: list[TokenRecord] = [record] if key_exists else []
+    archived: list[DeletedTokenRecord] = []
+    if not key_exists:
+        archived.append(
             DeletedTokenRecord(
-                token=record.token,
-                key_alias=record.key_alias,
-                team_id=record.team_id,
-                user_id=record.user_id,
-                metadata=record.metadata,
-                deleted_at=DELETED_AT,
+                record.token,
+                record.key_alias,
+                record.team_id,
+                record.user_id,
+                record.metadata,
+                DELETED_AT,
             )
         )
-    database = FakeDatabase(active=active, deleted=deleted, batches=[])
+    database = FakeDatabase(active=active, deleted=archived, batches=[])
     repository = FakeRepository(database)
     resolved = await repository.key_metadata(frozenset({record.token}), None)
     return resolved[record.token]
@@ -216,8 +173,7 @@ async def row_answer(case: RowCase) -> JsonValue:
 
 
 async def cursor_answer(case: CursorCase) -> JsonValue:
-    batch: list[Mapping[str, object]] = [dict(DEFAULT_ROW) for _ in range(BATCH_SIZE - 1)]
-    batch.append(case["last"])
+    batch: list[dict[str, JsonValue]] = [dict(case["last"]) for _ in range(BATCH_SIZE)]
     database = FakeDatabase(active=[], deleted=[], batches=[batch, []])
     repository = FakeRepository(database)
     scope = DailyActivityScope(

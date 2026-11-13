@@ -2,9 +2,8 @@
 
 use super::super::DailyActivityRepository;
 use super::super::database::{DailyActivityDatabase, DailyRowFilter, DatabaseFuture};
-use super::super::rows::{
-    DatabaseRow, DatabaseValue, DeletedVerificationTokenRow, RowError, VerificationTokenRow,
-};
+use super::super::rows::records::{DeletedVerificationTokenRow, VerificationTokenRow};
+use super::super::rows::{DatabaseRow, DatabaseValue, RowError};
 use crate::budget_permission_rows::JsonData;
 use crate::daily_activity_contracts::{
     DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput, DailyActivityTable,

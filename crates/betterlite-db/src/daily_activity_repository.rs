@@ -8,7 +8,6 @@ use crate::daily_activity_export::DailyActivityExportError;
 use crate::daily_activity_sql::DailyActivitySqlError;
 use crate::postgres_store::errors::DbError;
 use rows::RowError;
-use std::num::TryFromIntError;
 
 pub const USAGE_KEY_SEARCH_MAX: i64 = 100;
 pub const USAGE_MODEL_TOP_KEYS_MAX: i64 = 100;
@@ -47,11 +46,6 @@ pub enum DailyActivityRepositoryError {
     Limit { maximum: i64 },
     #[error("pagination arithmetic is out of range")]
     Pagination,
-    #[error("the export batch size does not fit a database parameter")]
-    BatchSize {
-        #[source]
-        source: TryFromIntError,
-    },
 }
 
 pub type Result<T> = std::result::Result<T, DailyActivityRepositoryError>;

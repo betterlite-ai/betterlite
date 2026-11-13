@@ -1,5 +1,5 @@
 use super::database::DailyActivityDatabase;
-use super::rows;
+use super::rows::adapters;
 use super::{
     DailyActivityRepository, DailyActivityRepositoryError, Result, USAGE_EXPORT_BATCH_SIZE,
 };
@@ -67,7 +67,7 @@ where
 
     async fn fetch(&self) -> Result<Vec<ExportRow>> {
         let batch_size = i64::try_from(USAGE_EXPORT_BATCH_SIZE)
-            .map_err(|source| DailyActivityRepositoryError::BatchSize { source })?;
+            .map_err(|_| DailyActivityRepositoryError::Pagination)?;
         let query = build_export_sql(
             self.scope,
             self.export_type,
@@ -76,7 +76,7 @@ where
             &self.repository.clock,
         )?;
         let rows = self.repository.query(&query).await?;
-        Ok(rows::export_rows(&rows)?)
+        Ok(adapters::export_rows(&rows)?)
     }
 }
 

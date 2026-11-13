@@ -1,5 +1,5 @@
 use super::database::DailyActivityDatabase;
-use super::rows::{DeletedVerificationTokenRow, VerificationTokenRow};
+use super::rows::records::{DeletedVerificationTokenRow, VerificationTokenRow};
 use super::{DailyActivityRepository, Result};
 use crate::budget_permission_rows::JsonData;
 use crate::daily_activity_contracts::{DailyActivityProxyReads, KeyMetadataRow, SpendLogsWindow};
