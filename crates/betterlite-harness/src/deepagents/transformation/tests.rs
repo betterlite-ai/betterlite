@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::context::{GatewayTarget, SessionContext, SessionSettings, TurnOutcome};
 use crate::errors::HarnessError;
