@@ -142,69 +142,40 @@ fn the_special_secret_messages_match_litellm() {
     );
 }
 
+const AGENT_DEBUG: &str = r#"{"guardrail": "agent_365", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client", "client_secret": "sk-guardrail-secret-value"}"#;
+const AZURE_DEBUG: &str = r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "api_key": "sk-guardrail-secret-value", "api_base": "https://azure.example"}"#;
+const IBM_DEBUG: &str = r#"{"guardrail": "ibm_guardrails", "mode": "pre_call", "auth_token": "sk-guardrail-secret-value", "base_url": "https://ibm.example", "detector_id": "jailbreak"}"#;
+const PURVIEW_DEBUG: &str = r#"{"guardrail": "microsoft_purview", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client", "client_secret": "sk-guardrail-secret-value"}"#;
+const ARMOR_DEBUG: &str = r#"{"guardrail": "model_armor", "mode": "pre_call", "credentials": "sk-guardrail-secret-value"}"#;
+const OPENAI_DEBUG: &str = r#"{"guardrail": "openai_moderation", "mode": "during_call", "api_key": "sk-guardrail-secret-value"}"#;
+
 fn agent_debug() -> String {
-    let (args, _) = initialize_agent_365(
-        &params(
-            r#"{"guardrail": "agent_365", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client", "client_secret": "sk-guardrail-secret-value"}"#,
-        ),
-        Some("name"),
-        &NoSecrets,
-    )
-    .unwrap();
+    let (args, _) = initialize_agent_365(&params(AGENT_DEBUG), Some("name"), &NoSecrets).unwrap();
     format!("{args:?}")
 }
 
 fn azure_debug() -> String {
-    let args = initialize_azure(
-        &params(
-            r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call", "api_key": "sk-guardrail-secret-value", "api_base": "https://azure.example"}"#,
-        ),
-        Some("name"),
-    )
-    .unwrap();
+    let args = initialize_azure(&params(AZURE_DEBUG), Some("name")).unwrap();
     format!("{args:?}")
 }
 
 fn ibm_debug() -> String {
-    let args = initialize_ibm(
-        &params(
-            r#"{"guardrail": "ibm_guardrails", "mode": "pre_call", "auth_token": "sk-guardrail-secret-value", "base_url": "https://ibm.example", "detector_id": "jailbreak"}"#,
-        ),
-        Some("name"),
-    )
-    .unwrap();
+    let args = initialize_ibm(&params(IBM_DEBUG), Some("name")).unwrap();
     format!("{args:?}")
 }
 
 fn purview_debug() -> String {
-    let args = initialize_purview(
-        &params(
-            r#"{"guardrail": "microsoft_purview", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client", "client_secret": "sk-guardrail-secret-value"}"#,
-        ),
-        Some("name"),
-    )
-    .unwrap();
+    let args = initialize_purview(&params(PURVIEW_DEBUG), Some("name")).unwrap();
     format!("{args:?}")
 }
 
 fn armor_debug() -> String {
-    let args = initialize_model_armor(
-        &params(
-            r#"{"guardrail": "model_armor", "mode": "pre_call", "credentials": "sk-guardrail-secret-value"}"#,
-        ),
-        Some("name"),
-    );
+    let args = initialize_model_armor(&params(ARMOR_DEBUG), Some("name"));
     format!("{args:?}")
 }
 
 fn openai_debug() -> String {
-    let args = initialize_openai(
-        &params(
-            r#"{"guardrail": "openai_moderation", "mode": "during_call", "api_key": "sk-guardrail-secret-value"}"#,
-        ),
-        Some("name"),
-    )
-    .unwrap();
+    let args = initialize_openai(&params(OPENAI_DEBUG), Some("name")).unwrap();
     format!("{args:?}")
 }
 
