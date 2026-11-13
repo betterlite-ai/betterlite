@@ -2,7 +2,7 @@ use std::io::Write;
 
 use betterlite_config::sections::settings::JsonValue;
 use http::Method;
-use http::header::HeaderMap;
+use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 
 use crate::commands::keys::api::{self, Call};
 use crate::commands::keys::output;
@@ -23,6 +23,10 @@ pub(super) fn migrate_encryption(
         ..
     } = ports;
     let (method, path, query, body) = request_parts(options);
+    let mut headers = HeaderMap::new();
+    if body.is_some() {
+        let _previous = headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    }
     let reply = api::call(
         client,
         Call {
@@ -30,7 +34,7 @@ pub(super) fn migrate_encryption(
             base_url: context.base_url.trim_end_matches('/'),
             path,
             query: &query,
-            headers: HeaderMap::new(),
+            headers,
             body,
             api_key: context.api_key.as_ref(),
         },
