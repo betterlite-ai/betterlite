@@ -37,22 +37,17 @@ fn exporter_value(spec: &ExporterSpec) -> Value {
     })
 }
 
-const OWNERS: &[(ExporterOwner, &str)] = &[
-    (ExporterOwner::ArizeAx, "arize"),
-    (ExporterOwner::ArizePhoenix, "arize_phoenix"),
-    (ExporterOwner::LangfuseOtel, "langfuse_otel"),
-    (ExporterOwner::WeaveOtel, "weave_otel"),
-    (ExporterOwner::Levo, "levo"),
-    (ExporterOwner::Agentops, "agentops"),
-    (ExporterOwner::Newrelic, "newrelic"),
-    (ExporterOwner::Signoz, "signoz"),
-];
-
-fn owner_name(owner: ExporterOwner) -> &'static str {
-    OWNERS
-        .iter()
-        .find_map(|(candidate, name)| (*candidate == owner).then_some(*name))
-        .unwrap_or_default()
+const fn owner_name(owner: ExporterOwner) -> &'static str {
+    match owner {
+        ExporterOwner::ArizeAx => "arize",
+        ExporterOwner::ArizePhoenix => "arize_phoenix",
+        ExporterOwner::LangfuseOtel => "langfuse_otel",
+        ExporterOwner::WeaveOtel => "weave_otel",
+        ExporterOwner::Levo => "levo",
+        ExporterOwner::Agentops => "agentops",
+        ExporterOwner::Newrelic => "newrelic",
+        ExporterOwner::Signoz => "signoz",
+    }
 }
 
 pub(crate) fn destination_value(destination: &OtelDestination) -> Value {

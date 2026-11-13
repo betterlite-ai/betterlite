@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 
 import litellm
 from litellm.integrations.otel.model.config import ExporterSpec, OpenTelemetryV2Config
@@ -52,18 +52,6 @@ def apply_environment(environment: Environment) -> None:
     os.environ.update(environment)
 
 
-def string_map(values: Mapping[str, str]) -> dict[str, Json]:
-    result: dict[str, Json] = {}
-    result.update(values.items())
-    return result
-
-
-def strings_json(values: Iterable[str]) -> list[Json]:
-    result: list[Json] = []
-    result.extend(values)
-    return result
-
-
 def base_config(fields: BaseInput) -> OpenTelemetryV2Config:
     config = OpenTelemetryV2Config()
     config.exporters = [ExporterSpec.model_validate(item) for item in fields["exporters"]]
@@ -75,7 +63,7 @@ def base_config(fields: BaseInput) -> OpenTelemetryV2Config:
 def exporter_json(spec: ExporterSpec) -> Fields:
     options: dict[str, Json] | None = None
     if spec.options is not None:
-        options = string_map(spec.options)
+        options = dict(spec.options)
     owner: str | None = None
     if spec.owner is not None:
         owner = spec.owner.value
@@ -94,8 +82,8 @@ def exporter_json(spec: ExporterSpec) -> Fields:
 def preset_output(config: OpenTelemetryV2Config) -> Fields:
     return {
         "exporters": [exporter_json(spec) for spec in config.exporters],
-        "mapper_names": strings_json(config.mapper_names),
-        "resource_attributes": string_map(config.resource_attributes),
+        "mapper_names": list(config.mapper_names),
+        "resource_attributes": dict(config.resource_attributes),
         "service_name": config.service_name,
         "deployment_environment": config.deployment_environment,
         "capture_message_content": config.capture_message_content,
@@ -105,8 +93,8 @@ def preset_output(config: OpenTelemetryV2Config) -> Fields:
 def destination_json(destination: OtelDestination) -> Fields:
     result: Fields = {}
     result["endpoint"] = destination.endpoint
-    result["headers"] = string_map(destination.headers)
-    result["resource_attributes"] = string_map(destination.resource_attributes)
+    result["headers"] = dict(destination.headers)
+    result["resource_attributes"] = dict(destination.resource_attributes)
     result["callback_name"] = destination.callback_name
     result["protocol"] = destination.protocol
     result["span_scope"] = destination.span_scope
@@ -116,7 +104,7 @@ def destination_json(destination: OtelDestination) -> Fields:
 def optional_headers(headers: Mapping[str, str] | None) -> Json:
     if headers is None:
         return None
-    return string_map(headers)
+    return dict(headers)
 
 
 def run_preset(input_value: Input) -> Json:
@@ -142,17 +130,17 @@ def run_preset(input_value: Input) -> Json:
 
 def run_builder(input_value: Input) -> Json:
     if input_value["function"] == "newrelic_dynamic_headers":
-        return string_map(newrelic_dynamic_headers(input_value["params"]))
+        return dict(newrelic_dynamic_headers(input_value["params"]))
     if input_value["function"] == "newrelic_dynamic_endpoint":
         return newrelic_dynamic_endpoint(input_value["params"])
     if input_value["function"] == "signoz_dynamic_headers":
         litellm.provider_url_destination_allowed_hosts = input_value["allowed_hosts"]
-        return string_map(signoz_dynamic_headers(input_value["params"]))
+        return dict(signoz_dynamic_headers(input_value["params"]))
     if input_value["function"] == "signoz_dynamic_endpoint":
         litellm.provider_url_destination_allowed_hosts = input_value["allowed_hosts"]
         return signoz_dynamic_endpoint(input_value["params"])
     if input_value["function"] == "langfuse_dynamic_headers":
-        return string_map(langfuse_dynamic_headers(input_value["params"]))
+        return dict(langfuse_dynamic_headers(input_value["params"]))
     raise ValueError(f"unknown builder function {input_value['function']}")
 
 
@@ -165,7 +153,7 @@ def run_routing(input_value: Input) -> Json:
         litellm.provider_url_destination_allowed_hosts = input_value["allowed_hosts"]
         return dynamic_otlp_endpoint(input_value["callback_name"], input_value["params"])
     if input_value["function"] == "project_routing_headers":
-        return string_map(
+        return dict(
             project_routing_headers(input_value["callback_name"], input_value["auth_metadata"])
         )
     raise ValueError(f"unknown routing function {input_value['function']}")
@@ -175,7 +163,7 @@ def run_registry(input_value: Input) -> Json:
     if input_value["function"] == "preset_for":
         return input_value["callback_name"] in PRESET_BY_CALLBACK
     if input_value["function"] == "destination_capable_backends":
-        return strings_json(sorted(destination_capable_backends()))
+        return [*sorted(destination_capable_backends())]
     raise ValueError(f"unknown registry function {input_value['function']}")
 
 
