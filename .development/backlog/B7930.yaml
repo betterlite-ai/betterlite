@@ -2,7 +2,7 @@ id: B7930
 milestone: M12 python
 title: Python types for guardrails.py part one, enums, PII lists and per-vendor config models (L1-L835)
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7930-types-guardrails-core.yaml
 covers:
   - "litellm/types/guardrails.py"

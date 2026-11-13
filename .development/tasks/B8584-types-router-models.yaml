@@ -48,11 +48,7 @@ checks:
     why: Strict typing has to hold for every ported module.
     run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
 oracle_cases: []
-deviations:
-- what: The models are plain classes on B5657's `ResponseObject`, so pydantic's `model_validate`, `model_json_schema` and `model_fields` are not there.
-  why: The wheel depends only on python-dotenv.
-- what: "`SPECIAL_MODEL_INFO_PARAMS` is spelled out as a tuple of field names instead of read from `MirroredPricingParams.model_fields`."
-  why: The base has no pydantic `model_fields`.
+deviations: []
 out_of_scope:
 - "B8356 owns `betterlite/types/router.py` and its star import of this module, and B165 owns `CustomRoutingStrategyBase`."
 - "The Rust side of these validators belongs to B010 (params), B013 (model info), B322 (access windows), B323 (routing groups), B388 (adaptive weights), B401 (deployments) and B8350 (mock params); this task ports only the Python models."
