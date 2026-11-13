@@ -1,0 +1,10 @@
+litellm_settings:
+  api_key: seed-api-key
+  openai_key: seed-openai-key
+  api_base: https://seed.example/v1
+  organization: seed-organization
+  api_version: "2024-06-01"
+  azure_key: seed-azure-key
+  vertex_project: seed-project
+  vertex_location: seed-location
+model_list: []

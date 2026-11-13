@@ -1,0 +1,15 @@
+kind: helper
+name: xai-request-only
+call:
+  batch_provider_list:
+    request:
+      provider: xai
+      after: cursor-after
+      limit: 5
+    litellm_settings:
+      api_key: global-key
+      api_base: https://global.example/v1
+    environment:
+      OPENAI_API_KEY: env-key
+env: {}
+compare: {ignore: []}

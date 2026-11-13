@@ -1,0 +1,22 @@
+kind: helper
+name: vertex-request-parameters
+call:
+  batch_provider_list:
+    request:
+      provider: vertex_ai
+      after: cursor-after
+      limit: 10
+      max_retries: 2
+      timeout:
+        connect: 1.5
+        read: 9.0
+        write: 3.5
+        pool: 4.5
+    litellm_settings:
+      vertex_project: configured-project
+    environment:
+      VERTEXAI_PROJECT: env-project
+      VERTEXAI_LOCATION: env-location
+      VERTEXAI_CREDENTIALS: env-credentials
+env: {}
+compare: {ignore: []}

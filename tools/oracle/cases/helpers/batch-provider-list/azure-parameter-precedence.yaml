@@ -1,0 +1,30 @@
+kind: helper
+name: azure-parameter-precedence
+call:
+  batch_provider_list:
+    request:
+      provider: azure
+      api_version: 2024-06-01
+      max_retries: 4
+      azure_ad_token: request-token
+      tenant_id: request-tenant
+      client_id: request-client
+      client_secret: request-secret
+      azure_scope: request-scope
+      azure_username: request-user
+      azure_password: request-password
+      timeout:
+        connect: 1.5
+        read: 2.5
+        write: 3.5
+        pool: 4.5
+    litellm_settings:
+      api_key: global-key
+      azure_key: azure-key
+    environment:
+      AZURE_API_BASE: https://azure-env.example
+      AZURE_API_VERSION: env-version
+      AZURE_OPENAI_API_KEY: env-openai-key
+      AZURE_AD_TOKEN: env-token
+env: {}
+compare: {ignore: []}

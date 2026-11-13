@@ -1,0 +1,10 @@
+kind: helper
+name: provider-parameter-defaults
+call:
+  batch_provider_list:
+    request:
+      provider: openai
+    litellm_settings: {}
+    environment: {}
+env: {}
+compare: {ignore: []}

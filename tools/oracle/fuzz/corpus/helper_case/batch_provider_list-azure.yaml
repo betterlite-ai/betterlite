@@ -1,0 +1,20 @@
+kind: helper
+name: batch-provider-list-azure-seed
+call:
+  batch_provider_list:
+    request:
+      provider: azure
+      api_version: 2024-06-01
+      max_retries: 1
+      timeout:
+        connect: 1.5
+        read: 2.5
+        write: 3.5
+        pool: 4.5
+    litellm_settings:
+      azure_key: seed-azure-key
+    environment:
+      AZURE_API_BASE: https://seed-azure.example
+      AZURE_OPENAI_API_KEY: seed-env-key
+env: {}
+compare: {ignore: []}
