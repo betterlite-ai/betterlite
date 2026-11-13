@@ -1,0 +1,8 @@
+task: B6080
+deviations:
+  - what: A usage.cost given as a numeric string, such as "0.5", sets no cost header in betterlite. Only a JSON number does.
+    why: LiteLLM's float() turns the string into 0.5 by accident of Python. The OpenRouter docs define cost as a number, so a string is a bad reply and is treated like any other unreadable cost.
+    link: ""
+  - what: The KeyError text names the missing key and prints the chunk as compact JSON, not as a Python dict.
+    why: Python's dict repr is not reproducible (docs/compatibility.md), so the helper cases only send chunks whose text is the same in both, such as {}.
+    link: ""

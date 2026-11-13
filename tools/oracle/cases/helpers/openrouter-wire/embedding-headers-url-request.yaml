@@ -1,0 +1,57 @@
+kind: helper
+name: openrouter-wire-embedding-headers-url-request
+call:
+  b6080:
+    op: embedding
+    cases:
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: openrouter/google/gemini-embedding-001
+        input: hello
+        optional_params: {}
+        non_default_params: {}
+      - headers:
+          X-Title: caller-title
+          authorization: Bearer caller
+        api_key: sk-1
+        environment:
+          OR_SITE_URL: https://site.example
+          OR_APP_NAME: my-app
+        api_base: https://gateway.example/v1///
+        model: openai/text-embedding-3-small
+        input: [one, two]
+        optional_params: {}
+        non_default_params: {}
+      - headers: {}
+        api_key: null
+        environment:
+          OR_SITE_URL: ""
+          OR_APP_NAME: ""
+        api_base: ""
+        model: openrouter/openrouter/model
+        input: [1, 2, 3]
+        optional_params: {}
+        non_default_params: {}
+      - headers: {}
+        api_key: ""
+        environment: {}
+        api_base: null
+        model: m
+        input: [[1, 2], [3]]
+        optional_params: {}
+        non_default_params: {}
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: m
+        input: [a]
+        optional_params:
+          model: override
+          dimensions: 8
+        non_default_params: {}
+env: {}
+compare:
+  ignore: []

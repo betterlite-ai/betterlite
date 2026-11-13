@@ -1,0 +1,10 @@
+kind: helper
+name: openrouter-wire-embedding-reply
+call:
+  b6080:
+    op: embedding_reply
+    cases:
+      - body: '{"object":"list","data":[{"object":"embedding","embedding":[0.5,-0.25],"index":0}],"model":"m","usage":{"prompt_tokens":2,"total_tokens":2}}'
+env: {}
+compare:
+  ignore: []

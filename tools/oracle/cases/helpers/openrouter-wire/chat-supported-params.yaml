@@ -1,0 +1,14 @@
+kind: helper
+name: openrouter-wire-chat-supported-params
+call:
+  b6080:
+    op: supported
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-3.5-sonnet
+      - z-ai/glm-4.5
+      - openai/gpt-3.5-turbo-16k
+      - mistralai/mistral-large
+env: {}
+compare:
+  ignore: []

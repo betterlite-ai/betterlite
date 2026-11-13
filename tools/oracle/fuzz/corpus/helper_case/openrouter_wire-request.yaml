@@ -1,0 +1,17 @@
+kind: helper
+name: openrouter-wire-request
+call:
+  b6080:
+    op: request
+    cases:
+      - model: anthropic/claude-3.5-sonnet
+        messages:
+          - role: user
+            content: hello
+            cache_control: {type: ephemeral}
+        optional_params:
+          extra_body:
+            route: fallback
+env: {}
+compare:
+  ignore: []

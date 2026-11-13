@@ -1,0 +1,46 @@
+kind: helper
+name: openrouter-wire-stream-chunks-and-errors
+call:
+  b6080:
+    op: chunk
+    cases:
+      - chunk:
+          id: gen-1
+          created: 1700000000
+          model: openai/gpt-4o
+          usage: null
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                reasoning: thinking
+      - chunk:
+          id: gen-2
+          created: 1700000001
+          model: openai/gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hello
+            - index: 1
+              delta:
+                content: world
+                reasoning: ""
+      - chunk:
+          id: gen-3
+          created: 1700000002
+          model: openai/gpt-4o
+          choices: []
+      - chunk: {}
+      - chunk:
+          error:
+            message: rate limited
+            code: 429
+      - chunk:
+          error:
+            message: upstream failed
+            code: 502
+            user_id: u1
+env: {}
+compare:
+  ignore: []
