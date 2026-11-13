@@ -78,7 +78,10 @@ impl Transport<RoleClient> for SdkStreams {
         match self {
             Self::Streamable(streams) => Box::pin(streams.send(item)),
             Self::LegacySse(streams) => Box::pin(streams.send(item)),
-            Self::Stdio(streams) => Box::pin(streams.send(item)),
+            Self::Stdio(streams) => {
+                let sent = streams.send(item);
+                Box::pin(async move { sent.await.map_err(|error| SdkError::Io(Arc::new(error))) })
+            }
         }
     }
     async fn receive(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
@@ -92,7 +95,10 @@ impl Transport<RoleClient> for SdkStreams {
         match self {
             Self::Streamable(streams) => streams.close().await,
             Self::LegacySse(streams) => streams.close().await,
-            Self::Stdio(streams) => streams.close().await,
+            Self::Stdio(streams) => streams
+                .close()
+                .await
+                .map_err(|error| SdkError::Io(Arc::new(error))),
         }
     }
 }

@@ -51,8 +51,10 @@ enum LimitError {
 fn sdk_error(error: SseError) -> SdkError {
     match error {
         SseError::Body(source) => match source.downcast::<LimitError>() {
-            Ok(LimitError::TooLarge { limit }) => SdkError::EventTooLarge { limit },
-            Ok(LimitError::Source(source)) => SdkError::Http(Arc::new(source)),
+            Ok(limit_error) => match *limit_error {
+                LimitError::TooLarge { limit } => SdkError::EventTooLarge { limit },
+                LimitError::Source(source) => SdkError::Http(Arc::new(source)),
+            },
             Err(other) => SdkError::Sse(SseError::Body(other)),
         },
         framing => SdkError::Sse(framing),

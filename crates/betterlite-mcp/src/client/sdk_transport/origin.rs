@@ -109,7 +109,7 @@ impl OriginHop for McpHttpTransport {
         &self,
         request: McpHttpRequest,
     ) -> BoxFuture<'_, Result<HttpResponse<HttpBody>, McpHttpError>> {
-        Transport::send(self, request, true)
+        Box::pin(self.send(request, true))
     }
     fn drained(source: McpHttpError) -> McpHttpError {
         source
@@ -156,7 +156,7 @@ where
             return Ok(response);
         }
         drop(response.body.read_all().await.map_err(Hop::drained)?);
-        drop(response.body.close().await.map_err(Hop::drained)?);
+        response.body.close().await.map_err(Hop::drained)?;
         method = target.method;
         url = target.url;
         followed = followed.saturating_add(1);
