@@ -2216,6 +2216,7 @@ dependencies = [
  "http 1.5.0",
  "httparse",
  "indexmap 2.14.2",
+ "jiff",
  "lru",
  "mime_guess",
  "nix",
