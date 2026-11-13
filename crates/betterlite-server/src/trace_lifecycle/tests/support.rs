@@ -382,6 +382,7 @@ pub(crate) fn event(call_type: &str, status: &str) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload: Arc::new(payload(call_type, status)),
         dynamic_params: Arc::new(Json::Null),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     })
@@ -402,6 +403,7 @@ pub(crate) fn event_with_session(
     Arc::new(LoggerEvent {
         payload: Arc::new(built),
         dynamic_params: Arc::new(Json::Null),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     })
