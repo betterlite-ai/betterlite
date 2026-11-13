@@ -16,6 +16,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-redis = { path = "../betterlite-redis" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
+indexmap = "2.14.2"
 lru = "0.18.4"
 pcre2 = "0.2.11"
 regex.workspace = true
@@ -32,7 +33,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 unicode-normalization = "0.1.26"
-uuid = { version = "1.29.0", features = ["serde"] }
+uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 [dev-dependencies]
 rstest = "=0.27.0"
