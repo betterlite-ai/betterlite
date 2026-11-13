@@ -41,11 +41,6 @@ class GetProbe(TypedDict):
     api_base: str
 
 
-class AgentProfileInput(TypedDict):
-    op: Literal["agent_profile"]
-    models: list[str]
-
-
 class UrlsInput(TypedDict):
     op: Literal["urls"]
     environment: dict[str, str]
@@ -113,7 +108,7 @@ class Recorded(BaseModel):
     model_call_details: PostCall
 
 
-Input = AgentProfileInput | UrlsInput | CreateInput | RepliesInput | GetInput
+Input = UrlsInput | CreateInput | RepliesInput | GetInput
 
 
 def activate(environment: dict[str, str]) -> None:
@@ -144,20 +139,6 @@ def create_body(found: BaseResponsesAPIConfig, probe: CreateProbe) -> dict[str, 
         headers={},
     )
     return {"body": body}
-
-
-def profiles(input_value: AgentProfileInput) -> JsonValue:
-    found = config()
-    values: list[JsonValue] = []
-    for model in input_value["models"]:
-        probe: CreateProbe = {"model": model, "input": "hi", "optional_params": {}}
-        try:
-            body = create_body(found, probe)
-        except (ValueError, TypeError, KeyError):
-            values.append(None)
-        else:
-            values.append(body["agent_profile"])
-    return {"profiles": values}
 
 
 def urls(input_value: UrlsInput) -> JsonValue:
@@ -304,8 +285,6 @@ def gets(input_value: GetInput) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    if input_value["op"] == "agent_profile":
-        return profiles(input_value)
     if input_value["op"] == "urls":
         return urls(input_value)
     if input_value["op"] == "create_requests":

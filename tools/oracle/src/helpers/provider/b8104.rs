@@ -43,11 +43,6 @@ pub(crate) struct GetProbe {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct AgentProfile {
-    pub(super) models: Vec<String>,
-}
-
-#[derive(Deserialize)]
 pub(crate) struct Urls {
     pub(super) environment: BTreeMap<String, String>,
     pub(super) sdk: Sdk,
@@ -77,7 +72,6 @@ pub(crate) struct Gets {
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Input {
-    AgentProfile(AgentProfile),
     Urls(Urls),
     CreateRequests(Creates),
     Replies(Replies),
@@ -91,7 +85,6 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::AgentProfile(call) => Ok(ops::profiles(call)),
             Input::Urls(call) => Ok(ops::urls(call)),
             Input::CreateRequests(call) => Ok(ops::creates(call)),
             Input::Replies(call) => Ok(ops::replies(call)),

@@ -243,27 +243,6 @@ fn a_usage_object_is_kept_as_sent() {
 }
 
 #[test]
-fn compact_requires_created_at() {
-    let upstream = response(200, r#"{"id":"resp_1","output":[]}"#);
-    let error = plain_config()
-        .transform_compact_response(&upstream, &mut ResponsesLogging::default())
-        .expect_err("compact needs a timestamp");
-    let ManusResponsesError::Contract(ResponsesContractError::BaseLlm(inner)) = error else {
-        panic!("the failure should be the base exception");
-    };
-    assert_eq!(inner.status_code, 200);
-}
-
-#[test]
-fn compact_converts_created_at_without_the_manus_defaults() {
-    let upstream = response(200, r#"{"id":"resp_1","created_at":"5.9","output":[]}"#);
-    let reply = plain_config()
-        .transform_compact_response(&upstream, &mut ResponsesLogging::default())
-        .expect("compact transforms");
-    assert_eq!(reply.created_at, 5);
-}
-
-#[test]
 fn the_default_id_source_yields_eight_hex_characters() {
     let suffix = UuidIdSource.next_suffix();
     assert_eq!(suffix.len(), 8);

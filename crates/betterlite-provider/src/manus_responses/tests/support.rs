@@ -101,13 +101,6 @@ pub(super) fn params(wire: &str) -> Params {
     serde_json::from_str(wire).expect("the fixture is a JSON object")
 }
 
-pub(super) fn headers(pairs: &[(&str, &str)]) -> Headers {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
-}
-
 pub(super) fn response(status: u16, body: &str) -> ResponsesUpstream {
     ResponsesUpstream {
         status_code: status,

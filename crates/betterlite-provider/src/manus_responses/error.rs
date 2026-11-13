@@ -43,10 +43,6 @@ pub enum ManusResponsesError {
     Json(#[from] serde_json::Error),
     #[error("the request parameters are not an object")]
     ParamsShape,
-    #[error("a Responses stream chunk must be a JSON object")]
-    StreamChunkShape,
-    #[error("a Responses stream chunk has no type field")]
-    StreamChunkWithoutType,
-    #[error("the input items reply is not a JSON object")]
-    InputItemsShape,
+    #[error("the {operation} transformation is not built for the Manus provider")]
+    UnsupportedOperation { operation: &'static str },
 }

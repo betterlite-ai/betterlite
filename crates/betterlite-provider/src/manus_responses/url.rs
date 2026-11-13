@@ -6,12 +6,6 @@ use super::{
     MANUS_API_BASE, MANUS_API_BASE_ENV, ManusResponsesConfig, RESPONSES_SUFFIX, V1_SUFFIX,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ResourceRoute {
-    Delete,
-    Cancel,
-}
-
 fn base_url(
     config: &ManusResponsesConfig,
     api_base: Option<&str>,

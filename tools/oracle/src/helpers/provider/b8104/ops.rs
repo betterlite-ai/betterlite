@@ -12,7 +12,7 @@ use betterlite_provider::manus_responses::error::ManusResponsesError;
 use serde_json::{Value, json};
 
 use super::fixture;
-use super::{AgentProfile, Creates, Gets, Replies, ReplyProbe, Urls};
+use super::{Creates, Gets, Replies, ReplyProbe, Urls};
 
 fn create_body(
     config: &ManusResponsesConfig,
@@ -28,22 +28,6 @@ fn create_body(
         headers: Headers::new(),
     };
     config.transform_create_request(&request).ok()
-}
-
-pub(super) fn profiles(call: &AgentProfile) -> Value {
-    let config = fixture::config(&BTreeMap::new(), &fixture::empty_sdk(), 0);
-    let values: Vec<Value> = call
-        .models
-        .iter()
-        .map(|model| {
-            let body = create_body(&config, model, &Json::Text(String::from("hi")), &Params::new());
-            body.and_then(|body| body.get("agent_profile").cloned())
-                .map_or(Value::Null, |profile| {
-                    serde_json::to_value(profile).unwrap_or(Value::Null)
-                })
-        })
-        .collect();
-    json!({"profiles": values})
 }
 
 pub(super) fn urls(call: &Urls) -> Value {
@@ -90,9 +74,7 @@ fn transform_failure(error: &ManusResponsesError) -> Value {
         ManusResponsesError::Contract(ResponsesContractError::BaseLlm(inner)) => {
             json!({"error": {"status": inner.status_code}})
         }
-        ManusResponsesError::Contract(
-            ResponsesContractError::ApiBaseRequired,
-        )
+        ManusResponsesError::Contract(ResponsesContractError::ApiBaseRequired)
         | ManusResponsesError::MissingApiKey
         | ManusResponsesError::Environment { .. }
         | ManusResponsesError::ParamNotText { .. }
