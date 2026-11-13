@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::GeminiToolsError;
 use super::records::{CallingMode, FunctionCallingConfig, Tool, ToolConfig};
@@ -49,6 +49,13 @@ pub fn map_service_tier(value: &str) -> String {
     match value.to_lowercase().as_str() {
         "auto" => "priority".to_owned(),
         other => other.to_owned(),
+    }
+}
+#[must_use]
+pub fn map_web_search_options(_options: &Object) -> Tool {
+    // Gemini takes neither user_location nor search_context_size, so every options object becomes an empty googleSearch
+    Tool::GoogleSearch {
+        google_search: Object::new(),
     }
 }
 pub fn drop_mixed_search_tools(tools: &mut Vec<Tool>, include_server_side: bool) -> bool {
