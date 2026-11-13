@@ -8,13 +8,12 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
-use crate::guardrails::unified_simple::any_guardrail::AnyGuardrail;
-
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Recorded {
     pub(crate) inputs: GuardrailApiInputs,
     pub(crate) input_type: GuardrailInputType,
     pub(crate) request_data: BTreeMap<String, GuardrailValue>,
+    pub(crate) logged: bool,
 }
 
 pub(crate) type CallLog = Arc<Mutex<Vec<Recorded>>>;
@@ -42,9 +41,8 @@ impl FakeGuardrail {
         }
     }
 
-    pub(crate) fn erase(self) -> (AnyGuardrail, CallLog) {
-        let calls = Arc::clone(&self.calls);
-        (AnyGuardrail(Arc::new(self)), calls)
+    pub(crate) fn calls(&self) -> CallLog {
+        Arc::clone(&self.calls)
     }
 }
 
@@ -54,12 +52,13 @@ impl GuardrailContract for FakeGuardrail {
         inputs: GuardrailApiInputs,
         request_data: &mut BTreeMap<String, GuardrailValue>,
         input_type: GuardrailInputType,
-        _logging_obj: Option<&mut GuardrailLogTarget>,
+        logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
         self.calls.lock().unwrap().push(Recorded {
             inputs,
             input_type,
             request_data: request_data.clone(),
+            logged: logging_obj.is_some(),
         });
         let reply = self.reply.clone();
         let failure = self.failure.clone();

@@ -1,4 +1,3 @@
-pub mod any_guardrail;
 pub mod completion;
 pub mod embeddings;
 pub mod image;

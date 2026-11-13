@@ -11,6 +11,8 @@ use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationC
 use super::{SpeechTranslation, SpeechTranslationError};
 use crate::guardrails::unified_simple::tests::fake::{FakeGuardrail, Recorded, calls_of};
 
+type Adapter = SpeechTranslation<FakeGuardrail>;
+
 fn body(json: &str) -> BTreeMap<String, GuardrailValue> {
     serde_json::from_str(json).unwrap()
 }
@@ -19,13 +21,14 @@ fn value(json: &str) -> GuardrailValue {
     serde_json::from_str(json).unwrap()
 }
 
-fn call(
-    request_data: &mut BTreeMap<String, GuardrailValue>,
-) -> TranslationCall<'_, GuardrailLogTarget> {
+fn call<'request>(
+    request_data: &'request mut BTreeMap<String, GuardrailValue>,
+    logging_obj: Option<&'request mut GuardrailLogTarget>,
+) -> TranslationCall<'request, GuardrailLogTarget> {
     TranslationCall {
         user_api_key_dict: None,
         request_data: Some(request_data),
-        logging_obj: None,
+        logging_obj,
         stream_transform_sink: None,
         deliver_ended_stream_rewrites: false,
     }
@@ -48,15 +51,18 @@ fn is_refusal(error: &SpeechTranslationError) -> bool {
 
 #[tokio::test]
 async fn adapter_input_text_is_scanned_and_rewritten() {
-    let (guardrail, calls) = FakeGuardrail::replying(&["safe-speech"]).erase();
+    let fake = FakeGuardrail::replying(&["safe-speech"]);
+    let calls = fake.calls();
+    let mut log_target = GuardrailLogTarget::default();
     let original = body(r#"{"input": "read this", "model": "tts-1", "voice": "alloy"}"#);
     let mut data = original.clone();
-    SpeechTranslation
-        .process_input_messages(&mut data, &guardrail, None)
+    Adapter::default()
+        .process_input_messages(&mut data, &fake, Some(&mut log_target))
         .await
         .unwrap();
     let recorded: Vec<Recorded> = calls_of(&calls);
     assert_eq!(recorded.len(), 1);
+    assert!(recorded[0].logged);
     assert_eq!(recorded[0].inputs.texts, Some(vec!["read this".to_owned()]));
     assert_eq!(recorded[0].inputs.model, Some("tts-1".to_owned()));
     assert_eq!(recorded[0].input_type, GuardrailInputType::Request);
@@ -67,11 +73,12 @@ async fn adapter_input_text_is_scanned_and_rewritten() {
 
 #[tokio::test]
 async fn adapter_input_missing_text_makes_no_guardrail_call() {
-    let (guardrail, calls) = FakeGuardrail::replying(&["safe"]).erase();
+    let fake = FakeGuardrail::replying(&["safe"]);
+    let calls = fake.calls();
     let original = body(r#"{"model": "tts-1"}"#);
     let mut data = original.clone();
-    SpeechTranslation
-        .process_input_messages(&mut data, &guardrail, None)
+    Adapter::default()
+        .process_input_messages(&mut data, &fake, None)
         .await
         .unwrap();
     assert!(calls_of(&calls).is_empty());
@@ -80,11 +87,12 @@ async fn adapter_input_missing_text_makes_no_guardrail_call() {
 
 #[tokio::test]
 async fn adapter_input_failure_is_returned() {
-    let (guardrail, calls) = FakeGuardrail::failing(refusal()).erase();
+    let fake = FakeGuardrail::failing(refusal());
+    let calls = fake.calls();
     let original = body(r#"{"input": "read this"}"#);
     let mut data = original.clone();
-    let error = SpeechTranslation
-        .process_input_messages(&mut data, &guardrail, None)
+    let error = Adapter::default()
+        .process_input_messages(&mut data, &fake, None)
         .await
         .unwrap_err();
     assert!(is_refusal(&error));
@@ -94,11 +102,12 @@ async fn adapter_input_failure_is_returned() {
 
 #[tokio::test]
 async fn adapter_output_returns_the_response_without_a_guardrail_call() {
-    let (guardrail, calls) = FakeGuardrail::replying(&["safe"]).erase();
+    let fake = FakeGuardrail::replying(&["safe"]);
+    let calls = fake.calls();
     let response = value(r#"{"audio": "YXVkaW8="}"#);
     let mut request_data = BTreeMap::new();
-    let returned = SpeechTranslation
-        .process_output_response(response.clone(), &guardrail, call(&mut request_data))
+    let returned = Adapter::default()
+        .process_output_response(response.clone(), &fake, call(&mut request_data, None))
         .await
         .unwrap();
     assert!(calls_of(&calls).is_empty());
@@ -108,41 +117,42 @@ async fn adapter_output_returns_the_response_without_a_guardrail_call() {
 
 #[tokio::test]
 async fn defaults_stream_methods_flags_and_hooks_keep_the_trait_values() {
-    let (guardrail, calls) = FakeGuardrail::replying(&["safe"]).erase();
+    let fake = FakeGuardrail::replying(&["safe"]);
+    let calls = fake.calls();
     let mut responses = vec![value(r#"{"audio": "YXVkaW8="}"#)];
     let original = responses.clone();
-    SpeechTranslation
-        .process_streaming_response(&mut responses, &guardrail, call(&mut BTreeMap::new()))
+    Adapter::default()
+        .process_streaming_response(&mut responses, &fake, call(&mut BTreeMap::new(), None))
         .await
         .unwrap();
     assert_eq!(responses, original);
-    assert_eq!(SpeechTranslation.get_streaming_scan_key(&responses), None);
+    assert_eq!(Adapter::default().get_streaming_scan_key(&responses), None);
     let failure = SpeechTranslationError::Guardrail(refusal());
     assert_eq!(
-        SpeechTranslation.build_block_sse_chunks(&failure, true, Some(&responses)),
+        Adapter::default().build_block_sse_chunks(&failure, true, Some(&responses)),
         None
     );
     assert_eq!(
-        SpeechTranslation.build_stream_error_items(&failure, None),
+        Adapter::default().build_stream_error_items(&failure, None),
         None
     );
     assert_eq!(
-        SpeechTranslation.get_structured_messages(&BTreeMap::new()),
+        Adapter::default().get_structured_messages(&BTreeMap::new()),
         None
     );
     assert!(
-        SpeechTranslation
+        Adapter::default()
             .extract_request_tool_names(&BTreeMap::new())
             .is_empty()
     );
     let response = value(r#"{"audio": "YXVkaW8="}"#);
     assert_eq!(
-        SpeechTranslation.post_call_hook_response(response.clone()),
+        Adapter::default().post_call_hook_response(response.clone()),
         response
     );
     const {
-        assert!(!<SpeechTranslation as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
-        assert!(!<SpeechTranslation as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
+        assert!(!<Adapter as BaseTranslation>::DELIVERS_ENDED_STREAM_REWRITES);
+        assert!(!<Adapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
     }
     assert!(calls_of(&calls).is_empty());
 }

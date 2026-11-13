@@ -1,17 +1,25 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::marker::PhantomData;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
 
-use super::any_guardrail::AnyGuardrail;
 use crate::guardrails::completion_translation::{self, CompletionTranslationError};
 
-pub struct CompletionTranslation;
+// BaseTranslation fixes one Guardrail type per impl, so the adapter carries it as its only type parameter
+pub struct CompletionTranslation<G: GuardrailContract>(PhantomData<G>);
 
-impl BaseTranslation for CompletionTranslation {
-    type Guardrail = AnyGuardrail;
+impl<G: GuardrailContract> Default for CompletionTranslation<G> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<G: GuardrailContract> BaseTranslation for CompletionTranslation<G> {
+    type Guardrail = G;
     type LogTarget = GuardrailLogTarget;
     type Failure = CompletionTranslationError;
 
