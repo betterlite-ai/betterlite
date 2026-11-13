@@ -458,3 +458,27 @@ fn provider_names_match_the_litellm_spelling() {
         "bedrock"
     );
 }
+
+#[rstest]
+#[case::openai("openai", BatchListProvider::OpenAi)]
+#[case::hosted_vllm("hosted_vllm", BatchListProvider::HostedVllm)]
+#[case::litellm_proxy("litellm_proxy", BatchListProvider::LitellmProxy)]
+#[case::azure("azure", BatchListProvider::Azure)]
+#[case::vertex_ai("vertex_ai", BatchListProvider::VertexAi)]
+#[case::xai("xai", BatchListProvider::Xai)]
+#[case::other("bedrock", BatchListProvider::Other("bedrock".to_owned()))]
+fn provider_names_deserialize_to_their_variant(
+    #[case] name: &str,
+    #[case] expected: BatchListProvider,
+) {
+    let request: BatchProviderListInput =
+        serde_json::from_value(serde_json::json!({ "provider": name })).expect("input parses");
+    assert_eq!(request.provider, expected);
+}
+
+#[test]
+fn an_absent_provider_defaults_to_openai() {
+    let request: BatchProviderListInput =
+        serde_json::from_value(serde_json::json!({})).expect("input parses");
+    assert_eq!(request.provider, BatchListProvider::OpenAi);
+}
