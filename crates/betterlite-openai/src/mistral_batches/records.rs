@@ -1,8 +1,8 @@
+use crate::api::batch_records::BatchEndpoint;
+use crate::openai_base_config::Headers;
 use http::Method;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use crate::api::batch_records::BatchEndpoint;
-use crate::openai_base_config::Headers;
 fn default_count() -> i64 {
     1
 }

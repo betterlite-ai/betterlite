@@ -1,5 +1,5 @@
 pub mod decode;
 pub mod error;
 pub mod records;
-pub mod transformation;
 mod tests;
+pub mod transformation;

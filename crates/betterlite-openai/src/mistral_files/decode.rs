@@ -1,6 +1,6 @@
+use crate::api::batch_records::{BatchRecordsError, WireDecodeLimits};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use crate::api::batch_records::{BatchRecordsError, WireDecodeLimits};
 #[derive(Debug, Error)]
 pub enum MistralDecodeError {
     #[error(transparent)]
