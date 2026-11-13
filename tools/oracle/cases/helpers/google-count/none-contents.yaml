@@ -1,0 +1,11 @@
+kind: helper
+name: google-count-none-contents
+call:
+  google_count:
+    calls:
+      - model: gemini-2.0-flash
+        contents: null
+      - model: gemini-2.0-flash
+        contents: []
+env: {}
+compare: {ignore: []}
