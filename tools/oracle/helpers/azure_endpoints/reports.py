@@ -2,17 +2,19 @@ from collections.abc import Callable
 from typing import NotRequired, TypedDict, cast
 
 import httpx
+import litellm
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 
 from azure_endpoints.fixtures import IdentityParams
-from azure_endpoints.inputs import ClientStep, CloudflareStep, SuppliedStep
 from azure_endpoints.sdk import (
     STATE,
     CachedClient,
+    ClientStep,
+    CloudflareStep,
     FixtureAsyncAzureOpenAI,
     FixtureAzureOpenAI,
     Json,
-    is_shared_http,
+    SuppliedStep,
 )
 
 
@@ -120,7 +122,11 @@ def initialize_report(
         "api_version": params["api_version"],
         "max_retries": params["max_retries"],
         "timeout": timeout,
-        "http_client": {"is_async": is_async, "shared": is_shared_http(http_client)},
+        "http_client": {
+            "is_async": is_async,
+            "shared": http_client is litellm.client_session
+            or http_client is litellm.aclient_session,
+        },
         "endpoint": endpoint,
         "api_key": api_key,
         "azure_ad_token": ad_token,

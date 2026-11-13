@@ -6,19 +6,20 @@ from litellm.llms.azure.common_utils import BaseAzureLLM
 from azure_endpoints.cloudflare import cloudflare_step
 from azure_endpoints.dynamic import dynamic_step
 from azure_endpoints.fixtures import identity_params, session
-from azure_endpoints.inputs import (
+from azure_endpoints.reports import ClientParams, client_report, initialize_report
+from azure_endpoints.sdk import (
+    STATE,
     AuthParams,
     ClientStep,
     CloudflareStep,
     Defaults,
     InitializeStep,
     Input,
+    Json,
     LiteLlmParams,
     ProviderScript,
     SourceScripts,
 )
-from azure_endpoints.reports import ClientParams, client_report, initialize_report
-from azure_endpoints.sdk import STATE, Json
 
 ClientParamValue: TypeAlias = str | int | float | None | Callable[[], str]
 

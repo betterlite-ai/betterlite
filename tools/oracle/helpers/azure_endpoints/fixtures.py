@@ -9,26 +9,22 @@ import litellm
 from litellm.llms.azure import common_utils
 from litellm.llms.openai.common_utils import BaseOpenAILLM
 
-from azure_endpoints.inputs import (
-    Defaults,
-    ProviderScript,
-    RaiseScript,
-    Script,
-    SourceScripts,
-    SuppliedStep,
-)
 from azure_endpoints.sdk import (
     STATE,
     CachedClient,
+    Defaults,
     FixtureAsyncAzureOpenAI,
     FixtureAsyncOpenAI,
     FixtureAzureOpenAI,
     FixtureOpenAI,
     Json,
     OtherClient,
-    cached_client,
+    ProviderScript,
+    RaiseScript,
+    Script,
+    SourceScripts,
+    SuppliedStep,
     stable_id,
-    supplied_client,
 )
 
 COMMON = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L626"
@@ -39,6 +35,38 @@ class IdentityParams(TypedDict, total=False):
     is_async: bool
     azure_ad_token: str | None
     azure_ad_token_provider: str
+
+
+def cached_client(kind: str) -> CachedClient | OtherClient | None:
+    match kind:
+        case "none":
+            return None
+        case "other":
+            return OtherClient()
+        case "azure_open_ai":
+            return FixtureAzureOpenAI.blank({})
+        case "async_azure_open_ai":
+            return FixtureAsyncAzureOpenAI.blank({})
+        case "open_ai":
+            return FixtureOpenAI.blank()
+        case "async_open_ai":
+            return FixtureAsyncOpenAI.blank()
+        case _:
+            raise ValueError(f"unknown cached client {kind}")
+
+
+def supplied_client(kind: str, custom_query: dict[str, str]) -> CachedClient:
+    match kind:
+        case "azure_open_ai":
+            return FixtureAzureOpenAI.blank(custom_query)
+        case "async_azure_open_ai":
+            return FixtureAsyncAzureOpenAI.blank(custom_query)
+        case "open_ai":
+            return FixtureOpenAI.blank()
+        case "async_open_ai":
+            return FixtureAsyncOpenAI.blank()
+        case _:
+            raise ValueError(f"unknown supplied client {kind}")
 
 
 class ScriptedProvider:

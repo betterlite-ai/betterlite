@@ -148,41 +148,22 @@ fn resolve_provider<'data>(
         .as_ref()
         .is_none_or(|key| key.expose_secret().is_empty());
     if key_absent
-        && let Some(provider) = client_secret_provider(environment, scope, request.sources)?
+        && let Some((tenant_id, client_id, client_secret)) = non_empty_auth(
+            environment.tenant_id.as_deref(),
+            environment.client_id.as_deref(),
+            environment.client_secret.as_ref(),
+        )
     {
-        return Ok(Some(provider));
+        tracing::debug!("Using Azure AD Token Provider from Entra ID for Azure Auth");
+        let record = ClientSecretRecord {
+            tenant_id,
+            client_id,
+            client_secret,
+            scope: scope.to_owned(),
+        };
+        return Ok(Some(request.sources.client_secret(&record)?));
     }
-    username_password_provider(environment, scope, request.sources)
-}
-
-fn client_secret_provider<'data>(
-    environment: &AuthEnvironment,
-    scope: &str,
-    sources: &'data dyn CredentialSources,
-) -> Result<Option<Arc<dyn CallableTokenProvider + 'data>>, EndpointError> {
-    let Some((tenant_id, client_id, client_secret)) = non_empty_auth(
-        environment.tenant_id.as_deref(),
-        environment.client_id.as_deref(),
-        environment.client_secret.as_ref(),
-    ) else {
-        return Ok(None);
-    };
-    tracing::debug!("Using Azure AD Token Provider from Entra ID for Azure Auth");
-    let record = ClientSecretRecord {
-        tenant_id,
-        client_id,
-        client_secret,
-        scope: scope.to_owned(),
-    };
-    Ok(Some(sources.client_secret(&record)?))
-}
-
-// username and password build their provider even when an API key is configured, as long as none was passed
-fn username_password_provider<'data>(
-    environment: &AuthEnvironment,
-    scope: &str,
-    sources: &'data dyn CredentialSources,
-) -> Result<Option<Arc<dyn CallableTokenProvider + 'data>>, EndpointError> {
+    // username and password build their provider even when an API key is configured, as long as none was passed
     let Some((client_id, username, password)) = non_empty_auth(
         environment.client_id.as_deref(),
         environment.azure_username.as_deref(),
@@ -198,7 +179,7 @@ fn username_password_provider<'data>(
         tenant_id: None,
         scope: scope.to_owned(),
     };
-    Ok(Some(sources.username_password(&record)?))
+    Ok(Some(request.sources.username_password(&record)?))
 }
 
 fn non_empty_auth(

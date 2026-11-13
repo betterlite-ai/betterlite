@@ -3,8 +3,7 @@ from typing import cast
 from litellm.llms.azure import azure as azure_module
 from openai import AsyncAzureOpenAI, AzureOpenAI
 
-from azure_endpoints.inputs import DynamicStep
-from azure_endpoints.sdk import Json, QueryClient
+from azure_endpoints.sdk import DynamicStep, Json, QueryClient
 
 
 def dynamic_step(step: DynamicStep) -> Json:

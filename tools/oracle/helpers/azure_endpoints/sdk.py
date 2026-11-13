@@ -1,18 +1,125 @@
 import builtins
 import inspect
 from collections.abc import Callable
-from typing import TypeAlias, TypedDict, Unpack
+from typing import Literal, NotRequired, TypeAlias, TypedDict, Unpack
 
 import httpx
 import litellm
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
 
-from azure_endpoints.inputs import Script
-
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 CachedClient: TypeAlias = OpenAI | AsyncOpenAI | AzureOpenAI | AsyncAzureOpenAI
 
-SOURCE = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L589"
+
+class TokenScript(TypedDict):
+    outcome: Literal["token"]
+    token: str
+
+
+class RaiseScript(TypedDict):
+    outcome: Literal["raise"]
+    class_name: str
+    message: str
+
+
+Script: TypeAlias = TokenScript | RaiseScript
+
+
+class Defaults(TypedDict):
+    default_max_retries: int
+    azure_default_api_version: str
+
+
+class ProviderScript(TypedDict):
+    identity: int
+    script: Script
+
+
+class SourceScripts(TypedDict, total=False):
+    client_secret: Script
+    username_password: Script
+    refresh: Script
+    oidc: Script
+
+
+class AuthParams(TypedDict, total=False):
+    tenant_id: str | None
+    client_id: str | None
+    client_secret: str | None
+    azure_username: str | None
+    azure_password: str | None
+    azure_scope: str | None
+
+
+class LiteLlmParams(TypedDict, total=False):
+    azure_ad_token: str | None
+    auth: AuthParams
+    max_retries: int | None
+    timeout: float | None
+
+
+class InitializeStep(TypedDict, total=False):
+    defaults: Defaults
+    params: LiteLlmParams
+    api_key: str
+    api_base: str
+    api_version: str
+    is_async: bool
+    session: Literal["dedicated", "shared"]
+    refresh: bool
+    provider: ProviderScript
+    environment: dict[str, str]
+    sources: SourceScripts
+
+
+class SuppliedStep(TypedDict):
+    kind: Literal["azure_open_ai", "async_azure_open_ai", "open_ai", "async_open_ai"]
+    custom_query: NotRequired[dict[str, str]]
+
+
+class ClientStep(InitializeStep, total=False):
+    cached: Literal[
+        "none", "azure_open_ai", "async_azure_open_ai", "open_ai", "async_open_ai", "other"
+    ]
+    supplied: SuppliedStep
+
+
+class CloudflareParams(TypedDict, total=False):
+    tenant_id: str | None
+    client_id: str | None
+    azure_scope: str | None
+
+
+class CloudflareStep(TypedDict):
+    api_base: str
+    model: str
+    api_version: str
+    max_retries: int
+    timeout: float
+    params: NotRequired[CloudflareParams]
+    api_key: NotRequired[str]
+    azure_ad_token: NotRequired[str]
+    provider: NotRequired[ProviderScript]
+    shared_session: NotRequired[bool]
+    is_async: NotRequired[bool]
+    client: NotRequired[SuppliedStep]
+    environment: NotRequired[dict[str, str]]
+    sources: NotRequired[SourceScripts]
+
+
+class DynamicStep(TypedDict, total=False):
+    api_version: str
+    custom_query: dict[str, str]
+
+
+class Input(TypedDict, total=False):
+    default_api_version: list[InitializeStep]
+    cloudflare_base_model: list[CloudflareStep]
+    separate_token_client_identity: list[ClientStep]
+    azure_sdk_client_mode: list[ClientStep]
+    azure_initializer_credentials: list[InitializeStep]
+    azure_v1_client_projection: list[ClientStep]
+    dynamic_api_version: list[DynamicStep]
 
 
 class AzureInit(TypedDict, total=False):
@@ -108,9 +215,10 @@ def record_constructor(kind: str, values: dict[str, Json]) -> None:
 
 
 def azure_values(init: AzureInit) -> dict[str, Json]:
-    values: dict[str, Json] = {
-        "api_key_kind": key_kind(init.get("api_key")),
-        "api_key": api_key_value(init.get("api_key")),
+    api_key = init.get("api_key")
+    return {
+        "api_key_kind": key_kind(api_key),
+        "api_key": api_key_value(api_key),
         "azure_ad_token": init.get("azure_ad_token"),
         "token_provider": init.get("azure_ad_token_provider") is not None,
         "timeout": init.get("timeout"),
@@ -120,7 +228,6 @@ def azure_values(init: AzureInit) -> dict[str, Json]:
         "base_url": init.get("base_url"),
         "api_version": init.get("api_version"),
     }
-    return values
 
 
 def openai_values(init: OpenAiInit) -> dict[str, Json]:
@@ -184,38 +291,6 @@ class FixtureAsyncOpenAI(AsyncOpenAI):  # https://github.com/BerriAI/litellm/blo
     @classmethod
     def blank(cls) -> "FixtureAsyncOpenAI":
         return object.__new__(cls)
-
-
-def cached_client(kind: str) -> CachedClient | OtherClient | None:
-    match kind:
-        case "none":
-            return None
-        case "other":
-            return OtherClient()
-        case "azure_open_ai":
-            return FixtureAzureOpenAI.blank({})
-        case "async_azure_open_ai":
-            return FixtureAsyncAzureOpenAI.blank({})
-        case "open_ai":
-            return FixtureOpenAI.blank()
-        case "async_open_ai":
-            return FixtureAsyncOpenAI.blank()
-        case _:
-            raise ValueError(f"unknown cached client {kind}")
-
-
-def supplied_client(kind: str, custom_query: dict[str, str]) -> CachedClient:
-    match kind:
-        case "azure_open_ai":
-            return FixtureAzureOpenAI.blank(custom_query)
-        case "async_azure_open_ai":
-            return FixtureAsyncAzureOpenAI.blank(custom_query)
-        case "open_ai":
-            return FixtureOpenAI.blank()
-        case "async_open_ai":
-            return FixtureAsyncOpenAI.blank()
-        case _:
-            raise ValueError(f"unknown supplied client {kind}")
 
 
 def stable_id(value: Callable[[], str]) -> int:

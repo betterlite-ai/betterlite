@@ -4,9 +4,8 @@ from litellm.llms.azure.common_utils import BaseAzureLLM
 from openai import AsyncAzureOpenAI, AzureOpenAI
 
 from azure_endpoints.fixtures import session
-from azure_endpoints.inputs import CloudflareStep, ProviderScript, SourceScripts
 from azure_endpoints.reports import cloudflare_report
-from azure_endpoints.sdk import STATE, Json
+from azure_endpoints.sdk import STATE, CloudflareStep, Json, ProviderScript, SourceScripts
 
 
 def cloudflare_params(step: CloudflareStep) -> dict[str, str | None]:
