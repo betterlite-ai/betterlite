@@ -1,0 +1,7 @@
+model_list:
+  - model_name: sso-pkce-seed
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/SSO_PKCE_SEED_KEY
+general_settings:
+  master_key: sk-sso-pkce-seed

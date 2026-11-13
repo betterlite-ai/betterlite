@@ -1,0 +1,5 @@
+kind: helper
+name: sso-pkce-corpus-seed
+call: {sso_pkce: {state: corpus-state, environment: {GENERIC_CLIENT_STATE: ignored, GENERIC_CLIENT_USE_PKCE: "true"}}}
+env: {}
+compare: {ignore: []}
