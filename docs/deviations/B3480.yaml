@@ -1,0 +1,5 @@
+task: B3480
+deviations:
+  - what: A response payload that carries a _hidden_params key keeps that value in the record's private metadata and never writes it back out, where LiteLLM's fallback GenerateContentResponse.__init__ passes the key to pydantic as an allowed extra and model_dump then serializes it.
+    why: LiteLLM declares _hidden_params as a private attribute for response metadata and reads it at construction, so the field stays internal; the serialized extra is an accident of the runtime fallback class that no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/google_genai/main.py#L50-L55

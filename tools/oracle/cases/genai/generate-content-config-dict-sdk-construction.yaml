@@ -1,0 +1,18 @@
+kind: helper
+name: genai-generate-content-config-dict-sdk-construction
+call:
+  b3480:
+    constructs:
+      - record: config
+        fields:
+          temperature: 0.25
+          topP: 0.9
+          topK: 20
+          candidateCount: 2
+          maxOutputTokens: 512
+          responseMimeType: application/json
+          stopSequences: ["END"]
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}

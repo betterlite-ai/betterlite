@@ -1,0 +1,17 @@
+kind: helper
+name: genai-generate-content-response-dict-fallback
+call:
+  b3480:
+    constructs:
+      - record: response
+        fields:
+          candidates: []
+          vendorExtension: {kept: true, count: 2}
+          emptyObject: {}
+          explicitNull: null
+      - record: response
+        fields: {}
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}

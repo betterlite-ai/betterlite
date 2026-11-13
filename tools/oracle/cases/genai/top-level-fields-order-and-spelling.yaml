@@ -1,0 +1,13 @@
+kind: helper
+name: genai-top-level-fields-order-and-spelling
+call:
+  b3480:
+    constructs: []
+    top_level:
+      - provider: studio
+        model: gemini-2.5-flash
+      - provider: vertex
+        model: gemini-2.5-flash
+    errors: []
+env: {}
+compare: {ignore: []}

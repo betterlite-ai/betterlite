@@ -1,0 +1,20 @@
+kind: helper
+name: genai-generate-content-request-dict-fallback
+call:
+  b3480:
+    constructs:
+      - record: request
+        fields:
+          model: gemini-2.5-flash
+          contents: "hello"
+          tools: null
+          generationConfig: {}
+          systemInstruction: {parts: [{text: Behave}]}
+      - record: request
+        fields:
+          model: gemini-2.5-flash
+          contents: []
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}
