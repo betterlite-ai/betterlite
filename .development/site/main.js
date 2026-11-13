@@ -1,4 +1,4 @@
-import { REPO, GITHUB, DAY, number, shortDate, longDate, esc, percent, idNumber, figure, plural, fetchText, parseCsv } from "./shared.js";
+import { REPO, GITHUB, DAY, number, shortDate, yearDate, longDate, esc, percent, idNumber, figure, plural, fetchText, parseCsv } from "./shared.js";
 import { renderHistory } from "./history.js";
 
 const STATES = [
@@ -191,7 +191,7 @@ function renderMilestone(group, milestones, byId, children, merges, reviewing) {
   const bar = STATES.filter((state) => byState.get(state.key).length > 0)
     .map((state) => `<span class="state-${state.key}" style="flex-grow:${byState.get(state.key).length}" title="${state.label}: ${number.format(byState.get(state.key).length)}"></span>`)
     .join("");
-  const keys = STATES.map((state) => `<span><i class="state-${state.key}"></i>${state.label} <b>${number.format(byState.get(state.key).length)}</b></span>`).join("");
+  const keys = STATES.map((state) => `<span><i class="swatch state-${state.key}" aria-hidden="true"></i>${state.label} <b>${number.format(byState.get(state.key).length)}</b></span>`).join("");
 
   const sections = [];
   const review = byState.get("review");
@@ -532,7 +532,9 @@ async function main() {
   renderDeviations(jsyaml.loadAll(deviationsText), byId, milestones, merges);
 
   const [sha, committed] = commitText.trim().split(" ");
-  document.getElementById("built").innerHTML = `Built from <a class="id" href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, committed ${esc(longDate.format(Number(committed) * 1000))}.`;
+  const built = document.getElementById("built");
+  built.title = `Committed ${longDate.format(Number(committed) * 1000)}`;
+  built.innerHTML = `built from <a href="${GITHUB}/commit/${esc(sha)}">${esc(sha.slice(0, 8))}</a>, ${esc(yearDate.format(Number(committed) * 1000))}`;
   document.getElementById("status").hidden = true;
 
   const reviewing = await renderOpenPullRequests(byId);
