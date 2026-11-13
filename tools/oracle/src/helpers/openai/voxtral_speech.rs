@@ -70,8 +70,11 @@ impl Helper for Op {
 }
 
 fn probe_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let reply = probe.reply.as_ref().map(upstream).transpose()?;
-    probe_value(probe, reply.as_ref()).map_err(failure)
+    probe_value(
+        probe,
+        probe.reply.as_ref().map(upstream).transpose()?.as_ref(),
+    )
+    .map_err(failure)
 }
 
 fn failure(error: MistralAudioError) -> Box<HelperError> {
@@ -85,7 +88,10 @@ fn failure(error: MistralAudioError) -> Box<HelperError> {
     })
 }
 
-fn probe_value(probe: &Probe, reply: Option<&UpstreamResponse>) -> Result<Value, MistralAudioError> {
+fn probe_value(
+    probe: &Probe,
+    reply: Option<&UpstreamResponse>,
+) -> Result<Value, MistralAudioError> {
     let settings = Settings {
         api_base: None,
         api_key: probe.environment_api_key.clone().map(SecretString::from),
