@@ -36,3 +36,18 @@ deviations:
       no-silent-drops in .development/rules.yaml makes an unhandled config key an error that names it, so a typo stops
       startup instead of silently falling back to the default threshold.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/azure_content_safety.py#L49-L64
+  - what: >-
+      The legacy analyze_text retry reads Retry-After as whole seconds or an HTTP date. A fractional value such as 0.5,
+      an infinite one or text that is neither waits the exponential backoff instead.
+    why: >-
+      The shared Retry-After parser in betterlite-core reads whole seconds and dates. azure-core sleeps a fraction,
+      sleeps forever on inf and raises on unreadable text; Azure Content Safety sends whole seconds, so no working setup
+      relies on the other forms.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/pipeline/policies/_utils.py#L62-L76
+  - what: >-
+      Each legacy analyze_text attempt is bounded at 300 seconds in total, where azure-core's aiohttp transport waits up
+      to 300 seconds to connect and up to 300 seconds for each socket read.
+    why: >-
+      The injected pooled client takes one per-request timeout, and a total bound is what stops an endpoint that
+      trickles bytes forever. A timeout still answers 500, as azure-core's does.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/configuration.py#L137-L145
