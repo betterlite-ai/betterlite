@@ -122,58 +122,73 @@ impl StabilityImageGenerationConfig {
         prompt: &str,
         optional_params: &ImageParams,
     ) -> Result<GenerationRequest, StabilityGenerationError> {
-        let output_format = text_value("output_format", optional_params.get("output_format"))?
-            .unwrap_or_else(|| Some(DEFAULT_OUTPUT_FORMAT.to_owned()));
+        let output_format = Some(
+            field_value(
+                "output_format",
+                optional_params.get("output_format"),
+                read_text,
+            )?
+            .unwrap_or_else(|| Some(DEFAULT_OUTPUT_FORMAT.to_owned())),
+        );
         Ok(GenerationRequest {
             prompt: prompt.to_owned(),
-            negative_prompt: text_value("negative_prompt", optional_params.get("negative_prompt"))?,
-            aspect_ratio: text_value("aspect_ratio", optional_params.get("aspect_ratio"))?,
-            seed: integer_value("seed", optional_params.get("seed"))?,
+            negative_prompt: field_value(
+                "negative_prompt",
+                optional_params.get("negative_prompt"),
+                read_text,
+            )?,
+            aspect_ratio: field_value(
+                "aspect_ratio",
+                optional_params.get("aspect_ratio"),
+                read_text,
+            )?,
+            seed: field_value("seed", optional_params.get("seed"), read_integer)?,
             output_format,
-            model: text_value("model", optional_params.get("model"))?,
-            mode: text_value("mode", optional_params.get("mode"))?,
+            model: field_value("model", optional_params.get("model"), read_text)?,
+            mode: field_value("mode", optional_params.get("mode"), read_text)?,
             image: None,
-            strength: number_value("strength", optional_params.get("strength"))?,
-            style_preset: text_value("style_preset", optional_params.get("style_preset"))?,
+            strength: field_value("strength", optional_params.get("strength"), read_number)?,
+            style_preset: field_value(
+                "style_preset",
+                optional_params.get("style_preset"),
+                read_text,
+            )?,
         })
     }
 }
 
-fn text_value(
+// absent stays absent, an explicit null is kept, and any other shape names its field
+fn field_value<T>(
     field: &'static str,
     value: Option<&Json>,
-) -> Result<Option<Option<String>>, StabilityGenerationError> {
+    read: fn(&Json) -> Option<T>,
+) -> Result<Option<Option<T>>, StabilityGenerationError> {
     match value {
         None => Ok(None),
         Some(Json::Null) => Ok(Some(None)),
-        Some(Json::Text(text)) => Ok(Some(Some(text.clone()))),
-        Some(_) => Err(StabilityGenerationError::RequestField { field }),
-    }
-}
-
-fn integer_value(
-    field: &'static str,
-    value: Option<&Json>,
-) -> Result<Option<Option<i64>>, StabilityGenerationError> {
-    match value {
-        None => Ok(None),
-        Some(Json::Null) => Ok(Some(None)),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .map(|number| Some(Some(number)))
+        Some(json) => read(json)
+            .map(|found| Some(Some(found)))
             .ok_or(StabilityGenerationError::RequestField { field }),
-        Some(_) => Err(StabilityGenerationError::RequestField { field }),
     }
 }
 
-fn number_value(
-    field: &'static str,
-    value: Option<&Json>,
-) -> Result<Option<Option<Number>>, StabilityGenerationError> {
+fn read_text(value: &Json) -> Option<String> {
     match value {
-        None => Ok(None),
-        Some(Json::Null) => Ok(Some(None)),
-        Some(Json::Number(number)) => Ok(Some(Some(number.clone()))),
-        Some(_) => Err(StabilityGenerationError::RequestField { field }),
+        Json::Text(text) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+fn read_integer(value: &Json) -> Option<i64> {
+    match value {
+        Json::Number(number) => number.as_i64(),
+        _ => None,
+    }
+}
+
+fn read_number(value: &Json) -> Option<Number> {
+    match value {
+        Json::Number(number) => Some(number.clone()),
+        _ => None,
     }
 }
