@@ -1,5 +1,6 @@
 use betterlite_db::managed_resource_rows::{
-    ManagedResourceRow, ManagedRowDependencies, decode_managed_resource_rows,
+    ManagedResourceRow, ManagedRowDependencies, ManagedRowsDecodeError,
+    decode_managed_resource_rows,
 };
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
@@ -64,9 +65,9 @@ fn cipher(salt_key: Option<&String>) -> DbCipher {
 
 fn row_result(
     call: &RowCall,
-    decoded: Result<Rows, ManagedRowsDecodeError>,
+    result: Result<Rows, ManagedRowsDecodeError>,
 ) -> Result<RowResult<'_>, Box<crate::helpers::HelperError>> {
-    let Ok(decoded) = decoded else {
+    let Ok(decoded) = result else {
         return Ok(RowResult {
             name: &call.name,
             ok: false,
