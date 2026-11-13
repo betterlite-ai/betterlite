@@ -6,14 +6,13 @@ use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
 use betterlite_guardrails::unified_dispatch::emit::{
-    HttpErrorDetail, StreamHttpError, a2a_jsonrpc_error_chunk, a2a_request_id,
-    emit_streaming_http_error,
+    HttpErrorDetail, StreamHttpError, emit_streaming_http_error,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::support::{error_json, to_json};
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::HelperResult;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
@@ -29,47 +28,6 @@ impl DetailInput {
             Self::Object(fields) => HttpErrorDetail::Object(fields),
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RequestIdRequest {
-    #[serde(default)]
-    pub(super) responses: Vec<GuardrailValue>,
-    #[serde(default)]
-    pub(super) request_data: BTreeMap<String, GuardrailValue>,
-}
-
-pub(super) fn request_id(request: &RequestIdRequest) -> HelperResult {
-    serde_json::to_value(a2a_request_id(&request.responses, &request.request_data))
-        .map(|id| json!({"id": id}))
-        .map_err(|source| {
-            Box::new(HelperError {
-                class: "SerializationError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: source.to_string(),
-            })
-        })
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ErrorChunkRequest {
-    pub(super) status_code: u16,
-    pub(super) detail: DetailInput,
-    pub(super) request_id: GuardrailValue,
-}
-
-pub(super) fn error_chunk(request: &ErrorChunkRequest) -> HelperResult {
-    let error = StreamHttpError {
-        status_code: request.status_code,
-        detail: request.detail.clone().into_detail(),
-    };
-    let chunk = a2a_jsonrpc_error_chunk(&error, request.request_id.clone());
-    Ok(json!({"chunk": to_json(&chunk)?}))
 }
 
 #[derive(Debug, Deserialize)]
