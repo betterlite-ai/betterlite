@@ -1,0 +1,37 @@
+kind: helper
+name: openai-response-input-reasoning-summary-and-null
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input:
+      - type: reasoning
+        id: r1
+        summary:
+        - {type: summary_text, text: s, drop: null, keep: {n: null}}
+        content:
+        - {type: reasoning_text, text: c, drop: null}
+        encrypted_content: enc
+        status: completed
+        extra: null
+        extra_object: {n: null}
+      - type: reasoning
+        id: r2
+        reasoning_content:
+        - {type: summary_text, text: from-content}
+      - {type: reasoning, id: r4, reasoning_content: a-string}
+      - {type: reasoning, id: r6, summary: not-a-list, status: null, content: null, encrypted_content: null, kept_null: null}
+      - {type: reasoning, id: 7, summary: []}
+      - {type: reasoning, id: r8}
+      - {type: message, role: user, status: null}
+      params: {}
+    - model: gpt-4o
+      input:
+      - type: reasoning
+        id: r9
+        reasoning_content:
+        - {type: summary_text, text: x}
+        - {type: summary_text, text: y}
+      params: {}
+env: {}
+compare: {ignore: []}

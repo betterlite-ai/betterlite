@@ -1,0 +1,22 @@
+kind: helper
+name: openai-response-input-cache-control-in-input-and-tools
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input:
+      - role: user
+        content:
+        - {type: text, text: hi, cache_control: {type: ephemeral}}
+        - raw-part
+        - {type: input_image, image_url: u, nested: {cache_control: 1, keep: 2}}
+        cache_control: {t: 1}
+      - raw-item
+      - {type: reasoning, id: r, summary: [], status: null, cache_control: 7}
+      params:
+        tools:
+        - {type: function, name: f, cache_control: {x: 1}, parameters: {type: object, cache_control: {deep: 1}}}
+        - {parameters: '{"cache_control":{"type":"ephemeral"},"type":"object"}'}
+        - raw-tool
+env: {}
+compare: {ignore: []}
