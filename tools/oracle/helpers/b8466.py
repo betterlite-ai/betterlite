@@ -81,19 +81,20 @@ def _is_object(value: JsonValue) -> bool:
 def _python_type(value: JsonValue) -> str:
     match value:
         case NoneType():
-            return "NoneType"
+            name = "NoneType"
         case bool():
-            return "bool"
+            name = "bool"
         case int():
-            return "int"
+            name = "int"
         case float():
-            return "float"
+            name = "float"
         case str():
-            return "str"
+            name = "str"
         case list():
-            return "list"
+            name = "list"
         case dict():
-            return "dict"
+            name = "dict"
+    return name
 
 
 def _prefer(
