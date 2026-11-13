@@ -136,12 +136,7 @@ fn build_request_body(
             inputs
                 .texts
                 .iter()
-                .map(|text| {
-                    let mut message = BTreeMap::new();
-                    message.insert("role".to_owned(), GuardrailValue::Text("user".to_owned()));
-                    message.insert("content".to_owned(), GuardrailValue::Text(text.to_owned()));
-                    GuardrailValue::Object(message)
-                })
+                .map(|text| message("user", text))
                 .collect(),
         );
     }
@@ -174,14 +169,8 @@ fn build_response_body(
         .texts
         .iter()
         .map(|text| {
-            let mut message = BTreeMap::new();
-            message.insert("content".to_owned(), GuardrailValue::Text(text.to_owned()));
-            message.insert(
-                "role".to_owned(),
-                GuardrailValue::Text("assistant".to_owned()),
-            );
             let mut choice = BTreeMap::new();
-            choice.insert("message".to_owned(), GuardrailValue::Object(message));
+            choice.insert("message".to_owned(), message("assistant", text));
             GuardrailValue::Object(choice)
         })
         .collect();
@@ -189,6 +178,16 @@ fn build_response_body(
         "choices".to_owned(),
         GuardrailValue::Array(choices),
     )]))
+}
+
+fn message(role: &str, content: &str) -> GuardrailValue {
+    GuardrailValue::Object(BTreeMap::from([
+        ("role".to_owned(), GuardrailValue::Text(role.to_owned())),
+        (
+            "content".to_owned(),
+            GuardrailValue::Text(content.to_owned()),
+        ),
+    ]))
 }
 
 fn build_request_headers(
@@ -202,24 +201,31 @@ fn build_request_headers(
     let Some(GuardrailValue::Object(proxy_headers)) = proxy_request.get("headers") else {
         return headers;
     };
-    for (name, value) in proxy_headers {
+    let copied = proxy_headers.iter().filter_map(|(name, value)| {
         let text = value_text(value);
-        if !name.is_empty() && !text.is_empty() {
-            headers.insert(name.to_lowercase(), text);
-        }
-    }
+        (!name.is_empty() && !text.is_empty()).then(|| (name.to_lowercase(), text))
+    });
+    headers.extend(copied);
     headers
 }
 
 fn build_tag_metadata(request_data: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, String> {
+    let ids = [
+        (
+            "user_id",
+            metadata_value(request_data, "user_api_key_user_id"),
+        ),
+        (
+            "team_id",
+            metadata_value(request_data, "user_api_key_team_id"),
+        ),
+    ];
     let mut tag = BTreeMap::from([("gen-ai".to_owned(), "Gen AI".to_owned())]);
-    let user_id = metadata_value(request_data, "user_api_key_user_id");
-    let team_id = metadata_value(request_data, "user_api_key_team_id");
-    for (name, value) in [("user_id", user_id), ("team_id", team_id)] {
-        if let Some(value) = value.filter(|text| !text.is_empty()) {
-            tag.insert(name.to_owned(), value);
-        }
-    }
+    tag.extend(
+        ids.into_iter()
+            .filter_map(|(name, value)| Some((name.to_owned(), value?)))
+            .filter(|(_, value)| !value.is_empty()),
+    );
     tag
 }
 
@@ -285,10 +291,10 @@ fn value_text(value: &GuardrailValue) -> String {
 // LiteLLM selects a payload field with Python truthiness, so an empty list stays out of the body
 fn present(value: &GuardrailValue) -> bool {
     match value {
-        GuardrailValue::Null => false,
-        GuardrailValue::Boolean(flag) => *flag,
-        GuardrailValue::SignedInteger(number) => *number != 0,
-        GuardrailValue::UnsignedInteger(number) => *number != 0,
+        GuardrailValue::Null | GuardrailValue::Boolean(false) => false,
+        GuardrailValue::Boolean(true) => true,
+        GuardrailValue::SignedInteger(0) | GuardrailValue::UnsignedInteger(0) => false,
+        GuardrailValue::SignedInteger(_) | GuardrailValue::UnsignedInteger(_) => true,
         GuardrailValue::Decimal(number) => number.abs() > 0.0_f64,
         GuardrailValue::Text(text) => !text.is_empty(),
         GuardrailValue::Array(items) => !items.is_empty(),

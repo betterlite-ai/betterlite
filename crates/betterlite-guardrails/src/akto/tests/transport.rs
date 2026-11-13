@@ -52,15 +52,19 @@ async fn capture(State(captures): State<Captures>, request: Request) -> (AxumSta
     )
 }
 
-async fn serve(captures: Captures) -> (String, JoinSet<std::io::Result<()>>) {
+async fn serve_router(router: Router) -> (String, JoinSet<std::io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
-    let router = Router::new()
-        .route("/api/http-proxy", post(capture))
-        .with_state(captures);
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (base, server)
+}
+
+async fn serve(captures: Captures) -> (String, JoinSet<std::io::Result<()>>) {
+    let router = Router::new()
+        .route("/api/http-proxy", post(capture))
+        .with_state(captures);
+    serve_router(router).await
 }
 
 // Hardcoded independently of MAX_RESPONSE_BYTES, so a mutation of that constant can't move this boundary too.
@@ -74,8 +78,6 @@ fn padded_body(size: usize) -> String {
 }
 
 async fn serve_fixed_body(body: String) -> (String, JoinSet<std::io::Result<()>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("address"));
     let router = Router::new().route(
         "/api/http-proxy",
         post(move || {
@@ -83,9 +85,7 @@ async fn serve_fixed_body(body: String) -> (String, JoinSet<std::io::Result<()>>
             async move { (AxumStatus::OK, body) }
         }),
     );
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server)
+    serve_router(router).await
 }
 
 async fn send_to_body(body: String) -> AktoAnswer {
@@ -260,7 +260,12 @@ async fn akto_guardrail_tracks_background_ingest_tasks_until_they_finish() {
     let payload = guardrail
         .build_akto_payload(&inputs(), &BTreeMap::new(), 200, true)
         .expect("payload");
-    guardrail.spawn_fire_and_forget(true, true, payload);
+    let background = guardrail.clone();
+    guardrail.tasks.spawn(async move {
+        background
+            .fire_and_forget_request(true, true, &payload)
+            .await;
+    });
     assert_eq!(guardrail.tasks.len(), 1);
     guardrail.tasks.close();
     guardrail.tasks.wait().await;

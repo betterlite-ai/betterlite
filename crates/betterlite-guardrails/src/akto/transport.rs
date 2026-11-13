@@ -106,15 +106,6 @@ impl AktoMirroring {
             }
         }
     }
-
-    pub fn spawn_fire_and_forget(&self, guardrails: bool, ingest_data: bool, payload: AktoPayload) {
-        let guardrail = self.clone();
-        self.tasks.spawn(async move {
-            guardrail
-                .fire_and_forget_request(guardrails, ingest_data, &payload)
-                .await;
-        });
-    }
 }
 
 fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {

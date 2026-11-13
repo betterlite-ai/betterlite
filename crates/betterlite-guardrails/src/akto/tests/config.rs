@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::akto_mirroring::UnreachableFallback;
+use betterlite_config::sections::akto_mirroring::{Configured, UnreachableFallback};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -12,22 +12,17 @@ fn config_source(extra: &str) -> String {
     )
 }
 
+fn load_entry(source: &str, lookup: BTreeMap<String, String>) -> Configured {
+    let config = ConfigLoader { lookup }.load(source).expect("config");
+    config.sections.akto_mirroring.guardrails[0].clone()
+}
+
 #[test]
 fn akto_guardrail_config_loads_the_required_keys_and_defaults() {
     let source = config_source(
         "      akto_base_url: https://akto.test///\n      akto_api_key: secret-key\n",
     );
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(&source)
-    .expect("config");
-    let configured = config
-        .sections
-        .akto_mirroring
-        .guardrails
-        .first()
-        .expect("guardrail");
+    let configured = load_entry(&source, BTreeMap::new());
     assert_eq!(configured.guardrail_name, "akto-validate");
     assert_eq!(configured.api_base, "https://akto.test");
     assert_eq!(configured.api_key.expose_secret(), "secret-key");
@@ -52,14 +47,7 @@ fn akto_guardrail_config_reads_the_environment() {
         ("AKTO_ACCOUNT_ID".to_owned(), "4242".to_owned()),
         ("AKTO_VXLAN_ID".to_owned(), "9".to_owned()),
     ]);
-    let source = config_source("");
-    let config = ConfigLoader { lookup }.load(&source).expect("config");
-    let configured = config
-        .sections
-        .akto_mirroring
-        .guardrails
-        .first()
-        .expect("guardrail");
+    let configured = load_entry(&config_source(""), lookup);
     assert_eq!(configured.api_base, "http://env.test");
     assert_eq!(configured.api_key.expose_secret(), "env-key");
     assert_eq!(configured.account_id, "4242");
@@ -71,12 +59,7 @@ fn akto_guardrail_config_keeps_configured_ids() {
     let source = config_source(
         "      akto_base_url: http://akto.test\n      akto_api_key: key\n      akto_account_id: '4242'\n      akto_vxlan_id: '7'\n",
     );
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(&source)
-    .expect("config");
-    let configured = &config.sections.akto_mirroring.guardrails[0];
+    let configured = load_entry(&source, BTreeMap::new());
     assert_eq!(configured.account_id, "4242");
     assert_eq!(configured.vxlan_id, "7");
 }
@@ -121,11 +104,7 @@ fn akto_guardrail_config_reads_the_fallback(
         "      akto_base_url: http://akto.test\n      akto_api_key: key\n      unreachable_fallback: {value}\n"
     ));
     let lookup = BTreeMap::from([("AKTO_FALLBACK".to_owned(), "fail_open".to_owned())]);
-    let config = ConfigLoader { lookup }.load(&source).expect("config");
-    assert_eq!(
-        config.sections.akto_mirroring.guardrails[0].unreachable_fallback,
-        expected
-    );
+    assert_eq!(load_entry(&source, lookup).unreachable_fallback, expected);
 }
 
 #[test]
@@ -141,19 +120,24 @@ fn akto_guardrail_config_rejects_an_unknown_fallback() {
     assert!(matches!(error, ConfigError::Yaml { .. }));
 }
 
-#[rstest]
-#[case::integer("7", Duration::from_secs(7))]
-#[case::environment("os.environ/AKTO_TIMEOUT", Duration::from_secs(11))]
-fn akto_guardrail_config_reads_the_timeout(#[case] value: &str, #[case] expected: Duration) {
-    let source = config_source(&format!(
-        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      guardrail_timeout: {value}\n"
-    ));
-    let lookup = BTreeMap::from([("AKTO_TIMEOUT".to_owned(), "11".to_owned())]);
-    let config = ConfigLoader { lookup }.load(&source).expect("config");
-    assert_eq!(
-        config.sections.akto_mirroring.guardrails[0].timeout,
-        expected
+#[test]
+fn akto_guardrail_config_reads_an_integer_timeout() {
+    let source = config_source(
+        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      guardrail_timeout: 7\n",
     );
+    assert_eq!(
+        load_entry(&source, BTreeMap::new()).timeout,
+        Duration::from_secs(7)
+    );
+}
+
+#[test]
+fn akto_guardrail_config_reads_a_timeout_from_the_environment() {
+    let lookup = BTreeMap::from([("AKTO_TIMEOUT".to_owned(), "11".to_owned())]);
+    let source = config_source(
+        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      guardrail_timeout: os.environ/AKTO_TIMEOUT\n",
+    );
+    assert_eq!(load_entry(&source, lookup).timeout, Duration::from_secs(11));
 }
 
 #[test]
@@ -187,9 +171,6 @@ fn akto_guardrail_config_resolves_an_environment_reference_in_a_value() {
     let lookup = BTreeMap::from([("AKTO_BASE".to_owned(), "http://resolved.test".to_owned())]);
     let source =
         config_source("      akto_base_url: os.environ/AKTO_BASE\n      akto_api_key: key\n");
-    let config = ConfigLoader { lookup }.load(&source).expect("config");
-    assert_eq!(
-        config.sections.akto_mirroring.guardrails[0].api_base,
-        "http://resolved.test"
-    );
+    let configured = load_entry(&source, lookup);
+    assert_eq!(configured.api_base, "http://resolved.test");
 }

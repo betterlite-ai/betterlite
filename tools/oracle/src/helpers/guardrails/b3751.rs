@@ -22,7 +22,16 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.op.as_str() {
-            "init" => init(input),
+            "init" => {
+                let guardrail = settings(input)?;
+                Ok(json!({
+                    "base_url": guardrail.base_url,
+                    "account_id": guardrail.account_id,
+                    "vxlan_id": guardrail.vxlan_id,
+                    "unreachable_fallback": fallback_name(guardrail.unreachable_fallback),
+                    "timeout": guardrail.timeout.as_secs(),
+                }))
+            }
             "payload" => wire::build_payload(input),
             "response" => parse_response(input),
             "unreachable" => unreachable(input),
@@ -153,17 +162,6 @@ fn source(settings: &SettingsInput) -> String {
         "guardrails:\n  - guardrail_name: akto\n    litellm_params:\n      {}\n",
         parameters.join("\n      ")
     )
-}
-
-fn init(input: &Input) -> crate::helpers::HelperResult {
-    let guardrail = settings(input)?;
-    Ok(json!({
-        "base_url": guardrail.base_url,
-        "account_id": guardrail.account_id,
-        "vxlan_id": guardrail.vxlan_id,
-        "unreachable_fallback": fallback_name(guardrail.unreachable_fallback),
-        "timeout": guardrail.timeout.as_secs(),
-    }))
 }
 
 fn fallback_name(fallback: UnreachableFallback) -> &'static str {
