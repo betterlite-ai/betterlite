@@ -240,7 +240,11 @@ if [[ "${draft}" = true ]]; then
   gh pr edit "${pr}" --body-file "${body}" > /dev/null
   gh pr ready "${pr}" > /dev/null || land_again "PR #${pr} is open, but it did not leave draft, see logs/land-${id}.log"
 fi
-gh pr merge "${branch}" --auto --squash > /dev/null 2>&1
+# pr-watch lets go of a PR it finds unarmed, so a refused auto-merge left B5790's green PR 1431 outside the queue for 22 hours (11-12)
+if ! gh pr merge "${branch}" --auto --squash > /dev/null; then
+  armed=$(gh api graphql -F n="${pr}" -f query="query(\$n:Int!){repository(owner:\"betterlite-ai\",name:\"betterlite\"){pullRequest(number:\$n){autoMergeRequest{enabledAt} mergeQueueEntry{state}}}}" -q '.data.repository.pullRequest | .autoMergeRequest != null or .mergeQueueEntry != null')
+  [[ "${armed}" = true ]] || land_again "PR #${pr} is open, but auto-merge did not turn on, see logs/land-${id}.log"
+fi
 say "PR #${pr} open: https://github.com/betterlite-ai/betterlite/pull/${pr}"
 verified_head=$(git rev-parse HEAD) || exit 5
 result=$(bash "${P}/pr-watch.sh" "${pr}" merge)
