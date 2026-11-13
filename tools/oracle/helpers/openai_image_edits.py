@@ -2,7 +2,7 @@ import base64
 import io
 import os
 import time
-from collections.abc import Coroutine
+from collections.abc import Awaitable
 from functools import partial
 from typing import Final, NotRequired, Protocol
 
@@ -115,7 +115,7 @@ class EditArguments(TypedDict, closed=True):
 class EditHandler(Protocol):
     def image_edit_handler(
         self, **arguments: Unpack[EditArguments]
-    ) -> ImageResponse | Coroutine[object, object, ImageResponse]: ...
+    ) -> ImageResponse | Awaitable[ImageResponse]: ...
 
 
 class NamedBuffer(io.BufferedReader):
@@ -241,13 +241,13 @@ def call_value(fixture: Fixture) -> Call:
     return Call(url=str(request.url), headers=headers, data=data, parts=files)
 
 
-def supported_of(config: ParamsConfig, model: str) -> list[str]:
-    return config.get_supported_openai_params(model)
-
-
-def request_value(probe: Probe, handler: EditHandler) -> Outcome:
-    config = get_openai_image_edit_config(probe["model"])
-    supported = supported_of(config, probe["model"])
+def request_value(
+    probe: Probe,
+    handler: EditHandler,
+    config: BaseImageEditConfig,
+    params: ParamsConfig,
+) -> Outcome:
+    supported = params.get_supported_openai_params(probe["model"])
     mask = files_value(probe["mask"])
     options: Options = {**probe["options"]}
     if mask is not None:
@@ -286,7 +286,8 @@ def request_value(probe: Probe, handler: EditHandler) -> Outcome:
 
 
 def transform_value(probe: Probe) -> JsonValue:
-    found = request_value(probe, BaseLLMHTTPHandler())
+    config = get_openai_image_edit_config(probe["model"])
+    found = request_value(probe, BaseLLMHTTPHandler(), config, config)
     call = found["call"]
     value: dict[str, JsonValue] = {
         "family": found["family"],
