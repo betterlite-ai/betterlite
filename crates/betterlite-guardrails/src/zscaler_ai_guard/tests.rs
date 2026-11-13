@@ -20,6 +20,7 @@ use tracing_subscriber::fmt;
 use super::error::{ZscalerAiGuardError, ZscalerErrorDetail};
 use super::init::ZscalerArgs;
 use super::metadata;
+use super::printed::{quote_text, repr_text, str_text};
 use super::settings::{self, DEFAULT_TIMEOUT_DURATION, Settings};
 use super::{
     API_KEY_ENV, DEFAULT_URL, Inputs, POLICY_ID_ENV, SEND_ALIAS_ENV, SEND_TEAM_ID_ENV,
@@ -827,6 +828,13 @@ async fn a_client_error_is_a_500_like_litellms_http_client() {
         .await
         .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        error.detail(),
+        ZscalerErrorDetail::Service {
+            error_type: super::ERROR_TYPE,
+            reason: "Response status code: 404".to_owned()
+        }
+    );
 }
 
 #[tokio::test]
@@ -858,6 +866,183 @@ async fn a_transport_error_is_a_500() {
         .unwrap_err();
     assert!(matches!(error, ZscalerAiGuardError::Request { .. }));
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[test]
+fn printed_text_is_a_string_or_the_value_repr() {
+    assert_eq!(str_text(&GuardrailValue::Text("abc".to_owned())), "abc");
+    assert_eq!(str_text(&GuardrailValue::SignedInteger(7)), "7");
+    assert_eq!(str_text(&GuardrailValue::Null), "None");
+    assert_eq!(str_text(&GuardrailValue::Boolean(true)), "True");
+}
+
+#[test]
+fn printed_repr_renders_each_value_like_python() {
+    assert_eq!(repr_text(&GuardrailValue::Null), "None");
+    assert_eq!(repr_text(&GuardrailValue::Boolean(false)), "False");
+    assert_eq!(repr_text(&GuardrailValue::SignedInteger(-3)), "-3");
+    assert_eq!(repr_text(&GuardrailValue::UnsignedInteger(3)), "3");
+    assert_eq!(repr_text(&GuardrailValue::Decimal(2.0)), "2.0");
+    assert_eq!(repr_text(&GuardrailValue::Decimal(1.25)), "1.25");
+    assert_eq!(repr_text(&GuardrailValue::Text("a".to_owned())), "'a'");
+    assert_eq!(
+        repr_text(&GuardrailValue::Array(vec![
+            GuardrailValue::SignedInteger(1),
+            GuardrailValue::Null,
+        ])),
+        "[1, None]"
+    );
+    let mut fields = BTreeMap::new();
+    let _previous = fields.insert("k".to_owned(), GuardrailValue::Text("v".to_owned()));
+    assert_eq!(repr_text(&GuardrailValue::Object(fields)), "{'k': 'v'}");
+}
+
+#[test]
+fn printed_repr_quotes_and_escapes_strings() {
+    assert_eq!(quote_text("plain"), "'plain'");
+    assert_eq!(quote_text("a space"), "'a space'");
+    assert_eq!(quote_text("it's"), "\"it's\"");
+    assert_eq!(quote_text("a'b\"c"), r#"'a\'b"c'"#);
+    assert_eq!(quote_text("a\\b\n\t"), r"'a\\b\n\t'");
+    assert_eq!(quote_text("\u{7}"), r"'\x07'");
+    assert_eq!(quote_text("\u{2028}"), r"'\u2028'");
+    assert_eq!(quote_text("\u{e0001}"), r"'\U000e0001'");
+}
+
+#[test]
+fn a_null_litellm_metadata_value_falls_through_to_metadata() {
+    let data = request_data(
+        r#"{"litellm_metadata": {"user_api_key_alias": null}, "metadata": {"user_api_key_alias": "from-metadata"}}"#,
+    );
+    assert_eq!(
+        metadata::header_value(&data, "user_api_key_alias").unwrap(),
+        "from-metadata"
+    );
+}
+
+#[test]
+fn a_null_key_alias_falls_through_to_metadata() {
+    let data = request_data(
+        r#"{"litellm_metadata": {"user_api_key_key_alias": null}, "metadata": {"user_api_key_alias": "from-metadata"}}"#,
+    );
+    assert_eq!(
+        metadata::header_value(&data, "user_api_key_alias").unwrap(),
+        "from-metadata"
+    );
+}
+
+#[test]
+fn a_null_metadata_value_is_not_available() {
+    let data = request_data(r#"{"metadata": {"user_api_key_alias": null}}"#);
+    assert_eq!(
+        metadata::header_value(&data, "user_api_key_alias").unwrap(),
+        "N/A"
+    );
+}
+
+#[test]
+fn the_key_alias_fallback_only_applies_to_the_alias() {
+    let data = request_data(
+        r#"{"litellm_metadata": {"user_api_key_key_alias": "key-alias"}, "metadata": {"user_api_key_team_id": "team-1"}}"#,
+    );
+    assert_eq!(
+        metadata::header_value(&data, "user_api_key_team_id").unwrap(),
+        "team-1"
+    );
+}
+
+#[tokio::test]
+async fn an_answer_under_the_size_limit_is_read() {
+    let content = "x".repeat(3000);
+    let reply =
+        format!(r#"{{"statusCode": 200, "action": "ALLOW", "transactionId": "{content}"}}"#);
+    let mock = mock(200, &reply).await;
+    let guardrail = guardrail(&mock.base);
+    guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_decimal_200_status_code_is_accepted() {
+    let mock = mock(200, r#"{"statusCode": 200.0, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn a_decimal_status_code_other_than_200_is_a_500() {
+    let mock = mock(200, r#"{"statusCode": 400.0, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn a_decimal_policy_id_from_metadata_is_sent() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let data = request_data(r#"{"metadata": {"zguard_policy_id": 5.0}}"#);
+    guardrail
+        .apply_guardrail(inputs(&["hello"]), &data, GuardrailInputType::Request)
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    assert_eq!(
+        serde_json::to_value(&seen[0].body).unwrap(),
+        serde_json::json!({"direction": "IN", "content": "hello", "policyId": 5.0})
+    );
+}
+
+#[tokio::test]
+async fn a_fractional_policy_id_below_one_is_not_sent() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let data = request_data(r#"{"metadata": {"zguard_policy_id": 0.5}}"#);
+    guardrail
+        .apply_guardrail(inputs(&["hello"]), &data, GuardrailInputType::Request)
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    assert_eq!(
+        serde_json::to_value(&seen[0].body).unwrap(),
+        serde_json::json!({"direction": "IN", "content": "hello"})
+    );
+}
+
+#[tokio::test]
+async fn a_large_unsigned_policy_id_is_sent() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": "ALLOW"}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let data = request_data(r#"{"metadata": {"zguard_policy_id": 18446744073709551615}}"#);
+    guardrail
+        .apply_guardrail(inputs(&["hello"]), &data, GuardrailInputType::Request)
+        .await
+        .unwrap();
+    let seen = mock.seen.lock().unwrap();
+    assert_eq!(
+        serde_json::to_value(&seen[0].body).unwrap(),
+        serde_json::json!({"direction": "IN", "content": "hello", "policyId": 18446744073709551615_u64})
+    );
 }
 
 #[tokio::test]
