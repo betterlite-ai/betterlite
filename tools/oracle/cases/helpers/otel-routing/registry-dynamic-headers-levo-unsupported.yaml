@@ -1,0 +1,12 @@
+kind: helper
+name: registry-dynamic-headers-levo-unsupported
+call:
+  b3851:
+    function: dynamic_otlp_headers
+    callback_name: levo
+    params:
+      arize_api_key: key-1
+    allowed_hosts: []
+env: {}
+compare:
+  ignore: []

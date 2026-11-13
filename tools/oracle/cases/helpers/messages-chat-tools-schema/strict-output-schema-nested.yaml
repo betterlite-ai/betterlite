@@ -1,0 +1,20 @@
+kind: helper
+name: messages-chat-tools-schema-strict-output-schema-nested
+call:
+  messages_chat_tools_schema:
+    operation: output_format
+    output_format:
+      type: json_schema
+      schema:
+        type: object
+        properties:
+          list:
+            type: array
+            items: {type: object, properties: {c: {type: number}}}
+          choice:
+            anyOf:
+              - {type: object, properties: {d: {type: string}}}
+        $defs:
+          named: {type: object, properties: {e: {type: string}}}
+env: {}
+compare: {ignore: []}

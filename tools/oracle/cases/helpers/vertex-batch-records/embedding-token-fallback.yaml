@@ -1,0 +1,40 @@
+kind: helper
+name: vertex-batch-records-embedding-token-fallback
+call:
+  vertex_batch_records:
+    operation: row
+    calls:
+      - row: {request: {content: {parts: [{text: hi}]}}, response: {embedding: {values: [0.1]}, tokenCount: 12}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {embedding: {values: [0.1]}, tokenCount: "7"}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {embedding: {values: [0.1]}, tokenCount: "seven"}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {embedding: {values: [0.1]}}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {tokenCount: 4}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {embedding: {values: [0.1]}, tokenCount: 5}}
+        model_name: my-deployment
+        model_info: null
+        pricing: fixed
+      - row: {request: {}, response: {embedding: {values: [0.1]}, usageMetadata: {promptTokenCount: 9, totalTokenCount: 9}}}
+        model_name: my-deployment
+        model_info: null
+        pricing: fixed
+env: {}
+compare: {ignore: []}

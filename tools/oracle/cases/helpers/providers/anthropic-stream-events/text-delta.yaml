@@ -1,0 +1,17 @@
+kind: helper
+name: anthropic-stream-events-text-delta
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: text, text: Hello}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: " world"}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: text_delta, text: ""}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: max_tokens}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

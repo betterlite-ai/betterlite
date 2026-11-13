@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-interactions-caller-bearer-override
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {Authorization: "Bearer caller", Content-Type: text/plain, X-Extra: "1"}}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {authorization: "Bearer lowercase"}}
+      - {function: headers, api_base: "", stream: false, interaction_id: "", params: {vertex_project: project-1}, headers: {X-Trace: kept}}
+env: {}
+compare: {ignore: []}

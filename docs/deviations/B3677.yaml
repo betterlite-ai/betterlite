@@ -1,0 +1,5 @@
+task: B3677
+deviations:
+  - what: The response placed in the request data is a copy taken before the transcription output is rewritten. LiteLLM stores the live response object, so a change a guardrail makes through request_data["response"] reaches the returned response and a guardrail that reads it after the call sees the new text; in betterlite the guardrail writes to and reads a copy, and the response only gets the rewritten text.
+    why: Rust cannot hand out a shared reference into the response while the handler writes to it, and the guardrail only reads the response during its own call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/guardrail_translation/handler.py#L83-L93
