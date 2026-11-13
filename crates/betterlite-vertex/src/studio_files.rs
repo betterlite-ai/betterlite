@@ -30,7 +30,10 @@ pub(crate) fn resolve_key(
             return Some(key);
         }
     }
-    settings.environment_key.clone()
+    settings
+        .environment_key
+        .clone()
+        .filter(|key| !key.expose_secret().is_empty())
 }
 
 // get_api_base ends at a hardcoded default, so even an empty configured base still yields a URL.
