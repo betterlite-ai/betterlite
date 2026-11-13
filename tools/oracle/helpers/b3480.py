@@ -4,7 +4,7 @@ from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.types.google_genai.main import GenerateContentRequestDict, GenerateContentResponse
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 
 class ConstructCall(TypedDict):
@@ -35,6 +35,10 @@ class ErrorRecord(BaseModel):
     headers: JsonValue
 
 
+class HiddenRecord(BaseModel):
+    hidden_params: dict[str, JsonValue] = Field(alias="_hidden_params")
+
+
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 INPUT: TypeAdapter[Input] = TypeAdapter(Input)
@@ -51,8 +55,8 @@ def construct(call: ConstructCall) -> JsonValue:
         wire = OBJECT.validate_json(response.model_dump_json())
         # betterlite keeps _hidden_params off the wire, where LiteLLM serializes the extra (docs/deviations/B3480.yaml)
         wire.pop("_hidden_params", None)
-        hidden = OBJECT.validate_python(response.get("_hidden_params"))
-        return {"value": wire, "hidden_params": hidden}
+        hidden = HiddenRecord.model_validate(response, from_attributes=True)
+        return {"value": wire, "hidden_params": hidden.hidden_params}
     request = GenerateContentRequestDict(**fields)
     return {"value": dict(request)}
 
