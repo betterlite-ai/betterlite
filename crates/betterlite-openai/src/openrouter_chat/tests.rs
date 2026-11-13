@@ -498,6 +498,18 @@ fn stream_chunk_copies_reasoning_into_reasoning_content() {
 }
 
 #[test]
+fn stream_chunk_drops_a_null_usage() {
+    let chunk = json!({
+        "id": "c",
+        "created": 1,
+        "model": "m",
+        "choices": [],
+        "usage": null
+    });
+    assert_eq!(chunk_parser(&chunk).unwrap().usage, None);
+}
+
+#[test]
 fn stream_chunk_overwrites_an_existing_reasoning_content_with_null() {
     let chunk = json!({
         "id": "c",
