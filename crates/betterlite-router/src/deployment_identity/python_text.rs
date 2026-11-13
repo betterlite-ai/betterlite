@@ -68,23 +68,13 @@ fn write_repr_text(text: &str, out: &mut String) {
     out.push(quote);
 }
 
-const SHORT_ESCAPES: [(char, &str); 7] = [
-    ('"', "\\\""),
-    ('\\', "\\\\"),
-    ('\n', "\\n"),
-    ('\r', "\\r"),
-    ('\t', "\\t"),
-    ('\u{8}', "\\b"),
-    ('\u{c}', "\\f"),
-];
-
-// json.dumps with its default ensure_ascii: every character past ASCII becomes \uXXXX, in surrogate pairs above the BMP.
+// json.dumps with its default ensure_ascii: serde_json quotes and escapes the ASCII below the space, and DEL and every character past ASCII become \uXXXX, in surrogate pairs above the BMP.
 fn write_json_text(text: &str, out: &mut String) {
-    out.push('"');
-    for character in text.chars() {
-        if let Some((_, escape)) = SHORT_ESCAPES.iter().find(|(plain, _)| *plain == character) {
-            out.push_str(escape);
-        } else if character.is_ascii() && !character.is_ascii_control() {
+    for character in serde_json::Value::String(text.to_owned())
+        .to_string()
+        .chars()
+    {
+        if character.is_ascii() && !character.is_ascii_control() {
             out.push(character);
         } else {
             for unit in character.encode_utf16(&mut [0; 2]) {
@@ -93,7 +83,6 @@ fn write_json_text(text: &str, out: &mut String) {
             }
         }
     }
-    out.push('"');
 }
 
 fn number_text(number: &Number) -> String {
