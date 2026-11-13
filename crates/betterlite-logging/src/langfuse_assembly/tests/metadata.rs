@@ -7,7 +7,7 @@ use crate::langfuse_assembly::metadata;
 use crate::langfuse_assembly::{AssemblyInput, AssemblySettings};
 
 use super::support::{
-    Fixture, Inputs, absent, attribute, json, payload, run, string_array, text, upper, value,
+    Inputs, absent, attribute, fixture, json, payload, run, string_array, text, upper, value,
 };
 
 fn cleaned(inputs: &Inputs) -> metadata::Cleaned {
@@ -79,11 +79,11 @@ fn the_masking_function_metadata_key_is_dropped() {
 
 #[test]
 fn masking_applies_to_the_generation_input_and_output() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.masker = Some(upper);
-    fixture.inputs.input = Some(value(r#"{"messages": ["hi"]}"#));
-    fixture.inputs.output = Some(Json::Text("bye".to_owned()));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.masker = Some(upper);
+    case.inputs.input = Some(value(r#"{"messages": ["hi"]}"#));
+    case.inputs.output = Some(Json::Text("bye".to_owned()));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.input"),
@@ -97,18 +97,17 @@ fn masking_applies_to_the_generation_input_and_output() {
 
 #[test]
 fn mask_flags_replace_the_values_with_the_redaction_text() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.input = Some(Json::Text("secret input".to_owned()));
-    fixture.inputs.output = Some(Json::Text("secret output".to_owned()));
-    fixture.inputs.set_metadata("mask_input", Json::Bool(true));
-    fixture
-        .inputs
+    let mut case = fixture();
+    case.inputs.input = Some(Json::Text("secret input".to_owned()));
+    case.inputs.output = Some(Json::Text("secret output".to_owned()));
+    case.inputs.set_metadata("mask_input", Json::Bool(true));
+    case.inputs
         .set_metadata("mask_output", Json::Text("true".to_owned()));
-    fixture.inputs.set_metadata(
+    case.inputs.set_metadata(
         "parent_observation_id",
         Json::Text("0000000000000005".to_owned()),
     );
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.input").as_deref(),
@@ -126,15 +125,14 @@ fn mask_flags_replace_the_values_with_the_redaction_text() {
 
 #[test]
 fn redaction_drops_user_api_key_metadata_but_keeps_the_end_user() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.redact = true;
-    fixture.inputs.payload = Some(payload(
+    let mut case = fixture();
+    case.inputs.redact = true;
+    case.inputs.payload = Some(payload(
         r#"{"user_api_key_alias": "prod-key", "user_api_key_end_user_id": "end-user-1"}"#,
     ));
-    fixture
-        .inputs
+    case.inputs
         .set_metadata("user_api_key_alias", Json::Text("prod-key".to_owned()));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert!(absent(
         generation,
@@ -153,13 +151,12 @@ fn redaction_drops_user_api_key_metadata_but_keeps_the_end_user() {
 
 #[test]
 fn default_tags_turn_metadata_keys_into_tags() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.payload = Some(payload("{}"));
-    fixture.inputs.default_tags = vec!["user_api_key_alias".to_owned()];
-    fixture
-        .inputs
+    let mut case = fixture();
+    case.inputs.payload = Some(payload("{}"));
+    case.inputs.default_tags = vec!["user_api_key_alias".to_owned()];
+    case.inputs
         .set_metadata("user_api_key_alias", Json::Text("prod-key".to_owned()));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         attribute(generation, "langfuse.trace.tags"),
@@ -172,10 +169,10 @@ fn default_tags_turn_metadata_keys_into_tags() {
 #[case::miss(Some(false), "cache_hit:False")]
 #[case::unknown(None, "cache_hit:None")]
 fn the_cache_hit_tag_reports_the_flag(#[case] cache_hit: Option<bool>, #[case] expected: &str) {
-    let mut fixture = Fixture::default();
-    fixture.inputs.default_tags = vec!["cache_hit".to_owned()];
-    fixture.inputs.cache_hit = cache_hit;
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.default_tags = vec!["cache_hit".to_owned()];
+    case.inputs.cache_hit = cache_hit;
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         attribute(generation, "langfuse.trace.tags"),
@@ -192,16 +189,16 @@ fn the_cache_key_tag_falls_back_to_the_preset_key(
     #[case] preset: Option<&str>,
     #[case] expected: &str,
 ) {
-    let mut fixture = Fixture::default();
-    fixture.inputs.default_tags = vec!["cache_key".to_owned()];
-    fixture.inputs.preset_cache_key = preset.map(str::to_owned);
+    let mut case = fixture();
+    case.inputs.default_tags = vec!["cache_key".to_owned()];
+    case.inputs.preset_cache_key = preset.map(str::to_owned);
     if let Some(hidden) = hidden {
-        fixture.inputs.set_metadata(
+        case.inputs.set_metadata(
             "hidden_params",
             value(&format!(r#"{{"cache_key": "{hidden}"}}"#)),
         );
     }
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         attribute(generation, "langfuse.trace.tags"),
@@ -220,15 +217,14 @@ fn the_proxy_base_url_tag_reads_the_environment(
     #[case] base: Option<&str>,
     #[case] expected: Option<&str>,
 ) {
-    let mut fixture = Fixture::default();
-    fixture.inputs.default_tags = vec!["proxy_base_url".to_owned()];
+    let mut case = fixture();
+    case.inputs.default_tags = vec!["proxy_base_url".to_owned()];
     if let Some(base) = base {
-        fixture
-            .inputs
+        case.inputs
             .environment
             .insert("PROXY_BASE_URL".to_owned(), base.to_owned());
     }
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     match expected {
         Some(tag) => assert_eq!(
@@ -241,25 +237,25 @@ fn the_proxy_base_url_tag_reads_the_environment(
 
 #[test]
 fn the_proxy_base_url_tag_needs_the_default_tag() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.environment.insert(
+    let mut case = fixture();
+    case.inputs.environment.insert(
         "PROXY_BASE_URL".to_owned(),
         "https://proxy.example".to_owned(),
     );
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert!(absent(generation, "langfuse.trace.tags"));
 }
 
 #[test]
 fn proxy_headers_lose_the_credential_keys() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.litellm_params = value(
+    let mut case = fixture();
+    case.inputs.litellm_params = value(
         r#"{"proxy_server_request": {"method": "POST", "url": "http://proxy/v1/chat",
             "headers": {"Authorization": "Bearer secret", "Cookie": "a=b",
                         "Referer": "http://elsewhere", "X-Trace": "keep"}}}"#,
     );
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     let request = json(generation, "langfuse.trace.metadata.proxy_server_request")
         .expect("the proxy request metadata");
@@ -273,17 +269,13 @@ fn proxy_headers_lose_the_credential_keys() {
 
 #[test]
 fn debug_metadata_keeps_only_scalar_values() {
-    let mut fixture = Fixture::default();
-    fixture
-        .inputs
-        .set_metadata("debug_langfuse", Json::Bool(true));
-    fixture
-        .inputs
-        .set_metadata("text", Json::Text("t".to_owned()));
-    fixture.inputs.set_metadata("flag", Json::Bool(true));
-    fixture.inputs.set_metadata("count", value("5"));
-    fixture.inputs.set_metadata("nested", value(r#"{"a": 1}"#));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.set_metadata("debug_langfuse", Json::Bool(true));
+    case.inputs.set_metadata("text", Json::Text("t".to_owned()));
+    case.inputs.set_metadata("flag", Json::Bool(true));
+    case.inputs.set_metadata("count", value("5"));
+    case.inputs.set_metadata("nested", value(r#"{"a": 1}"#));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(
@@ -302,9 +294,9 @@ fn debug_metadata_keeps_only_scalar_values() {
 #[case::upper_text(Json::Text("TRUE".to_owned()), true)]
 #[case::other_text(Json::Text("yes".to_owned()), false)]
 fn debug_metadata_responds_to_the_debug_flag(#[case] debug: Json, #[case] expected: bool) {
-    let mut fixture = Fixture::default();
-    fixture.inputs.set_metadata("debug_langfuse", debug);
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.set_metadata("debug_langfuse", debug);
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         !absent(

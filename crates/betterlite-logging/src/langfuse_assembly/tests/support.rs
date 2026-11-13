@@ -221,19 +221,17 @@ pub struct Fixture {
     client: LangfuseApiClient,
 }
 
-impl Default for Fixture {
-    fn default() -> Self {
-        let exporter = InMemorySpanExporter::default();
-        let provider = SdkTracerProvider::builder()
-            .with_simple_exporter(exporter.clone())
-            .with_id_generator(RequestedIdGenerator::default())
-            .build();
-        Self {
-            inputs: Inputs::default(),
-            provider,
-            exporter,
-            client: idle_client(),
-        }
+pub fn fixture() -> Fixture {
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .with_id_generator(RequestedIdGenerator::default())
+        .build();
+    Fixture {
+        inputs: Inputs::default(),
+        provider,
+        exporter,
+        client: idle_client(),
     }
 }
 

@@ -41,7 +41,7 @@ where
 {
     let params = request.params;
     let public = trace_public_flag(request.plan.params.get("public"));
-    let parent = parent_observation_id(request.trace);
+    let parent = optional_str(request.trace.metadata.get("parent_observation_id"));
     let mut observation = start_generation(
         request.runtime.tracer,
         request.runtime.id_generator,
@@ -71,8 +71,8 @@ where
     T: Tracer,
 {
     let params = request.params;
-    let trace_root =
-        request.call.existing.is_none() && parent_observation_id(request.trace).is_none();
+    let trace_root = request.call.existing.is_none()
+        && optional_str(request.trace.metadata.get("parent_observation_id")).is_none();
     let level = Json::Text(request.trace.level.to_owned());
     let model = Json::Text(params.model.clone());
     let model_parameters = Json::Object(params.model_parameters.clone());
@@ -159,8 +159,4 @@ fn prompt_link(prompt: Option<&GenerationPrompt>) -> Option<PromptLink> {
         version: meta.version,
         is_fallback: false,
     })
-}
-
-fn parent_observation_id(trace: &GenerationTrace<'_>) -> Option<String> {
-    optional_str(trace.metadata.get("parent_observation_id"))
 }

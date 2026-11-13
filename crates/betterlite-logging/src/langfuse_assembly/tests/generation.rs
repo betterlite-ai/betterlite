@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 
 use crate::langfuse_observations::identity::{Timestamp, resolve_observation_id};
 
-use super::support::{Fixture, absent, attribute, json, object_field, payload, run, text, value};
+use super::support::{absent, attribute, fixture, json, object_field, payload, run, text, value};
 
 fn usage(usage: &str) -> Json {
     value(&format!(r#"{{"usage": {usage}}}"#))
@@ -30,38 +30,36 @@ fn the_generation_name_falls_back_in_order(
     #[case] alias: Option<&str>,
     #[case] expected: &str,
 ) {
-    let mut fixture = Fixture::default();
+    let mut case = fixture();
     let metadata = match alias {
         Some(alias) => format!(r#"{{"user_api_key_alias": "{alias}"}}"#),
         None => "{}".to_owned(),
     };
-    fixture.inputs.payload = Some(payload(&metadata));
+    case.inputs.payload = Some(payload(&metadata));
     if let Some(name) = name {
-        fixture
-            .inputs
+        case.inputs
             .set_metadata("generation_name", Json::Text(name.to_owned()));
     }
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(generation.name.to_string(), expected);
 }
 
 #[test]
 fn a_metadata_generation_id_becomes_the_span_id() {
-    let mut fixture = Fixture::default();
-    fixture
-        .inputs
+    let mut case = fixture();
+    case.inputs
         .set_metadata("generation_id", Json::Text("0102030405060708".to_owned()));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     assert_eq!(outcome.generation_id.as_deref(), Some("0102030405060708"));
 }
 
 #[test]
 fn the_response_id_and_start_time_build_the_generation_id() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(value(r#"{"id": "chatcmpl-9"}"#));
-    fixture.inputs.start_time = Some(Timestamp::DateTime(datetime()));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.response = Some(value(r#"{"id": "chatcmpl-9"}"#));
+    case.inputs.start_time = Some(Timestamp::DateTime(datetime()));
+    let outcome = run(case.assemble());
     let expected = resolve_observation_id(Some("time-01-02-03-456789_chatcmpl-9"))
         .expect("a span id")
         .to_string();
@@ -70,9 +68,9 @@ fn the_response_id_and_start_time_build_the_generation_id() {
 
 #[test]
 fn a_response_without_an_id_carries_no_generation_id() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(value(r#"{"object": "chat.completion"}"#));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.response = Some(value(r#"{"object": "chat.completion"}"#));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         outcome.generation_id,
@@ -82,13 +80,13 @@ fn a_response_without_an_id_carries_no_generation_id() {
 
 #[test]
 fn usage_details_reduce_the_input_by_the_cache_reads() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(usage(
+    let mut case = fixture();
+    case.inputs.response = Some(usage(
         r#"{"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120,
             "cache_read_input_tokens": 30, "cache_creation_input_tokens": 10}"#,
     ));
-    fixture.inputs.response_cost = Some(Decimal::new(25, 2));
-    let outcome = run(fixture.assemble());
+    case.inputs.response_cost = Some(Decimal::new(25, 2));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.usage_details"),
@@ -105,12 +103,12 @@ fn usage_details_reduce_the_input_by_the_cache_reads() {
 
 #[test]
 fn cached_token_details_override_the_top_level_cache_read() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(usage(
+    let mut case = fixture();
+    case.inputs.response = Some(usage(
         r#"{"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105,
             "prompt_tokens_details": {"cached_tokens": 40}}"#,
     ));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.usage_details"),
@@ -123,11 +121,11 @@ fn cached_token_details_override_the_top_level_cache_read() {
 
 #[test]
 fn null_token_counts_become_zero() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(usage(
+    let mut case = fixture();
+    case.inputs.response = Some(usage(
         r#"{"prompt_tokens": null, "completion_tokens": null, "total_tokens": null}"#,
     ));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.usage_details"),
@@ -140,10 +138,10 @@ fn null_token_counts_become_zero() {
 
 #[test]
 fn an_empty_usage_object_carries_no_usage_or_cost_details() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(usage("{}"));
-    fixture.inputs.response_cost = Some(Decimal::new(5, 1));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.response = Some(usage("{}"));
+    case.inputs.response_cost = Some(Decimal::new(5, 1));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert!(absent(generation, "langfuse.observation.usage_details"));
     assert!(absent(generation, "langfuse.observation.cost_details"));
@@ -151,11 +149,11 @@ fn an_empty_usage_object_carries_no_usage_or_cost_details() {
 
 #[test]
 fn cost_details_need_a_response_cost() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.response = Some(usage(
+    let mut case = fixture();
+    case.inputs.response = Some(usage(
         r#"{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}"#,
     ));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert!(absent(generation, "langfuse.observation.cost_details"));
 }
@@ -170,10 +168,10 @@ fn the_model_name_carries_the_bedrock_prefix(
     #[case] model: &'static str,
     #[case] expected: &str,
 ) {
-    let mut fixture = Fixture::default();
-    fixture.inputs.provider = provider;
-    fixture.inputs.model = model;
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.provider = provider;
+    case.inputs.model = model;
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.model.name").as_deref(),
@@ -183,12 +181,11 @@ fn the_model_name_carries_the_bedrock_prefix(
 
 #[test]
 fn a_deployment_metadata_name_wins_over_the_model() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.provider = Some("bedrock");
-    fixture
-        .inputs
+    let mut case = fixture();
+    case.inputs.provider = Some("bedrock");
+    case.inputs
         .set_metadata("deployment", Json::Text("anthropic/claude-3".to_owned()));
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.model.name").as_deref(),
@@ -198,13 +195,12 @@ fn a_deployment_metadata_name_wins_over_the_model() {
 
 #[test]
 fn the_system_fingerprint_reaches_the_model_parameters() {
-    let mut fixture = Fixture::default();
-    fixture
-        .inputs
+    let mut case = fixture();
+    case.inputs
         .optional_params
         .insert("temperature".to_owned(), value("0.5"));
-    fixture.inputs.response = Some(value(r#"{"system_fingerprint": "fp-1"}"#));
-    let outcome = run(fixture.assemble());
+    case.inputs.response = Some(value(r#"{"system_fingerprint": "fp-1"}"#));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         json(generation, "langfuse.observation.model.parameters"),
@@ -216,10 +212,10 @@ fn the_system_fingerprint_reaches_the_model_parameters() {
 
 #[test]
 fn error_levels_carry_the_status_message() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.level = "ERROR";
-    fixture.inputs.output = Some(Json::Text("boom".to_owned()));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.level = "ERROR";
+    case.inputs.output = Some(Json::Text("boom".to_owned()));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.status_message").as_deref(),
@@ -233,24 +229,24 @@ fn error_levels_carry_the_status_message() {
 
 #[test]
 fn other_levels_carry_no_status_message() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.output = Some(Json::Text("fine".to_owned()));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.output = Some(Json::Text("fine".to_owned()));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert!(absent(generation, "langfuse.observation.status_message"));
 }
 
 #[test]
 fn a_user_prompt_links_the_generation() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.set_metadata(
+    let mut case = fixture();
+    case.inputs.set_metadata(
         "prompt",
         value(
             r#"{"type": "text", "name": "greeting", "version": 3, "prompt": "hello",
                 "config": null, "labels": [], "tags": []}"#,
         ),
     );
-    let outcome = run(fixture.assemble());
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.prompt.name").as_deref(),
@@ -264,12 +260,12 @@ fn a_user_prompt_links_the_generation() {
 
 #[test]
 fn enrichments_carry_the_api_base_and_provider_locations() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.litellm_params = value(r#"{"api_base": "https://api.example"}"#);
-    fixture.inputs.vertex_location = Some("us-central1");
-    fixture.inputs.aws_region_name = Some("eu-west-1");
-    fixture.inputs.cache_hit = Some(true);
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.litellm_params = value(r#"{"api_base": "https://api.example"}"#);
+    case.inputs.vertex_location = Some("us-central1");
+    case.inputs.aws_region_name = Some("eu-west-1");
+    case.inputs.cache_hit = Some(true);
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(generation, "langfuse.observation.metadata.api_base").as_deref(),
@@ -291,12 +287,12 @@ fn enrichments_carry_the_api_base_and_provider_locations() {
 
 #[test]
 fn the_generation_metadata_carries_the_cost_hidden_params_and_ids() {
-    let mut fixture = Fixture::default();
-    fixture.inputs.payload = Some(payload("{}"));
-    fixture.inputs.response = Some(value(r#"{"id": "chatcmpl-1"}"#));
-    fixture.inputs.litellm_call_id = Some("call-1");
-    fixture.inputs.response_cost = Some(Decimal::new(5, 1));
-    let outcome = run(fixture.assemble());
+    let mut case = fixture();
+    case.inputs.payload = Some(payload("{}"));
+    case.inputs.response = Some(value(r#"{"id": "chatcmpl-1"}"#));
+    case.inputs.litellm_call_id = Some("call-1");
+    case.inputs.response_cost = Some(Decimal::new(5, 1));
+    let outcome = run(case.assemble());
     let generation = outcome.generation().expect("a generation span");
     assert_eq!(
         text(
