@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-single-empty-text
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [{"type": "text", "text": ""}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-native-schema-key-cache-control
+call: {"messages_content_primitives": {"operation": "is_provider_native_tool_dict", "tool": {"cache_control": {}}}}
+env: {}
+compare: {ignore: []}
