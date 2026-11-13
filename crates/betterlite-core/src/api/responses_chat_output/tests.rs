@@ -696,6 +696,25 @@ fn hosted_search_calls_replace_their_function_call() {
 }
 
 #[test]
+fn tool_call_provider_fields_reach_the_function_call_item() {
+    let response = assemble(
+        r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,
+            "tool_calls":[{"id":"x","type":"function","function":{"name":"f","arguments":"{}"},
+                           "provider_specific_fields":{"thought_signature":"sig"}}]}}]}"#,
+    );
+    let ResponseOutputItem::Sdk(output) = &response.response.output[0] else {
+        panic!("a function call was expected");
+    };
+    let SdkOutput::FunctionCall(function_call) = output.as_ref() else {
+        panic!("a function call was expected");
+    };
+    assert_eq!(
+        function_call.extra.get("provider_specific_fields"),
+        Some(&parse(r#"{"thought_signature":"sig"}"#))
+    );
+}
+
+#[test]
 fn custom_chat_tool_calls_cache_an_empty_function() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,
