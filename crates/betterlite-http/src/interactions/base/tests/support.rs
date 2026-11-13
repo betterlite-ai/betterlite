@@ -36,16 +36,15 @@ pub(crate) fn policy(verification: Verification, ca_file: Option<&str>) -> TlsPo
 }
 
 pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> Vec<u8> {
-    let mut text = format!(
-        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n",
+    let extra: String = headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect();
+    format!(
+        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n{extra}\r\n{body}",
         body.len()
-    );
-    for (name, value) in headers {
-        text.push_str(&format!("{name}: {value}\r\n"));
-    }
-    text.push_str("\r\n");
-    text.push_str(body);
-    text.into_bytes()
+    )
+    .into_bytes()
 }
 
 pub(crate) fn serve_once(answer: Vec<u8>, pause: Option<Duration>) -> Serving {

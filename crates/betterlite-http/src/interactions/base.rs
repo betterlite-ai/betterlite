@@ -113,8 +113,8 @@ pub enum RequestFailure {
 impl From<ReadError> for RequestFailure {
     fn from(failure: ReadError) -> Self {
         match failure {
-            ReadError::TooLarge { limit } => RequestFailure::BodyTooLarge { limit },
-            ReadError::Failed(source) => RequestFailure::Transport(source),
+            ReadError::TooLarge { limit } => Self::BodyTooLarge { limit },
+            ReadError::Failed(source) => Self::Transport(source),
         }
     }
 }
