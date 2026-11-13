@@ -110,6 +110,10 @@ fn invalid_id_fallback() {
     let bad_base64 = base64_capture.captured(|| decode_video_id_with_provider("video_AAAAA"));
     assert_eq!(bad_base64.video_id, "video_AAAAA");
     assert_eq!(base64_capture.events().len(), 1);
+    let skipped_capture = Capture::default();
+    let skipped = skipped_capture.captured(|| decode_video_id_with_provider("video_YTtiO2M-"));
+    assert_eq!(skipped.video_id, "video_YTtiO2M-");
+    assert_eq!(skipped_capture.events().len(), 1);
     let utf8_capture = Capture::default();
     let bad_utf8 = utf8_capture.captured(|| decode_video_id_with_provider("video_/w=="));
     assert_eq!(bad_utf8.video_id, "video_/w==");

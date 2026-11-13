@@ -1,6 +1,6 @@
 use base64::Engine as _;
 use base64::alphabet;
-use base64::engine::{GeneralPurpose, GeneralPurposeConfig};
+use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use serde_json::{Map, Value};
 
 const VIDEO_ID_PREFIX: &str = "video_";
@@ -10,10 +10,12 @@ const MODEL_FIELD: &str = "model_id:";
 const VIDEO_FIELD: &str = "video_id:";
 const CHARACTER_FIELD: &str = "character_id:";
 
-// Python's b64decode(validate=False) drops characters outside the alphabet and keeps nonzero trailing bits
+// Python's b64decode(validate=False) keeps nonzero trailing bits and takes the padding it is given or none
 const ID_BASE64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
-    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
+    GeneralPurposeConfig::new()
+        .with_decode_allow_trailing_bits(true)
+        .with_decode_padding_mode(DecodePaddingMode::Indifferent),
 );
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,14 +56,21 @@ fn add_base64_padding(value: &str) -> String {
 }
 
 fn decode_base64_text(encoded: &str) -> Option<String> {
-    let filtered: String = encoded
-        .chars()
-        .filter(|character| {
-            character.is_ascii_alphanumeric() || *character == '+' || *character == '/'
-        })
-        .collect();
-    let padded = add_base64_padding(&filtered);
-    let bytes = ID_BASE64.decode(padded.as_bytes()).ok()?;
+    let mut data = String::new();
+    let mut pads = 0_usize;
+    for character in add_base64_padding(encoded).chars() {
+        if character.is_ascii_alphanumeric() || character == '+' || character == '/' {
+            data.push(character);
+            pads = 0;
+        } else if character == '=' && data.len().checked_rem(4)? >= 2 {
+            pads = pads.checked_add(1)?;
+        }
+    }
+    let leftover = data.len().checked_rem(4)?;
+    if leftover == 1 || (leftover != 0 && leftover.checked_add(pads)? < 4) {
+        return None;
+    }
+    let bytes = ID_BASE64.decode(data.as_bytes()).ok()?;
     String::from_utf8(bytes).ok()
 }
 

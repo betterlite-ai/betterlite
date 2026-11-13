@@ -10,7 +10,6 @@ const DEFAULT_IMAGE_MIME: &str = "image/png";
 const DEFAULT_VIDEO_MIME: &str = "video/mp4";
 const IMAGE_PROBE_BYTES: usize = 100;
 const VIDEO_PROBE_BYTES: usize = 64;
-const MP4_SIGNATURE: &[u8] = b"ftyp";
 
 pub trait ReadSeek: Read + Seek {}
 
@@ -53,12 +52,6 @@ fn mime_for_image(detected: Option<ImageType>) -> &'static str {
     }
 }
 
-fn contains_mp4_signature(bytes: &[u8]) -> bool {
-    bytes
-        .windows(MP4_SIGNATURE.len())
-        .any(|window| window == MP4_SIGNATURE)
-}
-
 #[must_use]
 pub fn image_content_type(image: &mut MediaBody<'_>) -> &'static str {
     let detected = match image {
@@ -78,14 +71,9 @@ pub fn video_content_type(video: &mut MediaBody<'_>, filename: &str) -> &'static
     {
         return guessed;
     }
-    let header = match video {
-        MediaBody::Bytes(bytes) => Some(bytes.get(..VIDEO_PROBE_BYTES).unwrap_or(bytes).to_vec()),
-        MediaBody::Text(_) => None,
-        MediaBody::Stream { reader, .. } => probe_prefix(&mut **reader, VIDEO_PROBE_BYTES),
-    };
-    // the ftyp probe only ever confirms mp4; it runs to leave the reader's cursor as LiteLLM does
-    if header.is_some_and(|bytes| contains_mp4_signature(&bytes)) {
-        return DEFAULT_VIDEO_MIME;
+    // LiteLLM probes for ftyp so the cursor moves as it does there, then answers video/mp4 either way
+    if let MediaBody::Stream { reader, .. } = video {
+        let _probe = probe_prefix(&mut **reader, VIDEO_PROBE_BYTES);
     }
     DEFAULT_VIDEO_MIME
 }

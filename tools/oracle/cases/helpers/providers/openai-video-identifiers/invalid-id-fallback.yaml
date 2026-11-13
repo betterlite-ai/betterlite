@@ -18,6 +18,9 @@ call:
       - op: decode_video_id
         encoded: video_YTti
         capture_debug: true
+      - op: decode_video_id
+        encoded: video_YTtiO2M-
+        capture_debug: true
       - op: decode_character_id
         encoded: ''
         capture_debug: true
