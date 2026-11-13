@@ -61,12 +61,11 @@ pub fn cue_start(words: &[Word]) -> Option<i64> {
 
 #[must_use]
 pub fn cue_end(words: &[Word]) -> Option<i64> {
-    for word in words.iter().rev() {
-        if let Some(end) = word.end_ms {
-            return Some(end);
-        }
-    }
-    cue_start(words)
+    words
+        .iter()
+        .rev()
+        .find_map(|word| word.end_ms)
+        .or_else(|| cue_start(words))
 }
 
 #[must_use]

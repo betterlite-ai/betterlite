@@ -28,12 +28,9 @@ fn timed(text: &str, start_ms: i64, end_ms: i64) -> SubtitleToken {
 }
 
 fn spoken(text: &str, start_ms: i64, end_ms: i64, speaker: &str) -> SubtitleToken {
-    SubtitleToken {
-        text: text.to_owned(),
-        start_ms: Some(start_ms),
-        end_ms: Some(end_ms),
-        speaker: Some(Speaker::Text(speaker.to_owned())),
-    }
+    let mut token = timed(text, start_ms, end_ms);
+    token.speaker = Some(Speaker::Text(speaker.to_owned()));
+    token
 }
 
 fn cue(start_ms: i64, end_ms: i64, text: &str) -> SubtitleCue {
