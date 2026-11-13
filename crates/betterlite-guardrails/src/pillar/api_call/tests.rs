@@ -178,6 +178,22 @@ fn an_empty_object_is_empty() {
 }
 
 #[tokio::test]
+async fn a_body_at_the_cap_is_accepted() {
+    let prefix = "{\"pad\":\"";
+    let suffix = "\"}";
+    let pad = 1024 * 1024 - prefix.len() - suffix.len();
+    let body = format!("{prefix}{}{suffix}", "x".repeat(pad));
+    assert_eq!(body.len(), 1024 * 1024);
+    let (base, _receiver, mut server) = serve(StatusCode::OK, body).await;
+    let client = reqwest::Client::new();
+    let response = call_pillar_api(&client, &pillar_settings(&base), &headers(), &payload())
+        .await
+        .expect("a body at the cap is read");
+    assert!(response.flagged.is_none());
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_body_over_one_mib_is_rejected_before_it_is_parsed() {
     let padded = "x".repeat(1024 * 1024 + 512);
     let body = format!("{{\"pad\":\"{padded}\"}}");

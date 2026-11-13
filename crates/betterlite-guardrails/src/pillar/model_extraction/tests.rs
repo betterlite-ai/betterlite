@@ -94,6 +94,15 @@ fn an_unknown_model_falls_back_to_the_model_and_no_provider() {
 }
 
 #[test]
+fn an_empty_model_ignores_a_custom_provider_declaration() {
+    let fixture = Fixture::new();
+    let data = data(&[("model", text("")), ("custom_llm_provider", text("acme"))]);
+    let resolved =
+        extract_model_and_provider(&data, &fixture.resolver()).expect("a model resolves");
+    assert_eq!(resolved, ("unknown".to_owned(), "unknown".to_owned()));
+}
+
+#[test]
 fn a_failed_resolution_uses_the_declared_provider_field() {
     let fixture = Fixture::new();
     let data = data(&[
