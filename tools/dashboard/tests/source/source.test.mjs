@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -29,19 +30,22 @@ async function waitForPid(file) {
   throw new Error("the fake git did not record a child pid");
 }
 
-function alive(pid) {
+async function alive(pid) {
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
-    if (error.code !== "ESRCH") throw error;
-    return false;
+    if (error.code === "ESRCH") return false;
+    throw error;
   }
+  const stat = await fs.readFile(`/proc/${pid}/stat`, "utf8").catch(() => null);
+  if (stat === null) return true;
+  const close = stat.lastIndexOf(")");
+  return stat.slice(close + 2, close + 3) !== "Z";
 }
 
 async function waitForGone(pid) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    if (!alive(pid)) return true;
+    if (!(await alive(pid))) return true;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   return false;
@@ -53,6 +57,14 @@ function killQuietly(pid) {
   } catch {
     return;
   }
+}
+
+function realGitPath() {
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
+    const candidate = path.join(directory, "git");
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error("no git on PATH");
 }
 
 test("prepare publishes the selected export and leaves proprietary subtrees out", async (t) => {
@@ -110,18 +122,23 @@ test("a modified working tree in the source checkout is not used", async (t) => 
 
 test("hostile inherited git configuration cannot change the archive", async (t) => {
   const fixture = await createFixture(t);
+  const home = path.join(fixture.base, "home");
+  await fs.mkdir(home, { recursive: true });
+  await fs.writeFile(path.join(home, ".gitconfig"), "[core]\n\tautocrlf = true\n");
   const hostile = {
+    HOME: home,
     GIT_DIR: path.join(fixture.base, "not-a-repository"),
     GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "tar.umask",
-    GIT_CONFIG_VALUE_0: "0077",
-    GIT_CONFIG_PARAMETERS: "'tar.umask'='0077'",
+    GIT_CONFIG_KEY_0: "core.autocrlf",
+    GIT_CONFIG_VALUE_0: "true",
+    GIT_CONFIG_PARAMETERS: "'core.autocrlf'='true'",
   };
-  const saved = new Map();
+  const saved = new Map([["GIT_CONFIG_GLOBAL", process.env.GIT_CONFIG_GLOBAL]]);
   for (const [name, value] of Object.entries(hostile)) {
     saved.set(name, process.env[name]);
     process.env[name] = value;
   }
+  delete process.env.GIT_CONFIG_GLOBAL;
   try {
     const result = await prepare({
       pin: fixture.pin,
@@ -303,6 +320,24 @@ test("a patch whose preimage does not match fails before publishing", async (t) 
   assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "sentinel"), "utf8"), "keep");
 });
 
+test("a patch whose postimage does not match is rejected after applying", async (t) => {
+  const fixture = await createFixture(t);
+  const target = "ui/litellm-dashboard/next.config.mjs";
+  const before = fixture.files[target];
+  const after = "export default { output: \"export\" };\n";
+  await fs.mkdir(fixture.paths.outDir, { recursive: true });
+  await fs.writeFile(path.join(fixture.paths.outDir, "sentinel"), "keep");
+  await writePatchPair(fixture.paths.patchesDir, "10-first.patch", singleLinePatch(target, before, after), [
+    { path: target, preimage: hashText(before), postimage: hashText("something else\n") },
+  ]);
+  await rejected(
+    prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir }),
+    "patch-hash",
+  );
+  assert.equal(await fs.readFile(path.join(fixture.paths.outDir, "sentinel"), "utf8"), "keep");
+  assert.equal(await exists(path.join(fixture.paths.outDir, target)), false);
+});
+
 test("a patch whose hunk does not apply fails the git apply check", async (t) => {
   const fixture = await createFixture(t);
   const target = "ui/litellm-dashboard/next.config.mjs";
@@ -446,7 +481,7 @@ test("git subprocesses time out and kill their whole process group", async (t) =
   process.env.FAKE_GIT_PID_FILE = pidFile;
   try {
     await rejected(
-      prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir, timeoutMs: 150 }),
+      prepare({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, outDir: fixture.paths.outDir, patchesDir: fixture.paths.patchesDir, timeoutMs: 1000 }),
       "timeout",
     );
   } finally {
@@ -549,4 +584,51 @@ test("verifyRepeat compares the two prepared trees", async (t) => {
   assert.ok(result.comparedPaths.includes("LICENSE"));
   assert.ok(result.comparedPaths.includes("ui/litellm-dashboard/package-lock.json"));
   assert.equal(result.comparedPaths.includes("ui/litellm-dashboard/_experimental/out/index.html"), false);
+});
+
+test("verifyRepeat rejects two preparations that differ", async (t) => {
+  const fixture = await createFixture(t);
+  const target = "ui/litellm-dashboard/next.config.mjs";
+  const before = fixture.files[target];
+  const after = "export default { output: \"export\" };\n";
+  await writePatchPair(fixture.paths.patchesDir, "10-first.patch", singleLinePatch(target, before, after), [
+    { path: target, preimage: hashText(before), postimage: hashText(after) },
+  ]);
+  const wrapper = path.join(fixture.base, "wrapper-git");
+  const countFile = path.join(fixture.base, "apply-count");
+  const real = realGitPath();
+  await fs.mkdir(wrapper);
+  await fs.writeFile(
+    path.join(wrapper, "git"),
+    [
+      "#!/bin/sh",
+      `"${real}" "$@"`,
+      "status=$?",
+      "if [ $status -ne 0 ]; then exit $status; fi",
+      'case " $* " in',
+      '  *" --check "*) exit 0 ;;',
+      "esac",
+      'if [ "$1" = "apply" ]; then',
+      '  count=$(cat "$WRAPPER_COUNT_FILE" 2>/dev/null || echo 0)',
+      "  count=$((count + 1))",
+      '  echo "$count" > "$WRAPPER_COUNT_FILE"',
+      '  if [ "$count" -eq 2 ]; then printf "extra\\n" > extra.txt; fi',
+      "fi",
+      "exit 0",
+      "",
+    ].join("\n"),
+    { mode: 0o755 },
+  );
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${wrapper}${path.delimiter}${originalPath}`;
+  process.env.WRAPPER_COUNT_FILE = countFile;
+  try {
+    await rejected(
+      verifyRepeat({ pin: fixture.pin, sourceRepo: fixture.repo, cacheDir: fixture.paths.cacheDir, patchesDir: fixture.paths.patchesDir }),
+      "reproducibility",
+    );
+  } finally {
+    process.env.PATH = originalPath;
+    delete process.env.WRAPPER_COUNT_FILE;
+  }
 });
