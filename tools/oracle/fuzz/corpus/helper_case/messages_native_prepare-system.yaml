@@ -1,0 +1,16 @@
+kind: helper
+name: messages-native-prepare-system-seed
+call:
+  messages_native_prepare:
+    function: system
+    calls:
+      - request:
+          messages:
+            - role: user
+              content: q
+            - role: system
+              content: reminder
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+env: {}
+compare: {ignore: []}

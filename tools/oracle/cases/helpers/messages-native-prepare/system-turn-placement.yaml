@@ -1,0 +1,101 @@
+kind: helper
+name: messages-native-prepare-system-turn-placement
+call:
+  messages_native_prepare:
+    function: system
+    calls:
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 16
+          system: base
+          messages:
+            - role: system
+              content: initial
+            - role: user
+              content: question
+            - role: assistant
+              content:
+                - type: tool_use
+                  id: t
+                  name: lookup
+                  input: {}
+            - role: system
+              content: reminder
+            - role: user
+              content:
+                - type: tool_result
+                  tool_use_id: t
+                  content: found
+            - role: user
+              content: next
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+      - request:
+          model: claude-opus-5
+          max_tokens: 16
+          system: base
+          messages:
+            - role: system
+              content: initial
+            - role: user
+              content: question
+            - role: assistant
+              content:
+                - type: tool_use
+                  id: t
+                  name: lookup
+                  input: {}
+            - role: system
+              content: reminder
+            - role: user
+              content:
+                - type: tool_result
+                  tool_use_id: t
+                  content: found
+            - role: user
+              content: next
+        model: claude-opus-5
+        supports_mid_system: true
+      - request:
+          system: base
+          messages: not a list
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+      - request:
+          system:
+            - type: text
+              text: x-anthropic-billing-header: a
+          messages:
+            - role: user
+              content: question
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+      - request:
+          messages:
+            - role: system
+              content: a
+            - role: system
+              content:
+                - type: text
+                  text: b
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+      - request:
+          messages:
+            - role: user
+              content: q
+            - role: assistant
+              content: a
+            - role: system
+              content: r
+            - role: user
+              content:
+                - type: text
+                  text: look
+                - type: tool_result
+                  tool_use_id: t
+        model: claude-sonnet-4-5
+        supports_mid_system: false
+env: {}
+compare:
+  ignore: []

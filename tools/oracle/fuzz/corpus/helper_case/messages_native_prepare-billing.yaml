@@ -1,0 +1,17 @@
+kind: helper
+name: messages-native-prepare-billing-seed
+call:
+  messages_native_prepare:
+    function: billing
+    systems:
+      - x-anthropic-billing-header: a
+      - keep
+    request:
+      system:
+        - type: text
+          text: base
+          cache_control:
+            type: ephemeral
+            scope: global
+env: {}
+compare: {ignore: []}

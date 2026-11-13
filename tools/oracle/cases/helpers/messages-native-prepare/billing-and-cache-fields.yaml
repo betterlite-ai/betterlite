@@ -1,0 +1,50 @@
+kind: helper
+name: messages-native-prepare-billing-and-cache-fields
+call:
+  messages_native_prepare:
+    function: billing
+    systems:
+      - x-anthropic-billing-header: cc_version=1
+      - " x-anthropic-billing-header: cc_version=1"
+      - be brief
+      - null
+      - - type: text
+          text: x-anthropic-billing-header: a
+        - type: text
+          text: keep
+        - type: image
+          source:
+            type: base64
+            media_type: image/png
+            data: AA==
+        - x-anthropic-billing-header: a
+      - - type: text
+          text: x-anthropic-billing-header: a
+    request:
+      system:
+        - type: text
+          text: base
+          cache_control:
+            type: ephemeral
+            scope: global
+            ttl: 1h
+      messages:
+        - role: user
+          content:
+            - type: text
+              text: question
+              cache_control:
+                type: ephemeral
+                scope: global
+                ttl: 5m
+          cache_control:
+            type: ephemeral
+            scope: global
+      tools:
+        - name: lookup
+          cache_control:
+            type: ephemeral
+            scope: global
+env: {}
+compare:
+  ignore: []
