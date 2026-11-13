@@ -14,6 +14,10 @@ pub fn strip_encrypted_reasoning(
     let current = mem::take(items);
     let mut kept = Vec::with_capacity(current.len());
     for item in current {
+        // LiteLLM's final filter drops every None, including a null the predicate never selected
+        if matches!(item, Record::Scalar(Json::Null)) {
+            continue;
+        }
         let selected = should_strip
             .is_none_or(|predicate| matches!(&item, Record::Dict(_)) && predicate(&item));
         let stripped = if selected {
@@ -32,7 +36,6 @@ pub fn strip_encrypted_reasoning(
 fn without_encrypted_reasoning(item: Record) -> Option<Record> {
     let mut dict = match item {
         Record::Dict(dict) => dict,
-        Record::Scalar(Json::Null) => return None,
         other @ (Record::Scalar(_) | Record::List(_) | Record::Object { .. }) => {
             return Some(other);
         }

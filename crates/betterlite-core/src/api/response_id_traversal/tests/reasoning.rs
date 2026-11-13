@@ -139,6 +139,14 @@ fn drops_null_items() {
 }
 
 #[test]
+fn drops_null_items_the_predicate_never_selected() {
+    let mut input = list(vec![null(), dict(vec![("type", text("message"))]), null()]);
+    let predicate = |_item: &Record| false;
+    strip_encrypted_reasoning(&mut input, Some(&predicate));
+    assert_eq!(input, list(vec![dict(vec![("type", text("message"))])]));
+}
+
+#[test]
 fn keeps_the_surviving_order() {
     let mut input = list(vec![
         dict(vec![("type", text("first"))]),

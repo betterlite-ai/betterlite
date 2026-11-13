@@ -76,6 +76,12 @@ call:
             id: r
             encrypted_content: cipher
             summary: "\u001c \u001d"
+      - input:
+          - null
+          - type: message
+          - null
+        strip_ids:
+          - r
 env: {}
 compare:
   ignore: []
