@@ -3,8 +3,8 @@ deviations:
   - what: A native response body over 16 MiB is refused with a typed error before it is decoded, where LiteLLM parses any size.
     why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L362-L392
-  - what: A candidate entry whose value is null, a boolean, a number or a string is kept as sent, where LiteLLM's `"citationMetadata" in candidate` raises an uncaught TypeError as HTTP 500 for null, booleans and numbers.
-    why: The declared candidate type is an object, so such a reply is malformed; betterlite preserves what arrived instead of failing the whole response, and no working setup receives one.
+  - what: A candidates field that is null, or a candidate entry that is null, a boolean or a number, is kept as sent, where LiteLLM's candidate loop and its `"citationMetadata" in candidate` check raise an uncaught TypeError as HTTP 500 for those values.
+    why: The declared candidate type is an object inside a list, so such a reply is malformed; betterlite preserves what arrived instead of failing the whole response, and no working setup receives one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L394-L406
   - what: A response body nested past serde_json's 128 levels, or holding the non-standard NaN or Infinity literals, fails as unreadable JSON, where LiteLLM parses it through Python's json.loads.
     why: Rule bounded-inputs gives the decoder a depth cap so an adversarial body cannot exhaust the stack, and betterlite reads and writes standard JSON; a Gemini reply that deep or carrying NaN is nothing a working setup relies on.
