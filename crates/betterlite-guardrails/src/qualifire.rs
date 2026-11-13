@@ -9,19 +9,21 @@ pub mod wire;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use reqwest::Client;
 
-use crate::generic_guardrail_contracts::{GuardrailApiInputs, GuardrailInputType};
+use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::GuardrailBase;
+use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::guardrail_selection::gate::GuardrailSelection;
 use error::QualifireError;
 use init::QualifireArgs;
 use request::CheckRequest;
-use settings::{Check, OnFlagged, QualifireSettings, insert_flag};
+use settings::{Check, OnFlagged, QualifireSettings, SecretLookup, insert_flag};
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,
@@ -39,6 +41,19 @@ pub struct QualifireGuardrail {
 }
 
 impl QualifireGuardrail {
+    pub fn new(
+        args: &QualifireArgs,
+        secrets: &dyn SecretLookup,
+        environment: &dyn EnvironmentLookup,
+        client: Client,
+    ) -> Result<Self, QualifireError> {
+        Ok(Self {
+            base: GuardrailBase::new(guardrail_settings(args), true)?,
+            settings: settings::resolve(args, secrets, environment)?,
+            client,
+        })
+    }
+
     pub async fn apply_guardrail(
         &self,
         inputs: GuardrailApiInputs,

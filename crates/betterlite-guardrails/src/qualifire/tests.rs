@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+mod edges;
+mod network;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -9,16 +12,14 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use super::QualifireGuardrail;
 use super::convert::{self, ApiMessage, ApiTool, ApiToolCall};
 use super::init::QualifireArgs;
 use super::request::{self, CheckRequest};
 use super::settings::{self, Check, OnFlagged, QualifireSettings, SecretLookup};
 use super::wire::{BlockDetail, Payload, QualifireResponse, Verdict};
-use super::{QualifireGuardrail, guardrail_settings};
-use crate::generic_guardrail_contracts::{
-    GuardrailApiInputs, GuardrailInputType, GuardrailMessage,
-};
-use crate::guardrail_base::GuardrailBase;
+use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
+use crate::guardrail_base::inputs::GuardrailApiInputs;
 
 struct NoSecrets;
 
@@ -72,11 +73,13 @@ fn resolve(
 }
 
 fn build(args: &QualifireArgs) -> QualifireGuardrail {
-    QualifireGuardrail {
-        base: GuardrailBase::new(guardrail_settings(args), true).unwrap(),
-        settings: resolve(args, &NoSecrets, &BTreeMap::new()),
-        client: base_builder().build().unwrap(),
-    }
+    QualifireGuardrail::new(
+        args,
+        &NoSecrets,
+        &BTreeMap::new(),
+        base_builder().build().unwrap(),
+    )
+    .unwrap()
 }
 
 fn params(extra: &str) -> LitellmParams {

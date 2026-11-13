@@ -1,0 +1,18 @@
+kind: helper
+name: qualifire-monitor
+call:
+  b8213:
+    settings: {api_key: oracle-key, grounding_check: true, on_flagged: monitor}
+    messages:
+      - {role: user, content: "Tell me about the moon landing."}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        score: 30
+        status: failed
+        evaluationResults:
+          - results:
+              - {name: grounding, flagged: true}
+env: {}
+compare: {ignore: []}

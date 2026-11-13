@@ -10,7 +10,8 @@ use super::error::QualifireError;
 use super::settings::{Check, OnFlagged};
 use super::wire::{EvaluatePayload, InvokePayload, Payload, Verdict};
 use super::{MAX_RESPONSE_BYTES, QualifireGuardrail};
-use crate::generic_guardrail_contracts::{GuardrailApiInputs, GuardrailInputType};
+use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::qualifire::convert::{self, ApiMessage, ApiTool, MessageRow};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,7 +143,7 @@ impl QualifireGuardrail {
             .settings
             .api_key
             .as_ref()
-            .map_or("", |secret| secret.expose_secret().as_str());
+            .map_or("", |secret| secret.expose_secret());
         let mut value = HeaderValue::from_str(key)
             .map_err(|source| QualifireError::InvalidHeader { source })?;
         value.set_sensitive(true);
