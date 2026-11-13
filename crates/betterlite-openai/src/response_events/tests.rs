@@ -493,26 +493,32 @@ fn known_event_variants() {
     known_invalid_payloads();
 }
 
+fn assert_known_event(source: &str) {
+    let decoded = decode_bytes(source);
+    assert!(
+        matches!(decoded, DecodedStreamResponse::Known { .. }),
+        "{source}"
+    );
+}
+
 fn known_lifecycle_events() {
-    for event_type in [
-        "response.created",
-        "response.in_progress",
-        "response.completed",
-        "response.failed",
-        "response.incomplete",
+    for (event_type, class) in [
+        ("response.created", "ResponseCreatedEvent"),
+        ("response.in_progress", "ResponseInProgressEvent"),
+        ("response.completed", "ResponseCompletedEvent"),
+        ("response.failed", "ResponseFailedEvent"),
+        ("response.incomplete", "ResponseIncompleteEvent"),
     ] {
         let decoded = decode_bytes(&format!(
             r#"{{"type":"{event_type}","response":{{"id":"r","created_at":1,"output":[]}}}}"#
         ));
-        assert!(
-            matches!(decoded, DecodedStreamResponse::Known { .. }),
-            "{event_type}"
-        );
+        assert!(matches!(decoded, DecodedStreamResponse::Known { .. }));
+        assert_eq!(decoded.class().class_name(), class);
     }
 }
 
 fn known_content_events() {
-    for event in [
+    [
         r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}"#,
         r#"{"type":"response.output_item.done","output_index":0,"item":{"type":"message"}}"#,
         r#"{"type":"response.content_part.added","item_id":"i","output_index":0,"content_index":0,"part":{"type":"output_text","text":"t"}}"#,
@@ -526,13 +532,9 @@ fn known_content_events() {
         r#"{"type":"response.function_call_arguments.done","item_id":"i","output_index":0,"arguments":"{}"}"#,
         r#"{"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"YQ=="}"#,
         r#"{"type":"error","sequence_number":1,"error":{"type":"invalid_request_error","code":"bad","message":"m"}}"#,
-    ] {
-        let decoded = decode_bytes(event);
-        assert!(
-            matches!(decoded, DecodedStreamResponse::Known { .. }),
-            "{event}"
-        );
-    }
+    ]
+    .into_iter()
+    .for_each(assert_known_event);
 }
 
 fn known_search_and_mcp_events() {
@@ -550,25 +552,17 @@ fn known_search_and_mcp_events() {
         "response.mcp_call.completed",
         "response.mcp_call.failed",
     ] {
-        let decoded = decode_bytes(&format!(
+        assert_known_event(&format!(
             r#"{{"type":"{event_type}","sequence_number":1,"item_id":"i","output_index":0}}"#
         ));
-        assert!(
-            matches!(decoded, DecodedStreamResponse::Known { .. }),
-            "{event_type}"
-        );
     }
     for event_type in [
         "response.mcp_call_arguments.delta",
         "response.mcp_call_arguments.done",
     ] {
-        let decoded = decode_bytes(&format!(
+        assert_known_event(&format!(
             r#"{{"type":"{event_type}","sequence_number":1,"item_id":"i","output_index":0,"delta":"{{"}}"#
         ));
-        assert!(
-            matches!(decoded, DecodedStreamResponse::Known { .. }),
-            "{event_type}"
-        );
     }
 }
 
@@ -824,6 +818,27 @@ fn openai_response_events_credential_identity_isolation() {
     credential_isolation_tokens();
 }
 
+fn authorized(
+    sources: ApiKeySources<'_>,
+    api_base: &str,
+    identity: &mut Identity,
+) -> BTreeMap<String, String> {
+    validate_environment(
+        BTreeMap::new(),
+        sources,
+        Some(api_base),
+        ResponsesProvider::OpenAi,
+        identity,
+    )
+}
+
+fn assert_authorization(headers: &BTreeMap<String, String>, expected: &str) {
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some(expected)
+    );
+}
+
 fn credential_isolation_keys() {
     let first_key = SecretString::from("first-api-key");
     let second_key = SecretString::from("second-api-key");
@@ -831,28 +846,18 @@ fn credential_isolation_keys() {
         enabled: false,
         calls: 0,
     };
-    let first = validate_environment(
-        BTreeMap::new(),
+    let first = authorized(
         sources(Some(&first_key), None, None, None),
-        Some("https://first.example/v1"),
-        ResponsesProvider::OpenAi,
+        "https://first.example/v1",
         &mut none,
     );
-    let second = validate_environment(
-        BTreeMap::new(),
+    let second = authorized(
         sources(Some(&second_key), None, None, None),
-        Some("https://second.example/v1"),
-        ResponsesProvider::OpenAi,
+        "https://second.example/v1",
         &mut none,
     );
-    assert_eq!(
-        first.get("Authorization").map(String::as_str),
-        Some("Bearer first-api-key")
-    );
-    assert_eq!(
-        second.get("Authorization").map(String::as_str),
-        Some("Bearer second-api-key")
-    );
+    assert_authorization(&first, "Bearer first-api-key");
+    assert_authorization(&second, "Bearer second-api-key");
     assert_ne!(first, second);
     assert!(
         !first
@@ -870,30 +875,20 @@ fn credential_isolation_tokens() {
         enabled: true,
         calls: 0,
     };
-    let first = validate_environment(
-        BTreeMap::new(),
+    let first = authorized(
         sources(None, None, None, None),
-        Some("https://first.example/v1"),
-        ResponsesProvider::OpenAi,
+        "https://first.example/v1",
         &mut first_identity,
     );
-    let second = validate_environment(
-        BTreeMap::new(),
+    let second = authorized(
         sources(None, None, None, None),
-        Some("https://second.example/v1"),
-        ResponsesProvider::OpenAi,
+        "https://second.example/v1",
         &mut second_identity,
     );
-    assert_eq!(
-        first.get("Authorization").map(String::as_str),
-        Some("Bearer wi:https://first.example/v1")
-    );
-    assert_eq!(
-        second.get("Authorization").map(String::as_str),
-        Some("Bearer wi:https://second.example/v1")
-    );
-    assert_ne!(first, second);
     assert_eq!((first_identity.calls, second_identity.calls), (1, 1));
+    assert_authorization(&first, "Bearer wi:https://first.example/v1");
+    assert_authorization(&second, "Bearer wi:https://second.example/v1");
+    assert_ne!(first, second);
 }
 
 #[test]

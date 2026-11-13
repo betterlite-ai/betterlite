@@ -36,9 +36,9 @@ pub(super) fn run(call: &Call) -> HelperResult {
         Call::MissingErrorCode(probes)
         | Call::UnknownGenericEvent(probes)
         | Call::KnownEventVariants(probes) => events(&probes.probes),
-        Call::CompletedIncompleteFailed(probes) => terminal_responses(&probes.probes),
+        Call::CompletedIncompleteFailed(probes) => terminal(&probes.probes, true),
         Call::LastTerminalWins(probes) | Call::NoTerminalEvent(probes) => {
-            terminal_events(&probes.probes)
+            terminal(&probes.probes, false)
         }
         Call::NonNativeStreamingModel(probes) => streams(&probes.probes),
         Call::ResponsesAuthHeaders(probes) => auth(&probes.probes),
@@ -183,7 +183,14 @@ fn decode_event(event: &Value) -> Result<DecodedStreamResponse, Box<HelperError>
 }
 
 fn event_value(decoded: &DecodedStreamResponse) -> Value {
-    let event = match decoded {
+    json!({
+        "class": decoded.class().class_name(),
+        "event": strip_nulls(decoded_event_value(decoded)),
+    })
+}
+
+fn decoded_event_value(decoded: &DecodedStreamResponse) -> Value {
+    match decoded {
         DecodedStreamResponse::Known { record, .. } => {
             serde_json::to_value(record).unwrap_or_default()
         }
@@ -191,8 +198,7 @@ fn event_value(decoded: &DecodedStreamResponse) -> Value {
         DecodedStreamResponse::Lax { fields, .. } => {
             serde_json::to_value(Json::Object(fields.clone())).unwrap_or_default()
         }
-    };
-    json!({ "class": decoded.class().class_name(), "event": strip_nulls(event) })
+    }
 }
 
 fn strip_nulls(value: Value) -> Value {
@@ -209,30 +215,21 @@ fn strip_nulls(value: Value) -> Value {
     }
 }
 
-fn terminal_responses(probes: &[Probe]) -> HelperResult {
+fn terminal(probes: &[Probe], responses_only: bool) -> HelperResult {
     let mut results = Vec::with_capacity(probes.len());
     for probe in probes {
         let chunks = probe
             .chunks
             .as_deref()
             .ok_or_else(|| invalid_input(String::from("a terminal probe needs chunks")))?;
-        results.push(parse_terminal_response(chunks).map_or(
-            Value::Null,
-            |response| json!({ "id": response.id, "created_at": response.created_at }),
-        ));
-    }
-    Ok(Value::Array(results))
-}
-
-fn terminal_events(probes: &[Probe]) -> HelperResult {
-    let mut results = Vec::with_capacity(probes.len());
-    for probe in probes {
-        let chunks = probe
-            .chunks
-            .as_deref()
-            .ok_or_else(|| invalid_input(String::from("a terminal probe needs chunks")))?;
-        results
-            .push(parse_terminal_event(chunks).map_or(Value::Null, |event| terminal_value(&event)));
+        results.push(if responses_only {
+            parse_terminal_response(chunks).map_or(
+                Value::Null,
+                |response| json!({ "id": response.id, "created_at": response.created_at }),
+            )
+        } else {
+            parse_terminal_event(chunks).map_or(Value::Null, |event| terminal_value(&event))
+        });
     }
     Ok(Value::Array(results))
 }
@@ -243,9 +240,5 @@ fn terminal_value(event: &ResponsesTerminalEvent) -> Value {
         ResponsesTerminalEvent::Incomplete(response) => ("ResponseIncompleteEvent", response),
         ResponsesTerminalEvent::Failed(response) => ("ResponseFailedEvent", response),
     };
-    json!({
-        "class": class,
-        "id": response.response.id,
-        "created_at": response.response.created_at,
-    })
+    json!({ "class": class, "id": response.response.id, "created_at": response.response.created_at })
 }

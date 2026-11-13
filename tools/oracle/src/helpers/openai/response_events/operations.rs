@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::Probe;
 use super::calls::invalid_input;
-use crate::helpers::HelperResult;
+use crate::helpers::{HelperError, HelperResult};
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fixture catalog lookup failed")]
@@ -80,34 +80,36 @@ impl WorkloadIdentity for RecordingIdentity {
 }
 
 pub(super) fn auth(probes: &[Probe]) -> HelperResult {
-    let mut results = Vec::with_capacity(probes.len());
-    for probe in probes {
-        let params_key = probe.api_key.as_deref().map(SecretString::from);
-        let litellm_key = probe.litellm_api_key.as_deref().map(SecretString::from);
-        let openai_key = probe.litellm_openai_key.as_deref().map(SecretString::from);
-        let env_key = probe.env_api_key.as_deref().map(SecretString::from);
-        let sources = ApiKeySources {
-            litellm_params: params_key.as_ref(),
-            litellm: litellm_key.as_ref(),
-            openai: openai_key.as_ref(),
-            environment: env_key.as_ref(),
-        };
-        let mut identity = RecordingIdentity {
-            enabled: probe.identity.unwrap_or(false),
-        };
-        let given_headers: BTreeMap<String, String> = probe.headers.clone().unwrap_or_default();
-        let validated = validate_environment(
-            given_headers,
-            sources,
-            probe.api_base.as_deref(),
-            ResponsesProvider::OpenAi,
-            &mut identity,
-        );
-        results.push(
-            serde_json::to_value(validated).map_err(|error| invalid_input(error.to_string()))?,
-        );
-    }
+    let results = probes
+        .iter()
+        .map(auth_value)
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(Value::Array(results))
+}
+
+fn auth_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let params_key = probe.api_key.as_deref().map(SecretString::from);
+    let litellm_key = probe.litellm_api_key.as_deref().map(SecretString::from);
+    let openai_key = probe.litellm_openai_key.as_deref().map(SecretString::from);
+    let env_key = probe.env_api_key.as_deref().map(SecretString::from);
+    let sources = ApiKeySources {
+        litellm_params: params_key.as_ref(),
+        litellm: litellm_key.as_ref(),
+        openai: openai_key.as_ref(),
+        environment: env_key.as_ref(),
+    };
+    let mut identity = RecordingIdentity {
+        enabled: probe.identity.unwrap_or(false),
+    };
+    let given_headers: BTreeMap<String, String> = probe.headers.clone().unwrap_or_default();
+    let validated = validate_environment(
+        given_headers,
+        sources,
+        probe.api_base.as_deref(),
+        ResponsesProvider::OpenAi,
+        &mut identity,
+    );
+    serde_json::to_value(validated).map_err(|error| invalid_input(error.to_string()))
 }
 
 pub(super) fn urls(probes: &[Probe]) -> Value {
