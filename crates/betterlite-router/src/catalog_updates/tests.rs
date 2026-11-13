@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use support::{Show, Step, entry, observe, team_entry};
+use support::{Show, Step, capture_logs, entry, observe, parsed, team_entry};
+
+use super::ptu_warning::warn_unattributed_ptu;
 
 mod support;
 
@@ -10,6 +12,28 @@ const NUMBERED: &str =
     r#"{"model_name":"g","litellm_params":{"model":"openai/m"},"model_info":{"id":7}}"#;
 const ORGANIZED: &str =
     r#"{"model_name":"g","litellm_params":{"model":"openai/m","organization":["o1","o2"]}}"#;
+
+const TOP_LEVEL_LIMITS: &str = r#"{"model_name":"g","rpm":10,"tpm":20,"litellm_params":{"model":"openai/m"},"model_info":{"id":"a"}}"#;
+const OWN_RPM: &str = r#"{"model_name":"g","rpm":10,"tpm":20,"litellm_params":{"model":"openai/m","rpm":5},"model_info":{"id":"a"}}"#;
+const NULL_LIMITS: &str = r#"{"model_name":"g","rpm":null,"tpm":null,"litellm_params":{"model":"openai/m"},"model_info":{"id":"a"}}"#;
+const SOURCES: &str = r#"{"model_name":"g","litellm_params":{"model":"openai/m","dataSources":[{"type":"t","parameters":{"endpoint":"os.environ/AZURE_ENDPOINT","key":"os.environ/AZURE_KEY","index_name":"os.environ/AZURE_KEY"}}]},"model_info":{"id":"a"}}"#;
+const UNSET_SOURCES: &str = r#"{"model_name":"g","litellm_params":{"model":"openai/m","dataSources":[{"parameters":{"endpoint":"os.environ/MISSING","key":"os.environ/EMPTY","index_name":"plain"}}]},"model_info":{"id":"a"}}"#;
+const ODD_SOURCES: &str = r#"{"model_name":"g","litellm_params":{"model":"openai/m","dataSources":[{"type":"t"},5,{"parameters":{"endpoint":"literal","key":7}},{"parameters":"text"}]},"model_info":{"id":"a"}}"#;
+
+fn ptu(name: &str, info: &str) -> String {
+    format!(
+        r#"{{"model_name":"{name}","litellm_params":{{"model":"openai/m"}},"model_info":{info}}}"#
+    )
+}
+
+fn warning(names: &str) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+    format!(
+        "PTU fields are set on config.yaml deployment(s) {names}, but PTU cost attribution is disabled, so no flat cost accrues and this traffic is billed per token. Set LITELLM_ENABLE_PTU_COST_ATTRIBUTION=True to enable it"
+    )
+}
 
 fn oversized() -> String {
     // a mebibyte of literal text is past the regex size limit, so the wildcard cannot compile
@@ -61,7 +85,7 @@ fn second() -> String {
 #[case::added_team_model_is_indexed(vec![Step::Add(team_entry("g", "a", "t1", "pub"))], false, Show::Teams, "teams=[t1/pub:[0]] public=[pub]")]
 #[case::wildcard_goes_to_the_pattern_router(vec![Step::Set(vec![entry("x/*", "a", "openai/*")])], false, Show::Patterns, "defaults=[a] route=[a@openai/y] teams=[] unresolved=[]")]
 #[case::wildcard_delete_leaves_the_default_ids(vec![Step::Set(vec![entry("x/*", "a", "openai/*")]), Step::Delete("a")], false, Show::Patterns, "defaults=[a] route=[] teams=[] unresolved=[]")]
-#[case::wildcard_with_an_empty_id_is_no_default(vec![Step::Set(vec![entry("x/*", "", "openai/*")])], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
+#[case::wildcard_with_an_empty_id_is_no_default(vec![Step::Set(vec![entry("x/*", "", "openai/*")])], false, Show::Patterns, "defaults=[] route=[@openai/y] teams=[] unresolved=[]")]
 #[case::team_wildcard_goes_to_the_team_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "x/*")])], false, Show::Patterns, "defaults=[] route=[] teams=[t1:a@openai/m] unresolved=[]")]
 #[case::team_wildcard_delete_drops_the_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "x/*")]), Step::Delete("a")], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
 #[case::team_name_without_a_wildcard_has_no_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "pub")])], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
@@ -71,6 +95,16 @@ fn second() -> String {
 #[case::declared_ids_are_listed_with_their_duplicates(vec![Step::Inputs(vec![first(), entry("h", "a", "openai/m"), second()])], false, Show::Outcomes, "inputs:g:\"a\":a:a:-|h:\"a\":a:a:-|g:\"b\":b:a:-")]
 #[case::each_organization_is_one_input(vec![Step::Inputs(vec![ORGANIZED.to_owned()])], false, Show::Outcomes, concat!("inputs:g:\"", "9eb2e7f5643a3582a5dd4db0cd151e84ebea96fc2631139a6f22e6b1f19d8d1e", "\":-:-:o1|g:\"", "9eb2e7f5643a3582a5dd4db0cd151e84ebea96fc2631139a6f22e6b1f19d8d1e", "\":-:-:o2"))]
 #[case::numeric_ids_are_declared(vec![Step::Inputs(vec![NUMBERED.to_owned()])], false, Show::Outcomes, "inputs:g:7:7::-")]
+#[case::router_level_limits_fill_the_params(vec![Step::Set(vec![TOP_LEVEL_LIMITS.to_owned()])], false, Show::Params, "a:10 20 -")]
+#[case::own_params_keep_their_limit(vec![Step::Set(vec![OWN_RPM.to_owned()])], false, Show::Params, "a:5 20 -")]
+#[case::null_limits_stay_unset(vec![Step::Set(vec![NULL_LIMITS.to_owned()])], false, Show::Params, "a:- - -")]
+#[case::an_added_deployment_gets_the_limits(vec![Step::Add(TOP_LEVEL_LIMITS.to_owned())], false, Show::Params, "a:10 20 -")]
+#[case::an_upserted_deployment_gets_the_limits(vec![Step::Set(vec![first()]), Step::Upsert(TOP_LEVEL_LIMITS.to_owned())], false, Show::Params, "a:10 20 -")]
+#[case::data_sources_read_the_environment(vec![Step::Set(vec![SOURCES.to_owned()])], false, Show::Params, r#"a:- - [{"type":"t","parameters":{"endpoint":"https://search.example","key":"key-1","index_name":"os.environ/AZURE_KEY"}}]"#)]
+#[case::an_added_data_source_reads_the_environment(vec![Step::Add(SOURCES.to_owned())], false, Show::Params, r#"a:- - [{"type":"t","parameters":{"endpoint":"https://search.example","key":"key-1","index_name":"os.environ/AZURE_KEY"}}]"#)]
+#[case::unset_variables_read_as_empty(vec![Step::Set(vec![UNSET_SOURCES.to_owned()])], false, Show::Params, r#"a:- - [{"parameters":{"endpoint":"","key":"","index_name":"plain"}}]"#)]
+#[case::odd_data_sources_are_left_alone(vec![Step::Set(vec![ODD_SOURCES.to_owned()])], false, Show::Params, r#"a:- - [{"type":"t"},5,{"parameters":{"endpoint":"literal","key":7}},{"parameters":"text"}]"#)]
+#[case::set_warns_about_ptu_before_it_builds(vec![Step::Set(vec![ptu("p", r#"{"ptu_count":2}"#), entry("bad1", "c", "openai/m")])], false, Show::Logs, "PTU fields are set on config.yaml deployment(s) p, but PTU cost attribution is disabled, so no flat cost accrues and this traffic is billed per token. Set LITELLM_ENABLE_PTU_COST_ATTRIBUTION=True to enable it")]
 #[tokio::test]
 async fn catalog_updates_behaviors(
     #[case] steps: Vec<Step>,
@@ -112,4 +146,28 @@ async fn catalog_updates_boundaries(
     #[case] expected: &str,
 ) {
     assert_eq!(observe(steps, ignore, show).await, expected);
+}
+
+#[rstest]
+#[case::ptu_count(vec![ptu("p", r#"{"ptu_count":2}"#)], false, "p")]
+#[case::hourly_rate(vec![ptu("p", r#"{"cost_per_ptu_per_hour":1.5}"#)], false, "p")]
+#[case::window_start(vec![ptu("p", r#"{"ptu_effective_from":"2026-01-01T00:00:00Z"}"#)], false, "p")]
+#[case::window_end(vec![ptu("p", r#"{"ptu_effective_to":"2026-01-01T00:00:00Z"}"#)], false, "p")]
+#[case::null_fields_do_not_count(vec![ptu("p", r#"{"ptu_count":null}"#)], false, "")]
+#[case::a_team_alone_is_not_a_declaration(vec![ptu("p", r#"{"team_id":"t"}"#)], false, "")]
+#[case::no_ptu_fields(vec![ptu("p", r#"{"id":"a"}"#)], false, "")]
+#[case::no_model_info(vec![NO_INFO.to_owned()], false, "")]
+#[case::database_models_are_left_out(vec![ptu("p", r#"{"db_model":true,"ptu_count":2}"#)], false, "")]
+#[case::config_models_flagged_false_count(vec![ptu("p", r#"{"db_model":false,"ptu_count":2}"#)], false, "p")]
+#[case::enabled_attribution_is_silent(vec![ptu("p", r#"{"ptu_count":2}"#)], true, "")]
+#[case::names_are_listed_in_order(vec![ptu("p", r#"{"ptu_count":2}"#), ptu("m", r#"{"id":"a"}"#), ptu("q", r#"{"ptu_count":3}"#)], false, "p, q")]
+#[test]
+fn ptu_declarations_are_warned_about(
+    #[case] entries: Vec<String>,
+    #[case] attributed: bool,
+    #[case] names: &str,
+) {
+    let (captured, _guard) = capture_logs();
+    warn_unattributed_ptu(&parsed(&entries), attributed);
+    assert_eq!(captured.messages(), warning(names));
 }

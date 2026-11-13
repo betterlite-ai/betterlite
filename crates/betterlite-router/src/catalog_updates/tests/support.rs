@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write as _};
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::decisions::Json;
@@ -19,6 +20,7 @@ use crate::deployment_identity::error::InvalidDeployment;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_pricing::PricingInputs;
 use crate::wildcard_catalog::PatternCatalog;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 struct NoModelInfo;
 
@@ -159,6 +161,48 @@ pub(super) enum Show {
     Teams,
     Calls,
     Held,
+    Params,
+    Logs,
+}
+
+#[derive(Clone)]
+pub(super) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Captured {
+    // each log line without its level and target
+    pub(super) fn messages(&self) -> String {
+        let text = String::from_utf8(self.0.lock().unwrap().clone()).unwrap();
+        let lines: Vec<&str> = text
+            .lines()
+            .map(|line| line.split_once(": ").map_or(line, |(_, message)| message))
+            .collect();
+        lines.join("|")
+    }
+}
+
+pub(super) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured(Arc::new(Mutex::new(Vec::new())));
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
 }
 
 fn generated_id() -> String {
@@ -168,6 +212,13 @@ fn generated_id() -> String {
 fn never(_: &str) -> bool {
     false
 }
+
+// the variables the data source references of the cases read
+const VARIABLES: [(&str, &str); 3] = [
+    ("AZURE_ENDPOINT", "https://search.example"),
+    ("AZURE_KEY", "key-1"),
+    ("EMPTY", ""),
+];
 
 const PRICING: PricingInputs = PricingInputs {
     ptu_cost_attribution: false,
@@ -200,7 +251,7 @@ fn rendered_inputs(entries: &[ModelEntry]) -> String {
         .join("|")
 }
 
-fn parsed(texts: &[String]) -> Vec<ModelEntry> {
+pub(super) fn parsed(texts: &[String]) -> Vec<ModelEntry> {
     texts
         .iter()
         .map(|text| serde_json::from_str(text).unwrap())
@@ -280,6 +331,26 @@ fn render_models(catalog: &DeploymentCatalog) -> String {
     format!("models=[{models}] ids({ids}) names({names}) set=[{set}]")
 }
 
+// id:rpm tpm dataSources per model, with - for a parameter the deployment does not carry.
+fn render_params(catalog: &DeploymentCatalog) -> String {
+    let mut listed = Vec::new();
+    for spec in &catalog.models {
+        let mut fields = Vec::new();
+        for key in ["rpm", "tpm", "dataSources"] {
+            fields.push(spec.litellm_params.get(key).map_or_else(
+                || "-".to_owned(),
+                |value| serde_json::to_string(value).unwrap(),
+            ));
+        }
+        listed.push(format!(
+            "{}:{}",
+            spec.id().unwrap_or_default(),
+            fields.join(" ")
+        ));
+    }
+    listed.join(";")
+}
+
 fn render(catalog: &DeploymentCatalog, show: Show) -> String {
     let teams = catalog
         .team_pattern_routers
@@ -307,7 +378,8 @@ fn render(catalog: &DeploymentCatalog, show: Show) -> String {
             joined(keys),
             joined(catalog.team_public_model_names())
         ),
-        Show::Outcomes | Show::Calls => String::new(),
+        Show::Params => render_params(catalog),
+        Show::Outcomes | Show::Calls | Show::Logs => String::new(),
     }
 }
 
@@ -340,10 +412,15 @@ async fn apply(updater: &mut TestUpdater<'_>, step: Step) -> String {
     }
 }
 
-// Runs the steps against one handle and renders what the caller asked to see.
-pub(super) async fn observe(steps: Vec<Step>, ignore: bool, show: Show) -> String {
-    let handle = CatalogHandle::default();
-    let effects = Recorder::default();
+// Runs the steps against one handle and says what each answered and which catalogs were held.
+async fn run_steps(
+    steps: Vec<Step>,
+    ignore: bool,
+    handle: &CatalogHandle,
+    effects: &Recorder,
+) -> (Vec<String>, Vec<Arc<DeploymentCatalog>>) {
+    let variables =
+        BTreeMap::from(VARIABLES.map(|(name, value)| (name.to_owned(), value.to_owned())));
     let mut registry = ModelRegistry::default();
     let generalizations = CatalogGeneralizations::default();
     let environment = RegistrationEnvironment {
@@ -353,14 +430,15 @@ pub(super) async fn observe(steps: Vec<Step>, ignore: bool, show: Show) -> Strin
         bedrock_base_model: str::to_owned,
     };
     let mut outcomes = Vec::new();
-    let mut held: Vec<Arc<DeploymentCatalog>> = Vec::new();
+    let mut held = Vec::new();
     for step in steps {
         if matches!(step, Step::Hold) {
             held.push(handle.load_full());
         }
         let mut updater = CatalogUpdater {
-            catalog: &handle,
-            effects: &effects,
+            catalog: handle,
+            effects,
+            env_vars: &variables,
             construction: Construction {
                 registry: &mut registry,
                 environment: &environment,
@@ -372,12 +450,47 @@ pub(super) async fn observe(steps: Vec<Step>, ignore: bool, show: Show) -> Strin
         };
         outcomes.push(apply(&mut updater, step).await);
     }
-    match show {
-        Show::Outcomes => outcomes.join(";"),
-        Show::Calls => effects.0.lock().unwrap().join(","),
-        Show::Held => held
-            .first()
-            .map_or_else(String::new, |old| render(old, show)),
-        Show::Models | Show::Patterns | Show::Teams => render(&handle.load_full(), show),
+    (outcomes, held)
+}
+
+// Runs the steps against one handle and renders what the caller asked to see.
+pub(super) async fn observe(steps: Vec<Step>, ignore: bool, show: Show) -> String {
+    let (captured, _guard) = capture_logs();
+    let handle = CatalogHandle::default();
+    let effects = Recorder::default();
+    let (outcomes, held) = run_steps(steps, ignore, &handle, &effects).await;
+    let seen = Seen {
+        outcomes: &outcomes,
+        effects: &effects,
+        logs: &captured,
+        held: &held,
+        catalog: &handle.load_full(),
+    };
+    seen.show(show)
+}
+
+// What a run left behind, to render the part the caller asked to see.
+struct Seen<'run> {
+    outcomes: &'run [String],
+    effects: &'run Recorder,
+    logs: &'run Captured,
+    held: &'run [Arc<DeploymentCatalog>],
+    catalog: &'run DeploymentCatalog,
+}
+
+impl Seen<'_> {
+    fn show(&self, show: Show) -> String {
+        match show {
+            Show::Outcomes => self.outcomes.join(";"),
+            Show::Calls => self.effects.0.lock().unwrap().join(","),
+            Show::Held => self
+                .held
+                .first()
+                .map_or_else(String::new, |old| render(old, show)),
+            Show::Logs => self.logs.messages(),
+            Show::Models | Show::Patterns | Show::Teams | Show::Params => {
+                render(self.catalog, show)
+            }
+        }
     }
 }

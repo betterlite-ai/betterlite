@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::model_registration::{CostMapFetcher, ModelInfoLookup};
 
+use super::admission::normalize;
 use super::catalog::{CatalogHandle, DeploymentCatalog};
 use super::entries::{ModelEntry, deployment_inputs};
 use super::error::CatalogError;
+use super::ptu_warning::warn_unattributed_ptu;
 use super::skip::skip_or_raise;
 use crate::deployment_identity::construct::{Construction, ConstructionPolicy, create_deployment};
 use crate::deployment_identity::error::{DeploymentError, InvalidDeployment};
@@ -36,6 +39,8 @@ pub trait CatalogEffects: Sync {
 pub struct CatalogUpdater<'run, Lookup, Fetcher, Policy, Effects> {
     pub catalog: &'run CatalogHandle,
     pub effects: &'run Effects,
+    // where the os.environ/ references in a deployment's data sources are read
+    pub env_vars: &'run (dyn EnvironmentLookup + Sync),
     pub construction: Construction<'run, Lookup, Fetcher, Policy>,
 }
 
@@ -48,12 +53,13 @@ where
     Policy: ConstructionPolicy,
     Effects: CatalogEffects,
 {
-    // the provider check, the strategies and the wildcard routers of _add_deployment
+    // the edits, the provider check, the strategies and the wildcard routers of _add_deployment
     pub(super) fn admit(
         &self,
         working: &mut DeploymentCatalog,
-        spec: &DeploymentSpec,
+        spec: &mut DeploymentSpec,
     ) -> Result<(), Failure<Fetcher>> {
+        normalize(spec, self.env_vars);
         self.effects.admit(spec)?;
         working.index_patterns(spec)?;
         Ok(())
@@ -64,22 +70,22 @@ where
         self.effects.invalidated();
     }
 
-    // add_deployment on a working copy; false when the id is already there
+    // add_deployment on a working copy: the deployment as added, or none when the id is already there
     async fn add_into(
         &mut self,
         working: &mut DeploymentCatalog,
-        spec: DeploymentSpec,
-    ) -> Result<bool, Failure<Fetcher>> {
+        mut spec: DeploymentSpec,
+    ) -> Result<Option<DeploymentSpec>, Failure<Fetcher>> {
         if spec
             .id()
             .is_some_and(|id| working.id_index.contains_key(id))
         {
-            return Ok(false);
+            return Ok(None);
         }
         self.construction
             .policy
             .warn_credential_mismatch(&spec.model_name, &spec.litellm_params);
-        self.admit(working, &spec)?;
+        self.admit(working, &mut spec)?;
         register_deployment_pricing(
             self.construction.registry,
             &spec.litellm_params,
@@ -91,8 +97,8 @@ where
         .map_err(DeploymentError::from)?;
         working.model_names.insert(spec.model_name.clone());
         self.effects.registered(&spec);
-        working.push(spec);
-        Ok(true)
+        working.push(spec.clone());
+        Ok(Some(spec))
     }
 
     // Router.add_deployment: none when the id is already in the catalog.
@@ -101,11 +107,11 @@ where
         spec: DeploymentSpec,
     ) -> Result<Option<DeploymentSpec>, Failure<Fetcher>> {
         let mut working = (*self.catalog.load_full()).clone();
-        if !self.add_into(&mut working, spec.clone()).await? {
+        let Some(added) = self.add_into(&mut working, spec).await? else {
             return Ok(None);
-        }
+        };
         self.commit(working);
-        Ok(Some(spec))
+        Ok(Some(added))
     }
 
     // Router.upsert_deployment: none when nothing changed, or when an ignored failure left the previous deployment serving.
@@ -134,19 +140,36 @@ where
             }
             self.effects.released(old);
         }
-        let Err(error) = self.add_into(&mut working, spec.clone()).await else {
-            self.finish_upsert(working, &spec, previous.as_ref());
-            return Ok(Some(spec));
-        };
+        match self.add_into(&mut working, spec.clone()).await {
+            Ok(added) => {
+                self.finish_upsert(working, &spec, previous.as_ref());
+                Ok(added)
+            }
+            Err(error) => {
+                self.drop_failed_upsert(&snapshot, &spec, previous, error)
+                    .await
+            }
+        }
+    }
+
+    // A failed upsert is returned in raise mode; otherwise it is logged and the previous deployment is put back.
+    async fn drop_failed_upsert(
+        &mut self,
+        snapshot: &DeploymentCatalog,
+        spec: &DeploymentSpec,
+        previous: Option<DeploymentSpec>,
+        error: Failure<Fetcher>,
+    ) -> Result<Option<DeploymentSpec>, Failure<Fetcher>> {
         if !self.construction.ignore_invalid_deployments {
             return Err(error);
         }
+        let id = spec.id().unwrap_or_default();
         tracing::warn!(
             "Error upserting deployment {} (id={id}): {error}. Dropping it and continuing with other deployments.",
             spec.model_name,
         );
         if let Some(old) = previous {
-            self.restore(&snapshot, &id, old).await;
+            self.restore(snapshot, id, old).await;
         }
         Ok(None)
     }
@@ -200,6 +223,7 @@ where
 
     // Router.set_model_list: the whole list is built apart and replaces the published catalog only when it was built.
     pub async fn set_model_list(&mut self, entries: &[ModelEntry]) -> Result<(), Failure<Fetcher>> {
+        warn_unattributed_ptu(entries, self.construction.pricing.ptu_cost_attribution);
         let mut working = DeploymentCatalog::default();
         for input in deployment_inputs(entries) {
             let created = create_deployment(&mut self.construction, &input).await?;
@@ -224,9 +248,9 @@ where
     fn add_created(
         &self,
         working: &mut DeploymentCatalog,
-        spec: DeploymentSpec,
+        mut spec: DeploymentSpec,
     ) -> Result<bool, Failure<Fetcher>> {
-        match self.admit(working, &spec) {
+        match self.admit(working, &mut spec) {
             Ok(()) => {
                 working.push(spec);
                 Ok(false)
