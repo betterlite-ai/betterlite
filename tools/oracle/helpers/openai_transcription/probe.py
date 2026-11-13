@@ -5,21 +5,29 @@ import litellm
 from litellm.llms.base_llm.audio_transcription.transformation import (
     BaseAudioTranscriptionConfig,
 )
-from litellm.llms.openai.transcriptions.gpt_transformation import (
-    OpenAIGPTAudioTranscriptionConfig,
-)
-from litellm.llms.openai.transcriptions.whisper_transformation import (
-    OpenAIWhisperAudioTranscriptionConfig,
-)
+from litellm.types.utils import LlmProviders
+from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
 litellm.suppress_debug_info = True
 
 JSON_HEADERS: Final = {"content-type": "application/json"}
-WHISPER: Final = OpenAIWhisperAudioTranscriptionConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/whisper_transformation.py#L21
-GPT: Final = OpenAIGPTAudioTranscriptionConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/gpt_transformation.py#L12
-PROVIDERS: Final[dict[str, BaseAudioTranscriptionConfig]] = {"whisper": WHISPER, "gpt": GPT}
+
+
+def audio_config(model: str) -> BaseAudioTranscriptionConfig:
+    config = ProviderConfigManager.get_provider_audio_transcription_config(
+        model=model, provider=LlmProviders.OPENAI
+    )
+    if config is None:
+        raise LookupError(model)
+    return config
+
+
+PROVIDERS: Final = {
+    "whisper": audio_config("whisper-1"),
+    "gpt": audio_config("gpt-4o-transcribe"),
+}
 
 
 @dataclass

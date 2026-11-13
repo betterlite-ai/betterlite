@@ -13,5 +13,21 @@ call:
           status: 200
           headers: {content-type: application/json, x-request-id: req-1}
           body: '{"text":"hi there","language":"en","duration":1.5,"segments":[],"words":[]}'
+      - model: whisper-1
+        provider: whisper
+        optional_params: {include: [logprobs], response_format: json}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+      - model: gpt-4o-transcribe
+        provider: gpt
+        optional_params: {timestamp_granularities: [word], response_format: json}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        optional_params: {include: [logprobs], language: en}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
 env: {}
 compare: {ignore: []}

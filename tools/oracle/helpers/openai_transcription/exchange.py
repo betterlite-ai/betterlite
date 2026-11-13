@@ -1,18 +1,21 @@
 import asyncio
 import base64
 from collections.abc import Coroutine
-from typing import Final, Protocol, TypedDict, Unpack, cast
+from typing import Final, Protocol, TypedDict
 
 import httpx
 import litellm
 import openai
+from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.llms.base_llm.audio_transcription.transformation import (
     BaseAudioTranscriptionConfig,
 )
 from litellm.llms.openai.transcriptions.handler import OpenAIAudioTranscription
-from litellm.types.utils import TranscriptionResponse
+from litellm.types.utils import FileTypes, TranscriptionResponse
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
+from typing_extensions import override
 
 from .probe import PROVIDERS, Answer, Probe
 
@@ -20,51 +23,22 @@ litellm.suppress_debug_info = True
 
 FILE: Final = ("a.wav", b"abc", "audio/wav")
 FILE_VIEW: Final[Json] = {"filename": "a.wav", "content_type": "audio/wav", "content": "YWJj"}
+DUMP: Final = TypeAdapter(dict[str, Json])
 
 
-class AdditionalArgs(TypedDict):
-    complete_input_dict: dict[str, Json]
+class Private(TypedDict):
+    _hidden_params: dict[str, Json]
 
 
-class PreCallArgs(AdditionalArgs):
+PRIVATE: Final = TypeAdapter(Private)
+
+
+class Sent(TypedDict):
+    complete_input_dict: dict[str, Json | tuple[str, bytes, str]]
+
+
+class PreCall(Sent):
     api_base: str
-    atranscription: bool
-
-
-class AsyncArgs(TypedDict):
-    audio_file: tuple[str, bytes, str]
-    data: dict[str, Json]
-    model_response: TranscriptionResponse
-    timeout: float
-    logging_obj: LiteLLMLoggingObj
-    api_key: str | None
-    api_base: str | None
-    max_retries: int
-
-
-class SyncArgs(TypedDict):
-    model: str
-    audio_file: tuple[str, bytes, str]
-    optional_params: dict[str, Json]
-    litellm_params: dict[str, Json]
-    model_response: TranscriptionResponse
-    timeout: float
-    max_retries: int
-    logging_obj: LiteLLMLoggingObj
-    api_key: str | None
-    api_base: str | None
-    atranscription: bool
-    provider_config: BaseAudioTranscriptionConfig | None
-
-
-class HandlerView(Protocol):
-    def async_audio_transcriptions(
-        self, **kwargs: Unpack[AsyncArgs]
-    ) -> Coroutine[None, None, TranscriptionResponse]: ...
-
-    def audio_transcriptions(
-        self, **kwargs: Unpack[SyncArgs]
-    ) -> TranscriptionResponse | Coroutine[None, None, TranscriptionResponse]: ...
 
 
 class Upstream:
@@ -79,28 +53,38 @@ class Upstream:
         )
 
 
-class Recorder:
+class Recorder(LiteLLMLoggingObj):
     def __init__(self) -> None:
         self.model_call_details: dict[str, Json] = {}
         self.pre: Json = None
         self.post: Json = None
 
-    def pre_call(self, additional_args: PreCallArgs, **_ignored: Json) -> None:
-        self.pre = {
-            "api_base": str(additional_args["api_base"]),
-            "data": data_view(additional_args),
-        }
+    @override
+    def pre_call(
+        self,
+        input: Json,
+        api_key: str | None,
+        model: str | None = None,
+        additional_args: PreCall | None = None,
+    ) -> None:
+        if additional_args is not None:
+            self.pre = {
+                "api_base": str(additional_args["api_base"]),
+                "data": data_view(additional_args),
+            }
 
+    @override
     def post_call(
         self,
         original_response: Json,
-        additional_args: AdditionalArgs | None = None,
-        **kwargs: Json,
+        input: Json = None,
+        api_key: str | None = None,
+        additional_args: Sent | None = None,
     ) -> None:
         match original_response:
             case dict() as fields:
                 self.post = {
-                    "input_names_file": FILE[0] in str(kwargs["input"]),
+                    "input_names_file": FILE[0] in str(input),
                     "data": data_view(additional_args),
                     "original_response": {
                         name: value for name, value in fields.items() if value is not None
@@ -116,11 +100,17 @@ class Recorder:
                 }
 
 
-def data_view(additional_args: AdditionalArgs | None) -> Json:
+def data_view(additional_args: Sent | None) -> Json:
     if additional_args is None:
         return None
-    fields = additional_args["complete_input_dict"]
-    return {name: FILE_VIEW if name == "file" else value for name, value in fields.items()}
+    view: dict[str, Json] = {}
+    for name, value in additional_args["complete_input_dict"].items():
+        match value:
+            case tuple():
+                view[name] = FILE_VIEW
+            case None | bool() | int() | float() | str() | list() | dict():
+                view[name] = value
+    return view
 
 
 def multipart_view(sent: httpx.Request) -> list[Json]:
@@ -147,42 +137,78 @@ def multipart_view(sent: httpx.Request) -> list[Json]:
     return parts
 
 
-def invoke(probe: Probe, recorder: Recorder) -> TranscriptionResponse:
-    handler = cast(HandlerView, OpenAIAudioTranscription())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L56-L171
-    logger = cast(LiteLLMLoggingObj, recorder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L81-L89
+class Handler(Protocol):
+    def async_audio_transcriptions(
+        self,
+        _audio_file: FileTypes,
+        _data: dict[str, Json | tuple[str, bytes, str]],
+        _model_response: TranscriptionResponse,
+        _timeout: float,
+        _logging_obj: LiteLLMLoggingObj,
+        _api_key: str | None,
+        _api_base: str | None,
+        /,
+        *,
+        max_retries: int,
+    ) -> Coroutine[None, None, TranscriptionResponse]: ...
+
+    def audio_transcriptions(
+        self,
+        _model: str,
+        _audio_file: FileTypes,
+        _optional_params: dict[str, Json],
+        _litellm_params: dict[str, Json],
+        _model_response: TranscriptionResponse,
+        _timeout: float,
+        _max_retries: int,
+        _logging_obj: LiteLLMLoggingObj,
+        _api_key: str | None,
+        _api_base: str | None,
+        /,
+        *,
+        atranscription: bool,
+        provider_config: BaseAudioTranscriptionConfig | None,
+    ) -> TranscriptionResponse | Coroutine[None, None, TranscriptionResponse]: ...
+
+
+def invoke(handler: Handler, probe: Probe, recorder: Recorder) -> TranscriptionResponse:
     if probe.data_model is not None or probe.data_model_null:
-        data: dict[str, Json] = {"model": None if probe.data_model_null else probe.data_model}
-        data["file"] = cast(Json, FILE)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L107
+        data: dict[str, Json | tuple[str, bytes, str]] = {
+            "model": None if probe.data_model_null else probe.data_model,
+            "file": FILE,
+        }
         data.update(probe.optional_params)
         return asyncio.run(
             handler.async_audio_transcriptions(
-                audio_file=FILE,
-                data=data,
-                model_response=TranscriptionResponse(),
-                timeout=30.0,
-                logging_obj=logger,
-                api_key=probe.api_key,
-                api_base=probe.api_base,
+                FILE,
+                data,
+                TranscriptionResponse(),
+                30.0,
+                recorder,
+                probe.api_key,
+                probe.api_base,
                 max_retries=2,
             )
         )
+    options = dict(probe.optional_params)
+    no_litellm_params: dict[str, Json] = {}
     outcome = handler.audio_transcriptions(
-        model=probe.model,
-        audio_file=FILE,
-        optional_params=dict(probe.optional_params),
-        litellm_params={},
-        model_response=TranscriptionResponse(),
-        timeout=30.0,
-        max_retries=2,
-        logging_obj=logger,
-        api_key=probe.api_key,
-        api_base=probe.api_base,
+        probe.model,
+        FILE,
+        options,
+        no_litellm_params,
+        TranscriptionResponse(),
+        30.0,
+        2,
+        recorder,
+        probe.api_key,
+        probe.api_base,
         atranscription=probe.atranscription,
         provider_config=None if probe.provider is None else PROVIDERS[probe.provider],
     )
-    if probe.atranscription:
-        return asyncio.run(cast("Coroutine[None, None, TranscriptionResponse]", outcome))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L82-L96
-    return cast(TranscriptionResponse, outcome)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L82-L96
+    if asyncio.iscoroutine(outcome):
+        return asyncio.run(outcome)
+    return outcome
 
 
 def client_view(probe: Probe) -> Json:
@@ -200,20 +226,21 @@ def client_view(probe: Probe) -> Json:
 
 
 def result_view(response: TranscriptionResponse) -> Json:
-    dumped = cast("dict[str, Json]", response.model_dump())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
-    hidden = cast("dict[str, Json]", response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2748
+    private: dict[str, Json] | None = response.__pydantic_private__
+    hidden = PRIVATE.validate_python(private)["_hidden_params"]
     return {
         "model": hidden.get("model"),
         "provider": hidden.get("custom_llm_provider"),
         "duration_recorded": "audio_transcription_duration" in hidden,
         "duration": hidden.get("audio_transcription_duration"),
-        "response": response_document(dumped),
+        "response": response_document(response),
         "headers": hidden.get("headers"),
         "additional_headers": hidden.get("additional_headers"),
     }
 
 
-def response_document(dumped: dict[str, Json]) -> Json:
+def response_document(response: TranscriptionResponse) -> Json:
+    dumped = DUMP.validate_json(response.model_dump_json())
     fields: dict[str, Json] = {
         name: value
         for name, value in dumped.items()
@@ -239,7 +266,7 @@ def request_view(upstream: Upstream) -> Json:
 
 def outcome(probe: Probe, recorder: Recorder) -> tuple[Json, Json]:
     try:
-        return result_view(invoke(probe, recorder)), None
+        return result_view(invoke(OpenAIAudioTranscription(), probe, recorder)), None
     except openai.APIStatusError as failure:
         status: Json = {
             "status": failure.status_code,
@@ -253,7 +280,7 @@ def outcome(probe: Probe, recorder: Recorder) -> tuple[Json, Json]:
 
 
 def exchange(probe: Probe) -> Json:
-    litellm.in_memory_llm_clients_cache.flush_cache()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L260
+    litellm.in_memory_llm_clients_cache = LLMClientCache()
     upstream = Upstream(probe.reply)
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(upstream.handle))
     litellm.aclient_session = httpx.AsyncClient(transport=httpx.MockTransport(upstream.handle))
