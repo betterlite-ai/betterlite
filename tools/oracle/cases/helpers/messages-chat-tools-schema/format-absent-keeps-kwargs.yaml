@@ -1,0 +1,11 @@
+kind: helper
+name: messages-chat-tools-schema-format-absent-keeps-kwargs
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      output_config: {}
+env: {}
+compare: {ignore: []}
