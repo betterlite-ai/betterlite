@@ -16,6 +16,7 @@ use betterlite_websearch::chat_responses_followup::search::SearchExecutor;
 use betterlite_websearch::execution::search::unclassified;
 use betterlite_websearch::records::RichWebSearchInput;
 use serde::{Deserialize, Serialize};
+use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
@@ -37,7 +38,7 @@ pub(crate) struct CaseInput {
     model: String,
     #[serde(default)]
     messages: Vec<FollowupMessage>,
-    input: Option<ResponsesInput>,
+    input: Option<InputCase>,
     response_format: Option<String>,
     tool_calls: Vec<ToolCall>,
     #[serde(default)]
@@ -46,6 +47,28 @@ pub(crate) struct CaseInput {
     kwargs: JsonMap,
     #[serde(default)]
     searches: Vec<SearchScript>,
+}
+
+// an untagged enum buffers its payload where a RawValue cannot be read, so the items stay Values here
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum InputCase {
+    Text(String),
+    Items(Vec<Value>),
+}
+
+impl InputCase {
+    fn to_responses(&self) -> Result<ResponsesInput, FollowupError> {
+        match self {
+            Self::Text(text) => Ok(ResponsesInput::Text(text.clone())),
+            Self::Items(items) => Ok(ResponsesInput::Items(
+                items
+                    .iter()
+                    .map(|item| to_raw_value(item).map(FollowupMessage))
+                    .collect::<Result<_, _>>()?,
+            )),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -200,10 +223,10 @@ async fn run_operation(
             serde_json::to_value(plan).map_err(FollowupError::from)
         }
         Operation::ResponsesPlan => {
-            let responses = input
-                .input
-                .clone()
-                .unwrap_or_else(|| ResponsesInput::Items(Vec::new()));
+            let responses = input.input.as_ref().map_or_else(
+                || Ok(ResponsesInput::Items(Vec::new())),
+                InputCase::to_responses,
+            )?;
             let request = ResponsesRequest {
                 model: &input.model,
                 input: &responses,

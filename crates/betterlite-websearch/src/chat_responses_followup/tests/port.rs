@@ -3,6 +3,7 @@ use std::future::{Future, ready};
 use std::sync::Mutex;
 
 use betterlite_context::agentic_loop_plan::JsonMap;
+use betterlite_openai::search::provider::SearchQuery;
 use betterlite_openai::search::records::SearchResponse;
 use serde_json::json;
 
@@ -12,13 +13,17 @@ use crate::execution::WebSearchExecution;
 use crate::execution::capabilities::ProviderCapabilities;
 use crate::execution::runner::{SearchCall, SearchRunner};
 use crate::execution::search::unclassified;
+use crate::records::RichWebSearchInput;
 use crate::search_tool_access::authorization::{SearchToolAuthorizer, SearchToolGrants};
 use crate::search_tool_access::hook_kwargs::{ParentOtelSpan, SearchCaller};
 use crate::search_tool_access::search_metadata::{
     SearchMetadataSource, SearchMetadataValue, SearchRequestMetadata,
 };
+use crate::search_tool_access::tool_selection::SearchToolParams;
 
 struct RecordedCall {
+    query: SearchQuery,
+    params: SearchToolParams,
     search_provider: String,
     metadata: Option<SearchRequestMetadata>,
 }
@@ -34,6 +39,8 @@ impl SearchRunner for FakeRunner {
         call: SearchCall<'_>,
     ) -> impl Future<Output = Result<SearchResponse, SearchFailure>> + Send {
         self.calls.lock().unwrap().push(RecordedCall {
+            query: call.query,
+            params: call.params.clone(),
             search_provider: call.search_provider.to_owned(),
             metadata: call.metadata.cloned(),
         });
@@ -90,7 +97,9 @@ impl SearchMetadataSource for FakeMetadata {
     }
 }
 
-struct FakeCapabilities;
+struct FakeCapabilities {
+    rich: bool,
+}
 
 impl ProviderCapabilities for FakeCapabilities {
     fn handles_web_search_natively(&self, _model: &str, _provider: &str) -> bool {
@@ -98,7 +107,7 @@ impl ProviderCapabilities for FakeCapabilities {
     }
 
     fn supports_rich_search_input(&self, _search_provider: &str) -> bool {
-        false
+        self.rich
     }
 }
 
@@ -120,7 +129,7 @@ fn execution() -> WebSearchExecution<FakeRunner, FakeGrants, FakeMetadata, FakeC
             grants_port: FakeGrants,
         },
         metadata_source: FakeMetadata,
-        capabilities: FakeCapabilities,
+        capabilities: FakeCapabilities { rich: false },
     }
 }
 
@@ -152,4 +161,38 @@ async fn websearch_execution_port_reports_a_failed_search() {
     let result =
         SearchExecutor::execute_search(&execution, "weather", &kwargs(json!({})), None).await;
     assert!(matches!(result, SearchResult::Failed(failure) if failure.message == "provider down"));
+}
+
+#[tokio::test]
+async fn websearch_execution_port_forwards_the_rich_input_to_a_rich_provider() {
+    let mut execution = execution();
+    execution.capabilities.rich = true;
+    let rich = RichWebSearchInput {
+        objective: Some("find the forecast".to_owned()),
+        search_queries: Some(vec!["weather".to_owned(), "forecast".to_owned()]),
+    };
+    let result =
+        SearchExecutor::execute_search(&execution, "weather", &kwargs(json!({})), Some(rich)).await;
+    assert!(matches!(result, SearchResult::Succeeded { .. }));
+    let calls = execution.runner.calls.lock().unwrap();
+    assert_eq!(
+        calls[0].query,
+        SearchQuery::Multiple(vec!["weather".to_owned(), "forecast".to_owned()])
+    );
+    assert_eq!(calls[0].params["objective"].get(), "\"find the forecast\"");
+}
+
+#[tokio::test]
+async fn websearch_execution_port_keeps_the_single_query_for_a_plain_provider() {
+    let execution = execution();
+    let rich = RichWebSearchInput {
+        objective: Some("find the forecast".to_owned()),
+        search_queries: Some(vec!["weather".to_owned(), "forecast".to_owned()]),
+    };
+    let result =
+        SearchExecutor::execute_search(&execution, "weather", &kwargs(json!({})), Some(rich)).await;
+    assert!(matches!(result, SearchResult::Succeeded { .. }));
+    let calls = execution.runner.calls.lock().unwrap();
+    assert_eq!(calls[0].query, SearchQuery::Single("weather".to_owned()));
+    assert!(!calls[0].params.contains_key("objective"));
 }

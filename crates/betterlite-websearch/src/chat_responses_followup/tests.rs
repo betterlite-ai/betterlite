@@ -12,6 +12,7 @@
         reason = "the fixtures state the provider JSON LiteLLM hands the builders, and each test reads as one scenario"
     )
 )]
+mod forwarding;
 mod port;
 
 use std::sync::{Arc, Mutex, PoisonError};
@@ -226,8 +227,8 @@ async fn search_batch_uses_function_arguments_when_input_is_not_an_object(
 ) {
     let searcher = Arc::new(ScriptedSearch::successful(&["result"]));
     let call = manual_call(
-        Input::Other(serde_json::value::to_raw_value(&json!("not an object")).unwrap()),
-        Input::from(serde_json::value::to_raw_value(&arguments).unwrap()),
+        Input::Other(to_raw_value(&json!("not an object")).unwrap()),
+        Input::from(to_raw_value(&arguments).unwrap()),
     );
     let kwargs = map(json!({}));
     let outcomes = search_batch(searcher.as_ref(), &[call], &kwargs, SearchSurface::Chat).await;
@@ -247,8 +248,8 @@ async fn search_batch_uses_function_arguments_when_input_is_not_an_object(
 #[tokio::test]
 async fn search_batch_responses_surface_ignores_function_arguments() {
     let call = manual_call(
-        Input::Other(serde_json::value::to_raw_value(&json!("not an object")).unwrap()),
-        Input::from(serde_json::value::to_raw_value(&json!({"query": "fallback"})).unwrap()),
+        Input::Other(to_raw_value(&json!("not an object")).unwrap()),
+        Input::from(to_raw_value(&json!({"query": "fallback"})).unwrap()),
     );
     let kwargs = map(json!({}));
     let chat = Arc::new(ScriptedSearch::successful(&["result"]));
@@ -839,8 +840,8 @@ async fn responses_patch_prefixes_the_model(
 async fn responses_patch_uses_the_empty_result_for_a_queryless_call() {
     let searcher = Arc::new(ScriptedSearch::successful(&[]));
     let call = manual_call(
-        Input::Other(serde_json::value::to_raw_value(&json!("not an object")).unwrap()),
-        Input::from(serde_json::value::to_raw_value(&json!({"query": "fallback"})).unwrap()),
+        Input::Other(to_raw_value(&json!("not an object")).unwrap()),
+        Input::from(to_raw_value(&json!({"query": "fallback"})).unwrap()),
     );
     let optional_params = map(json!({}));
     let kwargs = map(json!({}));

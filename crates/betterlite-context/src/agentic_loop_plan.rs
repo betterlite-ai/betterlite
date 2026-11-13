@@ -8,8 +8,8 @@ pub type JsonMap = IndexMap<String, Box<RawValue>>;
 
 #[must_use]
 pub fn get_text(map: &JsonMap, key: &str) -> Option<String> {
-    map.get(key)
-        .and_then(|value| serde_json::from_str(value.get()).ok())
+    let raw = map.get(key)?;
+    serde_json::from_str(raw.get()).ok()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

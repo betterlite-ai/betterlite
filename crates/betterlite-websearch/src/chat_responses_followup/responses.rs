@@ -1,7 +1,7 @@
 use betterlite_context::agentic_loop_plan::{
     AgenticLoopRequestPatch, FollowupMessage, JsonMap, get_text,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::value::{RawValue, to_raw_value};
 
 use super::error::FollowupError;
@@ -27,8 +27,7 @@ const DROPPED_KWARGS: [&str; 5] = [
 ];
 const INTERCEPTION_PREFIX: &str = "_websearch_interception";
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum ResponsesInput {
     Text(String),
     Items(Vec<FollowupMessage>),
