@@ -162,7 +162,7 @@ def render_page(render: Render) -> Json:
 
 
 def run(input_value: Input) -> Json:
-    # the lifetime is a constant read at import, so the environment goes in before any litellm import
+    # the lifetime is a constant read at import, so the environment goes in first
     for name, value in input_value["environment"].items():
         os.environ[name] = value
     return [render_page(render) for render in input_value["renders"]]
