@@ -56,32 +56,33 @@ pub fn map_openai_size_to_gemini_image_config(
 pub fn map_openai_image_params_to_gemini(
     mapping: &ImageParamMapping<'_>,
 ) -> Result<Object, GeminiImagePolicyError> {
-    let filtered = filtered_params(mapping.params, mapping.supported_params);
-    let mut mapped = Object::new();
-    map_sample_count(&filtered, mapping.optional_params, &mut mapped);
-    map_size(&filtered, mapping, &mut mapped);
-    map_explicit_image_config(&filtered, mapping.parse_image_config_string, &mut mapped)?;
-    copy_remaining(&filtered, mapping.optional_params, &mut mapped);
-    Ok(mapped)
-}
-
-fn filtered_params<'params>(
-    params: &'params Object,
-    supported_params: &[&str],
-) -> Vec<(&'params String, &'params Json)> {
-    params
+    let filtered: Vec<(&String, &Json)> = mapping
+        .params
         .iter()
-        .filter(|(key, _)| supported_params.iter().any(|name| *name == key.as_str()))
-        .collect()
-}
-
-fn map_sample_count(filtered: &[(&String, &Json)], optional: &Object, mapped: &mut Object) {
-    let Some((_, value)) = filtered.iter().find(|(key, _)| key.as_str() == "n") else {
-        return;
-    };
-    if !optional.contains_key("n") {
+        .filter(|(key, _)| {
+            mapping
+                .supported_params
+                .iter()
+                .any(|name| *name == key.as_str())
+        })
+        .collect();
+    let mut mapped = Object::new();
+    if let Some((_, value)) = filtered.iter().find(|(key, _)| key.as_str() == "n")
+        && !mapping.optional_params.contains_key("n")
+    {
         mapped.insert("sampleCount".to_owned(), (*value).clone());
     }
+    map_size(&filtered, mapping, &mut mapped);
+    map_explicit_image_config(&filtered, mapping.parse_image_config_string, &mut mapped)?;
+    for (key, value) in &filtered {
+        if HANDLED_PARAMS.contains(&key.as_str())
+            || mapping.optional_params.contains_key(key.as_str())
+        {
+            continue;
+        }
+        mapped.insert((*key).clone(), (*value).clone());
+    }
+    Ok(mapped)
 }
 
 fn map_size(filtered: &[(&String, &Json)], mapping: &ImageParamMapping<'_>, mapped: &mut Object) {
@@ -98,24 +99,18 @@ fn map_size(filtered: &[(&String, &Json)], mapping: &ImageParamMapping<'_>, mapp
         return;
     };
     if is_gemini_image_model(mapping.model) {
-        mapped.insert("imageConfig".to_owned(), image_config_json(&config));
+        let mut image_config =
+            Object::from([("aspectRatio".to_owned(), Json::Text(config.aspect_ratio))]);
+        if let Some(image_size) = config.image_size {
+            image_config.insert("imageSize".to_owned(), Json::Text(image_size));
+        }
+        mapped.insert("imageConfig".to_owned(), Json::Object(image_config));
     } else {
         mapped.insert("aspectRatio".to_owned(), Json::Text(config.aspect_ratio));
         if let Some(image_size) = config.image_size {
             mapped.insert("imageSize".to_owned(), Json::Text(image_size));
         }
     }
-}
-
-fn image_config_json(config: &ImageConfig) -> Json {
-    let mut object = Object::from([(
-        "aspectRatio".to_owned(),
-        Json::Text(config.aspect_ratio.clone()),
-    )]);
-    if let Some(image_size) = &config.image_size {
-        object.insert("imageSize".to_owned(), Json::Text(image_size.clone()));
-    }
-    Json::Object(object)
 }
 
 fn map_explicit_image_config(
@@ -138,13 +133,4 @@ fn map_explicit_image_config(
         mapped.insert("imageConfig".to_owned(), Json::Object(config));
     }
     Ok(())
-}
-
-fn copy_remaining(filtered: &[(&String, &Json)], optional: &Object, mapped: &mut Object) {
-    for (key, value) in filtered {
-        if HANDLED_PARAMS.contains(&key.as_str()) || optional.contains_key(key.as_str()) {
-            continue;
-        }
-        mapped.insert((*key).clone(), (*value).clone());
-    }
 }

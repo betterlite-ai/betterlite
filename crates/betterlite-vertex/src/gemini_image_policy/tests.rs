@@ -7,7 +7,6 @@ use betterlite_config::sections::Section as _;
 use betterlite_config::sections::vertex_schema_shaping::{Raw, Settings};
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
-use serde_json::json;
 
 use super::decode::{ImageOptions, MAX_IMAGE_OPTIONS_BYTES, decode_image_options};
 use super::error::GeminiImagePolicyError;
@@ -25,8 +24,12 @@ fn object(source: &str) -> Object {
     serde_json::from_str(source).expect("object source")
 }
 
-fn value(object: &Object) -> serde_json::Value {
-    serde_json::to_value(object).expect("object value")
+fn json(source: &str) -> Json {
+    serde_json::from_str(source).expect("json source")
+}
+
+fn wrapped(object: &Object) -> Json {
+    Json::Object(object.clone())
 }
 
 fn settings() -> Settings {
@@ -84,10 +87,10 @@ fn portrait_dimensions_override_the_nearest_ratio() {
 }
 
 #[test]
-fn the_nearest_ratio_tie_keeps_the_source_order() {
-    assert_eq!(aspect_ratio(3, 8), "1:4");
-    assert_eq!(aspect_ratio(6, 16), "1:4");
-    assert_eq!(aspect_ratio(9, 24), "1:4");
+fn an_exact_ratio_tie_keeps_the_larger_ratio() {
+    assert_eq!(aspect_ratio(3, 8), "9:16");
+    assert_eq!(aspect_ratio(6, 16), "9:16");
+    assert_eq!(aspect_ratio(9, 24), "9:16");
 }
 
 #[rstest]
@@ -221,9 +224,10 @@ fn supports_image_size_prefers_the_catalog_value() {
 
 #[test]
 fn n_maps_into_sample_count() {
-    let mapped = map_openai_image_params_to_gemini(&mapping(&object(r#"{"n":2}"#), &object("{}")))
-        .expect("mapping");
-    assert_eq!(value(&mapped), json!({"sampleCount": 2}));
+    let params = object(r#"{"n":2}"#);
+    let optional = object("{}");
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
+    assert_eq!(wrapped(&mapped), json(r#"{"sampleCount":2}"#));
 }
 
 #[test]
@@ -231,46 +235,49 @@ fn optional_params_suppress_n_and_size() {
     let params = object(r#"{"n":2,"size":"1024x1024"}"#);
     let optional = object(r#"{"n":3,"size":"512x512"}"#);
     let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
-    assert_eq!(value(&mapped), json!({}));
+    assert_eq!(wrapped(&mapped), json("{}"));
 }
 
 #[test]
 fn gemini_models_receive_image_config() {
-    let mapped = map_openai_image_params_to_gemini(&mapping(
-        &object(r#"{"size":"1024x1024"}"#),
-        &object("{}"),
-    ))
-    .expect("mapping");
+    let params = object(r#"{"size":"1024x1024"}"#);
+    let optional = object("{}");
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
     assert_eq!(
-        value(&mapped),
-        json!({"imageConfig": {"aspectRatio": "1:1", "imageSize": "1K"}})
+        wrapped(&mapped),
+        json(r#"{"imageConfig":{"aspectRatio":"1:1","imageSize":"1K"}}"#)
     );
 }
 
 #[test]
 fn other_models_receive_top_level_ratios() {
-    let mut request = mapping(&object(r#"{"size":"1024x1024"}"#), &object("{}"));
+    let params = object(r#"{"size":"1024x1024"}"#);
+    let optional = object("{}");
+    let mut request = mapping(&params, &optional);
     request.model = "imagen-3.0-generate-002";
     let mapped = map_openai_image_params_to_gemini(&request).expect("mapping");
     assert_eq!(
-        value(&mapped),
-        json!({"aspectRatio": "1:1", "imageSize": "1K"})
+        wrapped(&mapped),
+        json(r#"{"aspectRatio":"1:1","imageSize":"1K"}"#)
     );
 }
 
 #[test]
 fn unsupported_params_are_dropped() {
-    let mut request = mapping(&object(r#"{"quality":"high"}"#), &object("{}"));
+    let params = object(r#"{"quality":"high"}"#);
+    let optional = object("{}");
+    let mut request = mapping(&params, &optional);
     let only_size = ["n", "size"];
     request.supported_params = &only_size;
     let mapped = map_openai_image_params_to_gemini(&request).expect("mapping");
-    assert_eq!(value(&mapped), json!({}));
+    assert_eq!(wrapped(&mapped), json("{}"));
 }
 
 #[test]
 fn passthrough_params_keep_the_request_order() {
     let params = object(r#"{"seed":1,"quality":"high","n":2}"#);
-    let mut request = mapping(&params, &object("{}"));
+    let optional = object("{}");
+    let mut request = mapping(&params, &optional);
     let supported = ["n", "seed", "quality"];
     request.supported_params = &supported;
     let mapped = map_openai_image_params_to_gemini(&request).expect("mapping");
@@ -281,8 +288,8 @@ fn passthrough_params_keep_the_request_order() {
 #[test]
 fn tools_and_web_search_options_never_pass_through() {
     let params = object(r#"{"tools":[],"web_search_options":{"a":1},"size":"1024x1024"}"#);
-    let mapped =
-        map_openai_image_params_to_gemini(&mapping(&params, &object("{}"))).expect("mapping");
+    let optional = object("{}");
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
     let keys: Vec<&str> = mapped.keys().map(String::as_str).collect();
     assert_eq!(keys, ["imageConfig"]);
 }
@@ -290,11 +297,11 @@ fn tools_and_web_search_options_never_pass_through() {
 #[test]
 fn explicit_image_config_overwrites_the_inferred_one() {
     let params = object(r#"{"size":"1024x1024","imageConfig":{"aspectRatio":"21:9"}}"#);
-    let mapped =
-        map_openai_image_params_to_gemini(&mapping(&params, &object("{}"))).expect("mapping");
+    let optional = object("{}");
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
     assert_eq!(
-        value(&mapped),
-        json!({"imageConfig": {"aspectRatio": "21:9"}})
+        wrapped(&mapped),
+        json(r#"{"imageConfig":{"aspectRatio":"21:9"}}"#)
     );
 }
 
@@ -304,27 +311,31 @@ fn explicit_image_config_overwrites_one_from_optional_params() {
     let optional = object(r#"{"imageConfig":{"aspectRatio":"1:1"}}"#);
     let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
     assert_eq!(
-        value(&mapped),
-        json!({"imageConfig": {"aspectRatio": "21:9"}})
+        wrapped(&mapped),
+        json(r#"{"imageConfig":{"aspectRatio":"21:9"}}"#)
     );
 }
 
 #[test]
 fn an_image_config_string_needs_the_opt_in() {
     let params = object(r#"{"imageConfig":"{\"imageSize\":\"2K\"}"}"#);
-    let ignored =
-        map_openai_image_params_to_gemini(&mapping(&params, &object("{}"))).expect("mapping");
-    assert_eq!(value(&ignored), json!({}));
-    let mut request = mapping(&params, &object("{}"));
+    let optional = object("{}");
+    let ignored = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
+    assert_eq!(wrapped(&ignored), json("{}"));
+    let mut request = mapping(&params, &optional);
     request.parse_image_config_string = true;
     let parsed = map_openai_image_params_to_gemini(&request).expect("mapping");
-    assert_eq!(value(&parsed), json!({"imageConfig": {"imageSize": "2K"}}));
+    assert_eq!(
+        wrapped(&parsed),
+        json(r#"{"imageConfig":{"imageSize":"2K"}}"#)
+    );
 }
 
 #[test]
 fn an_invalid_image_config_string_is_an_error() {
     let params = object(r#"{"imageConfig":"{bad"}"#);
-    let mut request = mapping(&params, &object("{}"));
+    let optional = object("{}");
+    let mut request = mapping(&params, &optional);
     request.parse_image_config_string = true;
     assert!(matches!(
         map_openai_image_params_to_gemini(&request),
@@ -335,18 +346,19 @@ fn an_invalid_image_config_string_is_an_error() {
 #[test]
 fn an_image_config_string_that_is_not_an_object_is_ignored() {
     let params = object(r#"{"imageConfig":"[1]"}"#);
-    let mut request = mapping(&params, &object("{}"));
+    let optional = object("{}");
+    let mut request = mapping(&params, &optional);
     request.parse_image_config_string = true;
     let mapped = map_openai_image_params_to_gemini(&request).expect("mapping");
-    assert_eq!(value(&mapped), json!({}));
+    assert_eq!(wrapped(&mapped), json("{}"));
 }
 
 #[test]
 fn a_size_that_is_not_text_is_ignored() {
-    let mapped =
-        map_openai_image_params_to_gemini(&mapping(&object(r#"{"size":1024}"#), &object("{}")))
-            .expect("mapping");
-    assert_eq!(value(&mapped), json!({}));
+    let params = object(r#"{"size":1024}"#);
+    let optional = object("{}");
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
+    assert_eq!(wrapped(&mapped), json("{}"));
 }
 
 #[test]
@@ -354,8 +366,8 @@ fn mapped_tools_replace_the_raw_list() {
     let params = object(r#"{"tools":[{"type":"function","function":{"name":"f"}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &object("{}"), &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({"tools": [{"function_declarations": [{"name": "f"}]}]})
+        wrapped(&tools),
+        json(r#"{"tools":[{"function_declarations":[{"name":"f"}]}]}"#)
     );
 }
 
@@ -365,8 +377,8 @@ fn function_declarations_drop_mixed_search_tools() {
         object(r#"{"tools":[{"type":"function","function":{"name":"f"}},{"googleSearch":{}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &object("{}"), &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({"tools": [{"function_declarations": [{"name": "f"}]}]})
+        wrapped(&tools),
+        json(r#"{"tools":[{"function_declarations":[{"name":"f"}]}]}"#)
     );
 }
 
@@ -377,11 +389,10 @@ fn server_side_invocations_keep_search_tools() {
         object(r#"{"include_server_side_tool_invocations":true,"tools":[{"googleSearch":{}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &mapped, &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({"include_server_side_tool_invocations": true, "tools": [
-            {"googleSearch": {}},
-            {"function_declarations": [{"name": "f"}]}
-        ]})
+        wrapped(&tools),
+        json(
+            r#"{"include_server_side_tool_invocations":true,"tools":[{"googleSearch":{}},{"function_declarations":[{"name":"f"}]}]}"#,
+        )
     );
 }
 
@@ -389,7 +400,7 @@ fn server_side_invocations_keep_search_tools() {
 fn web_search_options_add_one_google_search() {
     let params = object(r#"{"web_search_options":{"search_context_size":"low"}}"#);
     let tools = map_gemini_image_tools_params(&params, &object("{}"), &settings()).expect("tools");
-    assert_eq!(value(&tools), json!({"tools": [{"googleSearch": {}}]}));
+    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"googleSearch":{}}]}"#));
 }
 
 #[test]
@@ -397,7 +408,7 @@ fn web_search_options_never_add_a_second_search_tool() {
     let params = object(r#"{"web_search_options":{}}"#);
     let mapped = object(r#"{"tools":[{"googleSearch":{}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &mapped, &settings()).expect("tools");
-    assert_eq!(value(&tools), json!({"tools": [{"googleSearch": {}}]}));
+    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"googleSearch":{}}]}"#));
 }
 
 #[test]
@@ -407,8 +418,10 @@ fn search_tools_deduplicate_by_their_key() {
     );
     let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({"tools": [{"googleSearch": {}}, {"googleSearchRetrieval": {}}, {"google_search": {}}]})
+        wrapped(&tools),
+        json(
+            r#"{"tools":[{"googleSearch":{}},{"googleSearchRetrieval":{}},{"google_search":{}}]}"#,
+        )
     );
 }
 
@@ -417,12 +430,12 @@ fn a_multi_key_tool_is_matched_by_its_first_search_key() {
     let mapped = object(r#"{"tools":[{"urlContext":{}},{"googleSearch":{},"urlContext":{}}]}"#);
     let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({"tools": [{"urlContext": {}}, {"googleSearch": {}, "urlContext": {}}]})
+        wrapped(&tools),
+        json(r#"{"tools":[{"urlContext":{}},{"googleSearch":{},"urlContext":{}}]}"#)
     );
     let mapped = object(r#"{"tools":[{"googleSearch":{}},{"googleSearch":{},"urlContext":{}}]}"#);
     let tools = map_gemini_image_tools_params(&object("{}"), &mapped, &settings()).expect("tools");
-    assert_eq!(value(&tools), json!({"tools": [{"googleSearch": {}}]}));
+    assert_eq!(wrapped(&tools), json(r#"{"tools":[{"googleSearch":{}}]}"#));
 }
 
 #[test]
@@ -438,7 +451,7 @@ fn tools_of_the_wrong_shape_are_an_error() {
 fn an_empty_tools_list_is_ignored() {
     let params = object(r#"{"tools":[]}"#);
     let tools = map_gemini_image_tools_params(&params, &object("{}"), &settings()).expect("tools");
-    assert_eq!(value(&tools), json!({}));
+    assert_eq!(wrapped(&tools), json("{}"));
 }
 
 #[test]
@@ -446,11 +459,10 @@ fn maps_coordinates_add_a_tool_config() {
     let params = object(r#"{"tools":[{"googleMaps":{"latitude":1.5,"longitude":2.5}}]}"#);
     let tools = map_gemini_image_tools_params(&params, &object("{}"), &settings()).expect("tools");
     assert_eq!(
-        value(&tools),
-        json!({
-            "tools": [{"googleMaps": {}}],
-            "toolConfig": {"retrievalConfig": {"latLng": {"latitude": 1.5, "longitude": 2.5}}}
-        })
+        wrapped(&tools),
+        json(
+            r#"{"tools":[{"googleMaps":{}}],"toolConfig":{"retrievalConfig":{"latLng":{"latitude":1.5,"longitude":2.5}}}}"#,
+        )
     );
 }
 
@@ -458,8 +470,8 @@ fn maps_coordinates_add_a_tool_config() {
 fn generation_config_defaults_to_image_and_text() {
     let generation = get_gemini_image_generation_config("gemini-x", &object("{}"), None);
     assert_eq!(
-        value(&generation),
-        json!({"response_modalities": ["IMAGE", "TEXT"]})
+        wrapped(&generation),
+        json(r#"{"response_modalities":["IMAGE","TEXT"]}"#)
     );
 }
 
@@ -468,8 +480,8 @@ fn generation_config_strips_image_size_for_unsupported_models() {
     let optional = object(r#"{"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}"#);
     let generation = get_gemini_image_generation_config("gemini-2.5-flash-image", &optional, None);
     assert_eq!(
-        value(&generation),
-        json!({"response_modalities": ["IMAGE", "TEXT"], "imageConfig": {"aspectRatio": "16:9"}})
+        wrapped(&generation),
+        json(r#"{"response_modalities":["IMAGE","TEXT"],"imageConfig":{"aspectRatio":"16:9"}}"#)
     );
 }
 
@@ -478,8 +490,10 @@ fn generation_config_keeps_image_size_when_supported() {
     let optional = object(r#"{"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}"#);
     let generation = get_gemini_image_generation_config("gemini-x", &optional, Some(true));
     assert_eq!(
-        value(&generation),
-        json!({"response_modalities": ["IMAGE", "TEXT"], "imageConfig": {"aspectRatio": "16:9", "imageSize": "2K"}})
+        wrapped(&generation),
+        json(
+            r#"{"response_modalities":["IMAGE","TEXT"],"imageConfig":{"aspectRatio":"16:9","imageSize":"2K"}}"#,
+        )
     );
 }
 
@@ -496,7 +510,7 @@ fn generation_config_takes_the_first_candidate_alias(
     let generation = get_gemini_image_generation_config("gemini-x", &object(optional), None);
     assert_eq!(
         generation.get("candidateCount"),
-        Some(&Json::Number(expected.into()))
+        Some(&Json::Number(serde_json::Number::from(expected)))
     );
 }
 

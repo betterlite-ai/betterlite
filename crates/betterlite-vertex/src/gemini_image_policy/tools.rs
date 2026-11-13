@@ -5,7 +5,6 @@ use serde::Serialize;
 use super::error::GeminiImagePolicyError;
 use crate::gemini_tools::assembly::map_tools;
 use crate::gemini_tools::options::map_web_search_options;
-use crate::gemini_tools::records::Tool;
 
 // LiteLLM's search-tool set, in its declaration order; url_context is absent from it
 const SEARCH_KEYS: [&str; 7] = [
@@ -39,7 +38,7 @@ fn map_tools_param(
 ) -> Result<(), GeminiImagePolicyError> {
     let Some(Json::List(tools)) = non_default_params
         .get("tools")
-        .filter(|value| !is_empty_list(value))
+        .filter(|value| !matches!(value, Json::List(items) if items.is_empty()))
     else {
         return Ok(());
     };
@@ -47,31 +46,24 @@ fn map_tools_param(
         result.get("include_server_side_tool_invocations"),
         Some(Json::Bool(true))
     );
-    let tool_objects = tools_as_objects(tools)?;
-    let mapped = map_tools(&tool_objects, include_server_side, None, settings)?;
-    add_tools(result, encoded_tools(&mapped.tools)?)?;
-    if let Some(tool_config) = mapped.tool_config {
-        result.insert("toolConfig".to_owned(), encode(&tool_config)?);
-    }
-    Ok(())
-}
-
-fn is_empty_list(value: &Json) -> bool {
-    matches!(value, Json::List(items) if items.is_empty())
-}
-
-fn tools_as_objects(tools: &[Json]) -> Result<Vec<Object>, GeminiImagePolicyError> {
-    tools
+    let objects = tools
         .iter()
         .map(|tool| match tool {
             Json::Object(object) => Ok(object.clone()),
             _ => Err(GeminiImagePolicyError::ToolsShape),
         })
-        .collect()
-}
-
-fn encoded_tools(tools: &[Tool]) -> Result<Vec<Json>, GeminiImagePolicyError> {
-    tools.iter().map(encode).collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    let mapped = map_tools(&objects, include_server_side, None, settings)?;
+    let encoded = mapped
+        .tools
+        .iter()
+        .map(encode)
+        .collect::<Result<Vec<_>, _>>()?;
+    add_tools(result, encoded)?;
+    if let Some(tool_config) = mapped.tool_config {
+        result.insert("toolConfig".to_owned(), encode(&tool_config)?);
+    }
+    Ok(())
 }
 
 fn encode<T>(value: &T) -> Result<Json, GeminiImagePolicyError>
@@ -102,17 +94,12 @@ fn add_web_search_tool(
     let Some(Json::Object(options)) = non_default_params.get("web_search_options") else {
         return Ok(());
     };
-    if has_search_tool(result) {
+    if let Some(Json::List(tools)) = result.get("tools")
+        && tools.iter().any(is_search_tool)
+    {
         return Ok(());
     }
     add_tools(result, vec![encode(&map_web_search_options(options))?])
-}
-
-fn has_search_tool(result: &Object) -> bool {
-    match result.get("tools") {
-        Some(Json::List(tools)) => tools.iter().any(is_search_tool),
-        _ => false,
-    }
 }
 
 fn is_search_tool(tool: &Json) -> bool {
@@ -133,16 +120,14 @@ fn has_function_declarations(tool: &Json) -> bool {
 }
 
 fn drop_search_tools_mixed_with_functions(result: &mut Object) {
-    if matches!(
-        result.get("include_server_side_tool_invocations"),
-        Some(Json::Bool(true))
-    ) {
-        return;
-    }
     let Some(Json::List(tools)) = result.get("tools") else {
         return;
     };
-    if tools.is_empty()
+    let server_side = matches!(
+        result.get("include_server_side_tool_invocations"),
+        Some(Json::Bool(true))
+    );
+    if server_side
         || !tools.iter().any(has_function_declarations)
         || !tools.iter().any(is_search_tool)
     {

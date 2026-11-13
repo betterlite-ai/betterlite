@@ -63,14 +63,12 @@ fn case_value(case: &Case, settings: &Settings) -> Result<Value, Box<HelperError
         }
     }
     let tools = map_gemini_image_tools_params(&case.params, &mapped, settings).map_err(failure)?;
-    let generation =
-        get_gemini_image_generation_config(&case.model, &tools, case.catalog_supports_image_size);
     Ok(json!({
         "supports_image_size": supports_gemini_image_size(&case.model, case.catalog_supports_image_size),
         "is_image_model": is_gemini_image_model(&case.model),
         "mapped": mapped,
         "tools": tools,
-        "generation": generation,
+        "generation": get_gemini_image_generation_config(&case.model, &tools, case.catalog_supports_image_size),
         "web_search_requests": get_gemini_image_web_search_requests(&case.response),
     }))
 }

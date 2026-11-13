@@ -14,7 +14,6 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 JsonObject: TypeAlias = dict[str, JsonValue]
-
 _ADAPTER: Final = TypeAdapter(dict[str, JsonValue])
 
 
@@ -34,20 +33,7 @@ class Input(TypedDict):
     cases: list[Case]
 
 
-class Result(TypedDict):
-    supports_image_size: bool
-    is_image_model: bool
-    mapped: JsonObject
-    tools: JsonObject
-    generation: JsonObject
-    web_search_requests: int | None
-
-
-class Output(TypedDict):
-    results: list[Result]
-
-
-def case_result(case: Case) -> Result:
+def case_result(case: Case) -> JsonValue:
     catalog = case["catalog_supports_image_size"]
     if catalog is not None:
         litellm.model_cost[case["model"]] = {"supports_image_size": catalog}
@@ -75,7 +61,6 @@ def case_result(case: Case) -> Result:
     }
 
 
-def run(input_value: Input) -> Output:
-    return {
-        "results": [case_result(case) for case in input_value["cases"]],
-    }
+def run(input_value: Input) -> JsonValue:
+    results: list[JsonValue] = [case_result(case) for case in input_value["cases"]]
+    return {"results": results}

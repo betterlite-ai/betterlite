@@ -54,18 +54,8 @@ call:
         parse_image_config_string: false
         pre_mapped:
           tools:
-            - urlContext: {}
-            - {googleSearch: {}, urlContext: {}}
-        response: {}
-      - model: gemini-b1334-image
-        catalog_supports_image_size: null
-        params: {}
-        supported_params: [n, size, tools, web_search_options]
-        optional_params: {}
-        parse_image_config_string: false
-        pre_mapped:
-          tools:
             - googleSearch: {}
+            - urlContext: {}
             - {googleSearch: {}, urlContext: {}}
         response: {}
 env: {}

@@ -18,66 +18,27 @@ const ASPECT_RATIOS: [(&str, u64, u64); 14] = [
     ("21:9", 21, 9),
 ];
 
-const SIZE_TO_ASPECT_RATIO: [(u64, u64, &str); 58] = [
-    (512, 512, "1:1"),
-    (1024, 1024, "1:1"),
-    (2048, 2048, "1:1"),
-    (4096, 4096, "1:1"),
-    (256, 1024, "1:4"),
-    (512, 2048, "1:4"),
-    (1024, 4096, "1:4"),
-    (2048, 8192, "1:4"),
-    (192, 1536, "1:8"),
-    (384, 3072, "1:8"),
-    (768, 6144, "1:8"),
-    (1536, 12288, "1:8"),
-    (424, 632, "2:3"),
-    (848, 1264, "2:3"),
-    (1696, 2528, "2:3"),
-    (3392, 5056, "2:3"),
-    (632, 424, "3:2"),
-    (1264, 848, "3:2"),
-    (2528, 1696, "3:2"),
-    (5056, 3392, "3:2"),
-    (448, 600, "3:4"),
-    (896, 1200, "3:4"),
-    (1792, 2400, "3:4"),
-    (3584, 4800, "3:4"),
-    (1024, 256, "4:1"),
-    (2048, 512, "4:1"),
-    (4096, 1024, "4:1"),
-    (8192, 2048, "4:1"),
-    (600, 448, "4:3"),
-    (1200, 896, "4:3"),
-    (2400, 1792, "4:3"),
-    (4800, 3584, "4:3"),
-    (464, 576, "4:5"),
-    (928, 1152, "4:5"),
-    (1856, 2304, "4:5"),
-    (3712, 4608, "4:5"),
-    (576, 464, "5:4"),
-    (1152, 928, "5:4"),
-    (2304, 1856, "5:4"),
-    (4608, 3712, "5:4"),
-    (1536, 192, "8:1"),
-    (3072, 384, "8:1"),
-    (6144, 768, "8:1"),
-    (12288, 1536, "8:1"),
-    (384, 688, "9:16"),
-    (768, 1376, "9:16"),
-    (1536, 2752, "9:16"),
-    (3072, 5504, "9:16"),
-    (688, 384, "16:9"),
-    (1376, 768, "16:9"),
-    (2752, 1536, "16:9"),
-    (5504, 3072, "16:9"),
-    (792, 336, "21:9"),
-    (1584, 672, "21:9"),
-    (3168, 1344, "21:9"),
-    (6336, 2688, "21:9"),
-    (1280, 896, "4:3"),
-    (896, 1280, "3:4"),
+// LiteLLM lists four sizes per ratio; each is this base pair times 1, 2, 4 or 8
+const RATIO_SIZES: [(&str, u64, u64); 14] = [
+    ("1:1", 512, 512),
+    ("1:4", 256, 1024),
+    ("1:8", 192, 1536),
+    ("2:3", 424, 632),
+    ("3:2", 632, 424),
+    ("3:4", 448, 600),
+    ("4:1", 1024, 256),
+    ("4:3", 600, 448),
+    ("4:5", 464, 576),
+    ("5:4", 576, 464),
+    ("8:1", 1536, 192),
+    ("9:16", 384, 688),
+    ("16:9", 688, 384),
+    ("21:9", 792, 336),
 ];
+const SIZE_SCALES: [u64; 4] = [1, 2, 4, 8];
+
+// these two sizes sit outside the scaled families above
+const PORTRAIT_SIZES: [(u64, u64, &str); 2] = [(1280, 896, "4:3"), (896, 1280, "3:4")];
 
 const AREA_512_LIMIT: u128 = 589_824;
 const AREA_1K_LIMIT: u128 = 2_359_296;
@@ -91,8 +52,7 @@ pub fn parse_dimensions(size: &str) -> Option<(u64, u64)> {
     if size == "auto" {
         return None;
     }
-    let lowered = size.to_lowercase();
-    let (width_text, height_text) = lowered.split_once('x')?;
+    let (width_text, height_text) = size.to_lowercase().split_once('x')?;
     Some((dimension(width_text)?, dimension(height_text)?))
 }
 
@@ -103,10 +63,7 @@ fn dimension(text: &str) -> Option<u64> {
 
 #[must_use]
 pub fn aspect_ratio(width: u64, height: u64) -> &'static str {
-    if let Some((_, _, ratio)) = SIZE_TO_ASPECT_RATIO
-        .iter()
-        .find(|(known_width, known_height, _)| *known_width == width && *known_height == height)
-    {
+    if let Some(ratio) = exact_ratio(width, height) {
         return ratio;
     }
     let requested = (u128::from(width), u128::from(height));
@@ -116,11 +73,36 @@ pub fn aspect_ratio(width: u64, height: u64) -> &'static str {
             scaled(numerator, requested.1),
             scaled(denominator, requested.0),
         );
-        if nearest.is_none_or(|(_, best)| distance_is_closer(distance, best)) {
+        // an exact tie keeps the larger ratio, as LiteLLM's rounded float logs do at 3:8
+        let closer = nearest.is_none_or(|(_, best)| {
+            distance_is_closer(distance, best)
+                || (!distance_is_closer(best, distance) && fraction_less(best, distance))
+        });
+        if closer {
             nearest = Some((ratio, distance));
         }
     }
     nearest.map_or("1:1", |(ratio, _)| ratio)
+}
+
+fn exact_ratio(width: u64, height: u64) -> Option<&'static str> {
+    if let Some((_, _, ratio)) = PORTRAIT_SIZES
+        .iter()
+        .find(|(known_width, known_height, _)| *known_width == width && *known_height == height)
+    {
+        return Some(ratio);
+    }
+    RATIO_SIZES
+        .iter()
+        .find_map(|(ratio, base_width, base_height)| {
+            SIZE_SCALES
+                .iter()
+                .any(|scale| {
+                    scaled(*scale, u128::from(*base_width)) == u128::from(width)
+                        && scaled(*scale, u128::from(*base_height)) == u128::from(height)
+                })
+                .then_some(*ratio)
+        })
 }
 
 fn scaled(factor: u64, dimension: u128) -> u128 {
