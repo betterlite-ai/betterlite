@@ -40,16 +40,17 @@ fn attribute(host: &PythonHost, module: &Py<PyAny>, name: &str) -> Py<PyAny> {
     host.attach(|py| module.bind(py).getattr(name).unwrap().unbind())
 }
 
-fn instance_of(host: &PythonHost, module: &Py<PyAny>, name: &str) -> Py<PyAny> {
-    host.attach(|py| {
-        module
-            .bind(py)
-            .getattr(name)
+fn instance_of(host: &PythonHost, module_name: &str, class_name: &str) -> Py<PyAny> {
+    let class = host.attach(|py| {
+        py.import("importlib")
             .unwrap()
-            .call0()
+            .call_method1("import_module", (module_name,))
+            .unwrap()
+            .getattr(class_name)
             .unwrap()
             .unbind()
-    })
+    });
+    host.attach(|py| class.bind(py).call0().unwrap().unbind())
 }
 
 fn hook_of(object: Py<PyAny>) -> HookObject {
@@ -64,8 +65,8 @@ fn hook_of(object: Py<PyAny>) -> HookObject {
 #[test]
 fn a_logger_instance_is_a_logger() {
     let host = start_host();
-    let module = registered_module(&host, c"b8043_logger", LOGGER_CODE);
-    let listener = instance_of(&host, &module, "CustomLogger");
+    registered_module(&host, c"b8043_logger", LOGGER_CODE);
+    let listener = instance_of(&host, "b8043_logger", "CustomLogger");
     let kind = hook_of(listener).kind(&host, "b8043_logger.CustomLogger");
     assert_eq!(kind, LoadedKind::Logger);
 }
@@ -73,8 +74,8 @@ fn a_logger_instance_is_a_logger() {
 #[test]
 fn a_callable_logger_instance_is_a_logger() {
     let host = start_host();
-    let module = registered_module(&host, c"b8043_callable_logger", LOGGER_CODE);
-    let listener = instance_of(&host, &module, "CallableLogger");
+    registered_module(&host, c"b8043_callable_logger", LOGGER_CODE);
+    let listener = instance_of(&host, "b8043_callable_logger", "CallableLogger");
     let kind = hook_of(listener).kind(&host, "b8043_callable_logger.CustomLogger");
     assert_eq!(kind, LoadedKind::Logger);
 }
@@ -138,8 +139,8 @@ fn a_string_is_other_with_its_type_name_and_repr() {
 #[test]
 fn a_plain_instance_is_other_with_its_type_name_and_repr() {
     let host = start_host();
-    let module = registered_module(&host, c"b8043_holder", HOLDER_CODE);
-    let holder = instance_of(&host, &module, "Holder");
+    registered_module(&host, c"b8043_holder", HOLDER_CODE);
+    let holder = instance_of(&host, "b8043_holder", "Holder");
     let kind = hook_of(holder).kind(&host, "b8043_holder.CustomLogger");
     let LoadedKind::Other { type_name, repr } = kind else {
         panic!("expected Other, got {kind:?}");

@@ -10,7 +10,7 @@ use crate::call_error::{CallError, PythonError};
 use crate::callable_handle::CallableHandle;
 use crate::host::PythonHost;
 use crate::instance_loader::LoadedObject;
-use crate::json_values::{JsonObject, JsonValue};
+use crate::json_values::{JsonObject, JsonValue, from_object, to_object};
 
 mod construct;
 mod kind;
@@ -88,14 +88,28 @@ impl HookObject {
         deadline: Duration,
         call: MethodCall<'_>,
     ) -> Result<JsonValue, HookError> {
-        let Some(method) = self.method(host, call.name) else {
-            return Err(HookError::NoSuchMethod {
-                name: call.name.to_owned(),
-            });
-        };
-        method
-            .call(host, tracker, deadline, call.args, call.kwargs)
-            .await
+        let raw = host.attach(|py| {
+            let args = call
+                .args
+                .iter()
+                .map(|value| to_object(py, value).map(Bound::unbind))
+                .collect::<PyResult<Vec<_>>>()
+                .map_err(|error| HookError::Python(PythonError::from_pyerr(py, &error)))?;
+            let kwargs = call
+                .kwargs
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), to_object(py, value)?.unbind())))
+                .collect::<PyResult<BTreeMap<_, _>>>()
+                .map_err(|error| HookError::Python(PythonError::from_pyerr(py, &error)))?;
+            Ok::<RawMethodCall<'_>, HookError>(RawMethodCall {
+                name: call.name,
+                args,
+                kwargs,
+            })
+        })?;
+        let value = self.call_method_raw(host, tracker, deadline, raw).await?;
+        host.attach(|py| from_object(value.bind(py)))
+            .map_err(CallError::Value)
             .map_err(HookError::Call)
     }
 
@@ -106,15 +120,17 @@ impl HookObject {
         deadline: Duration,
         call: RawMethodCall<'_>,
     ) -> Result<Py<PyAny>, HookError> {
-        let Some(method) = self.method(host, call.name) else {
-            return Err(HookError::NoSuchMethod {
-                name: call.name.to_owned(),
-            });
-        };
-        method
+        self.require_method(host, call.name)?
             .call_raw(host, tracker, deadline, call.args, call.kwargs)
             .await
             .map_err(HookError::Call)
+    }
+
+    fn require_method(&self, host: &PythonHost, name: &str) -> Result<CallableHandle, HookError> {
+        self.method(host, name)
+            .ok_or_else(|| HookError::NoSuchMethod {
+                name: name.to_owned(),
+            })
     }
 
     pub fn construct(

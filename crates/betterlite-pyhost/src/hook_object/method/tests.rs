@@ -3,8 +3,7 @@
 use std::ffi::CStr;
 use std::time::Duration;
 
-use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyModule};
-use pyo3::{Py, PyAny};
+use pyo3::types::{PyAnyMethods as _, PyModule};
 
 use crate::blocking_work::WorkTracker;
 use crate::hook_object::{HookError, HookObject, MethodCall};
@@ -12,7 +11,7 @@ use crate::host::{HostConfig, PythonHost};
 use crate::instance_loader::LoadedObject;
 use crate::json_values::{JsonObject, JsonValue};
 
-const HANDLER_CODE: &CStr = c"state = {'calls': 0}\n\nclass Handler:\n    def __init__(self, base):\n        self.base = base\n\n    def add(self, value):\n        return self.base + value\n\n    async def add_async(self, value):\n        return self.base + value\n\n    def touch(self):\n        state['calls'] += 1\n        return state['calls']\n\n    label = 'plain'\n";
+const HANDLER_CODE: &CStr = c"state = {'calls': 0}\n\nclass Handler:\n    def __init__(self, base):\n        self.base = base\n\n    def add(self, value):\n        return self.base + value\n\n    async def add_async(self, value):\n        return self.base + value\n\n    def touch(self):\n        state['calls'] += 1\n        return state['calls']\n\n    label = 'plain'\n\ndef recorded():\n    return state['calls']\n";
 
 fn start_host() -> PythonHost {
     PythonHost::start(&HostConfig::default()).unwrap()
@@ -22,19 +21,17 @@ fn tracker() -> WorkTracker {
     WorkTracker::new(2, Duration::from_secs(30))
 }
 
-fn handler_module(host: &PythonHost) -> Py<PyAny> {
-    host.attach(|py| {
-        PyModule::from_code(py, HANDLER_CODE, c"b8043_method.py", c"b8043_method")
-            .unwrap()
-            .into_any()
-            .unbind()
-    })
-}
-
-fn handler_hook(host: &PythonHost, module: &Py<PyAny>) -> HookObject {
+fn handler_fixture(host: &PythonHost) -> HookObject {
     let handler = host.attach(|py| {
+        let module =
+            PyModule::from_code(py, HANDLER_CODE, c"b8043_method.py", c"b8043_method").unwrap();
+        py.import("sys")
+            .unwrap()
+            .getattr("modules")
+            .unwrap()
+            .set_item("b8043_method", &module)
+            .unwrap();
         module
-            .bind(py)
             .getattr("Handler")
             .unwrap()
             .call1((10_i64,))
@@ -49,13 +46,11 @@ fn handler_hook(host: &PythonHost, module: &Py<PyAny>) -> HookObject {
     }
 }
 
-fn calls_recorded(host: &PythonHost, module: &Py<PyAny>) -> i64 {
+fn calls_recorded(host: &PythonHost) -> i64 {
     host.attach(|py| {
-        let state = module.bind(py).getattr("state").unwrap();
-        let entries = state.cast_into::<PyDict>().unwrap();
-        entries
-            .get_item("calls")
+        py.import("b8043_method")
             .unwrap()
+            .call_method0("recorded")
             .unwrap()
             .extract::<i64>()
             .unwrap()
@@ -65,8 +60,7 @@ fn calls_recorded(host: &PythonHost, module: &Py<PyAny>) -> i64 {
 #[test]
 fn has_method_finds_a_callable_attribute() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     assert!(hook.has_method(&host, "add"));
     assert!(hook.has_method(&host, "add_async"));
     assert!(!hook.has_method(&host, "missing"));
@@ -76,17 +70,15 @@ fn has_method_finds_a_callable_attribute() {
 #[test]
 fn has_method_does_not_call_the_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     assert!(hook.has_method(&host, "touch"));
-    assert_eq!(calls_recorded(&host, &module), 0);
+    assert_eq!(calls_recorded(&host), 0);
 }
 
 #[test]
 fn method_returns_none_for_a_missing_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     assert!(hook.method(&host, "missing").is_none());
     assert!(hook.method(&host, "label").is_none());
 }
@@ -94,8 +86,7 @@ fn method_returns_none_for_a_missing_method() {
 #[tokio::test]
 async fn method_returns_a_handle_to_the_bound_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     let add = hook.method(&host, "add").unwrap();
     let value = add
         .call(
@@ -113,8 +104,7 @@ async fn method_returns_a_handle_to_the_bound_method() {
 #[tokio::test]
 async fn call_method_calls_a_sync_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     let value = hook
         .call_method(
             &host,
@@ -134,8 +124,7 @@ async fn call_method_calls_a_sync_method() {
 #[tokio::test]
 async fn call_method_awaits_an_async_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     let value = hook
         .call_method(
             &host,
@@ -155,8 +144,7 @@ async fn call_method_awaits_an_async_method() {
 #[tokio::test]
 async fn call_method_passes_keyword_arguments_to_a_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     let value = hook
         .call_method(
             &host,
@@ -176,8 +164,7 @@ async fn call_method_passes_keyword_arguments_to_a_method() {
 #[tokio::test]
 async fn call_method_reports_a_missing_method_as_no_such_method() {
     let host = start_host();
-    let module = handler_module(&host);
-    let hook = handler_hook(&host, &module);
+    let hook = handler_fixture(&host);
     let error = hook
         .call_method(
             &host,
