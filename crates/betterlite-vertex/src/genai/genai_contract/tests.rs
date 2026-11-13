@@ -77,18 +77,24 @@ fn headers(pairs: &[(&str, &str)]) -> ResponseHeaders {
         .collect()
 }
 
-fn decode<T>(value: serde_json::Value) -> T
+fn decode<T>(text: &str) -> T
 where
     T: serde::de::DeserializeOwned,
 {
-    serde_json::from_value(value).expect("the record decodes")
+    serde_json::from_str(text).expect("the record decodes")
 }
 
-fn encode<T>(record: &T) -> serde_json::Value
+// both sides parse into Json, whose object equality ignores key order
+fn encode<T>(record: &T) -> Json
 where
     T: serde::Serialize,
 {
-    serde_json::to_value(record).expect("the record encodes")
+    let text = serde_json::to_string(record).expect("the record encodes");
+    serde_json::from_str(&text).expect("the record is JSON")
+}
+
+fn fixture(text: &str) -> Json {
+    serde_json::from_str(text).expect("the fixture is JSON")
 }
 
 #[test]
@@ -136,16 +142,14 @@ fn the_error_class_synthesizes_the_documented_request_and_response() {
 #[test]
 fn a_new_response_starts_with_empty_hidden_params() {
     assert!(GenerateContentResponse::default().hidden_params.is_empty());
-    let response: GenerateContentResponse = decode(serde_json::json!({"candidates": []}));
+    let response: GenerateContentResponse = decode(r#"{"candidates": []}"#);
     assert!(response.hidden_params.is_empty());
 }
 
 #[test]
 fn hidden_params_given_at_construction_are_kept() {
-    let response: GenerateContentResponse = decode(serde_json::json!({
-        "_hidden_params": {"response_cost": "0.01"},
-        "candidates": []
-    }));
+    let response: GenerateContentResponse =
+        decode(r#"{"_hidden_params": {"response_cost": "0.01"}, "candidates": []}"#);
     assert_eq!(
         response.hidden_params.get("response_cost"),
         Some(&Json::Text(String::from("0.01")))
@@ -155,37 +159,37 @@ fn hidden_params_given_at_construction_are_kept() {
 
 #[test]
 fn hidden_params_stay_off_the_serialized_response() {
-    let mut response: GenerateContentResponse = decode(serde_json::json!({"modelVersion": "v1"}));
+    let mut response: GenerateContentResponse = decode(r#"{"modelVersion": "v1"}"#);
     response.hidden_params.insert(
         String::from("response_cost"),
         Json::Text(String::from("0.01")),
     );
-    assert_eq!(encode(&response), serde_json::json!({"modelVersion": "v1"}));
+    assert_eq!(encode(&response), fixture(r#"{"modelVersion": "v1"}"#));
 }
 
 #[test]
 fn the_response_keeps_every_field_the_reply_carries() {
-    let reply = serde_json::json!({
+    let reply = r#"{
         "candidates": [{"content": {"parts": [{"text": "hi"}]}, "finishReason": "STOP"}],
         "usageMetadata": {"promptTokenCount": 3, "totalTokenCount": 5},
         "modelVersion": "gemini-2.5-flash",
         "vendorExtension": {"kept": true}
-    });
-    let response: GenerateContentResponse = decode(reply.clone());
+    }"#;
+    let response: GenerateContentResponse = decode(reply);
     assert!(response.wire.contains_key("vendorExtension"));
-    assert_eq!(encode(&response), reply);
+    assert_eq!(encode(&response), fixture(reply));
 }
 
 #[test]
 fn the_request_dict_keeps_the_declared_fields_and_the_unknown_ones() {
-    let body = serde_json::json!({
+    let body = r#"{
         "model": "gemini-2.5-flash",
         "contents": [{"role": "user", "parts": [{"text": "hi"}]}],
         "tools": null,
         "generationConfig": {"temperature": 0},
         "systemInstruction": {"parts": [{"text": "behave"}]}
-    });
-    let request: GenerateContentRequestDict = decode(body.clone());
+    }"#;
+    let request: GenerateContentRequestDict = decode(body);
     assert_eq!(request.model, "gemini-2.5-flash");
     assert_eq!(request.tools, Field::Null);
     assert_eq!(
@@ -196,38 +200,37 @@ fn the_request_dict_keeps_the_declared_fields_and_the_unknown_ones() {
         Some(&Json::Number(Number::from(0)))
     );
     assert!(request.extra.contains_key("systemInstruction"));
-    assert_eq!(encode(&request), body);
+    assert_eq!(encode(&request), fixture(body));
 }
 
 #[test]
 fn the_request_dict_omits_absent_optional_fields() {
-    let body = serde_json::json!({"model": "m", "contents": []});
-    let request: GenerateContentRequestDict = decode(body.clone());
+    let body = r#"{"model": "m", "contents": []}"#;
+    let request: GenerateContentRequestDict = decode(body);
     assert!(request.tools.is_missing());
     assert!(request.generation_config.is_missing());
     assert!(request.extra.is_empty());
-    assert_eq!(encode(&request), body);
+    assert_eq!(encode(&request), fixture(body));
 }
 
 #[test]
 fn the_config_dict_keeps_every_key_as_sent() {
-    let body = serde_json::json!({
+    let body = r#"{
         "temperature": 0,
         "stopSequences": [],
         "responseMimeType": "",
         "unknownKey": {"nested": null}
-    });
-    let config: GenerateContentConfigDict = decode(body.clone());
+    }"#;
+    let config: GenerateContentConfigDict = decode(body);
     assert_eq!(config.len(), 4);
-    assert_eq!(encode(&config), body);
+    assert_eq!(encode(&config), fixture(body));
 }
 
 #[test]
 fn the_content_list_and_tool_config_carry_any_declared_json() {
-    let contents: ContentListUnion =
-        decode(serde_json::json!(["hello", {"role": "user", "parts": []}]));
+    let contents: ContentListUnion = decode(r#"["hello", {"role": "user", "parts": []}]"#);
     assert!(matches!(contents, Json::List(_)));
-    let tools: ToolConfigDict = decode(serde_json::json!([{"functionDeclarations": []}]));
+    let tools: ToolConfigDict = decode(r#"[{"functionDeclarations": []}]"#);
     assert!(matches!(tools, Json::List(_)));
 }
 
@@ -251,13 +254,13 @@ fn the_contract_dispatches_every_method_to_the_implementation() {
         Fixture.supported_optional_params("gemini-2.5-flash"),
         vec![String::from("gemini-2.5-flash")]
     );
-    let config: GenerateContentConfigDict = decode(serde_json::json!({"temperature": 0}));
+    let config: GenerateContentConfigDict = decode(r#"{"temperature": 0}"#);
     assert_eq!(
         Fixture.map_optional_params(&config, "m").get("model"),
         Some(&Json::Text(String::from("m")))
     );
-    let contents: ContentListUnion = decode(serde_json::json!([{"role": "user"}]));
-    let tools: ToolConfigDict = decode(serde_json::json!([]));
+    let contents: ContentListUnion = decode(r#"[{"role": "user"}]"#);
+    let tools: ToolConfigDict = decode("[]");
     let request = GenerateContentRequest {
         model: "m",
         contents: &contents,
