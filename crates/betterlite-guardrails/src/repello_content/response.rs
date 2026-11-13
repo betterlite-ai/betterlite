@@ -20,7 +20,7 @@ fn response_array<'response>(
     }
 }
 
-fn joined(parts: Vec<&str>, separator: &str) -> Option<String> {
+fn joined(parts: &[&str], separator: &str) -> Option<String> {
     if parts.is_empty() {
         None
     } else {
@@ -29,16 +29,16 @@ fn joined(parts: Vec<&str>, separator: &str) -> Option<String> {
 }
 
 #[must_use]
-pub fn extract_response_text(response: ResponseSource<'_>) -> Option<String> {
+pub fn extract_response_text(response: &ResponseSource<'_>) -> Option<String> {
     match response {
         ResponseSource::Body(body) => {
-            chat_completion_text(body).or_else(|| responses_api_text(body))
+            chat_completion_text(*body).or_else(|| responses_api_text(*body))
         }
         ResponseSource::OutputText(text) => {
             if text.is_empty() {
                 None
             } else {
-                Some(text.to_owned())
+                Some(String::from(*text))
             }
         }
     }
@@ -61,7 +61,7 @@ pub fn chat_completion_text(response: &BTreeMap<String, GuardrailValue>) -> Opti
             parts.push(text);
         }
     }
-    joined(parts, "\n")
+    joined(&parts, "\n")
 }
 
 fn function_call_arguments(item: &BTreeMap<String, GuardrailValue>) -> Option<&str> {
@@ -111,5 +111,5 @@ fn output_item_text(item: &GuardrailValue) -> Vec<&str> {
 pub fn responses_api_text(response: &BTreeMap<String, GuardrailValue>) -> Option<String> {
     let output = response_array(response, "output")?;
     let texts: Vec<&str> = output.iter().flat_map(output_item_text).collect();
-    joined(texts, "")
+    joined(&texts, "")
 }

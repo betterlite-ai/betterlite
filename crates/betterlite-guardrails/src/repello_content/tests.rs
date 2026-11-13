@@ -595,7 +595,7 @@ fn responses_api_text_returns_none_without_output(#[case] source: &str) {
 #[test]
 fn response_text_prefers_chat_completion_over_responses_output() {
     assert_eq!(
-        extract_response_text(ResponseSource::Body(&data(
+        extract_response_text(&ResponseSource::Body(&data(
             r#"{"choices":[{"message":{"content":"chat"}}],"output":[{"type":"message","content":[{"type":"output_text","text":"api"}]}]}"#
         ))),
         Some("chat".to_owned())
@@ -605,7 +605,7 @@ fn response_text_prefers_chat_completion_over_responses_output() {
 #[test]
 fn response_text_falls_back_to_responses_output() {
     assert_eq!(
-        extract_response_text(ResponseSource::Body(&data(
+        extract_response_text(&ResponseSource::Body(&data(
             r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"api"}]}]}"#
         ))),
         Some("api".to_owned())
@@ -615,7 +615,7 @@ fn response_text_falls_back_to_responses_output() {
 #[test]
 fn response_text_returns_none_for_a_body_without_text() {
     assert_eq!(
-        extract_response_text(ResponseSource::Body(&data(r#"{"id":"x"}"#))),
+        extract_response_text(&ResponseSource::Body(&data(r#"{"id":"x"}"#))),
         None
     );
 }
@@ -623,20 +623,20 @@ fn response_text_returns_none_for_a_body_without_text() {
 #[test]
 fn response_text_reads_output_text_from_a_typed_response() {
     assert_eq!(
-        extract_response_text(ResponseSource::OutputText("typed")),
+        extract_response_text(&ResponseSource::OutputText("typed")),
         Some("typed".to_owned())
     );
 }
 
 #[test]
 fn response_text_ignores_an_empty_output_text() {
-    assert_eq!(extract_response_text(ResponseSource::OutputText("")), None);
+    assert_eq!(extract_response_text(&ResponseSource::OutputText("")), None);
 }
 
 #[test]
 fn response_text_does_not_read_an_output_text_key_from_a_body() {
     assert_eq!(
-        extract_response_text(ResponseSource::Body(&data(r#"{"output_text":"typed"}"#))),
+        extract_response_text(&ResponseSource::Body(&data(r#"{"output_text":"typed"}"#))),
         None
     );
 }
