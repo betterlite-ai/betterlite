@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-batch-rows-encoded-hash-suffix
+call:
+  vertex_batch_rows:
+    operation: split
+    rows:
+      - {key: "req%23one#1/2"}
+      - {key: "req%23one#0/2"}
+      - {key: "a#1/2#3"}
+      - {key: "a#x/2"}
+      - {key: "%C3%A9#0/1"}
+      - {key: plain}
+      - {key: ""}
+      - request: {labels: {litellm_custom_id_raw: b32_jbswy3dp}}
+env: {}
+compare: {ignore: []}
