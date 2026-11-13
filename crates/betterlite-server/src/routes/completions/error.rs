@@ -48,7 +48,7 @@ impl FailureAnswer {
     }
 }
 
-fn failure_answer(error: DispatchError) -> FailureAnswer {
+pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
     match error {
         DispatchError::Rejected {
             status,
@@ -83,15 +83,6 @@ fn failure_answer(error: DispatchError) -> FailureAnswer {
             FailureAnswer::internal("the completion call could not be dispatched")
         }
     }
-}
-
-pub(super) fn dispatch_failure(
-    error: DispatchError,
-    deployment: Option<&ChatDeployment>,
-    call_id: &str,
-    upstream: Option<&HeaderMap>,
-) -> Response {
-    render(&failure_answer(error), upstream, call_id, deployment)
 }
 
 pub(super) fn render(

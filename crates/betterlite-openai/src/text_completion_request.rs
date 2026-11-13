@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
-use serde::de::{Deserialize, Deserializer};
-use serde::ser::{Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use serde_with::skip_serializing_none;
 use thiserror::Error;
@@ -49,7 +48,8 @@ pub enum CompletionRequestError {
 }
 
 // OpenAI's completion prompt: one string, a list of strings, token ids, or one token list per prompt
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(from = "Value", into = "Value")]
 pub enum CompletionPrompt {
     Text(String),
     Texts(Vec<String>),
@@ -57,10 +57,6 @@ pub enum CompletionPrompt {
     TokenLists(Vec<Vec<i64>>),
     // a shape the declared prompt union reaches but main.py's dispatch refuses
     Unmapped(Value),
-}
-
-fn integers(items: &[Value]) -> Option<Vec<i64>> {
-    items.iter().map(Value::as_i64).collect()
 }
 
 // main.py 7623-7692 checks the first element only, so an empty or mixed list is the Unmapped shape
@@ -79,15 +75,22 @@ fn classify(items: Vec<Value>) -> CompletionPrompt {
             );
     }
     if first.is_number() {
-        return integers(&items).map_or_else(
-            || CompletionPrompt::Unmapped(Value::Array(items)),
-            CompletionPrompt::Tokens,
-        );
+        return items
+            .iter()
+            .map(Value::as_i64)
+            .collect::<Option<Vec<i64>>>()
+            .map_or_else(
+                || CompletionPrompt::Unmapped(Value::Array(items)),
+                CompletionPrompt::Tokens,
+            );
     }
     if first.is_array() {
         return items
             .iter()
-            .map(|item| item.as_array().and_then(|inner| integers(inner)))
+            .map(|item| {
+                item.as_array()
+                    .and_then(|inner| inner.iter().map(Value::as_i64).collect())
+            })
             .collect::<Option<Vec<Vec<i64>>>>()
             .map_or_else(
                 || CompletionPrompt::Unmapped(Value::Array(items)),
@@ -109,34 +112,29 @@ impl CompletionPrompt {
                     .collect()
             });
         }
-        (!matches!(self, Self::Unmapped(_))).then(|| vec![user_message(self.to_value())])
+        (!matches!(self, Self::Unmapped(_))).then(|| vec![user_message(Value::from(self.clone()))])
     }
+}
 
-    #[must_use]
-    pub fn to_value(&self) -> Value {
-        match self {
-            Self::Text(text) => Value::String(text.clone()),
-            Self::Texts(texts) => Value::from(texts.clone()),
-            Self::Tokens(tokens) => Value::from(tokens.clone()),
-            Self::TokenLists(lists) => Value::from(lists.clone()),
-            Self::Unmapped(value) => value.clone(),
+impl From<Value> for CompletionPrompt {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::String(text) => Self::Text(text),
+            Value::Array(items) => classify(items),
+            other => Self::Unmapped(other),
         }
     }
 }
 
-impl Serialize for CompletionPrompt {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_value().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for CompletionPrompt {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(match Value::deserialize(deserializer)? {
-            Value::String(text) => Self::Text(text),
-            Value::Array(items) => classify(items),
-            other => Self::Unmapped(other),
-        })
+impl From<CompletionPrompt> for Value {
+    fn from(prompt: CompletionPrompt) -> Self {
+        match prompt {
+            CompletionPrompt::Text(text) => Self::String(text),
+            CompletionPrompt::Texts(texts) => Self::from(texts),
+            CompletionPrompt::Tokens(tokens) => Self::from(tokens),
+            CompletionPrompt::TokenLists(lists) => Self::from(lists),
+            CompletionPrompt::Unmapped(value) => value,
+        }
     }
 }
 

@@ -5,8 +5,7 @@ use crate::text_completion_transport::logging::{
     CompletionLogger, PostCallRecord, PreCallRecord, StreamDefaults,
 };
 
-// The route's logging port. The gateway's LoggingState pipeline (B188) replaces it once a text call owns one;
-// until then the record goes out with counts and no message text, so no prompt reaches a log.
+// Records counts and no message text, so no prompt reaches a log; B188's LoggingState replaces it later
 pub struct TracingCompletionLog;
 
 impl CompletionLogger for TracingCompletionLog {

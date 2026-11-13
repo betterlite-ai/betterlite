@@ -31,7 +31,7 @@ use crate::state::ServerState;
 use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::success_headers;
 
-use self::error::{FailureAnswer, dispatch_failure, render};
+use self::error::{FailureAnswer, failure_answer, render};
 
 mod error;
 mod tests;
@@ -144,7 +144,7 @@ async fn completions(
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&state.state.executor, &model) else {
         let missing = DispatchError::MissingDeployment { model_id: model };
-        return dispatch_failure(missing, None, &call_id, None);
+        return render(&failure_answer(missing), None, &call_id, None);
     };
     execute(&state, request, deployment, &call_id, started).await
 }
@@ -178,14 +178,19 @@ async fn execute(
             let unbuilt = DispatchError::NotBuilt {
                 entry: "text_stream",
             };
-            dispatch_failure(unbuilt, Some(deployment), call_id, None)
+            render(&failure_answer(unbuilt), None, call_id, Some(deployment))
         }
         Err(error) => {
             let upstream = last_upstream
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone();
-            dispatch_failure(error, Some(deployment), call_id, upstream.as_ref())
+            render(
+                &failure_answer(error),
+                upstream.as_ref(),
+                call_id,
+                Some(deployment),
+            )
         }
     }
 }

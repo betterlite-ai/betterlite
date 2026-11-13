@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-// The public text completion body: B2238's normalization forces object and defaults usage and every choice field.
-// `extra` keeps whatever fields the provider sent beyond the declared ones, the way OpenAIObject dumps them.
+// B2238's normalization forces object and defaults usage and every choice field; extra keeps the provider's other fields
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct CompletionResponse {
     #[serde(default)]

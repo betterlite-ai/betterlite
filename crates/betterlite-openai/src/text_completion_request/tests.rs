@@ -53,7 +53,7 @@ fn a_missing_prompt_is_a_body_error() {
 fn token_prompts_serialize_ids_as_numbers_in_their_nested_shape() {
     let request = parsed(r#"{"model":"m","prompt":[[1,2],[3]]}"#);
     assert_eq!(
-        request.prompt.to_value(),
+        Value::from(request.prompt.clone()),
         serde_json::from_str::<Value>("[[1,2],[3]]").expect("token lists")
     );
     assert_eq!(
@@ -71,22 +71,19 @@ fn the_model_is_optional_and_kept_apart_from_the_provider_params() {
     assert!(!params.contains_key("prompt"));
 }
 
-#[test]
-fn controls_never_reach_the_provider_params() {
+#[rstest]
+#[case::api_base("api_base")]
+#[case::api_key("api_key")]
+#[case::metadata("metadata")]
+#[case::mock_response("mock_response")]
+#[case::num_retries("num_retries")]
+#[case::timeout("timeout")]
+fn controls_never_reach_the_provider_params(#[case] control: &str) {
     let request = parsed(
         r#"{"model":"m","prompt":"x","api_base":"http://evil","api_key":"sk-1","metadata":{"a":1},"mock_response":"hi","num_retries":2,"timeout":1,"max_retries":4}"#,
     );
     let params = request.optional_params().expect("optional params");
-    for control in [
-        "api_base",
-        "api_key",
-        "metadata",
-        "mock_response",
-        "num_retries",
-        "timeout",
-    ] {
-        assert!(!params.contains_key(control), "{control} leaked");
-    }
+    assert!(!params.contains_key(control), "{control} leaked");
     assert_eq!(params.get("max_retries"), Some(&Value::from(4)));
 }
 
