@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-part-image-no-source
+call: {"messages_content_primitives": {"operation": "tool_result_part", "item": {"type": "image"}}}
+env: {}
+compare: {ignore: []}
