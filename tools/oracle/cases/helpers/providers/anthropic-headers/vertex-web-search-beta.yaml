@@ -1,0 +1,52 @@
+kind: helper
+name: vertex-web-search-beta
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: [custom-beta]
+        features: [file_id]
+        computer_tool_used: computer_20250124
+        is_vertex_request: true
+        web_search_tool_used: true
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: [file_id]
+        computer_tool_used: computer_20250124
+        is_vertex_request: true
+        web_search_tool_used: false
+      - function: headers
+        api_key: null
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: true
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params:
+          is_vertex_request: true
+          tools: [{type: web_search_20250305}]
+        effort_used: false
+env: {}
+compare: {ignore: []}
