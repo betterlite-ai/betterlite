@@ -1,7 +1,7 @@
 id: B1310
 milestone: M3 providers
 title: Gemini option assembly and sampling defaults
-status: todo
+status: done
 depends_on: [B1301, B1305, B1308, B1309, B193, B171]
 file: tasks/B1310-gemini-options.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1556
