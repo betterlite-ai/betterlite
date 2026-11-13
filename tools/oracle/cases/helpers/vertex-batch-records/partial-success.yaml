@@ -5,17 +5,17 @@ call:
     operation: job
     zone: UTC
     calls:
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/1", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_UNSPECIFIED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/2", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_QUEUED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/3", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PENDING}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/4", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_RUNNING}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/5", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/6", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_FAILED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/7", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_CANCELLING}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/8", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_CANCELLED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/9", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PAUSED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/10", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_EXPIRED}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/11", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_UPDATING}
-      - response: {name: "projects/p/locations/l/batchPredictionJobs/12", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PARTIALLY_SUCCEEDED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/1", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_UNSPECIFIED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/2", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_QUEUED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/3", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PENDING}
+      - {name: "projects/p/locations/l/batchPredictionJobs/4", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_RUNNING}
+      - {name: "projects/p/locations/l/batchPredictionJobs/5", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_SUCCEEDED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/6", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_FAILED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/7", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_CANCELLING}
+      - {name: "projects/p/locations/l/batchPredictionJobs/8", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_CANCELLED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/9", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PAUSED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/10", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_EXPIRED}
+      - {name: "projects/p/locations/l/batchPredictionJobs/11", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_UPDATING}
+      - {name: "projects/p/locations/l/batchPredictionJobs/12", createTime: "2024-01-01T00:00:00.000000Z", state: JOB_STATE_PARTIALLY_SUCCEEDED}
 env: {TZ: UTC}
 compare: {ignore: []}

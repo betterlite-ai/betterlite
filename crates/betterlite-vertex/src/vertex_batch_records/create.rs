@@ -7,10 +7,6 @@ use crate::vertex_batch_records::types::{
     GcsDestination, GcsSource, InputConfig, OutputConfig, VertexAIBatchPredictionJob,
 };
 
-const INSTANCES_FORMAT: &str = "jsonl";
-const PREDICTIONS_FORMAT: &str = "jsonl";
-const DISPLAY_NAME_PREFIX: &str = "litellm-vertex-batch-";
-
 pub fn to_batch_job(
     request: &CreateBatchRequest,
     project: Option<&str>,
@@ -22,28 +18,23 @@ pub fn to_batch_job(
         .as_deref()
         .ok_or(BatchRecordsError::InputFileIdRequired)?;
     let model = batch_job_model(input_file_id, project, location)?;
+    let (prefix, _file) = input_file_id
+        .rsplit_once('/')
+        .unwrap_or((input_file_id, ""));
     Ok(VertexAIBatchPredictionJob {
-        display_name: format!("{DISPLAY_NAME_PREFIX}{display_id}"),
+        display_name: format!("litellm-vertex-batch-{display_id}"),
         model,
         input_config: InputConfig {
-            instances_format: INSTANCES_FORMAT.to_owned(),
+            instances_format: "jsonl".to_owned(),
             gcs_source: GcsSource {
                 uris: vec![input_file_id.to_owned()],
             },
         },
         output_config: OutputConfig {
-            predictions_format: PREDICTIONS_FORMAT.to_owned(),
+            predictions_format: "jsonl".to_owned(),
             gcs_destination: GcsDestination {
-                output_uri_prefix: output_prefix(input_file_id),
+                output_uri_prefix: prefix.to_owned(),
             },
         },
     })
-}
-
-// LiteLLM cuts the input uri at its last slash, so an id without one is its own output prefix
-fn output_prefix(input_file_id: &str) -> String {
-    let Some((prefix, _file)) = input_file_id.rsplit_once('/') else {
-        return input_file_id.to_owned();
-    };
-    prefix.to_owned()
 }

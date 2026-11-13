@@ -1,14 +1,11 @@
-use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
+use betterlite_openai::batches::records::{BatchObject, BatchObjectKind};
 use serde::Serialize;
 
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 use crate::vertex_batch_records::error::BatchRecordsError;
 use crate::vertex_batch_records::types::{
-    VertexBatchJobPage, VertexBatchPredictionResponse, VertexJobState,
+    VertexBatchJobPage, VertexBatchPredictionResponse, job_status,
 };
-
-const COMPLETION_WINDOW: &str = "24h";
-const PREDICTIONS_FILE: &str = "predictions.jsonl";
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum BatchListObject {
@@ -39,14 +36,20 @@ pub fn to_batch_object(
         local,
     )
     .map_err(BatchRecordsError::CreateTime)?;
+    let name = response.name.as_deref().unwrap_or_default();
+    let id = if name.is_empty() {
+        String::new()
+    } else {
+        name.rsplit('/').next().unwrap_or_default().to_owned()
+    };
     Ok(BatchObject {
-        id: batch_id(response),
-        completion_window: COMPLETION_WINDOW.to_owned(),
+        id,
+        completion_window: "24h".to_owned(),
         created_at,
         endpoint: String::new(),
-        input_file_id: input_file_id(response),
+        input_file_id: first_input_uri(response),
         object: BatchObjectKind::Batch,
-        status: batch_status(response.state.as_ref())?,
+        status: job_status(response.state.as_ref())?,
         cancelled_at: None,
         cancelling_at: None,
         completed_at: None,
@@ -59,12 +62,33 @@ pub fn to_batch_object(
         in_progress_at: None,
         metadata: None,
         model: None,
-        output_file_id: output_file_id(response),
+        output_file_id: output_file(response),
         request_counts: None,
         usage: None,
         // a projection has no passthrough fields, and serde_json's map is a disallowed type to name
         provider_fields: <_>::default(),
     })
+}
+
+fn first_input_uri(response: &VertexBatchPredictionResponse) -> String {
+    response
+        .input_config
+        .as_ref()
+        .and_then(|config| config.gcs_source.as_ref())
+        .and_then(|source| source.uris.first())
+        .cloned()
+        .unwrap_or_default()
+}
+
+// LiteLLM strips every trailing slash and appends predictions.jsonl only to a nonempty directory
+fn output_file(response: &VertexBatchPredictionResponse) -> Option<String> {
+    let directory = response
+        .output_info
+        .as_ref()
+        .and_then(|info| info.gcs_output_directory.as_deref())
+        .unwrap_or_default()
+        .trim_end_matches('/');
+    (!directory.is_empty()).then(|| format!("{directory}/predictions.jsonl"))
 }
 
 pub fn to_batch_list(
@@ -77,55 +101,12 @@ pub fn to_batch_list(
         data.push(to_batch_object(job, local)?);
     }
     let token = page.next_page_token.clone();
-    let has_more = token.as_deref().is_some_and(|value| !value.is_empty());
     Ok(BatchList {
         object: BatchListObject::List,
         first_id: data.first().map(|batch| batch.id.clone()),
         last_id: data.last().map(|batch| batch.id.clone()),
         data,
-        has_more,
+        has_more: token.as_deref().is_some_and(|value| !value.is_empty()),
         next_page_token: token,
     })
-}
-
-// Vertex reports the job's resource name; the last path segment is the id OpenAI clients see
-fn batch_id(response: &VertexBatchPredictionResponse) -> String {
-    let name = response.name.as_deref().unwrap_or_default();
-    if name.is_empty() {
-        return String::new();
-    }
-    name.rsplit('/').next().unwrap_or_default().to_owned()
-}
-
-fn input_file_id(response: &VertexBatchPredictionResponse) -> String {
-    let Some(config) = response.input_config.as_ref() else {
-        return String::new();
-    };
-    let Some(source) = config.gcs_source.as_ref() else {
-        return String::new();
-    };
-    source.uris.first().cloned().unwrap_or_default()
-}
-
-fn output_file_id(response: &VertexBatchPredictionResponse) -> Option<String> {
-    let directory = response
-        .output_info
-        .as_ref()
-        .and_then(|info| info.gcs_output_directory.as_deref())
-        .unwrap_or_default()
-        .trim_end_matches('/');
-    if directory.is_empty() {
-        return None;
-    }
-    Some(format!("{directory}/{PREDICTIONS_FILE}"))
-}
-
-const fn batch_status(
-    state: Option<&Option<VertexJobState>>,
-) -> Result<BatchStatus, BatchRecordsError> {
-    match state {
-        None => Ok(VertexJobState::Unspecified.batch_status()),
-        Some(None) => Err(BatchRecordsError::NullJobState),
-        Some(Some(job_state)) => Ok(job_state.batch_status()),
-    }
 }

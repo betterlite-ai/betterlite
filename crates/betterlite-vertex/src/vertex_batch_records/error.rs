@@ -9,18 +9,18 @@ use crate::provider_metadata::timestamp::VertexTimestampError;
 pub enum BatchRecordsError {
     #[error("input_file_id is required, but not provided")]
     InputFileIdRequired,
-    #[error("the Vertex batch input file id is not valid UTF-8")]
+    #[error("the Vertex batch identifier is not valid UTF-8")]
     IdentifierUtf8(#[source] Utf8Error),
     #[error(
-        "the Vertex batch input file id '{identifier}' contains no 'publishers/<publisher>/models/<model>' or 'endpoints/<numeric endpoint id>' path segment"
+        "the Vertex batch identifier '{identifier}' names no publishers/<publisher>/models/<model> or endpoints/<numeric id> path"
     )]
     ModelMissing { identifier: String },
-    #[error(
-        "Vertex AI batch jobs against a fine-tuned endpoint ('{model}') require vertex_project to build the endpoint resource name"
-    )]
+    #[error("a fine-tuned endpoint ('{model}') needs vertex_project to build its resource name")]
     ProjectRequired { model: String },
     #[error("the Vertex batch job state is null")]
     NullJobState,
+    #[error("the Vertex batch job state '{state}' is not a Vertex AI job state")]
+    UnknownJobState { state: String },
     #[error("the Vertex batch job createTime is invalid")]
     CreateTime(#[source] VertexTimestampError),
     #[error("the Vertex batch job response is not valid JSON")]
@@ -38,6 +38,7 @@ impl BatchRecordsError {
             Self::InputFileIdRequired
             | Self::IdentifierUtf8(_)
             | Self::NullJobState
+            | Self::UnknownJobState { .. }
             | Self::CreateTime(_)
             | Self::Decode(_)
             | Self::Usage(_) => None,

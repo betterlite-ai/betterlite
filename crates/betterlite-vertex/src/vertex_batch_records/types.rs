@@ -1,6 +1,8 @@
 use betterlite_openai::batches::records::BatchStatus;
 use serde::{Deserialize, Serialize};
 
+use crate::vertex_batch_records::error::BatchRecordsError;
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct GcsSource {
@@ -27,7 +29,7 @@ pub struct OutputConfig {
     pub gcs_destination: GcsDestination,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct OutputInfo {
     pub gcs_output_directory: Option<String>,
@@ -42,51 +44,6 @@ pub struct VertexAIBatchPredictionJob {
     pub output_config: OutputConfig,
 }
 
-// Vertex names twelve job states; the mapping below is LiteLLM's, so an unknown spelling is a decode error
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub enum VertexJobState {
-    #[serde(rename = "JOB_STATE_UNSPECIFIED")]
-    Unspecified,
-    #[serde(rename = "JOB_STATE_QUEUED")]
-    Queued,
-    #[serde(rename = "JOB_STATE_PENDING")]
-    Pending,
-    #[serde(rename = "JOB_STATE_RUNNING")]
-    Running,
-    #[serde(rename = "JOB_STATE_SUCCEEDED")]
-    Succeeded,
-    #[serde(rename = "JOB_STATE_FAILED")]
-    Failed,
-    #[serde(rename = "JOB_STATE_CANCELLING")]
-    Cancelling,
-    #[serde(rename = "JOB_STATE_CANCELLED")]
-    Cancelled,
-    #[serde(rename = "JOB_STATE_PAUSED")]
-    Paused,
-    #[serde(rename = "JOB_STATE_EXPIRED")]
-    Expired,
-    #[serde(rename = "JOB_STATE_UPDATING")]
-    Updating,
-    #[serde(rename = "JOB_STATE_PARTIALLY_SUCCEEDED")]
-    PartiallySucceeded,
-}
-
-impl VertexJobState {
-    #[must_use]
-    pub const fn batch_status(self) -> BatchStatus {
-        match self {
-            Self::Unspecified | Self::Failed => BatchStatus::Failed,
-            Self::Queued | Self::Pending => BatchStatus::Validating,
-            Self::Running | Self::Paused | Self::Updating => BatchStatus::InProgress,
-            Self::Succeeded | Self::PartiallySucceeded => BatchStatus::Completed,
-            Self::Cancelling => BatchStatus::Cancelling,
-            Self::Cancelled => BatchStatus::Cancelled,
-            Self::Expired => BatchStatus::Expired,
-        }
-    }
-}
-
-// LiteLLM reads only gcsSource from a job's inputConfig, and a partial config leaves the file id empty
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct BatchJobInputConfig {
@@ -101,7 +58,7 @@ pub struct VertexBatchPredictionResponse {
     pub output_info: Option<OutputInfo>,
     // absent takes Vertex's default state, while an explicit null is the KeyError LiteLLM raises
     #[serde(with = "serde_with::rust::double_option")]
-    pub state: Option<Option<VertexJobState>>,
+    pub state: Option<Option<String>>,
     pub create_time: Option<String>,
 }
 
@@ -110,4 +67,27 @@ pub struct VertexBatchPredictionResponse {
 pub struct VertexBatchJobPage {
     pub batch_prediction_jobs: Option<Vec<VertexBatchPredictionResponse>>,
     pub next_page_token: Option<String>,
+}
+
+// Vertex names twelve job states; LiteLLM's map fails on any other spelling
+pub fn job_status(state: Option<&Option<String>>) -> Result<BatchStatus, BatchRecordsError> {
+    let name = match state {
+        None => "JOB_STATE_UNSPECIFIED",
+        Some(None) => return Err(BatchRecordsError::NullJobState),
+        Some(Some(value)) => value.as_str(),
+    };
+    match name {
+        "JOB_STATE_UNSPECIFIED" | "JOB_STATE_FAILED" => Ok(BatchStatus::Failed),
+        "JOB_STATE_QUEUED" | "JOB_STATE_PENDING" => Ok(BatchStatus::Validating),
+        "JOB_STATE_RUNNING" | "JOB_STATE_PAUSED" | "JOB_STATE_UPDATING" => {
+            Ok(BatchStatus::InProgress)
+        }
+        "JOB_STATE_SUCCEEDED" | "JOB_STATE_PARTIALLY_SUCCEEDED" => Ok(BatchStatus::Completed),
+        "JOB_STATE_CANCELLING" => Ok(BatchStatus::Cancelling),
+        "JOB_STATE_CANCELLED" => Ok(BatchStatus::Cancelled),
+        "JOB_STATE_EXPIRED" => Ok(BatchStatus::Expired),
+        other => Err(BatchRecordsError::UnknownJobState {
+            state: other.to_owned(),
+        }),
+    }
 }

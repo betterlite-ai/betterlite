@@ -1,6 +1,5 @@
-import os
 from decimal import Decimal
-from typing import Literal, TypeAlias, TypedDict, cast
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.llms.vertex_ai.batches.transformation import (
@@ -24,21 +23,12 @@ litellm.suppress_debug_info = True
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
-MONEY_SCALE: str = "f"
 
 
 class CreateCall(TypedDict):
     data: CreateBatchRequest
     vertex_project: str | None
     vertex_location: str | None
-
-
-class JobCall(TypedDict):
-    response: VertexBatchPredictionResponse
-
-
-class ListCall(TypedDict):
-    page: Object
 
 
 class RowCall(TypedDict):
@@ -48,29 +38,10 @@ class RowCall(TypedDict):
     pricing: Literal["fixed", "requires_info", "failure"]
 
 
-class CreateInput(TypedDict):
-    operation: Literal["create"]
-    calls: list[CreateCall]
-
-
-class JobInput(TypedDict):
-    operation: Literal["job"]
-    zone: str
-    calls: list[JobCall]
-
-
-class ListInput(TypedDict):
-    operation: Literal["list"]
-    zone: str
-    calls: list[ListCall]
-
-
-class RowInput(TypedDict):
-    operation: Literal["row"]
-    calls: list[RowCall]
-
-
-Input: TypeAlias = CreateInput | JobInput | ListInput | RowInput
+class Input(TypedDict):
+    operation: Literal["create", "job", "list", "row"]
+    zone: NotRequired[str]
+    calls: list[Json]
 
 
 class ListPage(TypedDict):
@@ -80,10 +51,6 @@ class ListPage(TypedDict):
     last_id: str | None
     has_more: bool
     next_page_token: str | None
-
-
-class PricingFailureError(Exception):
-    pass
 
 
 class FixturePricing:
@@ -98,12 +65,9 @@ class FixturePricing:
         model_info: ModelInfo | None = None,
     ) -> tuple[float, float]:
         del usage, model
-        if custom_llm_provider != "vertex_ai":
-            raise PricingFailureError(custom_llm_provider)
-        if self.pricing == "failure":
-            raise PricingFailureError("pricing")
-        if self.pricing == "requires_info" and model_info is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L426
-            raise PricingFailureError("model_info")
+        missing = self.pricing == "requires_info" and model_info is None  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L426
+        if missing or self.pricing == "failure" or custom_llm_provider != "vertex_ai":
+            raise ValueError(custom_llm_provider)
         return (0.25, 0.5)
 
 
@@ -111,16 +75,6 @@ def calculated_usage(body: GenerateContentResponseBody) -> Usage:
     return VertexGeminiConfig._calculate_usage(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1742
         body,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L471
     )
-
-
-def money(value: float) -> str:
-    exact = Decimal(repr(float(value))).normalize()
-    return format(exact, MONEY_SCALE)
-
-
-def local_zone(zone: str) -> None:
-    if os.environ.get("TZ") != zone:
-        raise ValueError(f"the case TZ must match the zone {zone}")
 
 
 def job_state(batch: LiteLLMBatch) -> Json:
@@ -138,40 +92,6 @@ def job_state(batch: LiteLLMBatch) -> Json:
     return state
 
 
-def usage_state(usage: Usage) -> Json:
-    prompt = usage.prompt_tokens_details
-    completion = usage.completion_tokens_details
-    prompt_state: Json = None
-    if prompt is not None:
-        prompt_state = {
-            "text_tokens": prompt.text_tokens,
-            "audio_tokens": prompt.audio_tokens,
-            "image_tokens": prompt.image_tokens,
-            "video_tokens": prompt.video_tokens,
-            "cached_tokens": prompt.cached_tokens,
-            "tool_use_tokens": prompt.tool_use_tokens,
-            "web_search_requests": prompt.web_search_requests,
-            "google_maps_grounding_requests": prompt.google_maps_grounding_requests,
-        }
-    completion_state: Json = None
-    if completion is not None:
-        completion_state = {
-            "text_tokens": completion.text_tokens,
-            "audio_tokens": completion.audio_tokens,
-            "image_tokens": completion.image_tokens,
-            "video_tokens": completion.video_tokens,
-            "reasoning_tokens": completion.reasoning_tokens,
-        }
-    state: Json = {
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-        "prompt_tokens_details": prompt_state,
-        "completion_tokens_details": completion_state,
-    }
-    return state
-
-
 def create_outcome(call: CreateCall) -> Json:
     try:
         job = BatchTransform.transform_openai_batch_request_to_vertex_ai_batch_request(
@@ -183,17 +103,14 @@ def create_outcome(call: CreateCall) -> Json:
         return {"ok": False, "status": error.status_code}
     except (TypeError, ValueError):
         return {"ok": False, "status": None}
-    return {
-        "ok": True,
-        "job": cast(Json, job),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L694
-    }
+    return {"ok": True, "job": cast(Json, job)}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L694
 
 
-def job_outcome(call: JobCall) -> Json:
+def job_outcome(response: VertexBatchPredictionResponse) -> Json:
     status: Json = None
     try:
         batch = BatchTransform.transform_vertex_ai_batch_response_to_openai_batch_response(
-            call["response"],
+            response,
         )
     except VertexAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L99
         status = error.status_code
@@ -204,10 +121,10 @@ def job_outcome(call: JobCall) -> Json:
     return {"ok": False, "status": status}
 
 
-def list_outcome(call: ListCall) -> Json:
+def list_outcome(response: Object) -> Json:
     try:
         listed = BatchTransform.transform_vertex_ai_batch_list_response_to_openai_list_response(
-            call["page"],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L196
+            response,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L196
         )
     except VertexAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L99
         return {"ok": False, "status": error.status_code}
@@ -240,24 +157,31 @@ def row_outcome(call: RowCall) -> Json:
     if stats is None:
         return {"ok": True, "stats": None}
     state: Json = {
-        "usage": usage_state(stats.usage),
+        "usage": {
+            "prompt_tokens": stats.usage.prompt_tokens,
+            "completion_tokens": stats.usage.completion_tokens,
+            "total_tokens": stats.usage.total_tokens,
+        },
         "total_tokens": stats.total_tokens,
         "model": stats.model,
-        "prompt_cost": money(stats.prompt_cost),
-        "completion_cost": money(stats.completion_cost),
+        "prompt_cost": format(Decimal(repr(float(stats.prompt_cost))).normalize(), "f"),
+        "completion_cost": format(Decimal(repr(float(stats.completion_cost))).normalize(), "f"),
     }
     return {"ok": True, "stats": state}
 
 
 def run(input_value: Input) -> Json:
+    calls = input_value["calls"]
     match input_value["operation"]:
         case "create":
-            return {"calls": [create_outcome(call) for call in input_value["calls"]]}
+            create_calls = cast("list[CreateCall]", calls)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L517
+            return {"calls": [create_outcome(call) for call in create_calls]}
         case "job":
-            local_zone(input_value["zone"])
-            return {"calls": [job_outcome(call) for call in input_value["calls"]]}
+            job_calls = cast("list[VertexBatchPredictionResponse]", calls)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L694
+            return {"calls": [job_outcome(call) for call in job_calls]}
         case "list":
-            local_zone(input_value["zone"])
-            return {"calls": [list_outcome(call) for call in input_value["calls"]]}
+            list_calls = cast("list[Object]", calls)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L196
+            return {"calls": [list_outcome(page) for page in list_calls]}
         case "row":
-            return {"calls": [row_outcome(call) for call in input_value["calls"]]}
+            row_calls = cast("list[RowCall]", calls)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L694
+            return {"calls": [row_outcome(call) for call in row_calls]}

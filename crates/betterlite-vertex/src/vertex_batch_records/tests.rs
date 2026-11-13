@@ -9,6 +9,7 @@ use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_cost::GenericCostResult;
 use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_models::token_rates::ModelInfo;
+use betterlite_models::usage_sum::Usage;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::batches::records::BatchStatus;
 use indexmap::IndexMap;
@@ -22,14 +23,12 @@ use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::vertex_batch_records::create::to_batch_job;
 use crate::vertex_batch_records::error::BatchRecordsError;
 use crate::vertex_batch_records::model::{
-    BatchModelPath, bare_model_name, batch_job_model, decode_vertex_batch_identifier,
-    is_unmanaged_gcs_input,
+    bare_model_name, batch_job_model, decode_vertex_batch_identifier, is_unmanaged_gcs_input,
 };
 use crate::vertex_batch_records::response::{to_batch_list, to_batch_object};
 use crate::vertex_batch_records::rows::{
-    NativeVertexBatchRowStats, RowCostCalculator, RowCostRequest, VERTEX_AI_PROVIDER,
-    embedding_prompt_token_count, is_native_batch_row, native_vertex_batch_row_stats,
-    native_vertex_row_usage,
+    NativeVertexBatchRowStats, RowCostCalculator, VERTEX_AI_PROVIDER, embedding_prompt_token_count,
+    is_native_batch_row, native_vertex_batch_row_stats, native_vertex_row_usage,
 };
 use crate::vertex_batch_records::types::{VertexBatchJobPage, VertexBatchPredictionResponse};
 
@@ -52,6 +51,10 @@ fn generate_row(model_version: &str) -> String {
     format!(
         r#"{{"request":{{"contents":[]}},"response":{{"candidates":[{{"content":{{"parts":[{{"text":"hi"}}]}},"finishReason":"STOP"}}],{USAGE_METADATA},"modelVersion":{model_version}}}}}"#
     )
+}
+
+fn priced_row() -> Json {
+    json(&generate_row(MODEL_VERSION))
 }
 
 fn create_request(input_file_id: &str) -> CreateBatchRequest {
@@ -81,15 +84,28 @@ struct FixturePricing {
 }
 
 impl RowCostCalculator for FixturePricing {
-    fn calculate(&self, request: &RowCostRequest<'_>) -> Result<GenericCostResult, TokenCostError> {
-        let missing_info = self.require_info && request.model_info.is_none();
-        if self.failure || missing_info || request.custom_llm_provider != VERTEX_AI_PROVIDER {
+    fn calculate(
+        &self,
+        _usage: &Usage,
+        _model: &str,
+        custom_llm_provider: &str,
+        model_info: Option<&ModelInfo>,
+    ) -> Result<GenericCostResult, TokenCostError> {
+        let missing_info = self.require_info && model_info.is_none();
+        if self.failure || missing_info || custom_llm_provider != VERTEX_AI_PROVIDER {
             return Err(TokenCostError::UnknownModel);
         }
         Ok(GenericCostResult {
             prompt_cost: Decimal::new(25, 2),
             completion_cost: Decimal::new(5, 1),
         })
+    }
+}
+
+fn no_info(failure: bool) -> FixturePricing {
+    FixturePricing {
+        failure,
+        require_info: false,
     }
 }
 
@@ -101,18 +117,9 @@ fn model_info() -> ModelInfo {
 }
 
 fn stats(row: &Json, model_name: Option<&str>) -> NativeVertexBatchRowStats {
-    native_vertex_batch_row_stats(
-        row,
-        model_name,
-        None,
-        calculate_usage,
-        &FixturePricing {
-            failure: false,
-            require_info: false,
-        },
-    )
-    .unwrap()
-    .unwrap()
+    native_vertex_batch_row_stats(row, model_name, None, calculate_usage, &no_info(false))
+        .unwrap()
+        .unwrap()
 }
 
 #[test]
@@ -174,12 +181,7 @@ fn a_publisher_path_without_a_model_falls_through_to_the_endpoint() {
         b"gs://bucket/publishers/google/models//endpoints/77/file.jsonl",
     )
     .unwrap();
-    assert_eq!(
-        model,
-        BatchModelPath::Endpoint {
-            id: "77".to_owned()
-        }
-    );
+    assert_eq!(model, "endpoints/77");
 }
 
 #[test]
@@ -478,17 +480,10 @@ fn a_row_without_a_usable_response_is_failed(#[case] source: &str) {
         Some("deployment"),
         None,
         calculate_usage,
-        &FixturePricing {
-            failure: false,
-            require_info: false,
-        },
+        &no_info(false),
     )
     .unwrap();
     assert!(outcome.is_none());
-}
-
-fn priced_row() -> Json {
-    json(&generate_row(MODEL_VERSION))
 }
 
 #[test]
@@ -546,18 +541,9 @@ fn a_row_without_any_model_keeps_its_usage_and_costs_nothing() {
 #[test]
 fn a_pricing_failure_keeps_the_usage_and_returns_zero_cost() {
     let row = priced_row();
-    let stats = native_vertex_batch_row_stats(
-        &row,
-        None,
-        None,
-        calculate_usage,
-        &FixturePricing {
-            failure: true,
-            require_info: false,
-        },
-    )
-    .unwrap()
-    .unwrap();
+    let stats = native_vertex_batch_row_stats(&row, None, None, calculate_usage, &no_info(true))
+        .unwrap()
+        .unwrap();
     assert_eq!(stats.usage.prompt_tokens, 3);
     assert_eq!(stats.usage.completion_tokens, 2);
     assert_eq!(stats.model.as_deref(), Some("gemini-1.5-flash-001"));
@@ -568,31 +554,19 @@ fn a_pricing_failure_keeps_the_usage_and_returns_zero_cost() {
 #[test]
 fn the_row_calculator_receives_the_model_info() {
     let info = model_info();
-    let priced = native_vertex_batch_row_stats(
-        &priced_row(),
-        None,
-        Some(&info),
-        calculate_usage,
-        &FixturePricing {
-            failure: false,
-            require_info: true,
-        },
-    )
-    .unwrap()
-    .unwrap();
+    let strict = FixturePricing {
+        failure: false,
+        require_info: true,
+    };
+    let priced =
+        native_vertex_batch_row_stats(&priced_row(), None, Some(&info), calculate_usage, &strict)
+            .unwrap()
+            .unwrap();
     assert_eq!(priced.prompt_cost, Decimal::new(25, 2));
-    let unpriced = native_vertex_batch_row_stats(
-        &priced_row(),
-        None,
-        None,
-        calculate_usage,
-        &FixturePricing {
-            failure: false,
-            require_info: true,
-        },
-    )
-    .unwrap()
-    .unwrap();
+    let unpriced =
+        native_vertex_batch_row_stats(&priced_row(), None, None, calculate_usage, &strict)
+            .unwrap()
+            .unwrap();
     assert_eq!(unpriced.prompt_cost, Decimal::ZERO);
 }
 
