@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -16,6 +17,8 @@ use secrecy::SecretString;
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::decode::{RESPONSE_BODY_LIMIT, decode_vertex_embedding};
@@ -99,7 +102,7 @@ async fn execution_text_posts_the_transformed_request() {
         .unwrap();
     let calls = recorder.recorded();
     assert_eq!(
-        std::str::from_utf8(&calls[0].body).unwrap(),
+        str::from_utf8(&calls[0].body).unwrap(),
         r#"{"instances":[{"content":"hello"}],"parameters":{}}"#
     );
     assert_eq!(
@@ -138,9 +141,9 @@ async fn execution_multimodal_posts_the_transformed_request() {
         .await
         .unwrap();
     let calls = recorder.recorded();
-    let sync_body = std::str::from_utf8(&calls[0].body).unwrap();
+    let sync_body = str::from_utf8(&calls[0].body).unwrap();
     assert_eq!(sync_body, r#"{"instances":[{"text":"hello"}]}"#);
-    assert_eq!(std::str::from_utf8(&calls[1].body).unwrap(), sync_body);
+    assert_eq!(str::from_utf8(&calls[1].body).unwrap(), sync_body);
     assert_eq!(
         calls[0].headers.get("Content-Type").map(String::as_str),
         Some("application/json; charset=utf-8")
@@ -375,7 +378,7 @@ async fn execution_cancelled_call_drops_the_post() {
         pooled: &pending,
         caller: None,
     };
-    let elapsed = tokio::time::timeout(
+    let elapsed = timeout(
         Duration::from_millis(10),
         text_embedding(&call, &catalog(), &text_auth(&fixture), &clients),
     )
@@ -432,13 +435,13 @@ async fn execution_posts_through_the_pooled_client() {
         pooled: &client,
         caller: None,
     };
-    let mut server = tokio::task::JoinSet::new();
+    let mut server = JoinSet::new();
     server.spawn(answer_embedding(listener));
     let response = text_embedding(&call, &catalog(), &text_auth(&fixture), &clients)
         .await
         .unwrap();
     assert_eq!(response.model, TEXT_MODEL);
-    let sent = tokio::time::timeout(Duration::from_secs(5), server.join_next())
+    let sent = timeout(Duration::from_secs(5), server.join_next())
         .await
         .unwrap()
         .unwrap()
@@ -478,7 +481,7 @@ fn request_is_complete(received: &[u8]) -> bool {
     let Some(head_end) = received.windows(4).position(|window| window == b"\r\n\r\n") else {
         return false;
     };
-    let head = std::str::from_utf8(&received[..head_end]).unwrap();
+    let head = str::from_utf8(&received[..head_end]).unwrap();
     let length = head
         .lines()
         .find_map(|line| {

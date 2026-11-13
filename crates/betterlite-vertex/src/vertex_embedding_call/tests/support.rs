@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
+use std::future::{Future, pending};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -141,7 +141,7 @@ impl EmbeddingPost for PendingPost {
         let dropped = Arc::clone(&self.dropped);
         Box::pin(async move {
             let _signal = DropSignal { dropped };
-            std::future::pending::<()>().await;
+            pending::<()>().await;
             Err(PostError::Timeout)
         })
     }
