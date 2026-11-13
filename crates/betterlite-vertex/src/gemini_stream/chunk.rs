@@ -1,8 +1,6 @@
-use betterlite_models::usage_sum::Usage;
-
 use crate::gemini_candidates::choice::StreamChoice;
 use crate::gemini_metadata::extension::MetadataExtension;
-
+use betterlite_models::usage_sum::Usage;
 #[derive(Debug)]
 pub struct StreamChunk {
     pub id: String,
@@ -16,7 +14,6 @@ pub struct StreamChunk {
     pub traffic_type: Option<String>,
     pub is_finished: bool,
 }
-
 #[derive(Debug)]
 pub enum Choice {
     Projected(StreamChoice),

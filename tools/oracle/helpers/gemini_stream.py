@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Final, TypedDict, cast
 
 from litellm.llms.vertex_ai.gemini import vertex_and_google_ai_studio_gemini as gemini
@@ -10,13 +10,9 @@ class Input(TypedDict):
     fragments: list[str]
     legacy_function: bool
     headers: dict[str, str]
-
-
 @dataclass
 class Logging:
     optional_params: dict[str, JsonValue]
-
-
 @dataclass
 class DeltaView:
     role: str | None = None
@@ -27,20 +23,14 @@ class DeltaView:
     images: JsonValue = None
     annotations: JsonValue = None
     provider_specific_fields: JsonValue = None
-
-
 @dataclass
 class ChoiceView:
     index: int
     finish_reason: str | None
     delta: DeltaView
     logprobs: JsonValue = None
-
-
 class PromptDetails(TypedDict, total=False):
     web_search_requests: int
-
-
 @dataclass
 class UsageView:
     prompt_tokens: int
@@ -48,8 +38,6 @@ class UsageView:
     total_tokens: int
     prompt_tokens_details: PromptDetails | None = None
     completion_tokens_details: JsonValue = None
-
-
 @dataclass
 class ChunkView:
     id: str
@@ -57,18 +45,9 @@ class ChunkView:
     choices: list[ChoiceView]
     usage: UsageView | None = None
     service_tier: str | None = None
-    vertex_ai_grounding_metadata: list[JsonValue] = field(default_factory=list)
-    vertex_ai_url_context_metadata: list[JsonValue] = field(default_factory=list)
-    vertex_ai_safety_ratings: list[JsonValue] = field(default_factory=list)
-    vertex_ai_safety_results: list[JsonValue] = field(default_factory=list)
-    vertex_ai_citation_metadata: list[JsonValue] = field(default_factory=list)
-
-
 CHUNK: Final = TypeAdapter(ChunkView)
 DELTA: Final = TypeAdapter(DeltaView)
 JSON_VALUE: Final = TypeAdapter(JsonValue)
-
-
 def _usage(usage: UsageView) -> JsonValue:
     details = usage.prompt_tokens_details
     return {
@@ -79,8 +58,6 @@ def _usage(usage: UsageView) -> JsonValue:
         "completion_details": usage.completion_tokens_details is not None,
         "web_search_requests": None if details is None else details.get("web_search_requests"),
     }
-
-
 def _choice(choice: ChoiceView) -> JsonValue:
     return {
         "index": choice.index,
@@ -88,8 +65,6 @@ def _choice(choice: ChoiceView) -> JsonValue:
         "delta": JSON_VALUE.validate_json(DELTA.dump_json(choice.delta)),
         "logprobs": choice.logprobs,
     }
-
-
 def _state(chunk: ModelResponseStream) -> JsonValue:
     view = CHUNK.validate_json(chunk.model_dump_json())
     return {
@@ -98,16 +73,7 @@ def _state(chunk: ModelResponseStream) -> JsonValue:
         "choices": [_choice(choice) for choice in view.choices],
         "usage": None if view.usage is None else _usage(view.usage),
         "service_tier": view.service_tier,
-        "metadata": [
-            view.vertex_ai_grounding_metadata,
-            view.vertex_ai_url_context_metadata,
-            view.vertex_ai_safety_ratings,
-            view.vertex_ai_safety_results,
-            view.vertex_ai_citation_metadata,
-        ],
     }
-
-
 def _chunks(
     input_value: Input, optional_params: dict[str, JsonValue]
 ) -> tuple[list[JsonValue], list[JsonValue]]:
@@ -134,9 +100,10 @@ def _chunks(
             break
         drained.append(None if extra is None else _state(extra))
     return chunks, drained
-
-
+def _optional_params(input_value: Input) -> dict[str, JsonValue]:
+    if input_value["legacy_function"]:
+        return {"functions": [{}]}
+    return {}
 def run(input_value: Input) -> JsonValue:
-    optional_params: dict[str, JsonValue] = {"functions": [{}]} if input_value["legacy_function"] else {}
-    chunks, drained = _chunks(input_value, optional_params)
+    chunks, drained = _chunks(input_value, _optional_params(input_value))
     return {"chunks": chunks, "drained": drained}

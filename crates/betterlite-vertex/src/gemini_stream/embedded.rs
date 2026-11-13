@@ -1,7 +1,5 @@
-use betterlite_models::decisions::Json;
-
 use super::error::StreamError;
-
+use betterlite_models::decisions::Json;
 pub(super) fn check_embedded_error(value: &[u8]) -> Result<(), StreamError> {
     let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(value) else {
         return Ok(());
@@ -11,7 +9,6 @@ pub(super) fn check_embedded_error(value: &[u8]) -> Result<(), StreamError> {
         None => Ok(()),
     }
 }
-
 fn embedded(error: Json) -> StreamError {
     let Json::Object(fields) = error else {
         return StreamError::Embedded {
@@ -27,7 +24,6 @@ fn embedded(error: Json) -> StreamError {
         message: format!("{label} - {message}"),
     }
 }
-
 fn coercible_status(value: &Json) -> u16 {
     let code = match value {
         Json::Number(number) => number.as_i64(),
@@ -40,7 +36,6 @@ fn coercible_status(value: &Json) -> u16 {
         None => 500,
     }
 }
-
 fn text_field(value: Option<&Json>, fallback: &str) -> String {
     match value {
         Some(Json::Text(text)) => text.clone(),

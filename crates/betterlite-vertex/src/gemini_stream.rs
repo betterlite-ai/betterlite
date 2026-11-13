@@ -1,49 +1,32 @@
 pub mod adapters;
-pub mod chunk;
-pub mod error;
-
 mod buffer;
+pub mod chunk;
 mod embedded;
+pub mod error;
 mod parser;
-
 mod tests;
-
-use std::str;
-
-use http::header::HeaderMap;
-use serde_json::value::RawValue;
-use uuid::Uuid;
-
 use crate::gemini_response::complete::SERVICE_TIER_HEADER;
 use crate::gemini_response_parts::projection::CallMode;
-
 use buffer::FragmentBuffer;
 use chunk::StreamChunk;
 use error::StreamError;
-
+use http::header::HeaderMap;
+use serde_json::value::RawValue;
+use uuid::Uuid;
 #[derive(Debug, Clone, Copy)]
 pub struct StreamOptions {
     pub now: i64,
     pub call_mode: CallMode,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChunkType {
-    ValidJson,
-    AccumulatedJson,
-}
-
 pub struct GeminiStreamDecoder {
     options: StreamOptions,
     ids: Box<dyn FnMut() -> Uuid + Send>,
     service_tier: Option<String>,
-    chunk_type: ChunkType,
+    accumulated: bool,
     buffer: FragmentBuffer,
-    pending: Vec<u8>,
     cumulative_tool_call_index: u32,
     has_seen_tool_calls: bool,
 }
-
 impl GeminiStreamDecoder {
     pub fn new(
         options: StreamOptions,
@@ -54,72 +37,45 @@ impl GeminiStreamDecoder {
             options,
             ids,
             service_tier: stream_service_tier(headers),
-            chunk_type: ChunkType::ValidJson,
+            accumulated: false,
             buffer: FragmentBuffer::default(),
-            pending: Vec::new(),
             cumulative_tool_call_index: 0,
             has_seen_tool_calls: false,
         }
     }
-
     pub fn push(&mut self, fragment: &[u8]) -> Result<Option<StreamChunk>, StreamError> {
-        let text = self.decode_fragment(fragment)?;
+        let text = std::str::from_utf8(fragment).map_err(|source| StreamError::Utf8 { source })?;
         if text.is_empty() {
             return Ok(None);
         }
-        self.parse_fragment(&text)
+        self.parse_fragment(text)
     }
-
     pub fn finish(&mut self) -> Result<Option<StreamChunk>, StreamError> {
-        if !self.pending.is_empty() {
-            return Err(StreamError::IncompleteUtf8);
-        }
         let waiting =
             !self.buffer.fragments.is_empty() || self.buffer.offset < self.buffer.text.len();
-        if self.chunk_type != ChunkType::AccumulatedJson || !waiting {
+        if !self.accumulated || !waiting {
             return Ok(None);
         }
-        self.accumulated("", true)
+        self.accumulated_chunk("", true)
     }
-
-    fn decode_fragment(&mut self, fragment: &[u8]) -> Result<String, StreamError> {
-        let mut bytes = std::mem::take(&mut self.pending);
-        bytes.extend_from_slice(fragment);
-        let error = match str::from_utf8(&bytes) {
-            Ok(text) => return Ok(text.to_owned()),
-            Err(error) => error,
-        };
-        if error.error_len().is_some() {
-            return Err(StreamError::Utf8 { source: error });
-        }
-        let Some((valid, incomplete)) = bytes.split_at_checked(error.valid_up_to()) else {
-            return Err(StreamError::Utf8 { source: error });
-        };
-        self.pending = incomplete.to_vec();
-        String::from_utf8(valid.to_vec()).map_err(|error| StreamError::Utf8 {
-            source: error.utf8_error(),
-        })
-    }
-
     fn parse_fragment(&mut self, fragment: &str) -> Result<Option<StreamChunk>, StreamError> {
         let chunk = strip_sse_data(fragment);
         if chunk.is_empty() {
             return Ok(None);
         }
-        if self.chunk_type == ChunkType::AccumulatedJson {
-            return self.accumulated(chunk, false);
+        if self.accumulated {
+            return self.accumulated_chunk(chunk, false);
         }
         let trimmed = chunk.trim();
         match serde_json::from_str::<Box<RawValue>>(trimmed) {
             Ok(value) => self.chunk_parser(value.get().as_bytes()).map(Some),
             Err(_) => {
-                self.chunk_type = ChunkType::AccumulatedJson;
-                self.accumulated(trimmed, false)
+                self.accumulated = true;
+                self.accumulated_chunk(trimmed, false)
             }
         }
     }
-
-    fn accumulated(
+    fn accumulated_chunk(
         &mut self,
         chunk: &str,
         is_final: bool,
@@ -139,14 +95,12 @@ impl GeminiStreamDecoder {
         }
     }
 }
-
 fn strip_sse_data(chunk: &str) -> &str {
     match chunk.strip_prefix("data: ") {
         Some(stripped) => stripped,
         None => chunk.strip_prefix("data:").unwrap_or(chunk),
     }
 }
-
 fn stream_service_tier(headers: &HeaderMap) -> Option<String> {
     let mut tier = String::new();
     for value in headers.get_all(SERVICE_TIER_HEADER) {

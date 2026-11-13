@@ -5,7 +5,6 @@ use betterlite_vertex::gemini_stream::{GeminiStreamDecoder, StreamOptions};
 use http::HeaderMap;
 use libfuzzer_sys::fuzz_target;
 use uuid::Uuid;
-
 fuzz_target!(|bytes: &[u8]| {
     let options = StreamOptions {
         now: 1_700_000_000,

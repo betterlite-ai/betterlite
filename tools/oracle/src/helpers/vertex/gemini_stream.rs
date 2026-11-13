@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 use betterlite_models::usage_sum::Usage;
 use betterlite_vertex::gemini_response_parts::projection::CallMode;
 use betterlite_vertex::gemini_stream::chunk::{Choice, StreamChunk};
@@ -8,14 +7,10 @@ use betterlite_vertex::gemini_stream::{GeminiStreamDecoder, StreamOptions};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use uuid::Uuid;
-
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
-
 mod tests;
-
 pub(crate) struct Op;
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -23,10 +18,8 @@ pub(crate) struct Input {
     legacy_function: bool,
     headers: BTreeMap<String, String>,
 }
-
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         let headers = header_map(&input.headers)?;
         let options = StreamOptions {
@@ -53,7 +46,6 @@ impl Helper for Op {
         Ok(json!({ "chunks": chunks, "drained": drained }))
     }
 }
-
 fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
@@ -64,7 +56,6 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<Helpe
     }
     Ok(map)
 }
-
 fn stream_error(error: StreamError) -> Box<HelperError> {
     let status = if let StreamError::Embedded { status, .. } = &error {
         Some(*status)
@@ -80,7 +71,6 @@ fn stream_error(error: StreamError) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
-
 fn state(chunk: &StreamChunk) -> Value {
     json!({
         "id": &chunk.id,
@@ -88,16 +78,8 @@ fn state(chunk: &StreamChunk) -> Value {
         "choices": chunk.choices.iter().map(choice_state).collect::<Vec<Value>>(),
         "usage": chunk.usage.as_ref().map(usage_state),
         "service_tier": &chunk.service_tier,
-        "metadata": [
-            &chunk.metadata.grounding_metadata,
-            &chunk.metadata.url_context_metadata,
-            &chunk.metadata.safety_ratings,
-            &chunk.metadata.safety_results,
-            &chunk.metadata.citation_metadata,
-        ],
     })
 }
-
 fn choice_state(choice: &Choice) -> Value {
     match choice {
         Choice::Projected(projected) => json!({
@@ -118,7 +100,6 @@ fn choice_state(choice: &Choice) -> Value {
         }),
     }
 }
-
 fn usage_state(usage: &Usage) -> Value {
     json!({
         "prompt_tokens": usage.prompt_tokens,

@@ -10,8 +10,7 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use super::adapters::{
-    AsyncFragmentReader, AsyncResponseClose, FragmentReader, GeminiStream, ResponseClose,
-    StreamFuture,
+    AsyncFragmentReader, FragmentReader, GeminiStream, ResponseClose, StreamFuture,
 };
 use super::buffer::MAX_RETAINED_BYTES;
 use super::chunk::{Choice, StreamChunk};
@@ -409,7 +408,7 @@ fn ownership_cursor_keeps_the_copy_cost_linear() {
     }
     assert_eq!(drained, 49);
     assert!(decoder.buffer.copied <= payload.len().saturating_mul(2));
-    assert!(!decoder.buffer.has_buffered_content());
+    assert!(decoder.buffer.text.is_empty());
 }
 
 struct CountingReader {
@@ -477,10 +476,10 @@ struct AsyncResponse {
     closed: Arc<AtomicUsize>,
 }
 
-impl AsyncResponseClose for AsyncResponse {
-    fn close_response(&mut self) -> StreamFuture<'_, Result<(), StreamError>> {
+impl ResponseClose for AsyncResponse {
+    fn close_response(&mut self) -> Result<(), StreamError> {
         self.closed.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
+        Ok(())
     }
 }
 
@@ -617,12 +616,12 @@ async fn ownership_async_close_shuts_the_reader_and_the_response() {
 }
 
 #[test]
-fn ownership_utf8_sequences_split_across_fragments_decode() {
+fn ownership_a_utf8_fragment_decodes_before_parsing() {
     let mut decoder = decoder();
-    let fragment = r#"{"responseId":"héllo"}"#.as_bytes();
-    let split = fragment.iter().position(|byte| *byte == 0xc3).unwrap() + 1;
-    assert!(decoder.push(&fragment[..split]).unwrap().is_none());
-    let chunk = decoder.push(&fragment[split..]).unwrap().unwrap();
+    let chunk = decoder
+        .push(r#"{"responseId":"héllo"}"#.as_bytes())
+        .unwrap()
+        .unwrap();
     assert_eq!(chunk.id, "héllo");
 }
 
@@ -633,13 +632,6 @@ fn ownership_invalid_utf8_is_an_error() {
         decoder.push(&[0x7b, 0x22, 0xff, 0x22, 0x7d]),
         Err(StreamError::Utf8 { .. })
     ));
-}
-
-#[test]
-fn ownership_a_truncated_utf8_sequence_at_eof_is_an_error() {
-    let mut decoder = decoder();
-    assert!(decoder.push(&[0xc3]).unwrap().is_none());
-    assert!(matches!(decoder.finish(), Err(StreamError::IncompleteUtf8)));
 }
 
 #[test]
