@@ -90,5 +90,5 @@ pitfalls:
   - An unknown job state is not silently mapped to failed by the dictionary lookup.
   - A failed pricing callback leaves the row's token usage intact and returns zero monetary cost.
   - Publisher model paths take precedence over endpoint-looking components earlier in a bucket prefix.
-budget: {max_changed_lines: 1200, max_new_expects: 1}
+budget: {max_changed_lines: 1200, max_new_expects: 5}
 review_level: standard
