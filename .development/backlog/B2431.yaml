@@ -1,14 +1,14 @@
 id: B2431
 milestone: M5 API families
 title: Messages tool and structured-output conversion
-status: todo
+status: done
 depends_on: [B171, B1117]
 file: tasks/B2431-messages-chat-tools-schema.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/transformation.py"
 parent: B081
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1522
