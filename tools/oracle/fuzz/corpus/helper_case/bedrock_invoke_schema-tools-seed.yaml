@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-invoke-schema-tools-seed
+call:
+  bedrock_invoke_schema:
+    model_cost:
+      native-model: {litellm_provider: bedrock, supports_native_structured_output: true}
+    steps:
+      - function: normalize_custom_field
+        body:
+          tools: [{name: t, custom: {defer_loading: true}}]
+      - function: tools_without_eager_streaming
+        body:
+          tools: [{name: t, eager_input_streaming: true}]
+      - function: normalize_schema
+        schema: {type: custom, items: {type: custom}}
+      - function: ensure_tool_names
+        body:
+          tools: [{}]
+env: {}
+compare: {ignore: []}

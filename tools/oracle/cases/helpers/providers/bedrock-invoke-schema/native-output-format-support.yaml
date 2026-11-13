@@ -1,0 +1,51 @@
+kind: helper
+name: bedrock-invoke-native-output-format-support
+call:
+  bedrock_invoke_schema:
+    model_cost:
+      native-model: {litellm_provider: bedrock, supports_native_structured_output: true}
+      plain-model: {litellm_provider: bedrock}
+    steps:
+      - function: apply_structured_output
+        model: native-model
+        body:
+          messages: [{role: user, content: hi}]
+          output_config:
+            effort: high
+            format: {type: json_schema, schema: {type: object}}
+      - function: apply_structured_output
+        model: native-model
+        body:
+          output_config: config
+      - function: apply_structured_output
+        model: native-model
+        body:
+          messages: [{role: user, content: hi}]
+          output_config:
+            format: {type: json_schema, schema: {type: object}}
+      - function: apply_structured_output
+        model: native-model
+        body:
+          messages: [{role: user, content: hi}]
+          output_format: {schema: {type: object}}
+          output_config:
+            format: {type: json_schema, schema: {type: string}}
+      - function: apply_structured_output
+        model: plain-model
+        body:
+          messages: [{role: user, content: hi}]
+          output_config:
+            format: {type: json_schema, schema: {type: object}}
+      - function: apply_structured_output
+        model: plain-model
+        body:
+          output_config:
+            format: {type: json_schema, schema: {type: object}}
+      - function: apply_structured_output
+        model: plain-model
+        body:
+          output_format: ignored
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/4/body/messages/0/content/1/text, why: "json.dumps spacing of the inlined schema text is not part of the contract (docs/compatibility.md)"}
