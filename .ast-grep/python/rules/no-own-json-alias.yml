@@ -1,7 +1,7 @@
 id: no-own-json-alias
 language: python
 severity: error
-message: JSON has one type already; an oracle helper imports JsonValue from pydantic, which LiteLLM pins in uv.lock, and the wheel imports JsonValue from betterlite.types.utils.values
+message: JSON has one type already; an oracle helper imports JsonValue from pydantic, which LiteLLM pins in uv.lock, and the wheel imports JsonValue from pydantic too
 ignores:
   # files that had their own alias on 2026-11-13; cleanup tasks take them off
   - tools/oracle/helpers/anthropic_beta_config.py
