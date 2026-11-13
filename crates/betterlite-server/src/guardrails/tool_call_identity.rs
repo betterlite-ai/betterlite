@@ -116,40 +116,43 @@ pub fn tool_call_rewrite(before: &ToolCallShape, after: &ToolCallShape) -> ToolC
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors LiteLLM's _undeliverable_tool_call_rewrite_reason signature"
-)]
+pub struct UndeliverableRewriteInput<'calls> {
+    pub call_ids: &'calls [String],
+    pub tool_call_item_count: usize,
+    pub post_guardrail_tool_call_count: usize,
+    pub unresolved_argument_event: bool,
+    pub rewritten_call_ids: &'calls BTreeSet<String>,
+    pub event_call_ids: &'calls BTreeSet<String>,
+}
+
 #[must_use]
 pub fn undeliverable_reason(
-    call_ids: &[String],
-    tool_call_item_count: usize,
-    post_guardrail_tool_call_count: usize,
-    unresolved_argument_event: bool,
-    rewritten_call_ids: &BTreeSet<String>,
-    event_call_ids: &BTreeSet<String>,
+    input: &UndeliverableRewriteInput<'_>,
 ) -> Option<UndeliverableRewriteReason> {
-    if call_ids.len() != tool_call_item_count {
+    if input.call_ids.len() != input.tool_call_item_count {
         return Some(UndeliverableRewriteReason::MissingCallId {
-            missing: tool_call_item_count.saturating_sub(call_ids.len()),
-            total: tool_call_item_count,
+            missing: input
+                .tool_call_item_count
+                .saturating_sub(input.call_ids.len()),
+            total: input.tool_call_item_count,
         });
     }
-    let unique: BTreeSet<&String> = call_ids.iter().collect();
-    if unique.len() != call_ids.len() {
+    let unique: BTreeSet<&String> = input.call_ids.iter().collect();
+    if unique.len() != input.call_ids.len() {
         return Some(UndeliverableRewriteReason::RepeatedCallId);
     }
-    if call_ids.len() != post_guardrail_tool_call_count {
+    if input.call_ids.len() != input.post_guardrail_tool_call_count {
         return Some(UndeliverableRewriteReason::CallCountMismatch {
-            returned: post_guardrail_tool_call_count,
-            expected: call_ids.len(),
+            returned: input.post_guardrail_tool_call_count,
+            expected: input.call_ids.len(),
         });
     }
-    if unresolved_argument_event {
+    if input.unresolved_argument_event {
         return Some(UndeliverableRewriteReason::UnresolvedArgumentEvent);
     }
-    let missing: Vec<String> = rewritten_call_ids
-        .difference(event_call_ids)
+    let missing: Vec<String> = input
+        .rewritten_call_ids
+        .difference(input.event_call_ids)
         .cloned()
         .collect();
     if missing.is_empty() {

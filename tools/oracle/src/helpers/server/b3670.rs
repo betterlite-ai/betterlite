@@ -5,7 +5,8 @@ use betterlite_server::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, item_rewrite_field, rewritten_input_item,
 };
 use betterlite_server::guardrails::tool_call_identity::{
-    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes, undeliverable_reason,
+    ToolCallShape, UndeliverableRewriteInput, post_guardrail_shapes, tool_call_rewrite,
+    tool_call_shapes, undeliverable_reason,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -119,14 +120,14 @@ fn undeliverable_answer(input: &Request) -> Value {
     else {
         return Value::Null;
     };
-    undeliverable_reason(
+    undeliverable_reason(&UndeliverableRewriteInput {
         call_ids,
-        *tool_call_item_count,
-        *post_guardrail_tool_call_count,
-        *unresolved_argument_event,
+        tool_call_item_count: *tool_call_item_count,
+        post_guardrail_tool_call_count: *post_guardrail_tool_call_count,
+        unresolved_argument_event: *unresolved_argument_event,
         rewritten_call_ids,
         event_call_ids,
-    )
+    })
     .map_or(Value::Null, |reason| Value::String(reason.to_string()))
 }
 

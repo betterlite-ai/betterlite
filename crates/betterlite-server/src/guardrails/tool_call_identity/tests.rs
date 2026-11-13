@@ -11,7 +11,8 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::error::UndeliverableRewriteReason;
 use super::{
-    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes, undeliverable_reason,
+    ToolCallShape, UndeliverableRewriteInput, post_guardrail_shapes, tool_call_rewrite,
+    tool_call_shapes, undeliverable_reason,
 };
 
 #[derive(Clone, Default)]
@@ -250,14 +251,14 @@ fn ids(values: &[&str]) -> BTreeSet<String> {
 
 #[test]
 fn undeliverable_missing_call_id_comes_first() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned()],
-        2,
-        0,
-        true,
-        &ids(&["c1"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned()],
+        tool_call_item_count: 2,
+        post_guardrail_tool_call_count: 0,
+        unresolved_argument_event: true,
+        rewritten_call_ids: &ids(&["c1"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(
         reason,
         Some(UndeliverableRewriteReason::MissingCallId {
@@ -273,14 +274,14 @@ fn undeliverable_missing_call_id_comes_first() {
 
 #[test]
 fn undeliverable_repeated_call_id_comes_second() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned(), "c1".to_owned()],
-        2,
-        0,
-        true,
-        &ids(&["c1"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned(), "c1".to_owned()],
+        tool_call_item_count: 2,
+        post_guardrail_tool_call_count: 0,
+        unresolved_argument_event: true,
+        rewritten_call_ids: &ids(&["c1"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(reason, Some(UndeliverableRewriteReason::RepeatedCallId));
     assert_eq!(
         reason.unwrap().to_string(),
@@ -290,14 +291,14 @@ fn undeliverable_repeated_call_id_comes_second() {
 
 #[test]
 fn undeliverable_call_count_mismatch_comes_third() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned()],
-        1,
-        2,
-        true,
-        &ids(&["c1"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned()],
+        tool_call_item_count: 1,
+        post_guardrail_tool_call_count: 2,
+        unresolved_argument_event: true,
+        rewritten_call_ids: &ids(&["c1"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(
         reason,
         Some(UndeliverableRewriteReason::CallCountMismatch {
@@ -313,14 +314,14 @@ fn undeliverable_call_count_mismatch_comes_third() {
 
 #[test]
 fn undeliverable_unresolved_argument_event_comes_fourth() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned()],
-        1,
-        1,
-        true,
-        &ids(&["c1"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned()],
+        tool_call_item_count: 1,
+        post_guardrail_tool_call_count: 1,
+        unresolved_argument_event: true,
+        rewritten_call_ids: &ids(&["c1"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(
         reason,
         Some(UndeliverableRewriteReason::UnresolvedArgumentEvent)
@@ -329,14 +330,14 @@ fn undeliverable_unresolved_argument_event_comes_fourth() {
 
 #[test]
 fn undeliverable_missing_event_call_ids_come_last_and_sorted() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned(), "c2".to_owned()],
-        2,
-        2,
-        false,
-        &ids(&["c2", "c1"]),
-        &ids(&["c2"]),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned(), "c2".to_owned()],
+        tool_call_item_count: 2,
+        post_guardrail_tool_call_count: 2,
+        unresolved_argument_event: false,
+        rewritten_call_ids: &ids(&["c2", "c1"]),
+        event_call_ids: &ids(&["c2"]),
+    });
     assert_eq!(
         reason,
         Some(UndeliverableRewriteReason::MissingEventCallId {
@@ -351,14 +352,14 @@ fn undeliverable_missing_event_call_ids_come_last_and_sorted() {
 
 #[test]
 fn undeliverable_lists_every_missing_event_call_id_sorted() {
-    let reason = undeliverable_reason(
-        &["b".to_owned(), "a".to_owned(), "c".to_owned()],
-        3,
-        3,
-        false,
-        &ids(&["c", "a", "b"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["b".to_owned(), "a".to_owned(), "c".to_owned()],
+        tool_call_item_count: 3,
+        post_guardrail_tool_call_count: 3,
+        unresolved_argument_event: false,
+        rewritten_call_ids: &ids(&["c", "a", "b"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(
         reason,
         Some(UndeliverableRewriteReason::MissingEventCallId {
@@ -374,27 +375,27 @@ fn undeliverable_lists_every_missing_event_call_id_sorted() {
 #[test]
 fn undeliverable_is_none_when_every_check_passes() {
     assert_eq!(
-        undeliverable_reason(
-            &["c1".to_owned(), "c2".to_owned()],
-            2,
-            2,
-            false,
-            &ids(&["c1"]),
-            &ids(&["c1", "c2"]),
-        ),
+        undeliverable_reason(&UndeliverableRewriteInput {
+            call_ids: &["c1".to_owned(), "c2".to_owned()],
+            tool_call_item_count: 2,
+            post_guardrail_tool_call_count: 2,
+            unresolved_argument_event: false,
+            rewritten_call_ids: &ids(&["c1"]),
+            event_call_ids: &ids(&["c1", "c2"]),
+        }),
         None
     );
 }
 
 #[test]
 fn undeliverable_reports_the_first_failing_check() {
-    let reason = undeliverable_reason(
-        &["c1".to_owned(), "c1".to_owned()],
-        2,
-        1,
-        true,
-        &ids(&["c1"]),
-        &BTreeSet::new(),
-    );
+    let reason = undeliverable_reason(&UndeliverableRewriteInput {
+        call_ids: &["c1".to_owned(), "c1".to_owned()],
+        tool_call_item_count: 2,
+        post_guardrail_tool_call_count: 1,
+        unresolved_argument_event: true,
+        rewritten_call_ids: &ids(&["c1"]),
+        event_call_ids: &BTreeSet::new(),
+    });
     assert_eq!(reason, Some(UndeliverableRewriteReason::RepeatedCallId));
 }
