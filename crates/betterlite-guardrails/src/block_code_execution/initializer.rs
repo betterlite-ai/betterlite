@@ -161,9 +161,6 @@ fn blocked_languages(params: &LitellmParams) -> Result<Option<Vec<String>>, Init
 fn action(params: &LitellmParams) -> Result<BlockCodeAction, InitializerError> {
     match get_param(params, ParamKey::Action) {
         None => Ok(DEFAULT_ACTION),
-        Some(GuardrailValue::Null) => Err(InitializerError::InvalidParam {
-            field: ParamKey::Action.name().to_owned(),
-        }),
         Some(value) => decode(ParamKey::Action, &value),
     }
 }
