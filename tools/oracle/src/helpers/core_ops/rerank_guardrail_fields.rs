@@ -8,7 +8,7 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use betterlite_guardrails::guardrail_translation::cohere_rerank_guardrail::CohereRerankHandler;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
@@ -34,33 +34,9 @@ enum Call {
     },
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct RecordedCall {
-    texts: Option<Vec<String>>,
-    model: Option<String>,
-    input_type: GuardrailInputType,
-    request_data: BTreeMap<String, GuardrailValue>,
-}
-
 struct ScriptedGuardrail {
     texts: Option<Vec<String>>,
-    calls: Mutex<Vec<RecordedCall>>,
-}
-
-impl ScriptedGuardrail {
-    const fn returning(texts: Option<Vec<String>>) -> Self {
-        Self {
-            texts,
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn recorded(&self) -> Vec<RecordedCall> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
+    calls: Mutex<Vec<Value>>,
 }
 
 impl GuardrailContract for ScriptedGuardrail {
@@ -76,14 +52,14 @@ impl GuardrailContract for ScriptedGuardrail {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedCall {
-                texts: inputs.texts.clone(),
-                model: inputs.model.clone(),
-                input_type,
-                request_data: request_data.clone(),
-            });
+            .push(json!({
+                "texts": inputs.texts,
+                "model": inputs.model,
+                "input_type": input_type,
+                "request_data": request_data,
+            }));
         ready(Ok(GuardrailApiInputs {
-            texts: self.texts.clone().or_else(|| inputs.texts.clone()),
+            texts: self.texts.clone().or(inputs.texts),
             ..inputs
         }))
     }
@@ -112,18 +88,32 @@ impl Helper for Op {
 async fn dispatch(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Input { data, texts } => {
-            let guardrail = ScriptedGuardrail::returning(texts.clone());
+            let guardrail = ScriptedGuardrail {
+                texts: texts.clone(),
+                calls: Mutex::default(),
+            };
             let mut request_data = data.clone();
             CohereRerankHandler
                 .process_input_messages(&mut request_data, &guardrail, None)
                 .await
                 .or_value_error()?;
-            Ok(json!({"data": request_data, "calls": guardrail.recorded()}))
+            let calls = guardrail
+                .calls
+                .into_inner()
+                .unwrap_or_else(PoisonError::into_inner);
+            Ok(json!({"data": request_data, "calls": calls}))
         }
         Call::Output { output } => {
-            let guardrail = ScriptedGuardrail::returning(None);
+            let guardrail = ScriptedGuardrail {
+                texts: None,
+                calls: Mutex::default(),
+            };
             let returned = CohereRerankHandler.process_output_response(output.clone(), &guardrail);
-            Ok(json!({"same": returned == *output, "calls": guardrail.recorded()}))
+            let calls = guardrail
+                .calls
+                .into_inner()
+                .unwrap_or_else(PoisonError::into_inner);
+            Ok(json!({"same": returned == *output, "calls": calls}))
         }
     }
 }

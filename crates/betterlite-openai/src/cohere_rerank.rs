@@ -73,18 +73,17 @@ pub fn complete_url(version: RerankVersion, api_base: Option<&str>) -> String {
         RerankVersion::V1 => (DEFAULT_V1_URL, "/v1/rerank"),
         RerankVersion::V2 => (DEFAULT_V2_URL, "/v2/rerank"),
     };
-    api_base
-        .filter(|base| !base.is_empty())
-        .map_or_else(|| default.to_owned(), |base| appended(base, suffix))
-}
-
-fn appended(base: &str, suffix: &str) -> String {
-    let trimmed = base.trim_end_matches('/');
-    if trimmed.ends_with(suffix) {
-        trimmed.to_owned()
-    } else {
-        format!("{trimmed}{suffix}")
-    }
+    api_base.filter(|base| !base.is_empty()).map_or_else(
+        || default.to_owned(),
+        |base| {
+            let trimmed = base.trim_end_matches('/');
+            if trimmed.ends_with(suffix) {
+                trimmed.to_owned()
+            } else {
+                format!("{trimmed}{suffix}")
+            }
+        },
+    )
 }
 
 pub fn request_headers(
@@ -114,47 +113,43 @@ pub fn map_rerank_params(
     options: &RerankOptions,
     _non_default_params: &RerankParams,
 ) -> RerankParams {
-    let mut mapped = RerankParams::from([
-        (
-            "query".to_owned(),
-            options.query.clone().map_or(Json::Null, Json::Text),
-        ),
-        (
-            "documents".to_owned(),
-            options
-                .documents
-                .as_deref()
-                .map_or(Json::Null, |documents| {
-                    Json::List(documents.iter().map(RerankDocument::as_json).collect())
-                }),
-        ),
-        (
-            "top_n".to_owned(),
-            options
-                .top_n
-                .map_or(Json::Null, |limit| Json::Number(Number::from(limit))),
-        ),
-        (
-            "rank_fields".to_owned(),
-            options.rank_fields.as_deref().map_or(Json::Null, |fields| {
-                Json::List(fields.iter().cloned().map(Json::Text).collect())
-            }),
-        ),
-        // an absent or null return_documents takes the mapper's default of true
-        (
-            "return_documents".to_owned(),
-            Json::Bool(options.return_documents.unwrap_or(true)),
-        ),
-    ]);
-    let (name, limit) = match version {
+    let (limit_name, limit) = match version {
         RerankVersion::V1 => ("max_chunks_per_doc", options.max_chunks_per_doc),
         RerankVersion::V2 => ("max_tokens_per_doc", options.max_tokens_per_doc),
     };
-    mapped.insert(
-        name.to_owned(),
-        limit.map_or(Json::Null, |number| Json::Number(Number::from(number))),
-    );
-    mapped
+    let number =
+        |value: Option<i64>| value.map_or(Json::Null, |some| Json::Number(Number::from(some)));
+    RerankParams::from(
+        [
+            (
+                "query",
+                options.query.clone().map_or(Json::Null, Json::Text),
+            ),
+            (
+                "documents",
+                options
+                    .documents
+                    .as_deref()
+                    .map_or(Json::Null, |documents| {
+                        Json::List(documents.iter().map(RerankDocument::as_json).collect())
+                    }),
+            ),
+            ("top_n", number(options.top_n)),
+            (
+                "rank_fields",
+                options.rank_fields.as_deref().map_or(Json::Null, |fields| {
+                    Json::List(fields.iter().cloned().map(Json::Text).collect())
+                }),
+            ),
+            // an absent or null return_documents takes the mapper's default of true
+            (
+                "return_documents",
+                Json::Bool(options.return_documents.unwrap_or(true)),
+            ),
+            (limit_name, number(limit)),
+        ]
+        .map(|(name, value)| (name.to_owned(), value)),
+    )
 }
 
 pub fn transform_rerank_request(
@@ -226,18 +221,13 @@ fn response_text(body: &[u8]) -> String {
     )
 }
 
-// the pydantic dump drops every field the request left None, so only set options reach the wire
 fn project(request: &RerankRequest) -> Result<RerankParams, CohereRerankError> {
-    let encoded = serde_json::to_value(request).map_err(|source| CohereRerankError::Field {
-        name: "request",
-        source,
-    })?;
-    let mut body = serde_json::from_value::<RerankParams>(encoded).map_err(|source| {
-        CohereRerankError::Field {
+    let mut body = serde_json::to_value(request)
+        .and_then(serde_json::from_value::<RerankParams>)
+        .map_err(|source| CohereRerankError::Field {
             name: "request",
             source,
-        }
-    })?;
+        })?;
     body.retain(|_, value| !matches!(value, Json::Null));
     Ok(body)
 }

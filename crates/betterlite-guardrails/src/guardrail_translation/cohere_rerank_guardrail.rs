@@ -44,13 +44,20 @@ impl CohereRerankHandler {
     where
         G: GuardrailContract,
     {
-        let scanned = scanned_fields(data);
-        if scanned.is_empty() {
+        // an empty string is still scanned, so the check is on the type and not the value
+        let (names, texts): (Vec<_>, Vec<_>) = SCANNED_FIELDS
+            .into_iter()
+            .filter_map(|name| match data.get(name) {
+                Some(GuardrailValue::Text(text)) => Some((name, text.clone())),
+                Some(_) | None => None,
+            })
+            .unzip();
+        if names.is_empty() {
             tracing::debug!("Rerank: No query/instruction to process or not strings");
             return Ok(());
         }
         let inputs = GuardrailApiInputs {
-            texts: Some(scanned.iter().map(|(_, text)| text.clone()).collect()),
+            texts: Some(texts),
             images: None,
             tools: None,
             tool_calls: None,
@@ -61,7 +68,11 @@ impl CohereRerankHandler {
         let guardrailed = guardrail
             .apply_guardrail(inputs, data, GuardrailInputType::Request, logging_obj)
             .await?;
-        write_back(data, &scanned, guardrailed.texts.as_deref());
+        // a position the hook did not return keeps its original field
+        let returned = guardrailed.texts.unwrap_or_default();
+        for (name, text) in names.into_iter().zip(returned) {
+            data.insert(name.to_owned(), GuardrailValue::Text(text));
+        }
         Ok(())
     }
 
@@ -78,39 +89,6 @@ impl CohereRerankHandler {
             "Rerank: Output processing not applicable (output contains relevance scores, not text)"
         );
         response
-    }
-}
-
-// an empty string is still scanned, so the check is on the type and not the value
-fn scanned_fields(data: &BTreeMap<String, GuardrailValue>) -> Vec<(&'static str, String)> {
-    let mut scanned = Vec::new();
-    for name in SCANNED_FIELDS {
-        if let Some(GuardrailValue::Text(text)) = data.get(name) {
-            scanned.push((name, text.clone()));
-        }
-    }
-    scanned
-}
-
-// the hook's positions line up with the scanned fields, and a missing position keeps the original
-fn write_back(
-    data: &mut BTreeMap<String, GuardrailValue>,
-    scanned: &[(&'static str, String)],
-    texts: Option<&[String]>,
-) {
-    let Some(returned) = texts else {
-        return;
-    };
-    for (index, (name, original)) in scanned.iter().enumerate() {
-        let Some(rewritten) = returned.get(index) else {
-            continue;
-        };
-        data.insert((*name).to_owned(), GuardrailValue::Text(rewritten.clone()));
-        tracing::debug!(
-            "Rerank: Applied guardrail to {name}. Original length: {}, New length: {}",
-            original.chars().count(),
-            rewritten.chars().count()
-        );
     }
 }
 
