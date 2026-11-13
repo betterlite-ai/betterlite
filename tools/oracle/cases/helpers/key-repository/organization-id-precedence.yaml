@@ -1,0 +1,25 @@
+kind: helper
+name: key-repository-organization-id-precedence
+call:
+  key_repository:
+    cases:
+      missing_and_null_org_id_copy_organization_id:
+        records:
+          - mapping: {token: o1, organization_id: org-a}
+          - mapping: {token: o2, org_id: null, organization_id: org-b}
+      explicit_org_id_including_empty_wins:
+        records:
+          - mapping: {token: o3, org_id: '', organization_id: org-a}
+          - mapping: {token: o4, org_id: kept, organization_id: org-a}
+      null_organization_id_not_copied:
+        records:
+          - mapping: {token: o5, organization_id: null}
+          - mapping: {token: o6}
+      empty_organization_id_copied:
+        records:
+          - mapping: {token: o7, organization_id: ''}
+      conversion_does_not_mutate_input:
+        records:
+          - mapping: {token: o8, aliases: '{"a": 1}', organization_id: org-a}
+env: {}
+compare: {ignore: []}
