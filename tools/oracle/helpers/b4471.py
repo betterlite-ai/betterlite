@@ -268,23 +268,10 @@ ROUTES: Final[dict[str, tuple[tuple[str, ...], frozenset[str], frozenset[str]]]]
 }
 
 
-def prefix_matches(path: str, prefix: str) -> bool:
-    if "{" not in prefix:
-        return path.startswith(prefix)
-    segments = [segment for segment in path.split("/") if segment]
-    parts = [part for part in prefix.split("/") if part]
-    for index, part in enumerate(parts):
-        if index >= len(segments):
-            return False
-        if not (part.startswith("{") and part.endswith("}")) and segments[index] != part:
-            return False
-    return not prefix.endswith("/") or len(segments) > len(parts)
-
-
 def run(input_value: Input) -> list[bool]:
     _ = litellm.__name__
     prefixes, exact, mounts = ROUTES[input_value["component"]]
     return [
-        path in mounts or path in exact or any(prefix_matches(path, prefix) for prefix in prefixes)
+        path in mounts or path in exact or any(path.startswith(prefix) for prefix in prefixes)
         for path in input_value["paths"]
     ]

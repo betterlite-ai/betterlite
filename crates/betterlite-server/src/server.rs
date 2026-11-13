@@ -9,10 +9,12 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
+use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
 use crate::state::ServerState;
 use crate::state::shared::Shared;
 use axum::http::StatusCode;
+use axum::middleware::from_fn;
 use axum::response::{IntoResponse as _, Response as AxumResponse};
 use axum::{Json, Router};
 use betterlite_config::types::Config;
@@ -68,7 +70,7 @@ pub async fn run(
     run_with(config, chat, host, port, |application| application).await
 }
 
-// a component binary wraps the built router, so a path filter runs before any route matches
+// a component binary wraps the built router to hand its allowlist to the route filter
 pub async fn run_with<F>(
     config: Config,
     chat: ChatExecutor,
@@ -150,7 +152,8 @@ pub(crate) fn application(
         )),
         in_flight: Arc::new(InFlightRequests::default()),
     };
-    let application = stack.wrap(stacked);
+    // below the root path layer, so the filter matches the routes a request reaches without its root
+    let application = stack.wrap(stacked).layer(from_fn(filter_route));
     Ok(
         match RootPaths::from_settings(&config.sections.request_root_paths) {
             Some(paths) => paths.wrap(application),

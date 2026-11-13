@@ -1,6 +1,7 @@
 use super::chat_setup::chat_executor;
-use super::filter::{ComponentRoutes, with_component_filter};
+use super::filter::ComponentRoutes;
 use super::run_with;
+use axum::Extension;
 use betterlite_config::loader::startup::{load_config, process_environment};
 use betterlite_config::types::Config;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -71,7 +72,7 @@ pub fn serve_component(
         return ExitCode::FAILURE;
     };
     match runtime.block_on(run_with(config, chat, &host, port, |application| {
-        with_component_filter(application, routes)
+        application.layer(Extension(routes))
     })) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

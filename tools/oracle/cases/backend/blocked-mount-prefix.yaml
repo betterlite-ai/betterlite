@@ -3,6 +3,6 @@ name: backend-blocked-mount-prefix
 call:
   b4471:
     component: backend
-    paths: [/swagger/static]
+    paths: [/swaggerx, /swagger-ui]
 env: {}
 compare: {ignore: []}

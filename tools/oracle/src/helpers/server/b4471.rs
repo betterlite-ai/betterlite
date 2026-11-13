@@ -1,6 +1,6 @@
 use betterlite_backend::BACKEND_ROUTES;
 use betterlite_gateway::routes::GATEWAY_ROUTES;
-use betterlite_server::server::filter::matches_path;
+use betterlite_server::server::filter::keeps_route;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -30,7 +30,7 @@ impl crate::helpers::Helper for Op {
         let allowed: Vec<bool> = input
             .paths
             .iter()
-            .map(|path| matches_path(path, routes))
+            .map(|path| keeps_route(path, routes))
             .collect();
         serde_json::to_value(allowed).map_err(|error| helper_error(error.to_string()))
     }

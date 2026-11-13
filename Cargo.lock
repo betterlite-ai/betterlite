@@ -1220,6 +1220,7 @@ dependencies = [
  "betterlite-server",
  "clap",
  "nix",
+ "rstest",
  "serde",
  "serde_json",
  "tempfile",
@@ -1764,6 +1765,7 @@ dependencies = [
 name = "betterlite-gateway"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "betterlite-routes",
  "betterlite-server",
  "clap",
@@ -1774,6 +1776,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tower",
 ]
 
 [[package]]

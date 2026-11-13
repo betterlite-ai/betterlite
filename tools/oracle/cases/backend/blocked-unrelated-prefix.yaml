@@ -3,6 +3,6 @@ name: backend-blocked-unrelated-prefix
 call:
   b4471:
     component: backend
-    paths: [/v1/chat/completions]
+    paths: [/v1/chat/completions, /openai/v1/files, "/{provider}/v1/files"]
 env: {}
 compare: {ignore: []}

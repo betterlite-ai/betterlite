@@ -169,5 +169,7 @@ async fn shutdown_exits_zero_after_filtering_requests_by_path() {
     assert!(blocked_body.contains("Not Found"));
     let (allowed_status, _) = status_and_body(port, "/health/liveness").await;
     assert_eq!(allowed_status, 200);
+    let (chat_status, _) = status_and_body(port, "/v1/chat/completions").await;
+    assert_ne!(chat_status, 404);
     assert_eq!(terminate(child), Some(0));
 }

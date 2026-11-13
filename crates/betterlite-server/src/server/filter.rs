@@ -1,7 +1,6 @@
-use axum::Router;
-use axum::extract::{Request, State};
+use axum::extract::{MatchedPath, Request};
 use axum::http::StatusCode;
-use axum::middleware::{Next, from_fn_with_state};
+use axum::middleware::Next;
 use axum::response::{IntoResponse as _, Response};
 use phf::Set;
 use serde::Serialize;
@@ -18,54 +17,34 @@ struct NotFoundBody {
     detail: &'static str,
 }
 
-// LiteLLM keeps a route when it is a kept mount, an exact path, or under a kept prefix
+// LiteLLM keeps a route when its template is exact, starts with a kept prefix, or is a kept mount
 #[must_use]
-pub fn matches_path(path: &str, routes: ComponentRoutes) -> bool {
-    routes.mounts.contains(path)
-        || routes.exact.contains(path)
+pub fn keeps_route(template: &str, routes: ComponentRoutes) -> bool {
+    routes.exact.contains(template)
         || routes
             .prefixes
             .iter()
-            .any(|prefix| prefix_matches(path, prefix))
+            .any(|prefix| template.starts_with(prefix))
+        || routes.mounts.iter().any(|mount| {
+            template
+                .strip_prefix(mount)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
 }
 
-// a prefix without a template is Python's startswith; a {name} segment keeps Starlette matching one non-empty segment
-fn prefix_matches(path: &str, prefix: &str) -> bool {
-    if !prefix.contains('{') {
-        return path.starts_with(prefix);
-    }
-    let mut segments = path.split('/').filter(|segment| !segment.is_empty());
-    for part in prefix.split('/').filter(|part| !part.is_empty()) {
-        let Some(segment) = segments.next() else {
-            return false;
-        };
-        let placeholder = part.starts_with('{') && part.ends_with('}');
-        if !placeholder && segment != part {
-            return false;
-        }
-    }
-    !prefix.ends_with('/') || segments.next().is_some()
-}
-
-pub async fn filter_path(
-    State(routes): State<ComponentRoutes>,
-    request: Request,
-    next: Next,
-) -> Response {
-    if matches_path(request.uri().path(), routes) {
-        next.run(request).await
-    } else {
-        (
+// the routes arrive as a request extension, so betterlite itself runs this layer with no allowlist and keeps every route
+pub async fn filter_route(request: Request, next: Next) -> Response {
+    let routes = request.extensions().get::<ComponentRoutes>().copied();
+    if let (Some(routes), Some(matched)) = (routes, request.extensions().get::<MatchedPath>())
+        && !keeps_route(matched.as_str(), routes)
+    {
+        return (
             StatusCode::NOT_FOUND,
             axum::Json(NotFoundBody {
                 detail: "Not Found",
             }),
         )
-            .into_response()
+            .into_response();
     }
-}
-
-#[must_use]
-pub fn with_component_filter(application: Router, routes: ComponentRoutes) -> Router {
-    application.layer(from_fn_with_state(routes, filter_path))
+    next.run(request).await
 }
