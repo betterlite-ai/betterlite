@@ -70,17 +70,16 @@ fn write_repr_text(text: &str, out: &mut String) {
 
 // json.dumps with its default ensure_ascii: serde_json quotes and escapes the ASCII below the space, and DEL and every character past ASCII become \uXXXX, in surrogate pairs above the BMP.
 fn write_json_text(text: &str, out: &mut String) {
-    for character in serde_json::Value::String(text.to_owned())
+    let printable_ascii = 0x20_u16..0x7f_u16;
+    for unit in serde_json::Value::String(text.to_owned())
         .to_string()
-        .chars()
+        .encode_utf16()
     {
-        if character.is_ascii() && !character.is_ascii_control() {
-            out.push(character);
+        if printable_ascii.contains(&unit) {
+            out.extend(char::from_u32(u32::from(unit)));
         } else {
-            for unit in character.encode_utf16(&mut [0; 2]) {
-                let escaped = format!("\\u{unit:04x}");
-                out.push_str(&escaped);
-            }
+            let escaped = format!("\\u{unit:04x}");
+            out.push_str(&escaped);
         }
     }
 }
