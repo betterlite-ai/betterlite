@@ -1,0 +1,51 @@
+{
+  "kind": "helper",
+  "name": "v2-store-iso-expiry",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "v2",
+      "payloads": [
+        {
+          "access_token": "naive",
+          "refresh_token": null,
+          "expires_at": "2024-01-01T00:00:00",
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "zulu",
+          "refresh_token": null,
+          "expires_at": "2024-01-01T00:00:00Z",
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "offset",
+          "refresh_token": null,
+          "expires_at": "2024-01-01T01:00:00+01:00",
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "malformed",
+          "refresh_token": null,
+          "expires_at": "not-a-date",
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "number",
+          "refresh_token": null,
+          "expires_at": 1704067200,
+          "scopes": [],
+          "identity_binding_proof": null
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

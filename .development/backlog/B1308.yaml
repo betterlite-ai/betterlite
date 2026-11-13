@@ -1,7 +1,7 @@
 id: B1308
 milestone: M3 providers
 title: Gemini function tools, search and Maps retrieval
-status: todo
+status: done
 depends_on: [B1307, B171]
 file: tasks/B1308-gemini-tool-mapping.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1499

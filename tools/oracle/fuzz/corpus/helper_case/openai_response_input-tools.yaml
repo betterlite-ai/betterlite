@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-input-tools-seed
+call:
+  openai_response_input:
+    probes:
+    - {model: gpt-4o, input: hi, params: {tools: [{type: function, name: f, parameters: '{"type":"object","anyOf":[{"type":"string"}]}'}]}}
+    - {model: gpt-4o, input: hi, params: {tools: [raw-tool, {parameters: null}]}}
+env: {}
+compare: {ignore: []}
