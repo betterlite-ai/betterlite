@@ -73,19 +73,24 @@ fn map_param(
     context: &OptionsContext<'_>,
     warned: &mut bool,
 ) -> Result<usize, GeminiOptionsError> {
-    match param {
-        "audio" | "response_format" => map_media_param(param, value, optional, context)?,
-        "reasoning_effort" | "thinking" => thinking::map(param, value, optional, context)?,
-        "tools" | "functions" => return tools::append(value, optional, context.schema),
-        "tool_choice" | "parallel_tool_calls" | "web_search_options" => {
-            tools::map(param, value, optional, context)?;
+    if param == "tools" || param == "functions" {
+        return tools::append(value, optional, context.schema);
+    }
+    if matches!(
+        param,
+        "tool_choice" | "parallel_tool_calls" | "web_search_options"
+    ) {
+        tools::map(param, value, optional, context)?;
+    } else if matches!(param, "audio" | "response_format") {
+        map_media_param(param, value, optional, context)?;
+    } else if matches!(param, "reasoning_effort" | "thinking") {
+        thinking::map(param, value, optional, context)?;
+    } else if param == "include_server_side_tool_invocations" {
+        if decode::<bool>(value, param)? {
+            optional.insert(param.to_owned(), Json::Bool(true));
         }
-        "include_server_side_tool_invocations" => {
-            if decode::<bool>(value, param)? {
-                optional.insert(param.to_owned(), Json::Bool(true));
-            }
-        }
-        _ => map_scalar(param, value, optional, context.model, warned)?,
+    } else {
+        map_scalar(param, value, optional, context.model, warned)?;
     }
     Ok(0)
 }
