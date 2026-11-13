@@ -26,10 +26,10 @@ pub fn filter_to_model_groups(
     model_list: &[DeploymentSpec],
     model_groups: Option<&BTreeSet<String>>,
 ) -> Vec<DeploymentSpec> {
-    match model_groups {
-        None => model_list.to_vec(),
-        Some(groups) => matching(model_list, |spec| groups.contains(&spec.model_name)),
-    }
+    model_groups.map_or_else(
+        || model_list.to_vec(),
+        |groups| matching(model_list, |spec| groups.contains(&spec.model_name)),
+    )
 }
 
 #[must_use]
@@ -117,16 +117,16 @@ pub fn narrow_to_target(
     model_id: Option<&str>,
     team_id: Option<&str>,
 ) -> Vec<DeploymentSpec> {
-    if let Some(model_id) = model_id {
-        let by_id = matching(model_list, |spec| spec.id() == Some(model_id));
+    if let Some(requested_id) = model_id {
+        let by_id = matching(model_list, |spec| spec.id() == Some(requested_id));
         return if by_id.is_empty() {
             model_list.to_vec()
         } else {
             by_id
         };
     }
-    match model {
-        None => model_list.to_vec(),
-        Some(model) => deployments_targeted_by_name(model_list, model, team_id),
-    }
+    model.map_or_else(
+        || model_list.to_vec(),
+        |requested| deployments_targeted_by_name(model_list, requested, team_id),
+    )
 }

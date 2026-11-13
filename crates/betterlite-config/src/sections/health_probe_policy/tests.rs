@@ -162,14 +162,14 @@ fn a_malformed_timeout_fails_at_startup() {
 }
 
 #[test]
-fn a_negative_timeout_fails_at_startup() {
-    let error = load("{}", &[("HEALTH_CHECK_TIMEOUT_SECONDS", "-5")]).unwrap_err();
-    assert!(matches!(error, ConfigError::Environment { .. }));
+fn a_negative_timeout_counts_as_zero() {
+    let settings = loaded("{}", &[("HEALTH_CHECK_TIMEOUT_SECONDS", "-5")]);
+    assert_eq!(settings.timeout, Duration::ZERO);
 }
 
 #[rstest]
 #[case::unset(&[], "test from litellm")]
-#[case::blank(&[("DEFAULT_HEALTH_CHECK_PROMPT", "")], "test from litellm")]
+#[case::blank(&[("DEFAULT_HEALTH_CHECK_PROMPT", "")], "")]
 #[case::set(&[("DEFAULT_HEALTH_CHECK_PROMPT", "ping")], "ping")]
 fn the_prompt_reads_the_environment(#[case] environment: &[(&str, &str)], #[case] expected: &str) {
     assert_eq!(loaded("{}", environment).prompt, expected);

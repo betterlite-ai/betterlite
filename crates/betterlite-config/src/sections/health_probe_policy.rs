@@ -97,14 +97,16 @@ impl Section for Raw {
                 });
             }
         };
-        let timeout = betterlite_env::number::<u64>(
+        let configured_timeout = betterlite_env::number::<i64>(
             TIMEOUT_VARIABLE,
             &lookup.lookup(TIMEOUT_VARIABLE).unwrap_or_default(),
-        )?
-        .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
+        )?;
+        // asyncio.wait_for takes a negative timeout and times every probe out at once
+        let timeout = configured_timeout.map_or(DEFAULT_TIMEOUT, |seconds| {
+            Duration::from_secs(u64::try_from(seconds).unwrap_or_default())
+        });
         let prompt = lookup
             .lookup(PROMPT_VARIABLE)
-            .filter(|value| !value.is_empty())
             .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
         Ok(Settings {
             skip_disabled_models,

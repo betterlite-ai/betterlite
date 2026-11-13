@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rand::RngExt as _;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -38,7 +39,7 @@ fn max_tokens(params: &JsonObject) -> Option<i64> {
     }
 }
 
-fn text(params: &JsonObject, key: &str) -> Option<&str> {
+fn text<'spec>(params: &'spec JsonObject, key: &str) -> Option<&'spec str> {
     match params.get(key) {
         Some(Json::Text(value)) => Some(value),
         _ => None,

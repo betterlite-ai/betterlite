@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-// The health_check_* knobs a deployment carries in model_info, read once per probe.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModelHealthSettings {
     pub mode: Option<String>,
