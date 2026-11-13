@@ -60,7 +60,6 @@ fn mint_serves_the_cache_until_the_ttl_lapses_and_reports_the_denial() {
     let output = run(json!({
         "function": "mint",
         "config": config(),
-        "now_ms": 1_000_000_i64,
         "outcomes": [
             {"kind": "success", "body": "{\"access_token\":\"tok-0\",\"expires_in\":3600}"},
             {"kind": "success", "body": "{\"access_token\":\"tok-1\",\"expires_in\":3600}"},

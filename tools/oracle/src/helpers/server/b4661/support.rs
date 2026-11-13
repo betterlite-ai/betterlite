@@ -5,14 +5,13 @@ use async_trait::async_trait;
 use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsConfig;
 use betterlite_mcp::credential_contracts::header_carrier::HeaderCarrier;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::normalize_token_auth_method;
+use betterlite_server::mcp::outbound_credentials::WallClock;
 use betterlite_server::mcp::outbound_credentials::client_credentials::token_post::{
     M2mTokenEndpointPost, TokenEndpointOutcome,
 };
-use betterlite_server::mcp::outbound_credentials::{OAuthToken, WallClock};
 use chrono::{DateTime, TimeDelta, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 
@@ -60,16 +59,6 @@ pub(super) fn config_from(spec: &ConfigSpec) -> Result<ClientCredentialsConfig, 
         audience: spec.audience.clone(),
         upstream_resource: spec.upstream_resource.clone(),
         token_endpoint_auth_method,
-    })
-}
-
-pub(super) fn token_view(token: &OAuthToken) -> Value {
-    json!({
-        "access_token": token.access_token,
-        "expires_at_ms": token.expires_at.map(|at| at.timestamp_millis()),
-        "refresh_token": token.refresh_token,
-        "scopes": token.scopes,
-        "identity_binding_proof": token.identity_binding_proof,
     })
 }
 

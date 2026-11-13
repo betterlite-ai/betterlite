@@ -12,16 +12,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::support::{
-    ConfigSpec, ManualClock, OutcomeSpec, ScriptedPost, config_from, epoch, runtime, token_view,
-    value_error,
+    ConfigSpec, ManualClock, OutcomeSpec, ScriptedPost, config_from, epoch, runtime, value_error,
 };
 use crate::helpers::{HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MintInput {
     config: ConfigSpec,
-    #[serde(default = "default_now_ms")]
-    now_ms: i64,
     outcomes: Vec<OutcomeSpec>,
     operations: Vec<OperationSpec>,
 }
@@ -31,10 +28,6 @@ struct OperationSpec {
     server_id: String,
     #[serde(default)]
     advance_ms: i64,
-}
-
-const fn default_now_ms() -> i64 {
-    1_000_000
 }
 
 fn outcome(spec: &OutcomeSpec) -> Result<TokenEndpointOutcome, Box<HelperError>> {
@@ -58,7 +51,7 @@ fn outcome(spec: &OutcomeSpec) -> Result<TokenEndpointOutcome, Box<HelperError>>
 pub(super) async fn minted(input: &MintInput) -> HelperResult {
     let config = config_from(&input.config)?;
     let clock = Arc::new(ManualClock {
-        now: Mutex::new(epoch(input.now_ms)?),
+        now: Mutex::new(epoch(1_000_000)?),
     });
     let scripted: Vec<TokenEndpointOutcome> = input
         .outcomes
@@ -76,7 +69,13 @@ pub(super) async fn minted(input: &MintInput) -> HelperResult {
     for operation in &input.operations {
         clock.advance(operation.advance_ms);
         results.push(match source.get(&operation.server_id, &config).await {
-            Ok(token) => json!({"op": "get", "token": token_view(&token)}),
+            Ok(token) => json!({"op": "get", "token": {
+                "access_token": token.access_token,
+                "expires_at_ms": token.expires_at.map(|at| at.timestamp_millis()),
+                "refresh_token": token.refresh_token,
+                "scopes": token.scopes,
+                "identity_binding_proof": token.identity_binding_proof,
+            }}),
             Err(error) => json!({"op": "get", "error": error.to_string()}),
         });
     }

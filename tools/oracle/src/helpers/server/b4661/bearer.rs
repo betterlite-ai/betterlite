@@ -32,15 +32,6 @@ struct ScriptedCall {
     sends: Mutex<Vec<Vec<[String; 2]>>>,
 }
 
-impl ScriptedCall {
-    fn sends_view(&self) -> Vec<Vec<[String; 2]>> {
-        self.sends
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
 #[async_trait]
 impl AuthorizedCall for ScriptedCall {
     type Output = u16;
@@ -76,15 +67,6 @@ impl AuthorizedCall for ScriptedCall {
 struct ScriptedRefetch {
     answers: Mutex<VecDeque<Option<SecretString>>>,
     asked: Mutex<Vec<String>>,
-}
-
-impl ScriptedRefetch {
-    fn asked_view(&self) -> Vec<String> {
-        self.asked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
 }
 
 #[async_trait]
@@ -136,9 +118,19 @@ async fn scenario_view(scenario: &ScenarioSpec) -> HelperResult {
         .send_with_retry(&call)
         .await
         .map_err(|error| value_error(error.to_string()))?;
+    let sends = call
+        .sends
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    let refetched = refetch
+        .asked
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     Ok(json!({
-        "sends": call.sends_view(),
+        "sends": sends,
         "final_status": final_status,
-        "refetched": refetch.asked_view(),
+        "refetched": refetched,
     }))
 }

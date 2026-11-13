@@ -23,8 +23,6 @@ from pydantic import JsonValue as Json
 from pydantic import SecretStr
 from typing_extensions import override
 
-NOW_MS = 1_000_000
-
 
 class ConfigSpec(TypedDict):
     client_id: NotRequired[str | None]
@@ -90,7 +88,7 @@ Input = GrantInput | MintInput | BearerInput
 
 class ManualClock:
     def __init__(self) -> None:
-        self.now_ms = NOW_MS
+        self.now_ms = 1_000_000
 
     def __call__(self) -> float:
         return self.now_ms / 1000
@@ -193,14 +191,6 @@ class ScriptedTransport:
         return httpx2.Response(status, request=request)
 
 
-def scenario_result(sends: list[Json], final_status: int, refetched: list[Json]) -> Json:
-    view: dict[str, Json] = {}
-    view["sends"] = sends
-    view["final_status"] = final_status
-    view["refetched"] = refetched
-    return view
-
-
 async def grant_view(spec: ConfigSpec) -> Json:
     config = build_config(spec)
     granted = TokenEndpointSuccess.model_validate_json('{"body": {"access_token": "oracle"}}')
@@ -261,14 +251,11 @@ async def scenario_view(scenario: ScenarioSpec) -> Json:
     transport = ScriptedTransport(list(scenario["statuses"]))
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(transport), auth=auth) as client:
         response = await client.post("https://upstream.example/mcp")
-    return scenario_result(transport.sent, response.status_code, refetcher.asked)
-
-
-async def bearer_scenarios(input_value: BearerInput) -> Json:
-    scenarios: list[Json] = [
-        await scenario_view(scenario) for scenario in input_value["scenarios"]
-    ]
-    return {"scenarios": scenarios}
+    view: dict[str, Json] = {}
+    view["sends"] = transport.sent
+    view["final_status"] = response.status_code
+    view["refetched"] = refetcher.asked
+    return view
 
 
 def run(input_value: Input) -> Json:
@@ -277,4 +264,7 @@ def run(input_value: Input) -> Json:
         return {"grants": views}
     if input_value["function"] == "mint":
         return asyncio.run(mint_view(input_value))
-    return asyncio.run(bearer_scenarios(input_value))
+    scenarios: list[Json] = [
+        asyncio.run(scenario_view(scenario)) for scenario in input_value["scenarios"]
+    ]
+    return {"scenarios": scenarios}
