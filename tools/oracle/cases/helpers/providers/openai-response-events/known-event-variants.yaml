@@ -1,0 +1,42 @@
+kind: helper
+name: openai-response-events-known-event-variants
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    known_event_variants:
+      probes:
+        - {event: {type: response.created, response: {id: r, created_at: 1, output: []}}}
+        - {event: {type: response.in_progress, response: {id: r, created_at: 1, output: []}}}
+        - {event: {type: response.completed, response: {id: r, created_at: 1, output: []}}}
+        - {event: {type: response.failed, response: {id: r, created_at: 1, output: []}}}
+        - {event: {type: response.incomplete, response: {id: r, created_at: 1, output: []}}}
+        - {event: {type: response.output_item.added, output_index: 0, item: {type: message}}}
+        - {event: {type: response.output_item.done, output_index: 0, item: {type: message}}}
+        - {event: {type: response.content_part.added, item_id: i, output_index: 0, content_index: 0, part: {type: output_text, text: t}}}
+        - {event: {type: response.content_part.done, item_id: i, output_index: 0, content_index: 0, part: {type: refusal, refusal: 'no'}}}
+        - {event: {type: response.output_text.delta, item_id: i, output_index: 0, content_index: 0, delta: d}}
+        - {event: {type: response.output_text.annotation.added, item_id: i, output_index: 0, content_index: 0, annotation_index: 1, annotation: {type: url_citation}}}
+        - {event: {type: response.output_text.done, item_id: i, output_index: 0, content_index: 0, text: t}}
+        - {event: {type: response.refusal.delta, item_id: i, output_index: 0, content_index: 0, delta: d}}
+        - {event: {type: response.refusal.done, item_id: i, output_index: 0, content_index: 0, refusal: 'no'}}
+        - {event: {type: response.function_call_arguments.delta, item_id: i, output_index: 0, delta: '{'}}
+        - {event: {type: response.function_call_arguments.done, item_id: i, output_index: 0, arguments: '{}'}}
+        - {event: {type: response.file_search_call.in_progress, item_id: i, output_index: 0}}
+        - {event: {type: response.file_search_call.searching, item_id: i, output_index: 0}}
+        - {event: {type: response.file_search_call.completed, item_id: i, output_index: 0}}
+        - {event: {type: response.web_search_call.in_progress, item_id: i, output_index: 0}}
+        - {event: {type: response.web_search_call.searching, item_id: i, output_index: 0}}
+        - {event: {type: response.web_search_call.completed, item_id: i, output_index: 0}}
+        - {event: {type: response.mcp_list_tools.in_progress, sequence_number: 1, output_index: 0, item_id: i}}
+        - {event: {type: response.mcp_list_tools.completed, sequence_number: 2, output_index: 0, item_id: i}}
+        - {event: {type: response.mcp_list_tools.failed, sequence_number: 3, output_index: 0, item_id: i}}
+        - {event: {type: response.mcp_call.in_progress, sequence_number: 4, output_index: 0, item_id: i}}
+        - {event: {type: response.mcp_call_arguments.delta, sequence_number: 5, output_index: 0, item_id: i, delta: '{'}}
+        - {event: {type: response.mcp_call_arguments.done, sequence_number: 6, output_index: 0, item_id: i, arguments: '{}'}}
+        - {event: {type: response.mcp_call.completed, sequence_number: 7, output_index: 0, item_id: i}}
+        - {event: {type: response.mcp_call.failed, sequence_number: 8, output_index: 0, item_id: i}}
+        - {event: {type: image_generation.partial_image, partial_image_index: 0, b64_json: 'YQ=='}}
+        - {event: {type: error, sequence_number: 9, error: {type: invalid_request_error, code: bad, message: m, param: messages}}}
+        - {event: {type: response.output_text.delta, item_id: i, output_index: 0, content_index: 0, delta: d, sequence_number: 10}}
+        - {event: {type: response.output_text.delta, item_id: 5, output_index: 0, content_index: 0, delta: d}}

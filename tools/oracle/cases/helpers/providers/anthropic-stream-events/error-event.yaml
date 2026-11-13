@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-stream-events-error-event
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: error, error: {type: api_error, message: boom}}}
+      - {function: chunk, chunk: {type: error, error: {type: rate_limit_error, message: slow}}}
+      - {function: chunk, chunk: {type: error, error: {type: authentication_error, message: bad key}}}
+      - {function: chunk, chunk: {type: error, error: {type: something_new, message: odd}}}
+      - {function: chunk, chunk: {type: error, error: {message: no type}}}
+      - {function: chunk, chunk: {type: error, error: {}}}
+      - {function: chunk, chunk: {type: error}}
+      - {function: chunk, chunk: {type: error, error: null}}
+      - {function: chunk, chunk: {type: error, error: false}}
+      - {function: chunk, chunk: {type: error, error: {message: null}}}
+      - {function: chunk, chunk: {type: error, error: {message: ""}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}
