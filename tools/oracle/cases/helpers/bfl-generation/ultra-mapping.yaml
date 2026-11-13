@@ -1,0 +1,23 @@
+kind: helper
+name: ultra-mapping
+call:
+  bfl_generation:
+    operation: mapping
+    model: black_forest_labs/flux-pro-1.1-ultra
+    prompt: a cat on a windowsill
+    drop_params: false
+    requests:
+      - params:
+          n: 2
+          quality: hd
+          size: 1792x1024
+          seed: 7
+          output_format: jpeg
+          safety_tolerance: 3
+          prompt_upsampling: true
+          aspect_ratio: "16:9"
+          image_url: https://example.test/input.png
+          image_prompt_strength: 0.6
+        optional_params: {}
+env: {}
+compare: {ignore: []}

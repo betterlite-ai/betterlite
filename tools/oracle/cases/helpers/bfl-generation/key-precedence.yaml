@@ -1,0 +1,20 @@
+kind: helper
+name: key-precedence
+call:
+  bfl_generation:
+    operation: credentials
+    model: black_forest_labs/flux-pro-1.1
+    environment:
+      BFL_API_KEY: env-bfl
+      BLACK_FOREST_LABS_API_KEY: env-legacy
+      BFL_API_BASE: https://env.test/
+    requests:
+      - api_key: caller-key
+        api_base: https://caller.test//
+      - api_key: null
+        api_base: null
+env:
+  BFL_API_KEY: env-bfl
+  BLACK_FOREST_LABS_API_KEY: env-legacy
+  BFL_API_BASE: https://env.test/
+compare: {ignore: []}

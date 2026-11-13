@@ -1,0 +1,15 @@
+kind: helper
+name: retained-option
+call:
+  bfl_generation:
+    operation: mapping
+    model: flux-pro-1.1
+    prompt: a lighthouse
+    drop_params: false
+    requests:
+      - params: {size: 1024x1024, n: 4, seed: 9}
+        optional_params: {size: 512x512, num_images: 3}
+      - params: {quality: standard, raw: null}
+        optional_params: {raw: true}
+env: {}
+compare: {ignore: []}

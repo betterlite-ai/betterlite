@@ -1,0 +1,12 @@
+kind: helper
+name: unknown-model
+call:
+  bfl_generation:
+    operation: credentials
+    model: black_forest_labs/FLUX-Unknown
+    environment: {}
+    requests:
+      - api_key: caller-key
+        api_base: null
+env: {}
+compare: {ignore: []}

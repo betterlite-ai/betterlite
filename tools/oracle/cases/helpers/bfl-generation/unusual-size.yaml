@@ -1,0 +1,21 @@
+kind: helper
+name: unusual-size
+call:
+  bfl_generation:
+    operation: mapping
+    model: flux-dev
+    prompt: a desert road
+    drop_params: true
+    requests:
+      - params: {size: 1344x768}
+        optional_params: {}
+      - params: {size: 1024X1024}
+        optional_params: {}
+      - params: {size: "1344"}
+        optional_params: {}
+      - params: {size: " 800x600 "}
+        optional_params: {}
+      - params: {size: 256x256, style: vivid}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

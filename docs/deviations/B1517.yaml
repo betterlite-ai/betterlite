@@ -1,0 +1,8 @@
+task: B1517
+deviations:
+  - what: A polling URL the URL library cannot parse is rejected with BFL's 502 error; LiteLLM's urlparse raises ValueError for the same malformed IPv6 input and the scheme check only runs on URLs it accepts.
+    why: The trust boundary must reject before an x-key-bearing request, and no working setup can rely on a provider handing back an unparsable URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/common_utils.py#L33-L44
+  - what: Size dimensions parse ASCII digits with an optional sign and surrounding whitespace; Python's int() also accepts underscores and non-ASCII digits.
+    why: A working setup sends ordinary pixel dimensions, and the shared parser keeps the request body typed as JSON integers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L120-L146

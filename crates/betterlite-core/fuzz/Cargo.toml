@@ -29,6 +29,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bfl_boundary"
+path = "fuzz_targets/bfl_boundary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "budget_reset_clock"
 path = "fuzz_targets/budget_reset_clock.rs"
 test = false
