@@ -28,9 +28,7 @@ pub fn set_custom_id_labels(labels: &mut IndexMap<String, Json>, custom_id: &str
     labels.insert(String::from(ORDINARY_LABEL), Json::Text(lossy));
     let encoded = BASE32_NOPAD.encode(custom_id.as_bytes()).to_lowercase();
     let mut chunks: Vec<&[u8]> = encoded.as_bytes().chunks(MAX_ENCODED_LEN).collect();
-    if chunks.is_empty() {
-        chunks.push(b"");
-    }
+    chunks.resize(chunks.len().max(1), b"");
     for (index, chunk) in chunks.into_iter().enumerate() {
         let name = match index {
             0 => String::from(RAW_LABEL),

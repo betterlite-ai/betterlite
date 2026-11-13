@@ -83,11 +83,9 @@ fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
 }
 
 fn regroup(values: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
-    let mut next = 0_u128;
-    let outputs = regroup_embeddings(&decode_rows(values)?, model, &mut || {
-        next = next.saturating_add(1);
-        Uuid::from_u128(next)
-    })
-    .or_value_error()?;
+    let mut ids = (1..).map(Uuid::from_u128);
+    let rows = decode_rows(values)?;
+    let outputs = regroup_embeddings(&rows, model, &mut || ids.next().unwrap_or_default())
+        .or_value_error()?;
     Ok(json!({"rows": outputs}))
 }

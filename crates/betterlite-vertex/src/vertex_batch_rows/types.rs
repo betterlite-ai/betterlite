@@ -22,15 +22,13 @@ impl RowField {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 pub struct VertexBatchRow {
     pub key: Option<String>,
-    #[serde(default)]
     pub request: RowField,
     pub status: Option<String>,
-    #[serde(default)]
     pub processed_time: RowField,
-    #[serde(default)]
     pub response: RowField,
 }
 
