@@ -708,9 +708,17 @@ fn content_start_required_fields() {
         ))
         .unwrap_err();
     assert!(missing_text.to_string().contains("content_block.text"));
+    let first = chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"f1","name":"f","input":{}}}"#,
+    );
+    assert_eq!(
+        first.choices[0].delta.tool_calls.as_ref().unwrap()[0].index,
+        0
+    );
     let missing_id = converter
         .chunk_parser(&parse(
-            r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"f","input":{}}}"#,
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"f2","input":{}}}"#,
         ))
         .unwrap_err();
     assert!(missing_id.to_string().contains("content_block.id"));

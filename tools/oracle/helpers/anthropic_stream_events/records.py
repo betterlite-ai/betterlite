@@ -1,12 +1,11 @@
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.types.utils import ModelResponseStream
-
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+from pydantic import JsonValue
 
 
 class Dumpable(Protocol):
-    def model_dump(self) -> Json: ...
+    def model_dump(self) -> JsonValue: ...
 
 
 class Decoder(Protocol):
@@ -17,9 +16,9 @@ class Decoder(Protocol):
     served_model: str | None
     _current_server_tool_id: str | None
     _container_id: str | None
-    _server_tool_inputs: dict[str, Json]
+    _server_tool_inputs: dict[str, JsonValue]
 
-    def chunk_parser(self, *, chunk: dict[str, Json]) -> ModelResponseStream: ...
+    def chunk_parser(self, *, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
 
     def _handle_accumulated_json_chunk(
         self, *, data_str: str, is_final: bool
@@ -28,7 +27,7 @@ class Decoder(Protocol):
 
 class ChunkStep(TypedDict):
     function: Literal["chunk"]
-    chunk: dict[str, Json]
+    chunk: dict[str, JsonValue]
 
 
 class AccumulatedStep(TypedDict):

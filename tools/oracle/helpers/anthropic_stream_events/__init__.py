@@ -5,8 +5,9 @@ from uuid import UUID
 import litellm.types.utils
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator
 from litellm.llms.anthropic.common_utils import AnthropicError
+from pydantic import JsonValue
 
-from anthropic_stream_events.records import Decoder, Dumpable, Input, Json, Step
+from anthropic_stream_events.records import Decoder, Dumpable, Input, Step
 
 
 class FixedUuid:
@@ -30,11 +31,11 @@ def _iterator(input_value: Input) -> Decoder:
     return cast(Decoder, created)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L546
 
 
-def _chunk_view(chunk: Dumpable) -> Json:
-    dumped = cast(dict[str, Json], chunk.model_dump())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096
-    choice = cast(dict[str, Json], cast(list[Json], dumped["choices"])[0])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006
-    delta = cast(dict[str, Json], choice["delta"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507
-    delta_view: dict[str, Json] = {
+def _chunk_view(chunk: Dumpable) -> JsonValue:
+    dumped = cast(dict[str, JsonValue], chunk.model_dump())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096
+    choice = cast(dict[str, JsonValue], cast(list[JsonValue], dumped["choices"])[0])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006
+    delta = cast(dict[str, JsonValue], choice["delta"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507
+    delta_view: dict[str, JsonValue] = {
         "content": delta["content"],
         "provider_specific_fields": delta.get("provider_specific_fields"),
     }
@@ -42,7 +43,7 @@ def _chunk_view(chunk: Dumpable) -> Json:
         value = delta.get(key)
         if value is not None:
             delta_view[key] = value
-    view: dict[str, Json] = {
+    view: dict[str, JsonValue] = {
         "id": dumped["id"],
         "model": dumped.get("model"),
         "choices": [
@@ -57,8 +58,8 @@ def _chunk_view(chunk: Dumpable) -> Json:
     return deepcopy(view)
 
 
-def _state_view(iterator: Decoder) -> Json:
-    view: dict[str, Json] = {
+def _state_view(iterator: Decoder) -> JsonValue:
+    view: dict[str, JsonValue] = {
         "current_content_block_type": iterator.current_content_block_type,
         "current_server_tool_id": iterator._current_server_tool_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L601
         "is_response_format_tool": iterator.is_response_format_tool,
@@ -71,7 +72,7 @@ def _state_view(iterator: Decoder) -> Json:
     return deepcopy(view)
 
 
-def _run_step(iterator: Decoder, step: Step) -> Json:
+def _run_step(iterator: Decoder, step: Step) -> JsonValue:
     try:
         match step["function"]:
             case "chunk":
@@ -89,6 +90,6 @@ def _run_step(iterator: Decoder, step: Step) -> Json:
         return {"failed": True}
 
 
-def run(input_value: Input) -> Json:
+def run(input_value: Input) -> JsonValue:
     iterator = _iterator(input_value)
     return {"steps": [_run_step(iterator, step) for step in input_value["steps"]]}

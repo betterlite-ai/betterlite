@@ -121,10 +121,7 @@ fn web_search_name_variants() {
         &mut other,
         r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"ws2","name":"web_fetch","input":{"url":"https://z"}}}"#,
     );
-    assert_eq!(
-        at(&provider_fields(&fetch_tool).unwrap(), "/web_search_calls"),
-        None
-    );
+    assert_eq!(provider_fields(&fetch_tool), None);
     assert_eq!(
         as_json(other.state.server_tool_inputs.get("ws2").unwrap()),
         parse(r#"{"url":"https://z"}"#)
