@@ -256,25 +256,24 @@ where
 }
 
 fn render_models(catalog: &DeploymentCatalog) -> String {
+    let models = catalog
+        .models
+        .iter()
+        .map(|spec| format!("{}:{}", spec.model_name, spec.id().unwrap_or_default()));
+    let ids = catalog
+        .id_index
+        .iter()
+        .map(|(id, index)| format!("{id}:{index}"));
     format!(
         "models=[{}] ids({}) names({}) set=[{}]",
-        joined(catalog.models.iter().map(|spec| format!(
-            "{}:{}",
-            spec.model_name,
-            spec.id().unwrap_or_default()
-        ))),
-        joined(
-            catalog
-                .id_index
-                .iter()
-                .map(|(id, index)| format!("{id}:{index}"))
-        ),
+        joined(models),
+        joined(ids),
         indices(&catalog.name_index),
         joined(&catalog.model_names)
     )
 }
 
-fn render_patterns(catalog: &DeploymentCatalog) -> String {
+fn render(catalog: &DeploymentCatalog, show: Show) -> String {
     let teams = catalog
         .team_pattern_routers
         .iter()
@@ -283,32 +282,24 @@ fn render_patterns(catalog: &DeploymentCatalog) -> String {
         .provider_unresolved
         .iter()
         .map(|input| &input.model_name);
-    format!(
-        "defaults=[{}] route=[{}] teams=[{}] unresolved=[{}]",
-        joined(&catalog.provider_default_ids),
-        route(&catalog.pattern_router),
-        joined(teams),
-        joined(unresolved)
-    )
-}
-
-fn render_teams(catalog: &DeploymentCatalog) -> String {
     let keys = catalog
         .team_index
         .iter()
         .map(|((team, name), found)| format!("{team}/{name}:{found:?}"));
-    format!(
-        "teams=[{}] public=[{}]",
-        joined(keys),
-        joined(catalog.team_public_model_names())
-    )
-}
-
-fn render(catalog: &DeploymentCatalog, show: Show) -> String {
     match show {
         Show::Models | Show::Held => render_models(catalog),
-        Show::Patterns => render_patterns(catalog),
-        Show::Teams => render_teams(catalog),
+        Show::Patterns => format!(
+            "defaults=[{}] route=[{}] teams=[{}] unresolved=[{}]",
+            joined(&catalog.provider_default_ids),
+            route(&catalog.pattern_router),
+            joined(teams),
+            joined(unresolved)
+        ),
+        Show::Teams => format!(
+            "teams=[{}] public=[{}]",
+            joined(keys),
+            joined(catalog.team_public_model_names())
+        ),
         Show::Outcomes | Show::Calls => String::new(),
     }
 }
