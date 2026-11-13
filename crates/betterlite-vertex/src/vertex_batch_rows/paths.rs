@@ -1,7 +1,7 @@
+use betterlite_context::cloud_storage::VERTEX_AI_MANAGED_GCS_PREFIX;
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 
-const MANAGED_GCS_PREFIX: &str = "litellm-vertex-files/";
 const MODEL_PATH_PATTERN: &str = "publishers/[^/]+/models/([^/?]+)";
 
 #[must_use]
@@ -16,7 +16,7 @@ pub fn model_from_managed_gcs_url(url: &str) -> Option<String> {
 pub fn is_passthrough_managed_gcs_url(url: &str) -> bool {
     percent_decode_str(url).decode_utf8().is_ok_and(|decoded| {
         decoded
-            .split_once(MANAGED_GCS_PREFIX)
+            .split_once(VERTEX_AI_MANAGED_GCS_PREFIX)
             .is_some_and(|(_head, tail)| tail.starts_with("passthrough/"))
     })
 }

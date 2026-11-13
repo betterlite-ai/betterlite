@@ -162,6 +162,14 @@ fn set_custom_id_labels_round_trips_an_identifier_across_chunks() {
 }
 
 #[test]
+fn custom_id_from_labels_does_not_percent_decode_the_raw_label() {
+    let written = written_labels("a%23b");
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "a%23b");
+    let encoded = labels(&[(RAW_LABEL, "b32_mestem3c")]);
+    assert_eq!(custom_id_from_labels(&encoded).unwrap(), "a%23b");
+}
+
+#[test]
 fn custom_id_from_labels_reads_the_decoded_raw_label() {
     let written = labels(&[(RAW_LABEL, "b32_jbswy3dp")]);
     assert_eq!(custom_id_from_labels(&written).unwrap(), "Hello");
@@ -706,6 +714,10 @@ fn is_passthrough_managed_gcs_url_reads_the_first_prefix(
 )]
 #[case::other_publisher("https://x/publishers/anthropic/models/claude/rest", Some("claude"))]
 #[case::encoded_publisher("https://x/p%75blishers/google/models/my%20model", Some("my model"))]
+#[case::first_model_wins(
+    "gs://b/litellm-vertex-files/x/publishers/google/models/first/publishers/google/models/second",
+    Some("first")
+)]
 #[case::no_model_path("https://x/models/plain", None)]
 fn model_from_managed_gcs_url_reads_the_first_model_segment(
     #[case] url: &str,

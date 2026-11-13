@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-batch-rows-percent-in-label
+call:
+  vertex_batch_rows:
+    operation: rows
+    rows:
+      - request: {labels: {litellm_custom_id_raw: "b32_mestem3c", litellm_custom_id: a_23b}}
+env: {}
+compare: {ignore: []}

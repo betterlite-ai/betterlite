@@ -8,5 +8,6 @@ call:
       - req-1
       - ""
       - İstanbul
+      - a%23b
 env: {}
 compare: {ignore: []}

@@ -13,5 +13,6 @@ call:
       - https://x/publishers/anthropic/models/claude/rest
       - https://x/p%75blishers/google/models/my%20model
       - https://x/models/plain
+      - gs://b/litellm-vertex-files/x/publishers/google/models/first/publishers/google/models/second
 env: {}
 compare: {ignore: []}
