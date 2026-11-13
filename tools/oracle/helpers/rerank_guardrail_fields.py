@@ -62,9 +62,7 @@ OBJECTS = TypeAdapter(dict[str, object])
 
 def scripted_guardrail(texts: list[JsonValue] | None, calls: list[JsonValue]) -> CustomGuardrail:
     members = OBJECTS.validate_json("{}")
-    members["apply_guardrail"] = scripted_apply
-    members["texts"] = texts
-    members["calls"] = calls
+    members.update(apply_guardrail=scripted_apply, texts=texts, calls=calls)
     members["records_own_guardrail_information"] = True
     return type("Scripted", (CustomGuardrail,), members)(guardrail_name="scripted")  # type: ignore[no-any-return,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L180
 

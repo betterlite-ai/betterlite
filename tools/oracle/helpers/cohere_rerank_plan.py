@@ -13,6 +13,8 @@ from pydantic import JsonValue
 
 Params = dict[str, JsonValue]
 Document = str | dict[str, JsonValue]
+OptText = str | None
+OptCount = int | None
 
 MapParams = Callable[
     [
@@ -21,13 +23,13 @@ MapParams = Callable[
         bool,
         str,
         list[Document],
-        str | None,
-        int | None,
+        OptText,
+        OptCount,
         list[str] | None,
         bool | None,
-        int | None,
-        int | None,
-        str | None,
+        OptCount,
+        OptCount,
+        OptText,
     ],
     Params,
 ]
@@ -117,9 +119,8 @@ def run(input_value: Input) -> JsonValue:
             ("COHERE_API_KEY", settings.get("cohere_api_key")),
             ("CO_API_KEY", settings.get("co_api_key")),
         ):
-            if key is None:
-                os.environ.pop(name, None)
-            else:
+            os.environ.pop(name, None)
+            if key is not None:
                 os.environ[name] = key
         litellm.cohere_key = settings.get("cohere_key")
         config = V1 if call["version"] == "v1" else V2
