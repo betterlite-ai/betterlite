@@ -197,6 +197,10 @@ async fn lookup_hit_strips_tools() {
     );
     assert_eq!(options, CacheCreateOptions::default());
     assert_eq!(transport.methods(), vec![Method::GET]);
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/cachedContents"
+    );
 }
 
 #[tokio::test]
