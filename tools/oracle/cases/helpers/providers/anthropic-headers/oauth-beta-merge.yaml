@@ -1,0 +1,40 @@
+kind: helper
+name: oauth-beta-merge
+call:
+  anthropic_headers:
+    environment: {ANTHROPIC_API_KEY: sk-ant-oat-fixture-token}
+    calls:
+      - function: headers
+        api_key: sk-ant-oat-fixture-token
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: [custom-beta, oauth-2025-04-20, custom-beta]
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: headers
+        api_key: sk-ant-api03-fixture
+        auth_token: null
+        anthropic_version: null
+        api_base: null
+        use_bearer_for_custom_base: false
+        user_betas: null
+        features: []
+        computer_tool_used: null
+        is_vertex_request: false
+        web_search_tool_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers:
+          - {name: anthropic-beta, value: caller-beta}
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+env: {ANTHROPIC_API_KEY: sk-ant-oat-fixture-token}
+compare: {ignore: []}

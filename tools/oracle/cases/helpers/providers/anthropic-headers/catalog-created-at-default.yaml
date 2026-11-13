@@ -1,0 +1,13 @@
+kind: helper
+name: catalog-created-at-default
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: model_list
+        models:
+          - {id: anthropic/claude-sonnet-4, object: model, created: 0, owned_by: openai}
+        display_names: {}
+        listed_ids: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,48 @@
+kind: helper
+name: user-beta-preserved
+call:
+  anthropic_headers:
+    environment: {ANTHROPIC_API_KEY: sk-ant-api03-fixture}
+    calls:
+      - function: environment
+        model: claude-sonnet-4
+        headers:
+          - {name: anthropic-beta, value: "custom-one,custom-two"}
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers:
+          - {name: anthropic-beta, value: " beta-b ,alpha ,, beta-b "}
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers:
+          - {name: anthropic-beta, value: custom-beta}
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages:
+          - {role: user, content: [{type: file, file_id: file_1}]}
+        optional_params: {}
+        effort_used: false
+      - function: environment
+        model: claude-sonnet-4
+        headers: []
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+env: {ANTHROPIC_API_KEY: sk-ant-api03-fixture}
+compare: {ignore: []}
