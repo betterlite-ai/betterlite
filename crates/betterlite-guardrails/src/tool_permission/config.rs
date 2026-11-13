@@ -11,7 +11,7 @@ use super::rule::ToolPermissionRule;
 
 mod tests;
 
-// The UI schema LiteLLM returns from get_config_model; defaults and case folding follow its validators
+// The UI schema LiteLLM returns from get_config_model; resolve() validates the action strings
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolPermissionConfigModel {
@@ -19,57 +19,24 @@ pub struct ToolPermissionConfigModel {
     pub optional_params: Option<BTreeMap<String, GuardrailValue>>,
     #[serde(default)]
     pub rules: Option<Vec<ToolPermissionRule>>,
-    #[serde(default)]
-    pub default_action: DefaultAction,
-    #[serde(default)]
-    pub on_disallowed_action: DisallowedAction,
+    #[serde(default = "default_default_action")]
+    pub default_action: String,
+    #[serde(default = "default_on_disallowed_action")]
+    pub on_disallowed_action: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct DefaultAction(pub ToolDefaultAction);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct DisallowedAction(pub ToolDisallowedAction);
-
-impl Default for DefaultAction {
-    fn default() -> Self {
-        Self(ToolDefaultAction::Deny)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolPermissionSettings {
+    pub default_action: ToolDefaultAction,
+    pub on_disallowed_action: ToolDisallowedAction,
 }
 
-impl Default for DisallowedAction {
-    fn default() -> Self {
-        Self(ToolDisallowedAction::Block)
-    }
-}
-
-impl TryFrom<String> for DefaultAction {
-    type Error = ToolPermissionError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        parse_default_action(&value).map(Self)
-    }
-}
-
-impl From<DefaultAction> for String {
-    fn from(action: DefaultAction) -> Self {
-        default_action_text(action.0).to_owned()
-    }
-}
-
-impl TryFrom<String> for DisallowedAction {
-    type Error = ToolPermissionError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        parse_disallowed_action(&value).map(Self)
-    }
-}
-
-impl From<DisallowedAction> for String {
-    fn from(action: DisallowedAction) -> Self {
-        disallowed_action_text(action.0).to_owned()
+impl ToolPermissionConfigModel {
+    pub fn resolve(&self) -> Result<ToolPermissionSettings, ToolPermissionError> {
+        Ok(ToolPermissionSettings {
+            default_action: parse_default_action(&self.default_action)?,
+            on_disallowed_action: parse_disallowed_action(&self.on_disallowed_action)?,
+        })
     }
 }
 
@@ -77,6 +44,14 @@ impl GuardrailConfigModelIdentity for ToolPermissionConfigModel {
     fn ui_friendly_name() -> &'static str {
         "LiteLLM Tool Permission Guardrail"
     }
+}
+
+fn default_default_action() -> String {
+    "deny".to_owned()
+}
+
+fn default_on_disallowed_action() -> String {
+    "block".to_owned()
 }
 
 #[must_use]

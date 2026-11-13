@@ -4,10 +4,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rstest::rstest;
 
-use super::{
-    DefaultAction, DisallowedAction, ToolPermissionConfigModel, parse_default_action,
-    parse_disallowed_action,
-};
+use super::{ToolPermissionConfigModel, parse_default_action, parse_disallowed_action};
 use crate::guardrail_initializers::tool_permission::{ToolDefaultAction, ToolDisallowedAction};
 use crate::tool_permission::SUPPORTED_EVENT_HOOKS;
 use crate::tool_permission::rule::ToolDecision;
@@ -19,14 +16,11 @@ fn model(text: &str) -> ToolPermissionConfigModel {
 #[test]
 fn config_model_defaults_to_deny_and_block() {
     let parsed = model("{}");
-    assert_eq!(
-        parsed.default_action,
-        DefaultAction(ToolDefaultAction::Deny)
-    );
-    assert_eq!(
-        parsed.on_disallowed_action,
-        DisallowedAction(ToolDisallowedAction::Block)
-    );
+    assert_eq!(parsed.default_action, "deny");
+    assert_eq!(parsed.on_disallowed_action, "block");
+    let settings = parsed.resolve().expect("resolved settings");
+    assert_eq!(settings.default_action, ToolDefaultAction::Deny);
+    assert_eq!(settings.on_disallowed_action, ToolDisallowedAction::Block);
     assert_eq!(parsed.rules, None);
     assert_eq!(parsed.optional_params, None);
 }
@@ -47,19 +41,16 @@ fn config_model_normalizes_the_actions_to_lowercase(
     #[case] expected_default: ToolDefaultAction,
     #[case] expected_disallowed: ToolDisallowedAction,
 ) {
-    let parsed = model(text);
-    assert_eq!(parsed.default_action, DefaultAction(expected_default));
-    assert_eq!(
-        parsed.on_disallowed_action,
-        DisallowedAction(expected_disallowed)
-    );
+    let settings = model(text).resolve().expect("resolved settings");
+    assert_eq!(settings.default_action, expected_default);
+    assert_eq!(settings.on_disallowed_action, expected_disallowed);
 }
 
 #[rstest]
 #[case::default_action(r#"{"default_action": "drop"}"#, "default_action")]
 #[case::on_disallowed_action(r#"{"on_disallowed_action": "ignore"}"#, "on_disallowed_action")]
 fn config_model_rejects_an_unknown_action(#[case] text: &str, #[case] field: &str) {
-    let error = serde_json::from_str::<ToolPermissionConfigModel>(text).unwrap_err();
+    let error = model(text).resolve().unwrap_err();
     assert!(
         error.to_string().contains(field),
         "unexpected error {error}"
