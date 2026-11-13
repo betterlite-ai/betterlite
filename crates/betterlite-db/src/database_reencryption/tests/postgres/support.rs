@@ -2,15 +2,15 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
+use tokio_postgres::NoTls;
 
-use super::super::fixtures::{MASTER_KEY, PREVIOUS_KEY, decrypted_leaves, json};
+use super::super::fixtures::{decrypted_leaves, json, MASTER_KEY, PREVIOUS_KEY};
 use crate::database_reencryption::outcome::{MigrationFailure, MigrationOutcome};
 use crate::database_reencryption::registry::SecretColumn;
-use crate::database_reencryption::runner::{MigrationRequest, migrate_if_requested};
-use crate::encryption_scan::MigrationJson;
+use crate::database_reencryption::runner::{migrate_if_requested, MigrationRequest};
 use crate::encryption_scan::secret_text::SecretText;
+use crate::encryption_scan::MigrationJson;
 use crate::stored_cipher::DbCipher;
 
 #[derive(Parser)]

@@ -2,8 +2,8 @@ use betterlite_secrets::secret_codec::CALLBACK_VAR_ENCRYPTED_PREFIX;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::MigrationError;
-use crate::encryption_scan::MigrationJson;
 use crate::encryption_scan::secret_text::SecretText;
+use crate::encryption_scan::MigrationJson;
 
 enum Stage {
     Visit(MigrationJson, i64),

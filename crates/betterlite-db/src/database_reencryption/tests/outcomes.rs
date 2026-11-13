@@ -3,10 +3,10 @@ use std::io;
 use secrecy::SecretString;
 
 use super::fixtures::{MASTER_KEY, PREVIOUS_KEY};
-use crate::database_reencryption::MigrationError;
 use crate::database_reencryption::outcome::{
-    MigrationFailure, MigrationOutcome, NothingToMigrate, describe_outcome,
+    describe_outcome, MigrationFailure, MigrationOutcome, NothingToMigrate,
 };
+use crate::database_reencryption::MigrationError;
 
 #[test]
 fn advice_salt() {

@@ -3,14 +3,14 @@ use std::future::Future;
 
 use deadpool_postgres::Client;
 use secrecy::SecretString;
-use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
+use tokio_postgres::Row;
 
+use super::registry::{registered_columns, rows_sql, update_sql, SecretColumn, DISCOVERY_SQL};
 use super::MigrationError;
-use super::registry::{DISCOVERY_SQL, SecretColumn, registered_columns, rows_sql, update_sql};
-use crate::encryption_scan::MigrationJson;
 use crate::encryption_scan::decode_migration_json;
 use crate::encryption_scan::secret_text::SecretText;
+use crate::encryption_scan::MigrationJson;
 
 // SQL NULL is None; a JSON null is Some(MigrationJson::Null), so the two never merge
 pub struct SecretRow {

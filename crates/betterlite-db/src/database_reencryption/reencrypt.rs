@@ -1,11 +1,11 @@
-use betterlite_secrets::secret_codec::{StoredValue, decrypt_if_encrypted_with};
+use betterlite_secrets::secret_codec::{decrypt_if_encrypted_with, StoredValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::MigrationError;
 use super::registry::SecretColumn;
 use super::runner::MigrationPlan;
 use super::storage::{SecretRow, SecretStorage};
 use super::traversal::{as_sql_parameter, replace_ciphertexts};
+use super::MigrationError;
 
 pub async fn reencrypt_stored_values<D>(
     database: &D,

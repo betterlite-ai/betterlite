@@ -4,9 +4,9 @@ use std::sync::Mutex;
 use rstest::rstest;
 
 use super::fixtures::json;
-use crate::database_reencryption::MigrationError;
 use crate::database_reencryption::registry::registered_columns;
 use crate::database_reencryption::traversal::{as_sql_parameter, replace_ciphertexts};
+use crate::database_reencryption::MigrationError;
 use crate::encryption_scan::MigrationJson;
 
 fn rendered(value: &MigrationJson) -> String {

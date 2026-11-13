@@ -1,18 +1,18 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::sync::Arc;
+use std::future::{ready, Future};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
-use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::database_reencryption::outcome::{MigrationOutcome, NothingToMigrate};
 use betterlite_db::database_reencryption::registry::SecretColumn;
-use betterlite_db::database_reencryption::runner::{MigrationRequest, migrate_if_requested};
+use betterlite_db::database_reencryption::runner::{migrate_if_requested, MigrationRequest};
 use betterlite_db::database_reencryption::storage::{SecretRow, SecretStorage};
 use betterlite_db::database_reencryption::traversal::replace_ciphertexts;
-use betterlite_db::encryption_scan::MigrationJson;
+use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::encryption_scan::decode_migration_json;
+use betterlite_db::encryption_scan::MigrationJson;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};

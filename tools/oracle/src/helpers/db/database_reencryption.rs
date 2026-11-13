@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 use std::io;
 
-use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::database_reencryption::outcome::{
-    MigrationFailure, MigrationOutcome, NothingToMigrate, describe_outcome,
+    describe_outcome, MigrationFailure, MigrationOutcome, NothingToMigrate,
 };
 use betterlite_db::database_reencryption::traversal::{as_sql_parameter, replace_ciphertexts};
+use betterlite_db::database_reencryption::MigrationError;
 use betterlite_db::encryption_scan::decode_migration_json;
 use serde_json::Value;
 

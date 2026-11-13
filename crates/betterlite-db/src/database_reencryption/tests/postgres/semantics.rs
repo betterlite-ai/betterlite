@@ -1,8 +1,8 @@
 use betterlite_secrets::secret_codec::Algorithm;
 use secrecy::SecretString;
 
-use super::super::fixtures::{MASTER_KEY, PREVIOUS_KEY, SALT_KEY, cipher, column, sealed};
-use super::support::{Database, database, master, migrate, plaintexts, previous};
+use super::super::fixtures::{cipher, column, sealed, MASTER_KEY, PREVIOUS_KEY, SALT_KEY};
+use super::support::{database, master, migrate, plaintexts, previous, Database};
 use crate::database_reencryption::counting::count_values_encrypted_with;
 use crate::database_reencryption::outcome::{MigrationOutcome, NothingToMigrate};
 use crate::database_reencryption::registry::SecretColumn;
