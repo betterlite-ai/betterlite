@@ -2606,6 +2606,7 @@ dependencies = [
  "http 1.5.0",
  "image",
  "indexmap 2.14.2",
+ "jiff",
  "jsonwebtoken",
  "mutants",
  "pem",
