@@ -74,8 +74,10 @@ impl Preset for AgentopsPreset {
 
 #[must_use]
 pub fn agentops_exporter_factory(clients: &HttpClients) -> ExporterFactory {
-    let client = Arc::clone(&clients.traces);
-    Arc::new(move |spec: &ExporterSpec| build_exporter(&client, spec))
+    Arc::new({
+        let client = Arc::clone(&clients.traces);
+        move |spec: &ExporterSpec| build_exporter(&client, spec)
+    })
 }
 
 fn build_exporter(client: &Arc<dyn HttpClient>, spec: &ExporterSpec) -> ExportResult<SpanSink> {
