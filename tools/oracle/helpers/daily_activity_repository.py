@@ -37,13 +37,13 @@ class DeletedTokenRecord(TokenRecord):
 class FakeTable:
     def __init__(self, rows: Sequence[TokenRecord]) -> None:
         self.rows = rows
-        self.calls: list[tuple[Mapping[str, object] | None, dict[str, object]]] = []
 
     async def find_many(
-        self, where: Mapping[str, object] | None = None, **extra: object
+        self, _where: Mapping[str, object] | None = None, **_extra: object
     ) -> Sequence[TokenRecord]:
-        self.calls.append((where, extra))
-        return self.rows
+        return list(
+            self.rows
+        )
 
 
 class FakeDatabase:
@@ -72,17 +72,15 @@ class FakeDatabase:
 
 
 class PassthroughReads:
-    def __init__(self) -> None:
-        self.calls: list[tuple[frozenset[str], SpendLogsWindow | None]] = []
-
     async def recover_key_metadata(
         self,
         resolved: Mapping[str, KeyMetadataRow],
-        api_keys: frozenset[str],
-        window: SpendLogsWindow | None,
+        _api_keys: frozenset[str],
+        _window: SpendLogsWindow | None,
     ) -> Mapping[str, KeyMetadataRow]:
-        self.calls.append((api_keys, window))
-        return dict(resolved)
+        return dict(
+            resolved
+        )
 
 
 class FakeRepository(DailyActivityRepository):
@@ -120,20 +118,6 @@ class Input(TypedDict):
     cases: dict[str, Call]
 
 
-def row_json(row: KeyMetadataRow) -> JsonValue:
-    return JSON.validate_python(
-        {
-            "api_key": row.api_key,
-            "key_alias": row.key_alias,
-            "team_id": row.team_id,
-            "user_id": row.user_id,
-            "user_email": row.user_email,
-            "key_exists": row.key_exists,
-            "tags": list(row.tags),
-        }
-    )
-
-
 async def resolved_row(record: TokenRecord, *, key_exists: bool) -> KeyMetadataRow:
     active: list[TokenRecord] = [record] if key_exists else []
     archived: list[DeletedTokenRecord] = []
@@ -169,7 +153,19 @@ async def row_answer(case: RowCase) -> JsonValue:
         metadata=case["metadata"],
     )
     row = await resolved_row(record, key_exists=case["key_exists"])
-    return JSON.validate_python({"row": row_json(row)})
+    return JSON.validate_python(
+        {
+            "row": {
+                "api_key": row.api_key,
+                "key_alias": row.key_alias,
+                "team_id": row.team_id,
+                "user_id": row.user_id,
+                "user_email": row.user_email,
+                "key_exists": row.key_exists,
+                "tags": list(row.tags),
+            }
+        }
+    )
 
 
 async def cursor_answer(case: CursorCase) -> JsonValue:
@@ -206,18 +202,15 @@ async def cursor_answer(case: CursorCase) -> JsonValue:
     )
 
 
-async def answer(case: Call) -> JsonValue:
-    if case["function"] == "metadata_tags":
-        return await tags_answer(case)
-    if case["function"] == "metadata_row":
-        return await row_answer(case)
-    return await cursor_answer(case)
-
-
 async def run_async(input_value: Input) -> JsonValue:
     answers: dict[str, JsonValue] = {}
     for name, case in input_value["cases"].items():
-        answers[name] = await answer(case)
+        if case["function"] == "metadata_tags":
+            answers[name] = await tags_answer(case)
+        elif case["function"] == "metadata_row":
+            answers[name] = await row_answer(case)
+        else:
+            answers[name] = await cursor_answer(case)
     return answers
 
 

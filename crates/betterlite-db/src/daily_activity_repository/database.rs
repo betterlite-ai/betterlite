@@ -1,6 +1,8 @@
+pub mod find;
+
 use super::rows::records::{
-    DeletedVerificationTokenRow, VerificationTokenRow, daily_activity_row,
-    deleted_verification_token_row, verification_token_row,
+    DeletedVerificationTokenRow, VerificationTokenRow, deleted_verification_token_row,
+    verification_token_row,
 };
 use super::rows::{DatabaseRow, RowError};
 use crate::daily_activity_contracts::{
@@ -10,6 +12,7 @@ use crate::postgres_store::errors::{DbError, backend};
 use deadpool_postgres::Client;
 use std::future::Future;
 use std::pin::Pin;
+use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
 const ACTIVE_TOKENS_SQL: &str = "SELECT token, key_alias, team_id, user_id, metadata::text AS metadata FROM \"LiteLLM_VerificationToken\" WHERE token = ANY($1)";
@@ -17,6 +20,9 @@ const DELETED_TOKENS_SQL: &str = "SELECT token, key_alias, team_id, user_id, met
 
 pub type DatabaseFuture<'database, T> =
     Pin<Box<dyn Future<Output = Result<T, DbError<RowError>>> + Send + 'database>>;
+
+type CountFuture<'database> = DatabaseFuture<'database, i64>;
+type TokenFuture<'database, T> = DatabaseFuture<'database, Vec<T>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DailyRowFilter {
@@ -75,12 +81,12 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
                 .query(query.sql.as_str(), &params)
                 .await
                 .map_err(backend)?;
-            let mut decoded = Vec::with_capacity(rows.len());
-            for row in &rows {
-                decoded.push(
-                    DatabaseRow::decode(row).map_err(|source| DbError::InvalidRecord { source })?,
-                );
-            }
+            let decoded = rows
+                .iter()
+                .map(|row| {
+                    DatabaseRow::decode(row).map_err(|source| DbError::InvalidRecord { source })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             Ok(Some(decoded))
         })
     }
@@ -88,52 +94,16 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
     fn active_tokens<'database>(
         &'database self,
         tokens: &'database [String],
-    ) -> DatabaseFuture<'database, Vec<VerificationTokenRow>> {
-        Box::pin(async move {
-            if tokens.is_empty() {
-                return Ok(Vec::new());
-            }
-            let values = tokens.to_vec();
-            let params: [&(dyn ToSql + Sync); 1] = [&values];
-            let client = self.reader.unwrap_or(self.writer);
-            let rows = client
-                .query(ACTIVE_TOKENS_SQL, &params)
-                .await
-                .map_err(backend)?;
-            let mut decoded = Vec::with_capacity(rows.len());
-            for row in &rows {
-                decoded.push(
-                    verification_token_row(row)
-                        .map_err(|source| DbError::InvalidRecord { source })?,
-                );
-            }
-            Ok(decoded)
-        })
+    ) -> TokenFuture<'database, VerificationTokenRow> {
+        Box::pin(async move { decode_tokens(&token_rows(self, tokens, ACTIVE_TOKENS_SQL).await?) })
     }
 
     fn deleted_tokens<'database>(
         &'database self,
         tokens: &'database [String],
-    ) -> DatabaseFuture<'database, Vec<DeletedVerificationTokenRow>> {
+    ) -> TokenFuture<'database, DeletedVerificationTokenRow> {
         Box::pin(async move {
-            if tokens.is_empty() {
-                return Ok(Vec::new());
-            }
-            let values = tokens.to_vec();
-            let params: [&(dyn ToSql + Sync); 1] = [&values];
-            let client = self.reader.unwrap_or(self.writer);
-            let rows = client
-                .query(DELETED_TOKENS_SQL, &params)
-                .await
-                .map_err(backend)?;
-            let mut decoded = Vec::with_capacity(rows.len());
-            for row in &rows {
-                decoded.push(
-                    deleted_verification_token_row(row)
-                        .map_err(|source| DbError::InvalidRecord { source })?,
-                );
-            }
-            Ok(decoded)
+            decode_deleted_tokens(&token_rows(self, tokens, DELETED_TOKENS_SQL).await?)
         })
     }
 
@@ -141,21 +111,12 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
         &'database self,
         table: DailyActivityTable,
         filters: &'database [DailyRowFilter],
-    ) -> DatabaseFuture<'database, i64> {
-        Box::pin(async move {
-            let (where_sql, parameters) = render_filters(table, filters);
-            let sql = format!(
-                "SELECT COUNT(*)::bigint FROM \"{}\" WHERE {where_sql}",
-                table.metadata().relation
-            );
-            let params = bind_params(&parameters);
-            let client = self.reader.unwrap_or(self.writer);
-            let row = client
-                .query_one(sql.as_str(), &params)
-                .await
-                .map_err(backend)?;
-            row.try_get::<_, i64>(0).map_err(backend)
-        })
+    ) -> CountFuture<'database> {
+        Box::pin(count_daily_query(
+            self.reader.unwrap_or(self.writer),
+            table,
+            filters,
+        ))
     }
 
     fn find_daily<'database>(
@@ -165,28 +126,62 @@ impl DailyActivityDatabase for PostgresDailyActivityDatabase<'_> {
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<DailyActivityRow>> {
-        Box::pin(async move {
-            let (where_sql, mut parameters) = render_filters(table, filters);
-            let limit_index = parameters.len().saturating_add(1);
-            let offset_index = parameters.len().saturating_add(2);
-            parameters.push(SqlParameter::Integer(take));
-            parameters.push(SqlParameter::Integer(skip));
-            let sql = format!(
-                "SELECT * FROM \"{}\" WHERE {where_sql} ORDER BY date DESC, id ASC LIMIT ${limit_index} OFFSET ${offset_index}",
-                table.metadata().relation
-            );
-            let params = bind_params(&parameters);
-            let client = self.reader.unwrap_or(self.writer);
-            let rows = client.query(sql.as_str(), &params).await.map_err(backend)?;
-            let mut decoded = Vec::with_capacity(rows.len());
-            for row in &rows {
-                decoded.push(
-                    daily_activity_row(row).map_err(|source| DbError::InvalidRecord { source })?,
-                );
-            }
-            Ok(decoded)
-        })
+        Box::pin(find::find_daily_query(
+            self.reader.unwrap_or(self.writer),
+            table,
+            filters,
+            skip,
+            take,
+        ))
     }
+}
+
+async fn count_daily_query(
+    client: &Client,
+    table: DailyActivityTable,
+    filters: &[DailyRowFilter],
+) -> Result<i64, DbError<RowError>> {
+    let (where_sql, parameters) = render_filters(table, filters);
+    let relation = table.metadata().relation;
+    let sql = format!("SELECT COUNT(*)::bigint FROM \"{relation}\" WHERE {where_sql}");
+    let params = bind_params(&parameters);
+    let row = client
+        .query_one(sql.as_str(), &params)
+        .await
+        .map_err(backend)?;
+    row.try_get::<_, i64>(0).map_err(backend)
+}
+
+fn token_rows<'database>(
+    database: &'database PostgresDailyActivityDatabase<'_>,
+    tokens: &'database [String],
+    sql: &'static str,
+) -> DatabaseFuture<'database, Vec<Row>> {
+    Box::pin(async move {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        let values = tokens.to_vec();
+        let params: [&(dyn ToSql + Sync); 1] = [&values];
+        let client = database.reader.unwrap_or(database.writer);
+        client.query(sql, &params).await.map_err(backend)
+    })
+}
+
+fn decode_tokens(rows: &[Row]) -> Result<Vec<VerificationTokenRow>, DbError<RowError>> {
+    rows.iter()
+        .map(|row| verification_token_row(row).map_err(|source| DbError::InvalidRecord { source }))
+        .collect()
+}
+
+fn decode_deleted_tokens(
+    rows: &[Row],
+) -> Result<Vec<DeletedVerificationTokenRow>, DbError<RowError>> {
+    rows.iter()
+        .map(|row| {
+            deleted_verification_token_row(row).map_err(|source| DbError::InvalidRecord { source })
+        })
+        .collect()
 }
 
 fn bind_params(parameters: &[SqlParameter]) -> Vec<&(dyn ToSql + Sync)> {
@@ -199,6 +194,21 @@ fn bind_params(parameters: &[SqlParameter]) -> Vec<&(dyn ToSql + Sync)> {
         }
     }
     binds
+}
+
+fn membership(
+    clauses: &mut Vec<String>,
+    parameters: &mut Vec<SqlParameter>,
+    field: &str,
+    values: &[String],
+) {
+    if values.is_empty() {
+        clauses.push("FALSE".to_owned());
+        return;
+    }
+    let index = parameters.len().saturating_add(1);
+    clauses.push(format!("{field} = ANY(${index}::text[])"));
+    parameters.push(SqlParameter::Texts(values.to_vec()));
 }
 
 fn render_filters(
@@ -218,13 +228,7 @@ fn render_filters(
                 parameters.push(SqlParameter::Text(end.clone()));
             }
             DailyRowFilter::EntityIn { values } => {
-                if values.is_empty() {
-                    clauses.push("FALSE".to_owned());
-                } else {
-                    let index = parameters.len().saturating_add(1);
-                    clauses.push(format!("{entity} = ANY(${index}::text[])"));
-                    parameters.push(SqlParameter::Texts(values.clone()));
-                }
+                membership(&mut clauses, &mut parameters, &entity, values);
             }
             DailyRowFilter::EntityNotIn { values } => {
                 if values.is_empty() {
@@ -242,13 +246,7 @@ fn render_filters(
                 parameters.push(SqlParameter::Text(value.clone()));
             }
             DailyRowFilter::ApiKeyIn { values } => {
-                if values.is_empty() {
-                    clauses.push("FALSE".to_owned());
-                } else {
-                    let index = parameters.len().saturating_add(1);
-                    clauses.push(format!("api_key = ANY(${index}::text[])"));
-                    parameters.push(SqlParameter::Texts(values.clone()));
-                }
+                membership(&mut clauses, &mut parameters, "api_key", values);
             }
         }
     }

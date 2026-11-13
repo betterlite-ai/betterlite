@@ -54,29 +54,24 @@ where
             if self.finished {
                 return Ok(None);
             }
-            let batch = self.fetch().await?;
-            if batch.len() < USAGE_EXPORT_BATCH_SIZE {
-                self.finished = true;
-            }
+            let batch_size = i64::try_from(USAGE_EXPORT_BATCH_SIZE)
+                .map_err(|_| DailyActivityRepositoryError::Pagination)?;
+            let query = build_export_sql(
+                self.scope,
+                self.export_type,
+                self.cursor.as_ref(),
+                batch_size,
+                &self.repository.clock,
+            )?;
+            let rows = self.repository.query(&query).await?;
+            let batch = export_rows(&rows)?;
             if batch.len() == USAGE_EXPORT_BATCH_SIZE {
                 self.cursor = next_cursor(&batch, self.export_type);
+            } else {
+                self.finished = true;
             }
             self.buffer = batch.into_iter();
         }
-    }
-
-    async fn fetch(&self) -> Result<Vec<ExportRow>> {
-        let batch_size = i64::try_from(USAGE_EXPORT_BATCH_SIZE)
-            .map_err(|_| DailyActivityRepositoryError::Pagination)?;
-        let query = build_export_sql(
-            self.scope,
-            self.export_type,
-            self.cursor.as_ref(),
-            batch_size,
-            &self.repository.clock,
-        )?;
-        let rows = self.repository.query(&query).await?;
-        Ok(export_rows(&rows)?)
     }
 }
 

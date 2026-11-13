@@ -13,11 +13,12 @@ use crate::postgres_store::errors::DbError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::future::{Future, ready};
+use std::future::ready;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Barrier;
 
 pub(crate) type FakeResult<T> = std::result::Result<T, FakeFailure>;
+type CountReply<'database> = DatabaseFuture<'database, i64>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FakeFailure {
@@ -114,6 +115,21 @@ impl FakeDatabase {
     pub(crate) fn daily_call_count(&self) -> usize {
         self.daily_calls.lock().unwrap().len()
     }
+
+    fn record_daily(
+        &self,
+        table: DailyActivityTable,
+        filters: &[DailyRowFilter],
+        skip: i64,
+        take: i64,
+    ) {
+        self.daily_calls.lock().unwrap().push(DailyCall {
+            table,
+            filters: filters.to_vec(),
+            skip,
+            take,
+        });
+    }
 }
 
 impl DailyActivityDatabase for FakeDatabase {
@@ -150,13 +166,7 @@ impl DailyActivityDatabase for FakeDatabase {
         _tokens: &'database [String],
     ) -> DatabaseFuture<'database, Vec<VerificationTokenRow>> {
         *self.active_calls.lock().unwrap() += 1;
-        let reply = self.active.lock().unwrap().clone();
-        Box::pin(async move {
-            match reply {
-                Ok(rows) => Ok(rows),
-                Err(failure) => Err(fake_error(failure)),
-            }
-        })
+        reply_future(self.active.lock().unwrap().clone())
     }
 
     fn deleted_tokens<'database>(
@@ -181,24 +191,10 @@ impl DailyActivityDatabase for FakeDatabase {
         &'database self,
         table: DailyActivityTable,
         filters: &'database [DailyRowFilter],
-    ) -> DatabaseFuture<'database, i64> {
-        self.daily_calls.lock().unwrap().push(DailyCall {
-            table,
-            filters: filters.to_vec(),
-            skip: 0,
-            take: 0,
-        });
-        let barrier = self.daily_barrier.clone();
+    ) -> CountReply<'database> {
+        self.record_daily(table, filters, 0, 0);
         let reply = self.count.lock().unwrap().clone();
-        Box::pin(async move {
-            if let Some(barrier) = barrier {
-                barrier.wait().await;
-            }
-            match reply {
-                Ok(count) => Ok(count),
-                Err(failure) => Err(fake_error(failure)),
-            }
-        })
+        barrier_reply(self.daily_barrier.clone(), reply)
     }
 
     fn find_daily<'database>(
@@ -208,24 +204,37 @@ impl DailyActivityDatabase for FakeDatabase {
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<crate::daily_activity_contracts::DailyActivityRow>> {
-        self.daily_calls.lock().unwrap().push(DailyCall {
-            table,
-            filters: filters.to_vec(),
-            skip,
-            take,
-        });
-        let barrier = self.daily_barrier.clone();
-        let reply = self.rows.lock().unwrap().clone();
-        Box::pin(async move {
-            if let Some(barrier) = barrier {
-                barrier.wait().await;
-            }
-            match reply {
-                Ok(rows) => Ok(rows),
-                Err(failure) => Err(fake_error(failure)),
-            }
-        })
+        self.record_daily(table, filters, skip, take);
+        barrier_reply(
+            self.daily_barrier.clone(),
+            self.rows.lock().unwrap().clone(),
+        )
     }
+}
+
+fn reply_future<T>(reply: FakeResult<T>) -> DatabaseFuture<'static, T>
+where
+    T: Send + 'static,
+{
+    barrier_reply(None, reply)
+}
+
+fn barrier_reply<T>(
+    barrier: Option<Arc<Barrier>>,
+    reply: FakeResult<T>,
+) -> DatabaseFuture<'static, T>
+where
+    T: Send + 'static,
+{
+    Box::pin(async move {
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
+        match reply {
+            Ok(value) => Ok(value),
+            Err(failure) => Err(fake_error(failure)),
+        }
+    })
 }
 
 #[derive(Clone)]
@@ -273,19 +282,6 @@ impl DailyActivityProxyReads for FakeReads {
         });
         let reply = self.reply.lock().unwrap().clone();
         ready(reply)
-    }
-}
-
-pub(crate) struct PanickingReads;
-
-impl DailyActivityProxyReads for PanickingReads {
-    fn recover_key_metadata(
-        &self,
-        _resolved: BTreeMap<String, KeyMetadataRow>,
-        _api_keys: &BTreeSet<String>,
-        _window: Option<SpendLogsWindow>,
-    ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
-        panic!("the recovery port failed");
     }
 }
 
@@ -343,10 +339,23 @@ pub(crate) fn count(value: i64) -> DatabaseValue {
     DatabaseValue::Integer(value)
 }
 
-pub(crate) fn key_spend_row(api_key: &str) -> DatabaseRow {
-    text_row(vec![
-        ("api_key", DatabaseValue::Text(api_key.to_owned())),
+fn base_values() -> Vec<(&'static str, DatabaseValue)> {
+    vec![
+        ("date", DatabaseValue::Text("2026-08-01".to_owned())),
+        ("entity_id", DatabaseValue::Text("entity".to_owned())),
+        ("entity_alias", optional_text(None)),
+        ("api_key", optional_text(None)),
+        ("key_alias", optional_text(None)),
+        ("user_id", optional_text(Some("user"))),
+        ("user_email", optional_text(None)),
+        ("model", optional_text(Some("gpt"))),
+        ("model_group", optional_text(None)),
+        ("custom_llm_provider", optional_text(None)),
+        ("mcp_namespaced_tool_name", optional_text(None)),
+        ("endpoint", optional_text(None)),
         ("spend", money(125, 2)),
+        ("flat_cost", money(0, 2)),
+        ("ptu_flat_cost", money(0, 2)),
         ("prompt_tokens", count(1)),
         ("completion_tokens", count(2)),
         ("total_tokens", count(3)),
@@ -355,30 +364,30 @@ pub(crate) fn key_spend_row(api_key: &str) -> DatabaseRow {
         ("failed_requests", count(6)),
         ("cache_read_input_tokens", count(7)),
         ("cache_creation_input_tokens", count(8)),
-    ])
+        ("compression_saved_tokens", count(0)),
+        ("compression_savings_spend", money(0, 2)),
+        ("prompt_caching_savings_spend", money(0, 2)),
+        ("gateway_injected_caching_savings_spend", money(0, 2)),
+        ("autorouter_savings_spend", money(0, 2)),
+        ("total_response_time_ms", count(9)),
+        ("timed_requests", count(10)),
+        ("group_level", count(1)),
+        ("api_key_rolled", count(0)),
+        ("distinct_api_keys", DatabaseValue::Null),
+    ]
+}
+
+pub(crate) fn key_spend_row(api_key: &str) -> DatabaseRow {
+    let mut values = base_values();
+    values.push(("api_key", DatabaseValue::Text(api_key.to_owned())));
+    text_row(values)
 }
 
 pub(crate) fn export_row(index: usize) -> DatabaseRow {
-    let date = format!("2026-08-{index:02}");
-    text_row(vec![
-        ("date", DatabaseValue::Text(date)),
-        ("entity_id", DatabaseValue::Text("entity".to_owned())),
-        ("entity_alias", optional_text(None)),
-        ("api_key", optional_text(Some("key"))),
-        ("key_alias", optional_text(None)),
-        ("user_id", optional_text(Some("user"))),
-        ("user_email", optional_text(None)),
-        ("model", optional_text(Some("gpt"))),
-        ("spend", money(125, 2)),
-        ("flat_cost", money(0, 2)),
-        ("prompt_tokens", count(1)),
-        ("completion_tokens", count(2)),
-        ("api_requests", count(3)),
-        ("successful_requests", count(4)),
-        ("failed_requests", count(5)),
-        ("cache_read_input_tokens", count(6)),
-        ("cache_creation_input_tokens", count(7)),
-    ])
+    let mut values = base_values();
+    values.push(("date", DatabaseValue::Text(format!("2026-08-{index:02}"))));
+    values.push(("api_key", DatabaseValue::Text("key".to_owned())));
+    text_row(values)
 }
 
 pub(crate) fn token_row(token: &str) -> VerificationTokenRow {
@@ -426,62 +435,19 @@ pub(crate) fn moment(seconds: i64) -> NaiveDateTime {
 }
 
 pub(crate) fn grouping_row(distinct_api_keys: Option<i64>) -> DatabaseRow {
-    text_row(vec![
-        ("date", optional_text(Some("2026-08-01"))),
-        ("api_key", optional_text(None)),
-        ("spend", money(125, 2)),
-        ("ptu_flat_cost", money(0, 2)),
-        ("prompt_tokens", count(1)),
-        ("completion_tokens", count(2)),
-        ("cache_read_input_tokens", count(3)),
-        ("cache_creation_input_tokens", count(4)),
-        ("compression_saved_tokens", count(5)),
-        ("compression_savings_spend", money(0, 2)),
-        ("prompt_caching_savings_spend", money(0, 2)),
-        ("gateway_injected_caching_savings_spend", money(0, 2)),
-        ("autorouter_savings_spend", money(0, 2)),
-        ("api_requests", count(6)),
-        ("successful_requests", count(7)),
-        ("failed_requests", count(8)),
-        ("total_response_time_ms", count(9)),
-        ("timed_requests", count(10)),
-        ("model", optional_text(None)),
-        ("model_group", optional_text(None)),
-        ("custom_llm_provider", optional_text(None)),
-        ("mcp_namespaced_tool_name", optional_text(None)),
-        ("endpoint", optional_text(None)),
-        ("group_level", count(1)),
-        (
-            "distinct_api_keys",
-            distinct_api_keys.map_or(DatabaseValue::Null, count),
-        ),
-    ])
+    let mut values = base_values();
+    values.push((
+        "distinct_api_keys",
+        distinct_api_keys.map_or(DatabaseValue::Null, count),
+    ));
+    text_row(values)
 }
 
 pub(crate) fn entity_row(entity_id: Option<&str>, api_key_rolled: i64) -> DatabaseRow {
-    text_row(vec![
-        ("entity_id", optional_text(entity_id)),
-        ("api_key_rolled", count(api_key_rolled)),
-        ("distinct_api_keys", count(3)),
-        ("date", optional_text(Some("2026-08-01"))),
-        ("api_key", optional_text(None)),
-        ("spend", money(125, 2)),
-        ("ptu_flat_cost", money(0, 2)),
-        ("prompt_tokens", count(1)),
-        ("completion_tokens", count(2)),
-        ("cache_read_input_tokens", count(3)),
-        ("cache_creation_input_tokens", count(4)),
-        ("compression_saved_tokens", count(5)),
-        ("compression_savings_spend", money(0, 2)),
-        ("prompt_caching_savings_spend", money(0, 2)),
-        ("gateway_injected_caching_savings_spend", money(0, 2)),
-        ("autorouter_savings_spend", money(0, 2)),
-        ("api_requests", count(6)),
-        ("successful_requests", count(7)),
-        ("failed_requests", count(8)),
-        ("total_response_time_ms", count(9)),
-        ("timed_requests", count(10)),
-    ])
+    let mut values = base_values();
+    values.push(("entity_id", optional_text(entity_id)));
+    values.push(("api_key_rolled", count(api_key_rolled)));
+    text_row(values)
 }
 
 pub(crate) fn without(mut row: DatabaseRow, column: &str) -> DatabaseRow {

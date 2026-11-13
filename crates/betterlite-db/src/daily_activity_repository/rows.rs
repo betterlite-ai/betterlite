@@ -64,78 +64,81 @@ impl DatabaseRow {
             })
     }
 
-    fn text_value(&self, column: &str) -> Result<Option<&str>, RowError> {
+    fn optional<T>(
+        &self,
+        column: &str,
+        convert: fn(&DatabaseValue) -> Option<T>,
+        expected: &'static str,
+    ) -> Result<Option<T>, RowError> {
         match self.value(column)? {
             DatabaseValue::Null => Ok(None),
-            DatabaseValue::Text(value) => Ok(Some(value.as_str())),
-            DatabaseValue::Integer(_) | DatabaseValue::Number(_) => Err(RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "text",
-            }),
+            value => convert(value)
+                .map(Some)
+                .ok_or_else(|| column_error(column, expected)),
         }
     }
 
     pub fn optional_text(&self, column: &str) -> Result<Option<String>, RowError> {
-        Ok(self.text_value(column)?.map(str::to_owned))
+        self.optional(column, text_of, "text")
     }
 
     pub fn text(&self, column: &str) -> Result<String, RowError> {
-        self.text_value(column)?
-            .map(str::to_owned)
-            .ok_or_else(|| RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "a non-null text",
-            })
+        self.optional_text(column)?
+            .ok_or_else(|| column_error(column, "a non-null text"))
     }
 
     pub fn optional_integer(&self, column: &str) -> Result<Option<i64>, RowError> {
-        match self.value(column)? {
-            DatabaseValue::Null => Ok(None),
-            DatabaseValue::Integer(value) => Ok(Some(*value)),
-            DatabaseValue::Text(_) | DatabaseValue::Number(_) => Err(RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "an integer",
-            }),
-        }
+        self.optional(column, integer_of, "an integer")
     }
 
     pub fn integer(&self, column: &str) -> Result<i64, RowError> {
         self.optional_integer(column)?
-            .ok_or_else(|| RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "a non-null integer",
-            })
+            .ok_or_else(|| column_error(column, "a non-null integer"))
     }
 
     // a column that is missing or null reads as absent, like a mapping lookup without a default
     pub fn integer_if_present(&self, column: &str) -> Result<Option<i64>, RowError> {
-        match self.values.get(column) {
-            None | Some(DatabaseValue::Null) => Ok(None),
-            Some(DatabaseValue::Integer(value)) => Ok(Some(*value)),
-            Some(DatabaseValue::Text(_) | DatabaseValue::Number(_)) => Err(RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "an integer",
-            }),
+        if self.values.contains_key(column) {
+            return self.optional_integer(column);
         }
+        Ok(None)
     }
 
     pub fn optional_decimal(&self, column: &str) -> Result<Option<Decimal>, RowError> {
-        match self.value(column)? {
-            DatabaseValue::Null => Ok(None),
-            DatabaseValue::Number(value) => Ok(Some(*value)),
-            DatabaseValue::Text(_) | DatabaseValue::Integer(_) => Err(RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "a number",
-            }),
-        }
+        self.optional(column, decimal_of, "a number")
     }
 
     pub fn decimal(&self, column: &str) -> Result<Decimal, RowError> {
         self.optional_decimal(column)?
-            .ok_or_else(|| RowError::ColumnType {
-                column: column.to_owned(),
-                expected: "a non-null number",
-            })
+            .ok_or_else(|| column_error(column, "a non-null number"))
+    }
+}
+
+fn column_error(column: &str, expected: &'static str) -> RowError {
+    RowError::ColumnType {
+        column: column.to_owned(),
+        expected,
+    }
+}
+
+fn text_of(value: &DatabaseValue) -> Option<String> {
+    match value {
+        DatabaseValue::Text(text) => Some(text.clone()),
+        _ => None,
+    }
+}
+
+fn integer_of(value: &DatabaseValue) -> Option<i64> {
+    match value {
+        DatabaseValue::Integer(number) => Some(*number),
+        _ => None,
+    }
+}
+
+fn decimal_of(value: &DatabaseValue) -> Option<Decimal> {
+    match value {
+        DatabaseValue::Number(number) => Some(*number),
+        _ => None,
     }
 }
 
@@ -152,46 +155,40 @@ fn decode_column(
     {
         let value = row
             .try_get::<_, Option<String>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+            .map_err(decode_error)?;
         return Ok(value.map_or(DatabaseValue::Null, DatabaseValue::Text));
     }
     if column_type == &Type::INT8 {
-        let value = row
-            .try_get::<_, Option<i64>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+        let value = row.try_get::<_, Option<i64>>(index).map_err(decode_error)?;
         return Ok(value.map_or(DatabaseValue::Null, DatabaseValue::Integer));
     }
     if column_type == &Type::INT4 {
-        let value = row
-            .try_get::<_, Option<i32>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+        let value = row.try_get::<_, Option<i32>>(index).map_err(decode_error)?;
         return Ok(value.map_or(DatabaseValue::Null, |value| {
             DatabaseValue::Integer(i64::from(value))
         }));
     }
     if column_type == &Type::INT2 {
-        let value = row
-            .try_get::<_, Option<i16>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+        let value = row.try_get::<_, Option<i16>>(index).map_err(decode_error)?;
         return Ok(value.map_or(DatabaseValue::Null, |value| {
             DatabaseValue::Integer(i64::from(value))
         }));
     }
     if column_type == &Type::FLOAT8 {
-        let value = row
-            .try_get::<_, Option<f64>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+        let value = row.try_get::<_, Option<f64>>(index).map_err(decode_error)?;
         return number_value(value, name);
     }
     if column_type == &Type::FLOAT4 {
-        let value = row
-            .try_get::<_, Option<f32>>(index)
-            .map_err(|source| RowError::Decode { source })?;
+        let value = row.try_get::<_, Option<f32>>(index).map_err(decode_error)?;
         return number_value(value.map(f64::from), name);
     }
     Err(RowError::UnsupportedColumn {
         column: name.to_owned(),
     })
+}
+
+fn decode_error(source: tokio_postgres::Error) -> RowError {
+    RowError::Decode { source }
 }
 
 fn number_value(value: Option<f64>, column: &str) -> Result<DatabaseValue, RowError> {

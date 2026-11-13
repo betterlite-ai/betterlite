@@ -22,6 +22,13 @@ pub struct DeletedVerificationTokenRow {
     pub deleted_at: NaiveDateTime,
 }
 
+macro_rules! column {
+    ($row:expr, $name:literal) => {
+        $row.try_get($name)
+            .map_err(|source| RowError::Decode { source })?
+    };
+}
+
 pub fn verification_token_row(row: &Row) -> Result<VerificationTokenRow, RowError> {
     let metadata_text = row
         .try_get::<_, Option<String>>("metadata")
@@ -31,18 +38,10 @@ pub fn verification_token_row(row: &Row) -> Result<VerificationTokenRow, RowErro
         Some(text) => Some(json_object(&text, "metadata")?),
     };
     Ok(VerificationTokenRow {
-        token: row
-            .try_get("token")
-            .map_err(|source| RowError::Decode { source })?,
-        key_alias: row
-            .try_get("key_alias")
-            .map_err(|source| RowError::Decode { source })?,
-        team_id: row
-            .try_get("team_id")
-            .map_err(|source| RowError::Decode { source })?,
-        user_id: row
-            .try_get("user_id")
-            .map_err(|source| RowError::Decode { source })?,
+        token: column!(row, "token"),
+        key_alias: column!(row, "key_alias"),
+        team_id: column!(row, "team_id"),
+        user_id: column!(row, "user_id"),
         metadata,
     })
 }
@@ -68,68 +67,30 @@ fn json_object(text: &str, column: &str) -> Result<BTreeMap<String, JsonData>, R
 pub fn deleted_verification_token_row(row: &Row) -> Result<DeletedVerificationTokenRow, RowError> {
     Ok(DeletedVerificationTokenRow {
         row: verification_token_row(row)?,
-        deleted_at: row
-            .try_get("deleted_at")
-            .map_err(|source| RowError::Decode { source })?,
+        deleted_at: column!(row, "deleted_at"),
     })
 }
 
 pub fn daily_activity_row(row: &Row) -> Result<DailyActivityRow, RowError> {
     Ok(DailyActivityRow {
-        id: row
-            .try_get("id")
-            .map_err(|source| RowError::Decode { source })?,
-        date: row
-            .try_get("date")
-            .map_err(|source| RowError::Decode { source })?,
-        api_key: row
-            .try_get("api_key")
-            .map_err(|source| RowError::Decode { source })?,
-        model: row
-            .try_get("model")
-            .map_err(|source| RowError::Decode { source })?,
-        model_group: row
-            .try_get("model_group")
-            .map_err(|source| RowError::Decode { source })?,
-        custom_llm_provider: row
-            .try_get("custom_llm_provider")
-            .map_err(|source| RowError::Decode { source })?,
-        mcp_namespaced_tool_name: row
-            .try_get("mcp_namespaced_tool_name")
-            .map_err(|source| RowError::Decode { source })?,
-        endpoint: row
-            .try_get("endpoint")
-            .map_err(|source| RowError::Decode { source })?,
-        prompt_tokens: row
-            .try_get("prompt_tokens")
-            .map_err(|source| RowError::Decode { source })?,
-        completion_tokens: row
-            .try_get("completion_tokens")
-            .map_err(|source| RowError::Decode { source })?,
-        cache_read_input_tokens: row
-            .try_get("cache_read_input_tokens")
-            .map_err(|source| RowError::Decode { source })?,
-        cache_creation_input_tokens: row
-            .try_get("cache_creation_input_tokens")
-            .map_err(|source| RowError::Decode { source })?,
-        compression_saved_tokens: row
-            .try_get("compression_saved_tokens")
-            .map_err(|source| RowError::Decode { source })?,
-        api_requests: row
-            .try_get("api_requests")
-            .map_err(|source| RowError::Decode { source })?,
-        successful_requests: row
-            .try_get("successful_requests")
-            .map_err(|source| RowError::Decode { source })?,
-        failed_requests: row
-            .try_get("failed_requests")
-            .map_err(|source| RowError::Decode { source })?,
-        total_response_time_ms: row
-            .try_get("total_response_time_ms")
-            .map_err(|source| RowError::Decode { source })?,
-        timed_requests: row
-            .try_get("timed_requests")
-            .map_err(|source| RowError::Decode { source })?,
+        id: column!(row, "id"),
+        date: column!(row, "date"),
+        api_key: column!(row, "api_key"),
+        model: column!(row, "model"),
+        model_group: column!(row, "model_group"),
+        custom_llm_provider: column!(row, "custom_llm_provider"),
+        mcp_namespaced_tool_name: column!(row, "mcp_namespaced_tool_name"),
+        endpoint: column!(row, "endpoint"),
+        prompt_tokens: column!(row, "prompt_tokens"),
+        completion_tokens: column!(row, "completion_tokens"),
+        cache_read_input_tokens: column!(row, "cache_read_input_tokens"),
+        cache_creation_input_tokens: column!(row, "cache_creation_input_tokens"),
+        compression_saved_tokens: column!(row, "compression_saved_tokens"),
+        api_requests: column!(row, "api_requests"),
+        successful_requests: column!(row, "successful_requests"),
+        failed_requests: column!(row, "failed_requests"),
+        total_response_time_ms: column!(row, "total_response_time_ms"),
+        timed_requests: column!(row, "timed_requests"),
         compression_savings_spend: decimal_column(row, "compression_savings_spend")?,
         prompt_caching_savings_spend: decimal_column(row, "prompt_caching_savings_spend")?,
         gateway_cache_savings_spend: decimal_column(row, "gateway_injected_caching_savings_spend")?,

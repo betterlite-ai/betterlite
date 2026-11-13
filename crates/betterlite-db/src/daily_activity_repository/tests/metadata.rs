@@ -1,13 +1,28 @@
 #![cfg(test)]
 
 use super::support::{
-    FakeDatabase, FakeFailure, FakeReads, PanickingReads, capture_logs, deleted_row, moment,
-    repository, tags_metadata, token_row,
+    FakeDatabase, FakeFailure, FakeReads, capture_logs, deleted_row, moment, repository,
+    tags_metadata, token_row,
 };
-use crate::daily_activity_contracts::KeyMetadataRow;
+use crate::daily_activity_contracts::{DailyActivityProxyReads, KeyMetadataRow, SpendLogsWindow};
 use crate::daily_activity_repository::DailyActivityRepository;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::time::{Duration, SystemTime};
+
+struct PanickingReads;
+
+impl DailyActivityProxyReads for PanickingReads {
+    fn recover_key_metadata(
+        &self,
+        _resolved: BTreeMap<String, KeyMetadataRow>,
+        _api_keys: &BTreeSet<String>,
+        _window: Option<SpendLogsWindow>,
+    ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
+        let message = "the recovery port failed";
+        panic!("{message}");
+    }
+}
 
 fn keys(values: &[&str]) -> BTreeSet<String> {
     values.iter().map(|value| (*value).to_owned()).collect()

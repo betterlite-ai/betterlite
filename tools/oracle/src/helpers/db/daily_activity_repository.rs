@@ -79,11 +79,8 @@ fn answer(case: &Case) -> serde_json::Value {
             serde_json::json!({ "row": metadata_row(&row, *key_exists) })
         }
         Case::NextCursor { export_type, last } => {
-            serde_json::json!({ "cursor": next_cursor(&export_batch(last), *export_type) })
+            let batch = vec![last.clone(); USAGE_EXPORT_BATCH_SIZE];
+            serde_json::json!({ "cursor": next_cursor(&batch, *export_type) })
         }
     }
-}
-
-fn export_batch(last: &ExportRow) -> Vec<ExportRow> {
-    vec![last.clone(); USAGE_EXPORT_BATCH_SIZE]
 }

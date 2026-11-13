@@ -98,9 +98,9 @@ where
             &self.clock,
         )?;
         let mut filters = vec![DailyRowFilter::DateRange { start, end }];
-        if let Some(entity_ids) = input.entity_ids.as_ref() {
+        if let Some(values) = input.entity_ids.as_ref() {
             filters.push(DailyRowFilter::EntityIn {
-                values: entity_ids.clone(),
+                values: values.clone(),
             });
         }
         if !input.exclude_entity_ids.is_empty() {
@@ -113,9 +113,9 @@ where
                 value: model.to_owned(),
             });
         }
-        if let Some(api_keys) = input.api_keys.as_ref() {
+        if let Some(values) = input.api_keys.as_ref() {
             filters.push(DailyRowFilter::ApiKeyIn {
-                values: api_keys.clone(),
+                values: values.clone(),
             });
         }
         let skip = page

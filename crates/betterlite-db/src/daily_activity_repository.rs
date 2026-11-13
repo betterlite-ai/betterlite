@@ -22,26 +22,14 @@ pub struct DailyActivityRepository<Database, Reads, Clock> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum DailyActivityRepositoryError {
-    #[error("the daily activity database read failed: {source}")]
-    Database {
-        #[from]
-        source: DbError<RowError>,
-    },
-    #[error("a daily activity row is invalid: {source}")]
-    Row {
-        #[from]
-        source: RowError,
-    },
-    #[error("the daily activity query could not be built: {source}")]
-    Sql {
-        #[from]
-        source: DailyActivitySqlError,
-    },
-    #[error("the daily activity export query could not be built: {source}")]
-    Export {
-        #[from]
-        source: DailyActivityExportError,
-    },
+    #[error(transparent)]
+    Database(#[from] DbError<RowError>),
+    #[error(transparent)]
+    Row(#[from] RowError),
+    #[error(transparent)]
+    Sql(#[from] DailyActivitySqlError),
+    #[error(transparent)]
+    Export(#[from] DailyActivityExportError),
     #[error("limit must be between 1 and {maximum}")]
     Limit { maximum: i64 },
     #[error("pagination arithmetic is out of range")]
