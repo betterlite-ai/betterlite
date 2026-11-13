@@ -1,0 +1,25 @@
+kind: helper
+name: stability-generation-seed-calls
+call:
+  stability_generation:
+    calls:
+      - function: supported
+        model: stability/sd3
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          size: 1024x1024
+        optional_params: {}
+        drop_params: false
+      - function: request
+        prompt: a cat
+        optional_params:
+          negative_prompt: null
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"image":"abc","finish_reason":"SUCCESS"}'
+        created: 1
+        data: []
+env: {}
+compare: {ignore: []}

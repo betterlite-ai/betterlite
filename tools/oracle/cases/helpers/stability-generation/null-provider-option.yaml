@@ -1,0 +1,27 @@
+kind: helper
+name: stability-generation-null-provider-option
+call:
+  stability_generation:
+    calls:
+      - function: request
+        prompt: a cat
+        optional_params:
+          negative_prompt: null
+          aspect_ratio: null
+          seed: null
+          mode: null
+          style_preset: ""
+          strength: 0.5
+      - function: request
+        prompt: a cat
+        optional_params:
+          output_format: null
+      - function: request
+        prompt: a cat
+        optional_params:
+          output_format: webp
+      - function: request
+        prompt: a cat
+        optional_params: {}
+env: {}
+compare: {ignore: []}

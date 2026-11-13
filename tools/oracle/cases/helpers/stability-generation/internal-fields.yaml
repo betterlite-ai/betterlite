@@ -1,0 +1,54 @@
+kind: helper
+name: stability-generation-internal-fields
+call:
+  stability_generation:
+    calls:
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          n: 2
+          response_format: b64_json
+        optional_params: {}
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          n: 2
+        optional_params:
+          n: 5
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          size: 1024x1024
+        optional_params:
+          size: 1792x1024
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          quality: hd
+        optional_params:
+          quality: standard
+        drop_params: false
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          quality: hd
+        optional_params: {}
+        drop_params: true
+      - function: map
+        model: stability/sd3
+        non_default_params:
+          quality: hd
+        optional_params: {}
+        drop_params: false
+      - function: request
+        prompt: a cat
+        optional_params:
+          _n: 2
+          _response_format: b64_json
+          model: sd3.5-large
+          seed: 7
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,34 @@
+kind: helper
+name: stability-generation-append-or-empty
+call:
+  stability_generation:
+    calls:
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"image":"new"}'
+        created: 11
+        data:
+          - b64_json: old
+            url: null
+            revised_prompt: null
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"finish_reason":"SUCCESS"}'
+        created: 5
+        data: []
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"image":""}'
+        created: 9
+        data: []
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"image":null}'
+        created: 9
+        data: []
+env: {}
+compare: {ignore: []}
