@@ -54,7 +54,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     #[command(
-        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
+        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set takes every package"
     )]
     Affected {
         #[arg(
@@ -62,6 +62,8 @@ enum Command {
             help = "Print only the packages the change edits, without the ones that depend on them"
         )]
         edited: bool,
+        #[command(flatten)]
+        shard: affected::Shard,
     },
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
@@ -251,7 +253,9 @@ fn run_command(
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
-        Command::Affected { edited } => Ok((affected::affected(&development.root, edited)?, true)),
+        Command::Affected { edited, shard } => {
+            Ok((affected::affected(&development.root, edited, shard)?, true))
+        }
         Command::Availability => {
             dispatch::availability(development)?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
