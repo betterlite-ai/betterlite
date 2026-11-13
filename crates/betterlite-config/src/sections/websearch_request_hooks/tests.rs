@@ -7,20 +7,21 @@ use rstest::rstest;
 use crate::loader::ConfigLoader;
 use crate::sections::websearch_request_hooks::Settings;
 
-fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
-    let lookup: BTreeMap<String, String> = variables
+fn variables(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
+    variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
+        .collect()
+}
+
+fn settings(source: &str, environment: &[(&str, &str)]) -> Settings {
+    let lookup = variables(environment);
     let config = ConfigLoader { lookup }.load(source).unwrap();
     config.sections.websearch_request_hooks
 }
 
-fn load_error(source: &str, variables: &[(&str, &str)]) -> String {
-    let lookup: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
+fn load_error(source: &str, environment: &[(&str, &str)]) -> String {
+    let lookup = variables(environment);
     ConfigLoader { lookup }
         .load(source)
         .expect_err("the config fails to load")
