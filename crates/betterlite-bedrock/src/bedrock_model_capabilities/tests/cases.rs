@@ -1,7 +1,7 @@
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 
 use super::super::CapabilityError;
-use super::super::cache_policy::{
+use super::super::catalog_flags::{
     accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tools,
 };
 use super::super::effort::normalize_opus_effort;
@@ -355,6 +355,16 @@ pub(super) fn strict_tools_fallback() {
             "anthropic.claude",
             r#"{"bedrock_converse_supports_strict_tools": false}"#,
         ),
+        ("anthropic.claude-gap-v1:0", r#"{"mode": "chat"}"#),
+        (
+            "anthropic.claude-gap",
+            r#"{"bedrock_converse_supports_strict_tools": false}"#,
+        ),
+        ("anthropic.claude-nokey-v1:0", r#"{"key": "no-such-entry"}"#),
+        (
+            "anthropic.claude-nokey",
+            r#"{"bedrock_converse_supports_strict_tools": false}"#,
+        ),
     ]);
     let runtime = runtime();
     let ask =
@@ -397,6 +407,22 @@ pub(super) fn strict_tools_fallback() {
     assert!(
         ask("anthropic.claude-v1:beta"),
         "a non-numeric revision stays in the name"
+    );
+    assert!(
+        !ask("anthropic.claude-gap-v1:0"),
+        "a candidate without a flag or key moves on to the stripped name"
+    );
+    assert!(
+        !ask("anthropic.claude-nokey-v1:0"),
+        "a key with no packaged entry moves on to the stripped name"
+    );
+    assert!(
+        !ask("anthropic.claude-gap-v١"),
+        "a non-ASCII decimal digit is a version separator too"
+    );
+    assert!(
+        !ask("anthropic.claude-gap-v1:١"),
+        "a non-ASCII decimal digit is a revision separator too"
     );
 }
 

@@ -3,7 +3,7 @@ use std::future::Future;
 
 use betterlite_models::full_model_metadata::record::ModelInfo;
 
-pub mod cache_policy;
+pub mod catalog_flags;
 pub mod effort;
 pub mod endpoints;
 pub mod mantle;

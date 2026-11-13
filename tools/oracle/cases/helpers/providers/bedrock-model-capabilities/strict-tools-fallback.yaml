@@ -7,12 +7,19 @@ call:
       anthropic.claude-opus-4-7: {litellm_provider: bedrock}
       anthropic.claude-flag-true: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: true}
       anthropic.claude-flag-false: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: false}
+      anthropic.claude-gap-v1:0: {litellm_provider: bedrock, mode: chat}
+      anthropic.claude-gap: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: false}
+      anthropic.claude-nokey-v1:0: {litellm_provider: bedrock}
+      anthropic.claude-nokey: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: false}
       amazon.nova-pro-v1:0: {litellm_provider: bedrock}
     models:
       - anthropic.claude-opus-4-7
       - us.anthropic.claude-opus-4-7
       - anthropic.claude-flag-true
       - anthropic.claude-flag-false
+      - anthropic.claude-gap-v1:0
+      - anthropic.claude-nokey-v1:0
+      - anthropic.claude-gap-v١
       - amazon.nova-pro-v1:0
       - anthropic.claude-made-up-99
 env: {}

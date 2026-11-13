@@ -32,11 +32,11 @@ pub(super) enum Input {
     },
     ParallelTools {
         model_cost: ParamMap,
-        models: Vec<Option<String>>,
+        models: Vec<String>,
     },
     ExtendedCacheTtl {
         model_cost: ParamMap,
-        models: Vec<Option<String>>,
+        models: Vec<String>,
     },
 }
 

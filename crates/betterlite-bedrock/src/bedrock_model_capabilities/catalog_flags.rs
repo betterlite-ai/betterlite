@@ -46,9 +46,8 @@ pub fn supports_parallel_tools(
     model: &str,
     model_cost: &ParamMap,
 ) -> Result<bool, CapabilityError> {
-    let flag = PARALLEL_TOOL_FLAG;
     any_entry(model, model_cost, |fields| {
-        matches!(fields.get(flag), Some(ParamValue::Bool(true)))
+        matches!(fields.get(PARALLEL_TOOL_FLAG), Some(ParamValue::Bool(true)))
     })
 }
 

@@ -1,6 +1,7 @@
 use betterlite_context::bedrock_model::get_bedrock_base_model;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 use super::{MODEL_KEY_FIELD, ModelInfoLookup};
 
@@ -47,7 +48,7 @@ fn version_candidates(base: &str) -> Vec<String> {
     candidates
 }
 
-// Python's `-v\d+(?::\d+)?$`: the trailing newline stays when `$` matched just before it
+// Python's `-v\d+(?::\d+)?$`: \d is any decimal digit, and a trailing newline stays
 fn strip_version_suffix(model: &str) -> Option<String> {
     let body = model.strip_suffix('\n').unwrap_or(model);
     let index = body.rfind("-v")?;
@@ -56,11 +57,18 @@ fn strip_version_suffix(model: &str) -> Option<String> {
         Some((number, revision)) => (number, Some(revision)),
         None => (tail, None),
     };
-    if number.is_empty() || !number.chars().all(|value| value.is_ascii_digit()) {
+    if number.is_empty()
+        || !number
+            .chars()
+            .all(|value| get_general_category(value) == GeneralCategory::DecimalNumber)
+    {
         return None;
     }
     if let Some(revision) = revision
-        && (revision.is_empty() || !revision.chars().all(|value| value.is_ascii_digit()))
+        && (revision.is_empty()
+            || !revision
+                .chars()
+                .all(|value| get_general_category(value) == GeneralCategory::DecimalNumber))
     {
         return None;
     }

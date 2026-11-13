@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
-use betterlite_bedrock::bedrock_model_capabilities::cache_policy::{
+use betterlite_bedrock::bedrock_model_capabilities::CapabilityError;
+use betterlite_bedrock::bedrock_model_capabilities::catalog_flags::{
     accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tools,
 };
 use betterlite_bedrock::bedrock_model_capabilities::effort::normalize_opus_effort;
@@ -53,32 +54,14 @@ fn mantle_api_base(region: &str, cases: &[MantleCase]) -> HelperResult {
     Ok(json!({ "urls": urls }))
 }
 
-#[derive(Clone, Copy)]
-enum FlagGate {
-    NativeResponses,
-    CachePoints,
-    ParallelTools,
-    ExtendedCacheTtl,
-}
-
-fn flag_results(model_cost: &ParamMap, models: &[Option<String>], gate: FlagGate) -> HelperResult {
+fn flag_results<Model, Gate>(model_cost: &ParamMap, models: &[Model], gate: Gate) -> HelperResult
+where
+    Gate: Fn(&Model, &ParamMap) -> Result<bool, CapabilityError>,
+{
     let results: Vec<Value> = models
         .iter()
         .map(|model| {
-            let answer = match gate {
-                FlagGate::NativeResponses => {
-                    supports_openai_responses(model.as_deref(), model_cost)
-                }
-                FlagGate::CachePoints => accepts_cache_points(model.as_deref(), model_cost),
-                // the two strict gates take a name, and their cases never carry null
-                FlagGate::ParallelTools => model
-                    .as_deref()
-                    .map_or(Ok(false), |name| supports_parallel_tools(name, model_cost)),
-                FlagGate::ExtendedCacheTtl => model
-                    .as_deref()
-                    .map_or(Ok(false), |name| is_claude_4_5_on_bedrock(name, model_cost)),
-            };
-            answer.map_or_else(|_| json!({"raised": true}), |value| json!(value))
+            gate(model, model_cost).map_or_else(|_| json!({"raised": true}), |value| json!(value))
         })
         .collect();
     Ok(json!({ "results": results }))
@@ -153,19 +136,27 @@ pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::MantleApiBase { region, cases } => mantle_api_base(region, cases),
         Input::NativeResponses { model_cost, models } => {
-            flag_results(model_cost, models, FlagGate::NativeResponses)
+            flag_results(model_cost, models, |model, cost| {
+                supports_openai_responses(model.as_deref(), cost)
+            })
         }
         Input::CachePointUnknownModel { model_cost, models } => {
-            flag_results(model_cost, models, FlagGate::CachePoints)
+            flag_results(model_cost, models, |model, cost| {
+                accepts_cache_points(model.as_deref(), cost)
+            })
         }
         Input::StrictToolsFallback { model_cost, models } => strict_tools(model_cost, models),
         Input::ToolSearch { model_cost, models } => tool_search(model_cost, models),
         Input::EffortCeiling { model_cost, cases } => effort_ceiling(model_cost, cases),
         Input::ParallelTools { model_cost, models } => {
-            flag_results(model_cost, models, FlagGate::ParallelTools)
+            flag_results(model_cost, models, |model, cost| {
+                supports_parallel_tools(model, cost)
+            })
         }
         Input::ExtendedCacheTtl { model_cost, models } => {
-            flag_results(model_cost, models, FlagGate::ExtendedCacheTtl)
+            flag_results(model_cost, models, |model, cost| {
+                is_claude_4_5_on_bedrock(model, cost)
+            })
         }
     }
 }
