@@ -1,0 +1,14 @@
+kind: helper
+name: rewrite-undeliverable-no-writes
+call:
+  b3246:
+    guardrail:
+      kind: unified
+      name: pii
+      texts_out: ["[masked] one", "[masked] two"]
+      tool_calls_out: null
+      hook: {mode: nothing, response: null}
+    translation: {delivers: false, tool_calls: null, rescans: true}
+    chunks: ["alice one", "alice two"]
+env: {}
+compare: {ignore: []}
