@@ -237,7 +237,7 @@ fn the_last_non_empty_snapshot_is_the_answer() {
         r#"{"content":{"parts":[{}]},"actions":{"state_delta":{}}}"#,
     ]);
     let answer = decode_vertex_agent_buffer(200, &body, MODEL).unwrap();
-    assert_eq!(answer.choice.message.content, "second");
+    assert_eq!(answer.content, "second");
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn an_empty_first_text_part_blocks_the_state_delta_fallback() {
         r#"{"content":{"parts":[{"text":""}]},"actions":{"state_delta":{"k":"delta"}}}"#,
     ]);
     let answer = decode_vertex_agent_buffer(200, &body, MODEL).unwrap();
-    assert_eq!(answer.choice.message.content, "");
+    assert_eq!(answer.content, "");
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn the_state_delta_fallback_takes_the_first_non_empty_string() {
         r#"{"content":{"parts":[{}]},"actions":{"state_delta":{"a":5,"b":"","c":"first","d":"second"}}}"#,
     ]);
     let answer = decode_vertex_agent_buffer(200, &body, MODEL).unwrap();
-    assert_eq!(answer.choice.message.content, "first");
+    assert_eq!(answer.content, "first");
 }
 
 #[test]
@@ -266,32 +266,29 @@ fn malformed_and_data_prefixed_lines_are_ignored() {
         "[1,2]",
     ]);
     let answer = decode_vertex_agent_buffer(200, &ignored, MODEL).unwrap();
-    assert_eq!(answer.choice.message.content, "");
+    assert_eq!(answer.content, "");
     let mixed = body_of(&[
         r#"data: {"content":{"parts":[{"text":"sse"}]}}"#,
         r#"{"content":{"parts":[{"text":"real"}]}}"#,
     ]);
     let answer = decode_vertex_agent_buffer(200, &mixed, MODEL).unwrap();
-    assert_eq!(answer.choice.message.content, "real");
+    assert_eq!(answer.content, "real");
 }
 
 #[test]
 fn the_choice_is_one_assistant_stop_at_index_zero() {
     let answer = decode_vertex_agent_buffer(200, b"", MODEL).unwrap();
     assert_eq!(answer.model, MODEL);
-    assert_eq!(answer.choice.index, 0);
-    assert_eq!(answer.choice.finish_reason, "stop");
-    assert_eq!(answer.choice.message.role, "assistant");
+    assert_eq!(answer.index, 0);
+    assert_eq!(answer.finish_reason, "stop");
+    assert_eq!(answer.role, "assistant");
     assert_eq!(answer.usage, None);
 }
 
 #[test]
 fn a_non_utf8_body_fails_with_the_raw_status() {
     let error = decode_vertex_agent_buffer(503, &[0xff_u8], MODEL).unwrap_err();
-    assert!(matches!(
-        error,
-        AgentEngineError::NotUtf8 { status: 503, .. }
-    ));
+    assert!(matches!(error, AgentEngineError::NotUtf8(503, _)));
     assert_eq!(error.status_code(), Some(503));
 }
 

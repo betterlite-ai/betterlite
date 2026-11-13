@@ -21,20 +21,15 @@ pub enum AgentEngineError {
     #[error("the Vertex AI access token could not be minted")]
     Auth(#[source] CredentialCacheError),
     #[error("the Vertex Agent Engine response body is not UTF-8")]
-    NotUtf8 {
-        status: u16,
-        #[source]
-        source: Utf8Error,
-    },
+    NotUtf8(u16, #[source] Utf8Error),
 }
-
 impl AgentEngineError {
     // LiteLLM raises a bare ValueError or IndexError here, which a proxy answers with a 500; the request is at fault
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Api { status_code, .. } => Some(*status_code),
-            Self::NotUtf8 { status, .. } => Some(*status),
+            Self::NotUtf8(status, _) => Some(*status),
             Self::ProjectRequired
             | Self::EmptyMessages
             | Self::FieldType { .. }
@@ -43,7 +38,6 @@ impl AgentEngineError {
         }
     }
 }
-
 // LiteLLM's VertexAgentEngineError takes the response's own status and message, and the headers are dropped
 #[must_use]
 pub fn get_error_class(message: &str, status_code: u16) -> AgentEngineError {

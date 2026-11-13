@@ -8,12 +8,10 @@ use betterlite_tokenizer::count::error::CountError;
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::error::AgentEngineError;
 use crate::model_urls::base_url::get_vertex_base_url;
 
-use super::error::AgentEngineError;
-
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 1] = ["user"];
-pub const API_VERSION: &str = "v1beta1";
 pub const DEFAULT_LOCATION: &str = "us-central1";
 // Agent Engine answers with its own SSE stream even for a buffered request, so a custom wrapper reads it
 pub const HAS_CUSTOM_STREAM_WRAPPER: bool = true;
@@ -21,16 +19,10 @@ pub const HAS_CUSTOM_STREAM_WRAPPER: bool = true;
 pub const STREAM_PARAM_IN_BODY: bool = false;
 // the answer already arrives as a stream, so streaming is never faked from one buffered body
 pub const SHOULD_FAKE_STREAM: bool = false;
-
-const CLASS_METHOD: &str = "stream_query";
-const MODEL_PREFIX: &str = "agent_engine/";
-const USER_PREFIX: &str = "litellm-user-";
 // B196 counts with the gpt-3.5-turbo encoding whatever agent model the request names
 const TOKEN_MODEL: &str = "gpt-3.5-turbo";
 const USER_ID_FIELD: &str = "user_id";
 const USER_FIELD: &str = "user";
-const SESSION_ID_FIELD: &str = "session_id";
-const USER_ID_CHARACTERS: usize = 8;
 
 #[must_use]
 pub fn map_openai_params(non_default_params: &Extra, mut optional_params: Extra) -> Extra {
@@ -51,24 +43,24 @@ pub struct AgentEngineTarget<'call> {
 pub fn complete_url(target: &AgentEngineTarget<'_>) -> Result<String, AgentEngineError> {
     let location = target
         .location
-        .filter(|location| !location.is_empty())
+        .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_LOCATION);
     // a full projects/ resource path names its own location, and only the host comes from configuration
     let parsed = target
         .model
-        .strip_prefix(MODEL_PREFIX)
+        .strip_prefix("agent_engine/")
         .unwrap_or(target.model);
     let resource = if parsed.starts_with("projects/") {
         parsed.to_owned()
     } else {
         let project = target
             .project
-            .filter(|project| !project.is_empty())
+            .filter(|value| !value.is_empty())
             .ok_or(AgentEngineError::ProjectRequired)?;
         format!("projects/{project}/locations/{location}/reasoningEngines/{parsed}")
     };
     let base = get_vertex_base_url(Some(location)).map_err(AgentEngineError::Location)?;
-    Ok(format!("{base}/{API_VERSION}/{resource}:streamQuery"))
+    Ok(format!("{base}/v1beta1/{resource}:streamQuery"))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -97,11 +89,11 @@ pub fn transform_request(
         user_id = text_param(optional_params, USER_FIELD)?;
     }
     Ok(AgentQueryPayload {
-        class_method: CLASS_METHOD,
+        class_method: "stream_query",
         input: AgentQueryInput {
             message,
             user_id: user_id.unwrap_or_else(|| generated_user_id(generated_user)),
-            session_id: text_param(optional_params, SESSION_ID_FIELD)?,
+            session_id: text_param(optional_params, "session_id")?,
         },
     })
 }
@@ -122,31 +114,18 @@ fn text_param(
 }
 
 fn generated_user_id(generated: Uuid) -> String {
-    let rendered = generated.to_string();
-    let head: String = rendered.chars().take(USER_ID_CHARACTERS).collect();
-    format!("{USER_PREFIX}{head}")
+    let head: String = generated.to_string().chars().take(8).collect();
+    format!("litellm-user-{head}")
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentMessage {
-    pub role: &'static str,
-    pub content: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentChoice {
-    pub index: u32,
-    pub finish_reason: &'static str,
-    pub message: AgentMessage,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentAnswer {
     pub model: String,
-    pub choice: AgentChoice,
+    pub index: u32,
+    pub finish_reason: &'static str,
+    pub role: &'static str,
+    pub content: String,
     pub usage: Option<Usage>,
 }
-
 // The buffered answer is an SSE body LiteLLM folds into its last non-empty text snapshot
 pub fn decode_vertex_agent_buffer(
     status: u16,
@@ -154,31 +133,22 @@ pub fn decode_vertex_agent_buffer(
     model: &str,
 ) -> Result<AgentAnswer, AgentEngineError> {
     let text =
-        std::str::from_utf8(body).map_err(|source| AgentEngineError::NotUtf8 { status, source })?;
+        std::str::from_utf8(body).map_err(|source| AgentEngineError::NotUtf8(status, source))?;
     let mut content = String::new();
-    for line in text.trim().split('\n') {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(line) else {
-            continue;
-        };
-        let found = extract_text(&fields);
-        if !found.is_empty() {
-            content = found;
+    for line in text.trim().lines().map(str::trim) {
+        if let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(line) {
+            let found = extract_text(&fields);
+            if !found.is_empty() {
+                content = found;
+            }
         }
     }
     Ok(AgentAnswer {
         model: model.to_owned(),
-        choice: AgentChoice {
-            index: 0,
-            finish_reason: "stop",
-            message: AgentMessage {
-                role: "assistant",
-                content,
-            },
-        },
+        index: 0,
+        finish_reason: "stop",
+        role: "assistant",
+        content,
         usage: None,
     })
 }
@@ -190,33 +160,25 @@ fn extract_text(fields: &Extra) -> String {
     {
         for part in parts {
             if let Json::Object(part) = part
-                && let Some(value) = part.get("text")
+                && let Some(text) = part.get("text")
             {
-                return match value {
+                return match text {
                     Json::Text(text) => text.clone(),
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::List(_)
-                    | Json::Object(_) => String::new(),
+                    _ => String::new(),
                 };
             }
         }
     }
     if let Some(Json::Object(actions)) = fields.get("actions")
         && let Some(Json::Object(state_delta)) = actions.get("state_delta")
+        && let Some(Json::Text(text)) = state_delta
+            .values()
+            .find(|value| matches!(value, Json::Text(text) if !text.is_empty()))
     {
-        for value in state_delta.values() {
-            if let Json::Text(text) = value
-                && !text.is_empty()
-            {
-                return text.clone();
-            }
-        }
+        return text.clone();
     }
     String::new()
 }
-
 pub trait TokenCounter: Send + Sync {
     fn count_messages<'count>(
         &'count self,
@@ -242,7 +204,7 @@ where
     Counter: TokenCounter + Sync,
 {
     let mut answer = decode_vertex_agent_buffer(status, body, model)?;
-    match count_usage(&answer.choice.message.content, messages, counter).await {
+    match count_usage(&answer.content, messages, counter).await {
         Ok(usage) => answer.usage = Some(usage),
         Err(error) => tracing::warn!("Failed to calculate token usage: {error}"),
     }
@@ -273,5 +235,4 @@ where
         numeric_extras: BTreeMap::new(),
     })
 }
-
 mod tests;

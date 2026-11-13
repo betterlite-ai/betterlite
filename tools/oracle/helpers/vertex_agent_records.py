@@ -2,6 +2,7 @@ from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
 import litellm
+from fastuuid import UUID
 from litellm._uuid import uuid as litellm_uuid
 from litellm.llms.vertex_ai.agent_engine.transformation import (
     VertexAgentEngineConfig,
@@ -14,12 +15,6 @@ litellm.suppress_debug_info = True
 
 EMPTY: Final[dict[str, JsonValue]] = {}
 CONFIG: Final = VertexAgentEngineConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L57
-TOKEN_MODEL: Final = "gpt-3.5-turbo"
-
-
-class PromptMessage(TypedDict):
-    role: str
-    content: str
 
 
 class UrlCall(TypedDict):
@@ -29,7 +24,7 @@ class UrlCall(TypedDict):
 
 
 class RequestCall(TypedDict):
-    messages: list[PromptMessage]
+    messages: list[dict[str, JsonValue]]
     non_default_params: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
     uuid: str
@@ -39,7 +34,7 @@ class ResponseCall(TypedDict):
     status: int
     body: str
     model: str
-    messages: list[PromptMessage]
+    messages: list[dict[str, JsonValue]]
     prompt_tokens: int
     completion_tokens: int
     counter: Literal["fixed", "failure"]
@@ -63,12 +58,6 @@ class ResponseInput(TypedDict):
 Input = UrlInput | RequestInput | ResponseInput
 
 
-class UsageView(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
 class MessageView(TypedDict):
     role: str
     content: str | None
@@ -83,14 +72,15 @@ class ChoiceView(TypedDict):
 class AnswerView(TypedDict):
     model: str | None
     choices: list[ChoiceView]
-    usage: NotRequired[UsageView | None]
+    usage: NotRequired[dict[str, JsonValue] | None]
 
 
 ANSWER: Final = TypeAdapter(AnswerView)
 
 
-class FixedCounter:
-    def __init__(self, prompt: int, completion: int) -> None:
+class Counter:
+    def __init__(self, kind: Literal["fixed", "failure"], prompt: int, completion: int) -> None:
+        self.kind = kind
         self.prompt = prompt
         self.completion = completion
 
@@ -98,36 +88,23 @@ class FixedCounter:
         self,
         *,
         model: str,
-        messages: list[PromptMessage] | None = None,
+        messages: list[dict[str, JsonValue]] | None = None,
         text: str | None = None,
         count_response_tokens: bool = False,
     ) -> int:
-        del text, count_response_tokens
-        if model != TOKEN_MODEL:
-            raise ValueError(model)
+        del model, text, count_response_tokens
+        if self.kind == "failure":
+            raise RuntimeError("token counting is unavailable")
         if messages is not None:
             return self.prompt
         return self.completion
-
-
-class FailingCounter:
-    def __call__(
-        self,
-        *,
-        model: str,
-        messages: list[PromptMessage] | None = None,
-        text: str | None = None,
-        count_response_tokens: bool = False,
-    ) -> int:
-        del model, messages, text, count_response_tokens
-        raise RuntimeError("token counting is unavailable")
 
 
 class FixedUuid:
     def __init__(self, value: str) -> None:
         self.value = value
 
-    def __call__(self) -> object:
+    def __call__(self) -> UUID:
         return litellm_uuid.UUID(self.value)
 
 
@@ -146,19 +123,13 @@ def url_outcome(call: UrlCall) -> JsonValue:
 def request_outcome(call: RequestCall) -> JsonValue:
     litellm_uuid.uuid4 = FixedUuid(call["uuid"])
     optional: dict[str, JsonValue] = dict(call["optional_params"])
-    payload = CONFIG.transform_request(call["model"], call["messages"], CONFIG.map_openai_params(call["non_default_params"], optional, call["model"], False), EMPTY, EMPTY)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L184
+    payload = CONFIG.transform_request(call["model"], call["messages"], CONFIG.map_openai_params(call["non_default_params"], optional, call["model"], False), EMPTY, EMPTY)  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L184
     return {"ok": True, "payload": payload}
-
-
-def usage_value(answer: AnswerView) -> JsonValue:
-    usage = answer.get("usage")
-    if usage is None:
-        return None
-    return [usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]]
 
 
 def answer_state(answer: AnswerView) -> JsonValue:
     choice = answer["choices"][0]
+    usage = answer.get("usage")
     return {
         "model": answer["model"],
         "choice": {
@@ -169,12 +140,14 @@ def answer_state(answer: AnswerView) -> JsonValue:
                 "content": choice["message"]["content"],
             },
         },
-        "usage": usage_value(answer),
+        "usage": None
+        if usage is None
+        else [usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]],
     }
 
 
 def response_outcome(call: ResponseCall) -> JsonValue:
-    litellm.utils.token_counter = FixedCounter(call["prompt_tokens"], call["completion_tokens"]) if call["counter"] == "fixed" else FailingCounter()  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
+    litellm.utils.token_counter = Counter(call["counter"], call["prompt_tokens"], call["completion_tokens"])  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
     raw = httpx.Response(
         call["status"],
         text=call["body"],

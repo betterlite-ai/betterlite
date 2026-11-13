@@ -5,18 +5,12 @@ use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use super::error::AgentEngineError;
 use crate::credential_sources::getters::VertexParams;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 use crate::token_refresh::ensure_access_token;
-
-use super::error::AgentEngineError;
-
-pub const AUTHORIZATION: &str = "Authorization";
-pub const CONTENT_TYPE: &str = "Content-Type";
-
-const JSON_CONTENT_TYPE: &str = "application/json";
 
 #[derive(Debug, Clone, Copy)]
 pub struct AgentAuth<'call> {
@@ -35,26 +29,21 @@ where
 {
     let credentials = auth.params.safe_get_vertex_ai_credentials(auth.vertex);
     let project = auth.params.safe_get_vertex_ai_project(auth.vertex);
-    let access = ensure_access_token(
-        VertexCapabilityProvider::VertexAi,
-        make_lookup(credentials, project),
-    )
-    .await
-    .map_err(AgentEngineError::Auth)?;
+    let lookup = make_lookup(credentials, project);
+    let access = ensure_access_token(VertexCapabilityProvider::VertexAi, lookup)
+        .await
+        .map_err(AgentEngineError::Auth)?;
     let mut headers: BTreeMap<String, SecretString> = caller
         .iter()
         .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
         .collect();
     // validate_environment updates the caller's headers, so these two replace whatever the caller sent
+    let bearer = format!("Bearer {}", access.token.expose_secret());
+    headers.insert("Authorization".to_owned(), SecretString::from(bearer));
     headers.insert(
-        AUTHORIZATION.to_owned(),
-        SecretString::from(format!("Bearer {}", access.token.expose_secret())),
-    );
-    headers.insert(
-        CONTENT_TYPE.to_owned(),
-        SecretString::from(JSON_CONTENT_TYPE),
+        "Content-Type".to_owned(),
+        SecretString::from("application/json"),
     );
     Ok(headers)
 }
-
 mod tests;
