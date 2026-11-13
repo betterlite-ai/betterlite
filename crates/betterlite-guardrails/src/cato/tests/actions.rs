@@ -207,6 +207,24 @@ async fn cato_guardrail_headers_omit_absent_optional_values() {
 }
 
 #[tokio::test]
+async fn cato_guardrail_user_email_header_ignores_a_caller_supplied_end_user_id() {
+    let (base, mut server, captured) = serve(StatusCode::OK, no_action()).await;
+    let mut data = body(&[
+        ("end_user_id", text("spoofed@example.test")),
+        ("user", text("spoofed@example.test")),
+        ("messages", list(&[object(&[("content", text("hi"))])])),
+    ]);
+    build(&base)
+        .call(&mut data, CallHook::PreCall, None, None)
+        .await
+        .expect("call");
+    let recorded = captured.lock().expect("captured").clone();
+    server.shutdown().await;
+    let (headers, _body) = recorded.first().expect("request");
+    assert!(!headers.contains_key("x-cato-user-email"));
+}
+
+#[tokio::test]
 async fn cato_guardrail_headers_omit_a_call_id_that_is_not_text() {
     let (base, mut server, captured) = serve(StatusCode::OK, no_action()).await;
     let mut data = body(&[
