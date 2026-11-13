@@ -47,7 +47,7 @@ where
         }
         if let Some(duration_seconds) = found.duration_seconds {
             cost_request.duration_seconds = duration_seconds;
-            let count = found.video_count.filter(|count| *count > 1).unwrap_or(1);
+            let count = found.video_count.map_or(1, |count| count.max(1));
             return video_generation_cost(&cost_request, lookup)?
                 .checked_mul(Decimal::from(count))
                 .ok_or(SpecialChargeError::Overflow);
