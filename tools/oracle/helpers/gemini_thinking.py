@@ -144,23 +144,20 @@ def server_flags(step: ServerFlagsStep) -> Json:
 
 
 def answer(step: Step) -> Json:
-    result: Json
     if step["op"] == "reasoning_effort":
-        result = reasoning_effort(step)
-    elif step["op"] == "thinking":
-        result = thinking(step)
-    elif step["op"] == "format":
-        result = format_response(step)
-    elif step["op"] == "modalities":
-        result = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L991
+        return reasoning_effort(step)
+    if step["op"] == "thinking":
+        return thinking(step)
+    if step["op"] == "format":
+        return format_response(step)
+    if step["op"] == "modalities":
+        return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L991
             Json,
             VertexGeminiConfig().map_response_modalities(step["modalities"]),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L991
         )
-    elif step["op"] == "audio":
-        result = audio(step)
-    else:
-        result = server_flags(step)
-    return result
+    if step["op"] == "audio":
+        return audio(step)
+    return server_flags(step)
 
 
 def run(input_value: Input) -> Json:

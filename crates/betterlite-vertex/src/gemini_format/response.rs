@@ -39,13 +39,12 @@ pub fn apply_response_format(
             Json::Text("application/json".to_owned()),
         );
     }
-    let Some(Json::Object(schema)) = candidate else {
-        return Ok(());
-    };
-    if schema.is_empty() {
-        return Ok(());
+    match candidate {
+        Some(Json::Object(schema)) if !schema.is_empty() => {
+            apply_schema(schema, modern, optional_params, schema_settings)
+        }
+        _ => Ok(()),
     }
-    apply_schema(schema, modern, optional_params, schema_settings)
 }
 
 fn mime_for_type(format: &Object) -> Option<&'static str> {
@@ -57,16 +56,15 @@ fn mime_for_type(format: &Object) -> Option<&'static str> {
 }
 
 fn schema_candidate(format: &Object) -> Option<&Json> {
-    if let Some(schema) = format.get("response_schema") {
-        return Some(schema);
-    }
-    if format.get("type").and_then(Json::as_str) != Some("json_schema") {
-        return None;
-    }
-    format
-        .get("json_schema")
-        .and_then(Json::as_object)
-        .and_then(|json_schema| json_schema.get("schema"))
+    format.get("response_schema").or_else(|| {
+        if format.get("type").and_then(Json::as_str) != Some("json_schema") {
+            return None;
+        }
+        format
+            .get("json_schema")
+            .and_then(Json::as_object)?
+            .get("schema")
+    })
 }
 
 fn apply_schema(

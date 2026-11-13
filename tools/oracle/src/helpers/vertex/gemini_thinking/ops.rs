@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 pub(crate) struct Input {
     settings: ThinkingSettings,
     #[serde(default)]
-    catalog: BTreeMap<String, bool>,
+    catalog: Catalog,
     steps: Vec<Step>,
 }
 
@@ -57,30 +57,22 @@ struct Step {
     non_default_params: Object,
 }
 
-struct Fixture<'catalog> {
-    settings: ThinkingSettings,
-    catalog: Catalog<'catalog>,
-}
+#[derive(Debug, Default, Deserialize)]
+struct Catalog(BTreeMap<String, bool>);
 
-struct Catalog<'entries>(&'entries BTreeMap<String, bool>);
-
-impl MinimalEffortSupport for Catalog<'_> {
+impl MinimalEffortSupport for Catalog {
     fn disables_minimal(&self, model: &str) -> bool {
         self.0.get(model).is_some_and(|supported| !supported)
     }
 }
 
 pub(super) fn run(input: &Input) -> Value {
-    let fixture = Fixture {
-        settings: input.settings,
-        catalog: Catalog(&input.catalog),
-    };
     let results: Vec<Value> = input
         .steps
         .iter()
         .map(|step| match step.op {
-            Operation::ReasoningEffort => reasoning_effort(step, &fixture),
-            Operation::Thinking => thinking_answer(step, &fixture),
+            Operation::ReasoningEffort => reasoning_effort(step, input),
+            Operation::Thinking => thinking_answer(step, input),
             Operation::Format => format_answer(step),
             Operation::Modalities => json!(map_response_modalities(&step.modalities)),
             Operation::Audio => audio_answer(step),
@@ -90,16 +82,16 @@ pub(super) fn run(input: &Input) -> Value {
     json!({"results": results})
 }
 
-fn reasoning_effort(step: &Step, fixture: &Fixture<'_>) -> Value {
+fn reasoning_effort(step: &Step, input: &Input) -> Value {
     if let Err(error) = validate_thinking_conflicts(&step.optional_params, "reasoning_effort") {
         return json!({"error": {"status": error.status()}});
     }
     let effort = step.effort.as_deref().unwrap_or_default();
     let model = step.model.as_deref();
     let mapped = if model.is_some_and(is_gemini_3_or_newer) {
-        map_effort_to_level(effort, model, &fixture.catalog)
+        map_effort_to_level(effort, model, &input.catalog)
     } else {
-        map_effort_to_budget(effort, model, &fixture.settings.budgets)
+        map_effort_to_budget(effort, model, &input.settings.budgets)
     };
     match mapped {
         Ok(config) => json!(config),
@@ -107,7 +99,7 @@ fn reasoning_effort(step: &Step, fixture: &Fixture<'_>) -> Value {
     }
 }
 
-fn thinking_answer(step: &Step, fixture: &Fixture<'_>) -> Value {
+fn thinking_answer(step: &Step, input: &Input) -> Value {
     if let Err(error) = validate_thinking_conflicts(&step.optional_params, "thinking") {
         return json!({"error": {"status": error.status()}});
     }
@@ -117,22 +109,25 @@ fn thinking_answer(step: &Step, fixture: &Fixture<'_>) -> Value {
     json!(map_thinking_param(
         param,
         step.model.as_deref(),
-        &fixture.settings,
-        &fixture.catalog
+        &input.settings,
+        &input.catalog
     ))
 }
 
 fn format_answer(step: &Step) -> Value {
     let mut mapped = step.optional_params.clone();
-    match apply_response_format(
+    let model = step.model.as_deref().unwrap_or_default();
+    if apply_response_format(
         &step.response_format,
-        step.model.as_deref().unwrap_or_default(),
+        model,
         &mut mapped,
         &SchemaSettings::default(),
-    ) {
-        Ok(()) => json!(mapped),
-        Err(_schema) => json!({"error": {"status": null}}),
+    )
+    .is_err()
+    {
+        return json!({"error": {"status": null}});
     }
+    json!(mapped)
 }
 
 fn audio_answer(step: &Step) -> Value {
