@@ -34,7 +34,6 @@ impl Settings {
             .into_iter()
             .flatten()
             .find(|key| !key.expose_secret().is_empty());
-        // the last operand stands even when empty, so only an absent module key leaves nothing
         environment.or(self.cohere_key.as_ref()).cloned()
     }
 }

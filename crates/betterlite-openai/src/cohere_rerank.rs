@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::str;
 
 use betterlite_config::sections::cohere_rerank_settings::Settings;
 use betterlite_models::decisions::Json;

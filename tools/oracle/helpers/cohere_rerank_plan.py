@@ -14,7 +14,6 @@ from pydantic import JsonValue
 Params = dict[str, JsonValue]
 Document = str | dict[str, JsonValue]
 
-
 MapParams = Callable[
     [
         Params | None,
@@ -136,7 +135,6 @@ def run(input_value: Input) -> JsonValue:
             None,
             options.get("top_n"),
             options.get("rank_fields"),
-            # an absent or null return_documents takes the declared argument default of true
             options.get("return_documents") is not False,
             options.get("max_chunks_per_doc"),
             options.get("max_tokens_per_doc"),
