@@ -8,11 +8,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use tracing::subscriber::with_default;
 
-use super::ToolPermissionGuardrail;
 use super::error::ToolPermissionError;
 use super::types::{
     PermissionError, ToolResult, is_tool_use_block, mapping_value, object_list, object_mapping,
 };
+use super::{DEFAULT_MAX_RECURSE_DEPTH, GUARDRAIL_NAME, ToolPermissionGuardrail};
 use crate::guardrail_initializers::tool_permission::{
     ToolDefaultAction, ToolDisallowedAction, ToolPermissionArgs,
 };
@@ -67,6 +67,16 @@ fn guardrail_args(rules: Vec<BTreeMap<String, GuardrailValue>>) -> ToolPermissio
         default_on: false,
         violation_message_template: None,
     }
+}
+
+#[test]
+fn guardrail_name_matches_litellm() {
+    assert_eq!(GUARDRAIL_NAME, "tool_permission");
+}
+
+#[test]
+fn default_max_recurse_depth_matches_litellm() {
+    assert_eq!(DEFAULT_MAX_RECURSE_DEPTH, 100);
 }
 
 #[test]

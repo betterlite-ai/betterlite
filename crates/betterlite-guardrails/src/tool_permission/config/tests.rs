@@ -4,7 +4,10 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use rstest::rstest;
 
-use super::{ToolPermissionConfigModel, parse_default_action, parse_disallowed_action};
+use super::{
+    ToolPermissionConfigModel, default_action_text, disallowed_action_text, parse_default_action,
+    parse_disallowed_action,
+};
 use crate::guardrail_initializers::tool_permission::{ToolDefaultAction, ToolDisallowedAction};
 use crate::tool_permission::SUPPORTED_EVENT_HOOKS;
 use crate::tool_permission::rule::ToolDecision;
@@ -83,6 +86,17 @@ fn config_model_rejects_a_rule_without_a_target() {
     assert!(
         error.to_string().contains("tool_name or tool_type"),
         "unexpected error {error}"
+    );
+}
+
+#[test]
+fn action_text_matches_litellm() {
+    assert_eq!(default_action_text(ToolDefaultAction::Allow), "allow");
+    assert_eq!(default_action_text(ToolDefaultAction::Deny), "deny");
+    assert_eq!(disallowed_action_text(ToolDisallowedAction::Block), "block");
+    assert_eq!(
+        disallowed_action_text(ToolDisallowedAction::Rewrite),
+        "rewrite"
     );
 }
 
