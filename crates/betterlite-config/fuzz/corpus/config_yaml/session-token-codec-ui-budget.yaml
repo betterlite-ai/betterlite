@@ -1,0 +1,4 @@
+litellm_settings:
+  max_ui_session_budget: 2.5
+
+model_list: []

@@ -1,0 +1,54 @@
+kind: helper
+name: jwt-claims-nested-claim-path
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {team_id_jwt_field: realm.team.id}
+        trusted_issuers: []
+        claims: {realm: {team: {id: team-1}}}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_id_jwt_field: profile.sub}
+        trusted_issuers: []
+        claims: {profile: {sub: user-1}}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_id_jwt_field: metadata.sub}
+        trusted_issuers: []
+        claims: {sub: user-3}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: 'kubernetes\.io.tenant'}
+        trusted_issuers: []
+        claims: {kubernetes.io: {tenant: team-4}}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: groups.0, team_id_default: default-team}
+        trusted_issuers: []
+        claims: {groups: [team-5]}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: '', team_id_default: default-team}
+        trusted_issuers: []
+        claims: {team: raw}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {user_id_jwt_field: sub}
+        trusted_issuers: []
+        claims: {sub: null}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+    tokens:
+      - "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEiLCJuZXN0ZWQiOnsidGVhbSI6InRlYW0tMSJ9fQ."
+      - "eyJhbGciOiJSUzI1NiJ9.WzEsMl0."
+      - "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEifQ"
+      - "eyJhbGciOiJSUzI1NiIsImtpZCI6NX0.eyJzdWIiOiJ1c2VyLTEifQ."
+env: {}
+compare: {ignore: []}

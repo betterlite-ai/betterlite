@@ -1,0 +1,23 @@
+kind: helper
+name: responses-parameters-drop-flags
+call:
+  responses_parameters:
+    action: drop_flags
+    steps:
+      - {value: null, environment: {}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: ""}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: " false "}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "0"}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "off"}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "true"}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "1"}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "yes"}}
+      - {value: null, environment: {LITELLM_DROP_PARAMS: "wat"}}
+      - {value: false, environment: {LITELLM_DROP_PARAMS: "true"}}
+      - {value: true, environment: {LITELLM_DROP_PARAMS: "false"}}
+      - {value: "wat", environment: {LITELLM_DROP_PARAMS: "true"}}
+      - {value: 1, environment: {}}
+      - {value: 0, environment: {}}
+      - {value: 2, environment: {}}
+env: {}
+compare: {ignore: []}

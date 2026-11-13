@@ -13,6 +13,7 @@ betterlite-auth = { path = "../betterlite-auth" }
 betterlite-bedrock = { path = "../betterlite-bedrock" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
