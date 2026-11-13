@@ -1,3 +1,5 @@
+use betterlite_models::decisions::Json;
+
 use super::super::budget::budget;
 use super::super::compactor::{CompactorConfig, compactor_input, compactor_model};
 use super::super::contracts::{
@@ -5,7 +7,7 @@ use super::super::contracts::{
 };
 use super::super::error::{CompactionError, ErrorKind};
 use super::super::history::portable_history;
-use super::support::{FixedCounter, candidate, deployment, messages, request};
+use super::support::{FixedCounter, candidate, deployment, items, messages, request};
 
 pub(super) fn run(name: &str) {
     match name {
@@ -34,6 +36,12 @@ pub(super) fn run(name: &str) {
         "compactor_input_slices_the_older_messages" => compactor_input_slices_the_older_messages(),
         "call_ids_are_sorted_not_order_bound" => call_ids_are_sorted_not_order_bound(),
         "keeps_an_open_tail_tool_call" => keeps_an_open_tail_tool_call(),
+        "counts_numeric_thinking_blocks_by_truthiness" => {
+            counts_numeric_thinking_blocks_by_truthiness();
+        }
+        "counts_text_and_object_thinking_blocks_by_truthiness" => {
+            counts_text_and_object_thinking_blocks_by_truthiness();
+        }
         other => panic!("unknown boundary case {other}"),
     }
 }
@@ -396,4 +404,67 @@ fn keeps_an_open_tail_tool_call() {
     assert_eq!(history.prefix_count, 1);
     assert_eq!(history.tail_count, 2);
     assert!(history.calls.is_empty());
+}
+
+fn responses_history_with_thinking(raw: &str) -> Result<History, CompactionError> {
+    let conversation = items(raw);
+    let tools: Vec<Json> = items("[]");
+    portable_history(
+        &Conversation::Responses {
+            items: conversation.as_slice(),
+            tools: tools.as_slice(),
+        },
+        "parent-model",
+    )
+}
+
+fn counts_numeric_thinking_blocks_by_truthiness() {
+    let present = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":1},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        present.reason,
+        "Native reasoning or compaction blocks require client-managed native compaction"
+    );
+    let absent = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":0},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap();
+    assert_eq!(absent.prefix_count, 1);
+}
+
+fn counts_text_and_object_thinking_blocks_by_truthiness() {
+    let text = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":"sig"},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        text.reason,
+        "Native reasoning or compaction blocks require client-managed native compaction"
+    );
+    let empty_text = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":""},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap();
+    assert_eq!(empty_text.prefix_count, 1);
+    let object = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":{"type":"thinking"}},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        object.reason,
+        "Native reasoning or compaction blocks require client-managed native compaction"
+    );
+    let empty_object = responses_history_with_thinking(
+        r#"[{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}],"thinking_blocks":{}},
+            {"type":"message","role":"user","content":[{"type":"input_text","text":"latest"}]}]"#,
+    )
+    .unwrap();
+    assert_eq!(empty_object.prefix_count, 1);
 }

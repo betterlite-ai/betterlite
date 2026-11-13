@@ -1,14 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent};
 use indexmap::IndexMap;
-
-#[must_use]
-pub fn content_blocks(message: &ChatMessage) -> &[ContentPart] {
-    match &message.content {
-        Some(MessageContent::Parts(parts)) => parts,
-        Some(MessageContent::Text(_)) | None => &[],
-    }
-}
 
 pub fn field_text<'a>(fields: &'a IndexMap<String, Json>, key: &str) -> Option<&'a str> {
     match fields.get(key) {

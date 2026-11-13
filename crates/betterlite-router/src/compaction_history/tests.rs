@@ -84,6 +84,12 @@ fn compaction_history_behaviors(#[case] name: &str) {
 #[case::compactor_input_slices_the_older_messages("compactor_input_slices_the_older_messages")]
 #[case::call_ids_are_sorted_not_order_bound("call_ids_are_sorted_not_order_bound")]
 #[case::keeps_an_open_tail_tool_call("keeps_an_open_tail_tool_call")]
+#[case::counts_numeric_thinking_blocks_by_truthiness(
+    "counts_numeric_thinking_blocks_by_truthiness"
+)]
+#[case::counts_text_and_object_thinking_blocks_by_truthiness(
+    "counts_text_and_object_thinking_blocks_by_truthiness"
+)]
 fn compaction_history_boundaries(#[case] name: &str) {
     boundaries::run(name);
 }
