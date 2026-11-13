@@ -81,11 +81,12 @@ def redundant(call: RedundantScanCall) -> Json:
     logger = logging.getLogger("LiteLLM Proxy")
     counter = ScanCounter()
     level = logger.level
+    handlers = logger.handlers[:]
+    logger.handlers = [counter]
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(counter)
     try:
         asyncio.run(drain([CHUNK.validate_python(chunk) for chunk in call["chunks"]]))
     finally:
-        logger.removeHandler(counter)
+        logger.handlers = handlers
         logger.setLevel(level)
     return {"scans": counter.scans}

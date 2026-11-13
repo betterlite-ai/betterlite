@@ -349,6 +349,29 @@ fn transform_chunk_role_is_assistant_only_on_the_first_delta() {
 }
 
 #[test]
+fn transform_chunk_role_is_assistant_when_the_emitted_text_is_empty() {
+    let mutated = text_map(&[(0, "ab")]);
+    let mut emitted = text_map(&[(0, "")]);
+    let mut held = IndexMap::new();
+    let reference = chunk("");
+    let output = build_transform_chunk(TransformChunkInput {
+        reference_chunk: &reference,
+        mutated_text_per_choice: &mutated,
+        emitted_text_per_choice: &mut emitted,
+        holdback_per_choice: &IndexMap::new(),
+        finish_reason_per_choice: &IndexMap::new(),
+        held_chars_per_choice: &mut held,
+        is_final: false,
+    })
+    .unwrap()
+    .unwrap();
+    let expected = parsed(
+        r#"[{"index": 0, "delta": {"content": "ab", "role": "assistant", "tool_calls": null}, "finish_reason": null}]"#,
+    );
+    assert_eq!(chunk_choices(&output), expected_choices(expected));
+}
+
+#[test]
 fn transform_chunk_skips_a_choice_with_nothing_to_say() {
     let mutated = text_map(&[(0, "ab"), (1, "cd")]);
     let mut emitted = text_map(&[(0, "ab")]);
