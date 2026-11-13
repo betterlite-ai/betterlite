@@ -93,7 +93,6 @@ pub fn request_headers(
     Ok(headers)
 }
 
-// LiteLLM's mapper never reads non_default_params, and it sends only this version's limit
 #[must_use]
 pub fn map_rerank_params(
     version: RerankVersion,
@@ -112,7 +111,6 @@ pub fn map_rerank_params(
             )
         },
     ));
-    // an absent or null return_documents takes the mapper's default of true
     let returned = match options.get("return_documents") {
         None | Some(Json::Null) => Json::Bool(true),
         Some(given) => given.clone(),
@@ -170,10 +168,7 @@ pub fn transform_rerank_response(
         Err(RerankContractError::Shape(ShapeDecodeError::Json(_))) => {
             Err(CohereRerankError::ResponseJson {
                 status,
-                message: str::from_utf8(body).map_or_else(
-                    |_| "the Cohere response is not valid UTF-8".to_owned(),
-                    str::to_owned,
-                ),
+                message: str::from_utf8(body).unwrap_or_default().to_owned(),
             })
         }
         Err(error) => Err(CohereRerankError::Decode(error)),

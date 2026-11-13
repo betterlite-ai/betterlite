@@ -31,18 +31,12 @@ pub(crate) struct Input {
 struct Call {
     version: RerankVersion,
     model: String,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     api_key: Option<String>,
-    #[serde(default)]
     headers: BTreeMap<String, String>,
-    #[serde(default)]
     settings: Settings,
     options: RerankParams,
-    #[serde(default)]
     non_default: RerankParams,
-    #[serde(default)]
     responses: Vec<Reply>,
 }
 
@@ -69,7 +63,6 @@ impl Helper for Op {
                 transform_rerank_request(call.version, &call.model, &mapped).or_value_error()?;
             for reply in &call.responses {
                 match transform_rerank_response(reply.status, reply.body.as_bytes(), LIMITS) {
-                    // LiteLLM raises CohereError here, and the helper protocol carries its status
                     Err(CohereRerankError::ResponseJson { status, message }) => {
                         return Err(Box::new(HelperError {
                             class: "CohereError".to_owned(),

@@ -67,15 +67,13 @@ class Input(TypedDict):
 # a method cannot be assigned on an instance under mypy, so the scripted check is set through object
 async def drive(call: InputCall | OutputCall) -> JsonValue:
     guardrail = CustomGuardrail(guardrail_name="scripted")
+    check = ScriptedCheck(call.get("texts") if call["operation"] == "input" else None)
+    object.__setattr__(guardrail, "apply_guardrail", check)
     if call["operation"] == "input":
-        check = ScriptedCheck(call.get("texts"))
         data = dict(call["data"])
-        object.__setattr__(guardrail, "apply_guardrail", check)
         await HANDLER.process_input_messages(data, guardrail)
         return {"data": data, "calls": check.calls}
-    check = ScriptedCheck(None)
     response = TypeAdapter(RerankResponse).validate_python(call["output"])
-    object.__setattr__(guardrail, "apply_guardrail", check)
     returned = await HANDLER.process_output_response(response, guardrail)
     return {"same": returned is response, "calls": check.calls}
 

@@ -26,7 +26,6 @@ pub(crate) struct Input {
 enum Call {
     Input {
         data: BTreeMap<String, GuardrailValue>,
-        #[serde(default)]
         texts: Option<Vec<String>>,
     },
     Output {
@@ -47,7 +46,6 @@ impl GuardrailContract for ScriptedGuardrail {
         input_type: GuardrailInputType,
         _logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        // a marker proves the handler passed its caller's own request data
         request_data.insert("guardrail_seen".to_owned(), GuardrailValue::Boolean(true));
         self.calls
             .lock()

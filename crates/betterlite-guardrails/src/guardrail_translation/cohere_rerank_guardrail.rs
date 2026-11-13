@@ -42,7 +42,6 @@ impl CohereRerankHandler {
     where
         G: GuardrailContract,
     {
-        // an empty string is still scanned, so the check is on the type and not the value
         let (names, texts): (Vec<_>, Vec<_>) = SCANNED_FIELDS
             .into_iter()
             .filter_map(|name| match data.get(name) {
@@ -60,13 +59,15 @@ impl CohereRerankHandler {
             tools: None,
             tool_calls: None,
             structured_messages: None,
-            model: non_empty_model(data.get("model")),
+            model: match data.get("model") {
+                Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.clone()),
+                Some(_) | None => None,
+            },
             stream_holdback_chars: None,
         };
         let guardrailed = guardrail
             .apply_guardrail(inputs, data, GuardrailInputType::Request, logging_obj)
             .await?;
-        // a position the hook did not return keeps its original field
         let returned = guardrailed.texts.unwrap_or_default();
         for (name, text) in names.into_iter().zip(returned) {
             data.insert(name.to_owned(), GuardrailValue::Text(text));
@@ -86,12 +87,5 @@ impl CohereRerankHandler {
             "Rerank: Output processing not applicable (output contains relevance scores, not text)"
         );
         response
-    }
-}
-
-fn non_empty_model(value: Option<&GuardrailValue>) -> Option<String> {
-    match value {
-        Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.clone()),
-        Some(_) | None => None,
     }
 }
