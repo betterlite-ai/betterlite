@@ -1,0 +1,10 @@
+kind: helper
+name: invalid-regex-error
+call:
+  b3810:
+    rules:
+      - {id: broken, tool_name: "(", decision: allow}
+    default_action: deny
+    on_disallowed_action: block
+env: {}
+compare: {ignore: []}

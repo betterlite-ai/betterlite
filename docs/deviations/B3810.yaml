@@ -1,0 +1,14 @@
+task: B3810
+deviations:
+  - what: A rule with a duplicate id stays twice in the ordered rule list while the compiled_targets entry is the later rule's, and compiled_patterns keeps the earlier entry when the later duplicate has no allowed_param_patterns.
+    why: This copies LiteLLM's build loop exactly, including its "if rule_patterns" guard; the no-silent-drops rule wants the overwrite stated rather than hidden.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L125-L160
+  - what: Patterns compile with the regex crate's syntax instead of Python's re module; backreferences, lookarounds and other constructs it lacks are rejected as an invalid regex when the rules load.
+    why: betterlite matches in linear time and compiles every pattern once at load, so a pattern that cannot be honoured fails where the rules enter instead of at request time; a user porting such a pattern from LiteLLM needs to rewrite it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L125-L143
+  - what: A rule object with a key outside id, tool_name, tool_type, decision and allowed_param_patterns is rejected with that key's name.
+    why: LiteLLM's pydantic model ignores extra keys by default, so a typo there is silently dropped; the no-silent-drops rule makes betterlite name it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L9-L53
+  - what: DEFAULT_MAX_RECURSE_DEPTH is the fixed default 100 and a DEFAULT_MAX_RECURSE_DEPTH environment variable does not change it.
+    why: betterlite reads the environment only in the config crate, and this module takes the depth as a constant; the argument traversal owner can later take a configured limit instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
