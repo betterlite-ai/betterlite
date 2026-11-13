@@ -86,5 +86,6 @@ fn the_pre_request_hook_syncs_the_forced_choice() {
             r#"{"type":"tool","name":"litellm_web_search"}"#
         )))
     );
-    assert_eq!(list(&converted, "tools").len(), 1);
+    let expected = encode(&crate::tools::get_litellm_web_search_tool()).unwrap();
+    assert_eq!(list(&converted, "tools")[0], expected);
 }

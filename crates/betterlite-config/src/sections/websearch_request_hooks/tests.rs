@@ -182,6 +182,18 @@ fn a_non_list_provider_list_is_a_load_error() {
 }
 
 #[test]
+fn a_list_under_the_callback_settings_entry_is_rejected() {
+    let error = load_error(
+        "callback_settings:\n  websearch_interception:\n    enabled_providers: [bedrock]\n",
+        &[],
+    );
+    assert!(
+        error.contains("callback_settings.websearch_interception.enabled_providers"),
+        "{error}"
+    );
+}
+
+#[test]
 fn the_websearch_params_are_no_longer_unsupported() {
     let loaded = settings(&params("    search_tool_name: known\n"), &[]);
     assert_eq!(loaded.search_tool_name.as_deref(), Some("known"));
