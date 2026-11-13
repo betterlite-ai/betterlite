@@ -489,7 +489,8 @@ fn native_locked_roster_limits() {
         })
     ));
     let nested = |depth: usize| format!("{}{}", "[".repeat(depth), "]".repeat(depth));
-    assert_eq!(as_failure(&roster(&string(&nested(64)))), "not a list");
+    // depth 64 still reaches member validation; only the entries themselves are not members
+    assert_eq!(as_failure(&roster(&string(&nested(64)))), "member");
     assert!(matches!(
         roster(&string(&nested(65))),
         Err(TeamRecordError::Record {
