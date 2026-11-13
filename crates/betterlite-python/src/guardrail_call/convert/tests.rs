@@ -371,6 +371,14 @@ fn hooks_with_an_unknown_name_use_the_configured_mode() {
 }
 
 #[test]
+fn the_number_marker_reaches_rust_as_a_number() {
+    assert_eq!(
+        value(r#"{"$serde_json::private::Number": "12"}"#).unwrap(),
+        GuardrailValue::SignedInteger(12)
+    );
+}
+
+#[test]
 fn data_rejects_an_integer_past_u64() {
     let error = value(r#"{"trace": 123456789012345678901234567890}"#).unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
