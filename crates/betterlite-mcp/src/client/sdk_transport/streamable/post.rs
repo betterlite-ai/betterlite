@@ -68,7 +68,6 @@ impl StreamableCore {
         }
         Ok(())
     }
-
     async fn answer(
         &self,
         response: HttpResponse<HttpBody>,
@@ -127,7 +126,6 @@ impl StreamableCore {
         drop(body.close().await);
         Ok(())
     }
-
     async fn answer_error(
         &self,
         status: u16,
@@ -160,7 +158,6 @@ impl StreamableCore {
         drop(body.close().await);
         Ok(())
     }
-
     pub(super) async fn push(&self, message: RxJsonRpcMessage<RoleClient>) -> Result<(), SdkError> {
         match self.incoming.send(Incoming::Message(message)).await {
             Ok(()) => Ok(()),
@@ -169,7 +166,6 @@ impl StreamableCore {
             )))),
         }
     }
-
     pub(super) async fn push_error(
         &self,
         code: ErrorCode,

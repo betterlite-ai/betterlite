@@ -92,7 +92,6 @@ impl StreamableHttp {
             incoming: Some(receiver),
         }
     }
-
     pub fn set_protocol_version(&self, version: &str) {
         let mut state = self
             .core
@@ -123,7 +122,6 @@ impl StreamableCore {
         }
         headers
     }
-
     pub(super) fn session_id(&self) -> Option<String> {
         match self
             .state
@@ -136,7 +134,6 @@ impl StreamableCore {
             None => None,
         }
     }
-
     pub(super) fn note_session(&self, headers: &HeaderMap) {
         let Some(session) = headers
             .get(MCP_SESSION_ID)
@@ -148,26 +145,22 @@ impl StreamableCore {
         state.session_id = Some(session.to_owned());
         debug!("Received session ID: {session}");
     }
-
     pub(super) fn clear_protocol_version(&self) {
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .protocol_version = None;
     }
-
     pub(super) const fn retry_delay(retry_ms: Option<u64>) -> Duration {
         match retry_ms {
             Some(milliseconds) => Duration::from_millis(milliseconds),
             None => RECONNECTION_DELAY,
         }
     }
-
     pub(super) fn failure(&self, kind: StreamFailureKind, error: SdkError) {
         report_failure(&self.handler, kind, error);
         drop(self.incoming.try_send(Incoming::Closed));
     }
-
     pub(super) async fn close(&self) -> Result<(), SdkError> {
         if self.session_id().is_some() {
             let request = McpHttpRequest {
@@ -193,7 +186,6 @@ impl StreamableCore {
 impl TransportContext for StreamableHttp {
     type Streams = StreamableStreams;
     type Error = SdkError;
-
     fn enter(&mut self) -> impl Future<Output = Result<StreamableStreams, SdkError>> + Send {
         let incoming = self.incoming.take();
         let core = Arc::clone(&self.core);
@@ -206,7 +198,6 @@ impl TransportContext for StreamableHttp {
             Ok(StreamableStreams { core, incoming })
         }
     }
-
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
         async move {
             self.core.close().await?;
@@ -216,7 +207,6 @@ impl TransportContext for StreamableHttp {
 }
 impl Transport<RoleClient> for StreamableStreams {
     type Error = SdkError;
-
     fn send(
         &mut self,
         item: TxJsonRpcMessage<RoleClient>,
@@ -224,7 +214,6 @@ impl Transport<RoleClient> for StreamableStreams {
         let core = Arc::clone(&self.core);
         async move { core.send(item).await }
     }
-
     fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
         async move {
             match self.incoming.recv().await {
@@ -233,7 +222,6 @@ impl Transport<RoleClient> for StreamableStreams {
             }
         }
     }
-
     fn close(&mut self) -> impl Future<Output = Result<(), SdkError>> + Send {
         async move { self.core.close().await }
     }

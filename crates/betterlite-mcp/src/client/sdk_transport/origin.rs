@@ -1,13 +1,15 @@
+use std::error::Error;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use http::header::LOCATION;
 use http::{HeaderMap, Method};
 use url::Url;
 
 use crate::client::cleanup::http_client::{
-    ClientError, HttpResponse, McpHttpClient, ResponseHead, Transport as _,
+    ClientBody, ClientError, HttpResponse, McpHttpClient, ResponseHead, Transport as _,
 };
-use crate::client::cleanup::recording::ResponseBody as _;
+use crate::client::cleanup::recording::ResponseBody;
 use crate::client::http_transport::error::McpHttpError;
 use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::{HttpBody, McpHttpTransport};
@@ -15,7 +17,6 @@ use crate::client::http_transport::send::{HttpBody, McpHttpTransport};
 use super::error::SdkError;
 
 const MAX_REDIRECTS: usize = 20;
-
 pub(super) struct RequestTarget {
     pub(super) method: Method,
     pub(super) url: Url,
@@ -92,22 +93,60 @@ pub(super) fn redirect_note(url: &Url, status: u16, headers: &HeaderMap) -> Opti
     let location = redirect_location(url, status, headers)?;
     Some(format!(" (redirected to {location}; not followed)"))
 }
-pub(super) async fn send_within_origin(
-    transport: &McpHttpTransport,
+pub(super) trait OriginHop {
+    type Body: ResponseBody;
+    type Error: Error + Send + 'static;
+    fn hop(
+        &self,
+        request: McpHttpRequest,
+    ) -> BoxFuture<'_, Result<HttpResponse<Self::Body>, Self::Error>>;
+    fn drained(source: <Self::Body as ResponseBody>::Error) -> Self::Error;
+}
+impl OriginHop for McpHttpTransport {
+    type Body = HttpBody;
+    type Error = McpHttpError;
+    fn hop(
+        &self,
+        request: McpHttpRequest,
+    ) -> BoxFuture<'_, Result<HttpResponse<HttpBody>, McpHttpError>> {
+        Transport::send(self, request, true)
+    }
+    fn drained(source: McpHttpError) -> McpHttpError {
+        source
+    }
+}
+impl OriginHop for McpHttpClient<McpHttpTransport> {
+    type Body = ClientBody<HttpBody>;
+    type Error = ClientError<McpHttpError>;
+    fn hop(
+        &self,
+        request: McpHttpRequest,
+    ) -> BoxFuture<'_, Result<HttpResponse<ClientBody<HttpBody>>, ClientError<McpHttpError>>> {
+        Box::pin(self.send(request, false))
+    }
+    fn drained(source: Arc<McpHttpError>) -> ClientError<McpHttpError> {
+        ClientError::Transport(source)
+    }
+}
+async fn follow_redirects<Hop>(
+    hop: &Hop,
     request: McpHttpRequest,
-) -> Result<HttpResponse<HttpBody>, SdkError> {
+) -> Result<HttpResponse<Hop::Body>, Hop::Error>
+where
+    Hop: OriginHop,
+{
     let mut method = request.method.clone();
     let mut url = request.url.clone();
     let mut followed = 0_usize;
     loop {
-        let hop = McpHttpRequest {
+        let attempt = McpHttpRequest {
             method: method.clone(),
             url: url.clone(),
             headers: request.headers.clone(),
             body: request.body.clone(),
             read_timeout: request.read_timeout,
         };
-        let mut response = transport.send(hop, true).await?;
+        let mut response = hop.hop(attempt).await?;
         let followed_target =
             next_request_within_origin(&method, &url, response.status, &response.headers);
         let Some(target) = followed_target else {
@@ -116,54 +155,28 @@ pub(super) async fn send_within_origin(
         if followed == MAX_REDIRECTS {
             return Ok(response);
         }
-        drop(response.body.read_all().await?);
-        drop(response.body.close().await?);
+        drop(response.body.read_all().await.map_err(Hop::drained)?);
+        drop(response.body.close().await.map_err(Hop::drained)?);
         method = target.method;
         url = target.url;
         followed = followed.saturating_add(1);
     }
 }
+pub(super) async fn send_within_origin(
+    transport: &McpHttpTransport,
+    request: McpHttpRequest,
+) -> Result<HttpResponse<HttpBody>, SdkError> {
+    follow_redirects(transport, request)
+        .await
+        .map_err(SdkError::from)
+}
 pub(super) async fn delete_within_origin(
     client: &McpHttpClient<McpHttpTransport>,
     request: McpHttpRequest,
 ) -> Result<u16, ClientError<McpHttpError>> {
-    let mut method = request.method.clone();
-    let mut url = request.url.clone();
-    let mut followed = 0_usize;
-    loop {
-        let hop = McpHttpRequest {
-            method: method.clone(),
-            url: url.clone(),
-            headers: request.headers.clone(),
-            body: request.body.clone(),
-            read_timeout: request.read_timeout,
-        };
-        let mut response = client.send(hop, false).await?;
-        let followed_target =
-            next_request_within_origin(&method, &url, response.status, &response.headers);
-        let Some(target) = followed_target else {
-            return Ok(response.status);
-        };
-        if followed == MAX_REDIRECTS {
-            return Ok(response.status);
-        }
-        drop(
-            response
-                .body
-                .read_all()
-                .await
-                .map_err(ClientError::Transport)?,
-        );
-        drop(
-            response
-                .body
-                .close()
-                .await
-                .map_err(ClientError::Transport)?,
-        );
-        method = target.method;
-        url = target.url;
-        followed = followed.saturating_add(1);
+    match follow_redirects(client, request).await {
+        Ok(response) => Ok(response.status),
+        Err(error) => Err(error),
     }
 }
 pub(super) fn status_error(response: HttpResponse<HttpBody>) -> SdkError {

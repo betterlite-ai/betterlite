@@ -76,7 +76,6 @@ impl StreamableCore {
             }
         }
     }
-
     async fn reconnect(
         &self,
         last_event_id: Option<String>,
@@ -125,7 +124,6 @@ impl StreamableCore {
             }
         }
     }
-
     async fn reconnect_once(
         &self,
         event_id: &mut Option<String>,
@@ -188,7 +186,6 @@ impl StreamableCore {
             }
         }
     }
-
     async fn handle_event(&self, sse: Sse, id: &RequestId) -> Result<bool, SdkError> {
         let Some(parsed) = event_message(&sse) else {
             return Ok(false);

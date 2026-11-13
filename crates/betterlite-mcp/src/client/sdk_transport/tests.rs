@@ -44,7 +44,7 @@ use crate::client::sessions::stdio_runtime::{StdioRuntime, StdioSessionFactory};
 use crate::client::sessions::stream::{MessageHandler, StreamFailureKind};
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext};
 
-use super::context::{SdkStreams, SdkTransport};
+use super::context::{SdkStreams, SdkTransport, StdioContext};
 use super::error::SdkError;
 use super::legacy_sse::LegacySse;
 use super::origin::next_request_within_origin;
@@ -354,7 +354,11 @@ fn the_userinfo_rule_follows_httpx2(
     let mut headers = HeaderMap::new();
     headers.insert(LOCATION, HeaderValue::from_static(location));
     let target = next_request_within_origin(&Method::GET, &sent, 307, &headers);
-    assert_eq!(target.is_some(), followed);
+    if followed {
+        assert!(target.is_some(), "{sent} should follow {location}");
+    } else {
+        assert!(target.is_none(), "{sent} must not follow {location}");
+    }
 }
 
 #[tokio::test]
@@ -908,7 +912,7 @@ async fn a_stdio_round_trip_through_the_async_rw_transport() {
         env: BTreeMap::new(),
         defaults: BTreeMap::new(),
     });
-    let mut transport = SdkTransport::Stdio(stdio);
+    let mut transport = SdkTransport::Stdio(StdioContext(stdio));
     let mut streams = enter(&mut transport).await;
     send(&mut streams, request(1, "ping")).await;
     let message = receive(&mut streams).await;

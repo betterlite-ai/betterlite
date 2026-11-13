@@ -33,7 +33,6 @@ impl EventStream {
             inner: SseStream::from_bytes_stream(bounded).boxed(),
         }
     }
-
     pub(super) async fn next(&mut self) -> Option<Result<Sse, SdkError>> {
         match self.inner.next().await {
             Some(event) => Some(event.map_err(sdk_error)),
@@ -83,7 +82,6 @@ impl Limiter {
             blank: false,
         }
     }
-
     fn observe(&mut self, chunk: &[u8]) -> Result<(), OverLimit> {
         for &byte in chunk {
             match byte {
@@ -113,7 +111,6 @@ struct Bounded {
 }
 impl Stream for Bounded {
     type Item = Result<Bytes, LimitError>;
-
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.failed {
             return Poll::Ready(None);

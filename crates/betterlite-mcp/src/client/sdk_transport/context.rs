@@ -1,8 +1,8 @@
 use std::future::Future;
 use std::io;
-use std::pin::Pin;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use rmcp::RoleClient;
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
@@ -16,15 +16,53 @@ use super::legacy_sse::{LegacySse, LegacySseStreams};
 use super::stdio::StdioRw;
 use super::streamable::{StreamableHttp, StreamableStreams};
 
+pub struct StdioContext(pub StdioTransport);
 pub enum SdkTransport {
     Streamable(StreamableHttp),
     LegacySse(LegacySse),
-    Stdio(StdioTransport),
+    Stdio(StdioContext),
 }
-pub enum SdkStreams {
-    Streamable(StreamableStreams),
-    LegacySse(LegacySseStreams),
-    Stdio(StdioRw),
+pub struct SdkStreams(Box<dyn BoxedStreams>);
+trait BoxedStreams: Send {
+    fn send_boxed(
+        &mut self,
+        item: TxJsonRpcMessage<RoleClient>,
+    ) -> BoxFuture<'static, Result<(), SdkError>>;
+    fn receive_boxed(&mut self) -> BoxFuture<'_, Option<RxJsonRpcMessage<RoleClient>>>;
+    fn close_boxed(&mut self) -> BoxFuture<'_, Result<(), SdkError>>;
+}
+
+impl<Streams> BoxedStreams for Streams
+where
+    Streams: Transport<RoleClient, Error = SdkError> + Send,
+{
+    fn send_boxed(
+        &mut self,
+        item: TxJsonRpcMessage<RoleClient>,
+    ) -> BoxFuture<'static, Result<(), SdkError>> {
+        Box::pin(Transport::<RoleClient>::send(self, item))
+    }
+    fn receive_boxed(&mut self) -> BoxFuture<'_, Option<RxJsonRpcMessage<RoleClient>>> {
+        Box::pin(Transport::<RoleClient>::receive(self))
+    }
+    fn close_boxed(&mut self) -> BoxFuture<'_, Result<(), SdkError>> {
+        Box::pin(Transport::<RoleClient>::close(self))
+    }
+}
+impl From<StreamableStreams> for SdkStreams {
+    fn from(streams: StreamableStreams) -> Self {
+        Self(Box::new(streams))
+    }
+}
+impl From<LegacySseStreams> for SdkStreams {
+    fn from(streams: LegacySseStreams) -> Self {
+        Self(Box::new(streams))
+    }
+}
+impl From<StdioRw> for SdkStreams {
+    fn from(streams: StdioRw) -> Self {
+        Self(Box::new(streams))
+    }
 }
 fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
     match failure {
@@ -35,77 +73,65 @@ fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
         }
     }
 }
+impl TransportContext for StdioContext {
+    type Streams = StdioRw;
+    type Error = SdkError;
+    fn enter(&mut self) -> impl Future<Output = Result<StdioRw, SdkError>> + Send {
+        async move {
+            let streams = self
+                .0
+                .enter()
+                .await
+                .map_err(|error| SdkError::Io(Arc::new(error)))?;
+            Ok(StdioRw::new_client(streams.stdout, streams.stdin))
+        }
+    }
+    fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
+        async move { self.0.exit().await.map_err(stdio_exit) }
+    }
+}
+
+macro_rules! open_transport {
+    ($transport:expr) => {
+        match $transport {
+            SdkTransport::Streamable(inner) => SdkStreams::from(inner.enter().await?),
+            SdkTransport::LegacySse(inner) => SdkStreams::from(inner.enter().await?),
+            SdkTransport::Stdio(inner) => SdkStreams::from(inner.enter().await?),
+        }
+    };
+}
+
+macro_rules! close_transport {
+    ($transport:expr) => {
+        match $transport {
+            SdkTransport::Streamable(inner) => inner.exit().await,
+            SdkTransport::LegacySse(inner) => inner.exit().await,
+            SdkTransport::Stdio(inner) => inner.exit().await,
+        }
+    };
+}
 impl TransportContext for SdkTransport {
     type Streams = SdkStreams;
     type Error = SdkError;
-
     fn enter(&mut self) -> impl Future<Output = Result<SdkStreams, SdkError>> + Send {
-        async move {
-            match self {
-                Self::Streamable(transport) => {
-                    let streams = transport.enter().await?;
-                    Ok(SdkStreams::Streamable(streams))
-                }
-                Self::LegacySse(transport) => {
-                    let streams = transport.enter().await?;
-                    Ok(SdkStreams::LegacySse(streams))
-                }
-                Self::Stdio(transport) => {
-                    let streams = transport
-                        .enter()
-                        .await
-                        .map_err(|error| SdkError::Io(Arc::new(error)))?;
-                    Ok(SdkStreams::Stdio(StdioRw::new_client(
-                        streams.stdout,
-                        streams.stdin,
-                    )))
-                }
-            }
-        }
+        async move { open_transport!(self) }
     }
-
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
-        async move {
-            match self {
-                Self::Streamable(transport) => transport.exit().await,
-                Self::LegacySse(transport) => transport.exit().await,
-                Self::Stdio(transport) => transport.exit().await.map_err(stdio_exit),
-            }
-        }
+        async move { close_transport!(self) }
     }
 }
 impl Transport<RoleClient> for SdkStreams {
     type Error = SdkError;
-
     fn send(
         &mut self,
         item: TxJsonRpcMessage<RoleClient>,
     ) -> impl Future<Output = Result<(), SdkError>> + Send + 'static {
-        let future: Pin<Box<dyn Future<Output = Result<(), SdkError>> + Send>> = match self {
-            Self::Streamable(streams) => Box::pin(streams.send(item)),
-            Self::LegacySse(streams) => Box::pin(streams.send(item)),
-            Self::Stdio(streams) => Box::pin(streams.send(item)),
-        };
-        future
+        self.0.send_boxed(item)
     }
-
     fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
-        async move {
-            match self {
-                Self::Streamable(streams) => streams.receive().await,
-                Self::LegacySse(streams) => streams.receive().await,
-                Self::Stdio(streams) => streams.receive().await,
-            }
-        }
+        self.0.receive_boxed()
     }
-
     fn close(&mut self) -> impl Future<Output = Result<(), SdkError>> + Send {
-        async move {
-            match self {
-                Self::Streamable(streams) => streams.close().await,
-                Self::LegacySse(streams) => streams.close().await,
-                Self::Stdio(streams) => streams.close().await,
-            }
-        }
+        self.0.close_boxed()
     }
 }

@@ -63,7 +63,6 @@ fn endpoint_of(base: &Url, sse: &Sse) -> Result<Url, SdkError> {
 impl TransportContext for LegacySse {
     type Streams = LegacySseStreams;
     type Error = SdkError;
-
     fn enter(&mut self) -> impl Future<Output = Result<LegacySseStreams, SdkError>> + Send {
         let url = self.url.clone();
         let http = Arc::clone(&self.http);
@@ -109,7 +108,6 @@ impl TransportContext for LegacySse {
             }
         }
     }
-
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<SdkError>>> + Send + 'static {
         async move { Ok(()) }
     }
@@ -150,7 +148,6 @@ impl LegacySseStreams {
 }
 impl Transport<RoleClient> for LegacySseStreams {
     type Error = SdkError;
-
     fn send(
         &mut self,
         item: TxJsonRpcMessage<RoleClient>,
@@ -159,7 +156,6 @@ impl Transport<RoleClient> for LegacySseStreams {
         let endpoint = self.endpoint.clone();
         async move { post(&http, &endpoint, item).await }
     }
-
     fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
         async move {
             loop {
@@ -174,7 +170,6 @@ impl Transport<RoleClient> for LegacySseStreams {
             }
         }
     }
-
     fn close(&mut self) -> impl Future<Output = Result<(), SdkError>> + Send {
         async move { Ok(()) }
     }

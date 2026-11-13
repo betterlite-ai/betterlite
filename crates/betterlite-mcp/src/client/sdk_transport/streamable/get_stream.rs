@@ -50,7 +50,6 @@ impl StreamableCore {
             }
         }
     }
-
     async fn get_once(
         &self,
         event_id: &mut Option<String>,
@@ -109,7 +108,6 @@ impl StreamableCore {
             }
         }
     }
-
     async fn on_event(&self, sse: Sse) -> Result<(), SdkError> {
         let Some(parsed) = event_message(&sse) else {
             return Ok(());
