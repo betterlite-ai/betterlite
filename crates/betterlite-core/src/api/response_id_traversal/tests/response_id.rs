@@ -7,7 +7,7 @@ use crate::api::response_id_traversal::metadata::{AffinityMetadata, ModelInfo};
 use crate::api::response_id_traversal::record::{Record, TraversalError};
 use crate::api::response_id_traversal::response_id::rewrite_response_id;
 
-use super::fixtures::{dict, list, object, output, text};
+use super::fixtures::{dict, list, object, output, text, text_field};
 
 fn metadata(model_id: Option<&str>) -> AffinityMetadata {
     AffinityMetadata {
@@ -43,7 +43,7 @@ fn rewrites_the_id_with_provider_and_model() {
     ]);
     rewrite_response_id(&mut response, Some("openai"), &metadata(Some("dep_a"))).unwrap();
     let expected = build_response_id(Some("openai"), Some("dep_a"), "resp_a");
-    assert_eq!(response.text_field("id"), Some(expected.as_str()));
+    assert_eq!(text_field(&response, "id"), Some(expected));
 }
 
 #[rstest]
@@ -56,7 +56,7 @@ fn missing_model_encodes_as_none(#[case] metadata: AffinityMetadata) {
     let mut response = dict(vec![("id", text("resp_a"))]);
     rewrite_response_id(&mut response, Some("openai"), &metadata).unwrap();
     let expected = build_response_id(Some("openai"), None, "resp_a");
-    assert_eq!(response.text_field("id"), Some(expected.as_str()));
+    assert_eq!(text_field(&response, "id"), Some(expected));
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn absent_provider_encodes_as_none() {
     let mut response = dict(vec![("id", text("resp_a"))]);
     rewrite_response_id(&mut response, None, &metadata(Some("dep_a"))).unwrap();
     let expected = build_response_id(None, Some("dep_a"), "resp_a");
-    assert_eq!(response.text_field("id"), Some(expected.as_str()));
+    assert_eq!(text_field(&response, "id"), Some(expected));
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn empty_model_id_encodes_as_empty() {
     let mut response = dict(vec![("id", text("resp_a"))]);
     rewrite_response_id(&mut response, Some("openai"), &metadata(Some(""))).unwrap();
     let expected = build_response_id(Some("openai"), Some(""), "resp_a");
-    assert_eq!(response.text_field("id"), Some(expected.as_str()));
+    assert_eq!(text_field(&response, "id"), Some(expected));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn empty_id_is_encoded() {
     let mut response = dict(vec![("id", text(""))]);
     rewrite_response_id(&mut response, Some("openai"), &metadata(Some("dep_a"))).unwrap();
     let expected = build_response_id(Some("openai"), Some("dep_a"), "");
-    assert_eq!(response.text_field("id"), Some(expected.as_str()));
+    assert_eq!(text_field(&response, "id"), Some(expected));
 }
 
 #[test]
@@ -127,10 +127,13 @@ fn affinity_flag_gates_encrypted_rewrites_only() {
     let Some(item) = items.first() else {
         panic!("the output item should stay");
     };
-    assert_eq!(item.text_field("encrypted_content"), Some("cipher"));
     assert_eq!(
-        item.text_field("container_id"),
-        Some(build_container_id(Some("openai"), Some("dep_a"), "c1").as_str())
+        text_field(item, "encrypted_content"),
+        Some("cipher".to_owned())
+    );
+    assert_eq!(
+        text_field(item, "container_id"),
+        Some(build_container_id(Some("openai"), Some("dep_a"), "c1"))
     );
 }
 
@@ -155,7 +158,7 @@ fn affinity_flag_runs_encrypted_rewrites() {
     assert_eq!(
         items
             .first()
-            .and_then(|item| item.text_field("encrypted_content")),
+            .and_then(|item| item.field("encrypted_content").and_then(Record::as_text)),
         Some(wrap_encrypted_content("cipher", "dep_a").as_str())
     );
 }

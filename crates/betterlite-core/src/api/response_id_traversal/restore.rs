@@ -1,3 +1,5 @@
+use betterlite_models::decisions::Json;
+
 use crate::api::response_id_codecs::encrypted::{
     decode_encrypted_item_id, unwrap_encrypted_content,
 };
@@ -9,19 +11,22 @@ pub fn restore_encrypted_item_ids(input: &mut Record) {
         return;
     };
     for item in items {
-        let Record::Dict(fields) = item else {
+        let Record::Dict(dict) = item else {
             continue;
         };
-        let decoded = fields
+        let decoded = dict
+            .values
             .get("id")
             .and_then(Record::as_text)
             .filter(|text| !text.is_empty())
             .and_then(decode_encrypted_item_id);
         if let Some(item_id) = decoded {
-            fields.insert("id".to_owned(), Record::Text(item_id.item_id));
+            dict.values
+                .insert("id".to_owned(), Record::Scalar(Json::Text(item_id.item_id)));
         }
         let mut unwrapped_content = None;
-        if let Some(content) = fields
+        if let Some(content) = dict
+            .values
             .get("encrypted_content")
             .and_then(Record::as_text)
             .filter(|text| !text.is_empty())
@@ -32,7 +37,10 @@ pub fn restore_encrypted_item_ids(input: &mut Record) {
             }
         }
         if let Some(unwrapped) = unwrapped_content {
-            fields.insert("encrypted_content".to_owned(), Record::Text(unwrapped));
+            dict.values.insert(
+                "encrypted_content".to_owned(),
+                Record::Scalar(Json::Text(unwrapped)),
+            );
         }
     }
 }

@@ -9,18 +9,33 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::api::response_id_traversal::record::{AttributeObject, Record};
+use betterlite_models::decisions::Json;
+
+use crate::api::response_id_traversal::record::{AttributeObject, DictRecord, Record};
 
 pub(super) fn text(value: &str) -> Record {
-    Record::Text(value.to_owned())
+    Record::Scalar(Json::Text(value.to_owned()))
 }
 
 pub(super) fn number(value: i64) -> Record {
-    Record::Number(Number::from(value))
+    Record::Scalar(Json::Number(Number::from(value)))
+}
+
+pub(super) fn null() -> Record {
+    Record::Scalar(Json::Null)
 }
 
 pub(super) fn dict(entries: Vec<(&str, Record)>) -> Record {
-    Record::Dict(fields(entries))
+    Record::Dict(DictRecord {
+        values: fields(entries),
+    })
+}
+
+pub(super) fn text_field(record: &Record, name: &str) -> Option<String> {
+    record
+        .field(name)
+        .and_then(Record::as_text)
+        .map(str::to_owned)
 }
 
 pub(super) fn fields(entries: Vec<(&str, Record)>) -> IndexMap<String, Record> {
@@ -76,14 +91,11 @@ pub(super) fn message_with_annotation(container_id: &str, as_object: bool) -> Re
 }
 
 pub(super) fn container_of(record: &Record) -> Option<String> {
-    record.text_field("container_id").map(str::to_owned)
+    text_field(record, "container_id")
 }
 
 pub(super) fn nested_container_of(record: &Record) -> Option<String> {
-    record
-        .field("code_interpreter_call")?
-        .text_field("container_id")
-        .map(str::to_owned)
+    text_field(record.field("code_interpreter_call")?, "container_id")
 }
 
 pub(super) fn annotation_container_of(record: &Record) -> Option<String> {
@@ -94,10 +106,7 @@ pub(super) fn annotation_container_of(record: &Record) -> Option<String> {
     let Record::List(annotations) = part.field("annotations")? else {
         return None;
     };
-    annotations
-        .first()?
-        .text_field("container_id")
-        .map(str::to_owned)
+    text_field(annotations.first()?, "container_id")
 }
 
 #[derive(Clone, Default)]

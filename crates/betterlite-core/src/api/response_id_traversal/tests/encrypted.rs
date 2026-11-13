@@ -4,23 +4,20 @@ use crate::api::response_id_codecs::encrypted::{build_encrypted_item_id, wrap_en
 use crate::api::response_id_traversal::encrypted::encode_encrypted_item_ids;
 use crate::api::response_id_traversal::record::Record;
 
-use super::fixtures::{capture, dict, list, number, object, output, text};
+use super::fixtures::{capture, dict, list, null, number, object, output, text, text_field};
 
 fn item_id(response: &Record, index: usize) -> Option<String> {
     let Some(Record::List(items)) = response.field("output") else {
         return None;
     };
-    items.get(index)?.text_field("id").map(str::to_owned)
+    text_field(items.get(index)?, "id")
 }
 
 fn item_content(response: &Record, index: usize) -> Option<String> {
     let Some(Record::List(items)) = response.field("output") else {
         return None;
     };
-    items
-        .get(index)?
-        .text_field("encrypted_content")
-        .map(str::to_owned)
+    text_field(items.get(index)?, "encrypted_content")
 }
 
 #[test]
@@ -91,7 +88,7 @@ fn skips_a_non_list_output(#[case] non_list: Record) {
 #[rstest]
 #[case::empty_string(Some(text("")))]
 #[case::number(Some(number(7)))]
-#[case::null(Some(Record::Null))]
+#[case::null(Some(null()))]
 #[case::absent(None)]
 fn skips_empty_or_non_string_content(#[case] content: Option<Record>) {
     let mut item = vec![("id", text("rs_a"))];

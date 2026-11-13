@@ -10,7 +10,11 @@ pub fn rewrite_response_id(
     custom_llm_provider: Option<&str>,
     metadata: &AffinityMetadata,
 ) -> Result<(), TraversalError> {
-    let Some(response_id) = response.text_field("id").map(str::to_owned) else {
+    let Some(response_id) = response
+        .field("id")
+        .and_then(Record::as_text)
+        .map(str::to_owned)
+    else {
         return Ok(());
     };
     if is_encoded_response_id(&response_id) {

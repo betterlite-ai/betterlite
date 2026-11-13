@@ -1,9 +1,7 @@
-use indexmap::IndexMap;
-
 use crate::api::response_id_codecs::container::{build_container_id, decode_container_id};
 
 use super::metadata::AffinityMetadata;
-use super::record::{AttributeObject, Record};
+use super::record::Record;
 
 pub fn encode_containers(
     response: &mut Record,
@@ -27,65 +25,26 @@ pub fn encode_container_id(
     custom_llm_provider: Option<&str>,
     model_id: Option<&str>,
 ) {
-    match item {
-        Record::Dict(fields) => encode_dict_item(fields, custom_llm_provider, model_id),
-        Record::Object { object } => encode_object_item(object, custom_llm_provider, model_id),
-        Record::Null | Record::Bool(_) | Record::Number(_) | Record::Text(_) | Record::List(_) => {}
-    }
-}
-
-fn encode_dict_item(
-    fields: &mut IndexMap<String, Record>,
-    custom_llm_provider: Option<&str>,
-    model_id: Option<&str>,
-) {
-    let encoded = fields
-        .get("container_id")
-        .and_then(Record::as_text)
-        .and_then(|container_id| maybe_encode(container_id, custom_llm_provider, model_id));
-    if let Some(wrapped) = encoded {
-        fields.insert("container_id".to_owned(), Record::Text(wrapped));
-    }
-    if let Some(Record::Dict(nested)) = fields.get_mut("code_interpreter_call") {
-        let nested_encoded = nested
-            .get("container_id")
-            .and_then(Record::as_text)
-            .and_then(|container_id| maybe_encode(container_id, custom_llm_provider, model_id));
-        if let Some(wrapped) = nested_encoded {
-            nested.insert("container_id".to_owned(), Record::Text(wrapped));
-        }
-    }
-    if matches!(
-        fields.get("type").and_then(Record::as_text),
-        Some("message")
-    ) && let Some(content) = fields.get_mut("content")
-    {
-        encode_message_content(content, custom_llm_provider, model_id);
-    }
-}
-
-fn encode_object_item(
-    object: &mut AttributeObject,
-    custom_llm_provider: Option<&str>,
-    model_id: Option<&str>,
-) {
-    let encoded = object
-        .fields
-        .get("container_id")
+    let encoded = item
+        .field("container_id")
         .and_then(Record::as_text)
         .and_then(|container_id| maybe_encode(container_id, custom_llm_provider, model_id));
     if let Some(wrapped) = encoded
-        && object.set_text("container_id", wrapped).is_err()
+        && item.set_text("container_id", wrapped).is_err()
     {
         tracing::debug!("Could not set container_id on streaming output item");
     }
-    if let Some(nested) = object.fields.get_mut("code_interpreter_call") {
+    // a mapping's nested call is visited only when it is a mapping; an object's attribute is visited whatever it holds
+    let parent_is_mapping = matches!(item, Record::Dict(_));
+    if let Some(nested) = item.field_mut("code_interpreter_call")
+        && (!parent_is_mapping || matches!(nested, Record::Dict(_)))
+    {
         encode_container_id(nested, custom_llm_provider, model_id);
     }
     if matches!(
-        object.fields.get("type").and_then(Record::as_text),
+        item.field("type").and_then(Record::as_text),
         Some("message")
-    ) && let Some(content) = object.fields.get_mut("content")
+    ) && let Some(content) = item.field_mut("content")
     {
         encode_message_content(content, custom_llm_provider, model_id);
     }
@@ -100,22 +59,11 @@ fn encode_message_content(
         return;
     };
     for part in parts {
-        if let Some(annotations) = part.field_mut("annotations") {
-            encode_annotations(annotations, custom_llm_provider, model_id);
+        if let Some(Record::List(annotations)) = part.field_mut("annotations") {
+            for annotation in annotations {
+                encode_container_id(annotation, custom_llm_provider, model_id);
+            }
         }
-    }
-}
-
-fn encode_annotations(
-    annotations: &mut Record,
-    custom_llm_provider: Option<&str>,
-    model_id: Option<&str>,
-) {
-    let Record::List(items) = annotations else {
-        return;
-    };
-    for annotation in items {
-        encode_container_id(annotation, custom_llm_provider, model_id);
     }
 }
 
@@ -153,89 +101,40 @@ pub fn collect_container_ids(response: Option<&Record>) -> Vec<String> {
     collected.into_iter().map(str::to_owned).collect()
 }
 
+// an explicit stack keeps the walk off the call stack; the result carries no promised order
 fn collect_from_item<'record>(item: &'record Record, collected: &mut Vec<&'record str>) {
-    match item {
-        Record::Dict(fields) => collect_from_dict(fields, collected),
-        Record::Object { object } => collect_from_object(object, collected),
-        Record::Null | Record::Bool(_) | Record::Number(_) | Record::Text(_) | Record::List(_) => {}
-    }
-}
-
-fn collect_from_dict<'record>(
-    fields: &'record IndexMap<String, Record>,
-    collected: &mut Vec<&'record str>,
-) {
-    if let Some(container_id) = fields
-        .get("container_id")
-        .and_then(Record::as_text)
-        .filter(|text| !text.is_empty())
-    {
-        push_unique(collected, container_id);
-    }
-    if let Some(Record::Dict(nested)) = fields.get("code_interpreter_call")
-        && let Some(container_id) = nested
-            .get("container_id")
+    let mut pending = vec![item];
+    while let Some(current) = pending.pop() {
+        if let Some(container_id) = current
+            .field("container_id")
             .and_then(Record::as_text)
             .filter(|text| !text.is_empty())
-    {
-        push_unique(collected, container_id);
-    }
-    if matches!(
-        fields.get("type").and_then(Record::as_text),
-        Some("message")
-    ) && let Some(content) = fields.get("content")
-    {
-        collect_from_message_content(content, collected);
-    }
-}
-
-fn collect_from_object<'record>(
-    object: &'record AttributeObject,
-    collected: &mut Vec<&'record str>,
-) {
-    if let Some(container_id) = object
-        .fields
-        .get("container_id")
-        .and_then(Record::as_text)
-        .filter(|text| !text.is_empty())
-    {
-        push_unique(collected, container_id);
-    }
-    if let Some(nested) = object.fields.get("code_interpreter_call") {
-        collect_from_item(nested, collected);
-    }
-    if matches!(
-        object.fields.get("type").and_then(Record::as_text),
-        Some("message")
-    ) && let Some(content) = object.fields.get("content")
-    {
-        collect_from_message_content(content, collected);
-    }
-}
-
-fn collect_from_message_content<'record>(
-    content: &'record Record,
-    collected: &mut Vec<&'record str>,
-) {
-    let Record::List(parts) = content else {
-        return;
-    };
-    for part in parts {
-        if let Some(annotations) = part.field("annotations") {
-            collect_from_annotations(annotations, collected);
+        {
+            push_unique(collected, container_id);
+        }
+        if let Some(nested) = current.field("code_interpreter_call")
+            && (!matches!(current, Record::Dict(_)) || matches!(nested, Record::Dict(_)))
+        {
+            pending.push(nested);
+        }
+        if matches!(
+            current.field("type").and_then(Record::as_text),
+            Some("message")
+        ) && let Some(content) = current.field("content")
+        {
+            pending_annotations(content, &mut pending);
         }
     }
 }
 
-fn collect_from_annotations<'record>(
-    annotations: &'record Record,
-    collected: &mut Vec<&'record str>,
-) {
-    let Record::List(items) = annotations else {
+fn pending_annotations<'record>(content: &'record Record, pending: &mut Vec<&'record Record>) {
+    let Record::List(parts) = content else {
         return;
     };
-    for annotation in items {
-        collect_from_item(annotation, collected);
+    for part in parts {
+        if let Some(Record::List(annotations)) = part.field("annotations") {
+            pending.extend(annotations);
+        }
     }
 }
 

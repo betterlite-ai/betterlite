@@ -7,7 +7,7 @@ use crate::api::response_id_traversal::record::Record;
 
 use super::fixtures::{
     annotation_container_of, capture, container_of, dict, list, message_with_annotation,
-    nested_call, nested_container_of, number, object, output, text,
+    nested_call, nested_container_of, null, number, object, output, text,
 };
 
 const PROVIDER: Option<&str> = Some("openai");
@@ -30,7 +30,7 @@ fn item_at(response: &Record, index: usize) -> Record {
     let Some(Record::List(items)) = response.field("output") else {
         panic!("output should stay a list");
     };
-    items.get(index).cloned().unwrap_or(Record::Null)
+    items.get(index).cloned().unwrap_or_else(null)
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn wraps_a_providerless_envelope_again() {
 
 #[rstest]
 #[case::empty_string(Some(text("")), true)]
-#[case::null(Some(Record::Null), false)]
+#[case::null(Some(null()), false)]
 #[case::number(Some(number(7)), false)]
 #[case::absent(None, false)]
 fn encodes_only_string_container_ids(

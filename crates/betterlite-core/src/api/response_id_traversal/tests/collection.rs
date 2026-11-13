@@ -4,7 +4,7 @@ use crate::api::response_id_codecs::container::build_container_id;
 use crate::api::response_id_traversal::container::collect_container_ids;
 use crate::api::response_id_traversal::record::Record;
 
-use super::fixtures::{dict, list, number, object, output, text};
+use super::fixtures::{dict, list, null, number, object, output, text};
 
 #[test]
 fn dedupes_ids_from_dicts_and_objects() {
@@ -68,7 +68,7 @@ fn reads_object_message_content() {
 
 #[rstest]
 #[case::empty(Some(text("")), 0)]
-#[case::null(Some(Record::Null), 0)]
+#[case::null(Some(null()), 0)]
 #[case::number(Some(number(7)), 0)]
 #[case::missing(None, 0)]
 #[case::kept(Some(text("c1")), 1)]

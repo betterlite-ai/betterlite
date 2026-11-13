@@ -102,33 +102,36 @@ where
 }
 
 fn rewrite_scenarios(scenarios: &[RewriteScenario]) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut results = Vec::with_capacity(scenarios.len());
-    for scenario in scenarios {
-        let mut response = scenario.response.clone();
-        let metadata = scenario.litellm_metadata.clone().unwrap_or_default();
-        let (result, diagnostic) = observed(|| {
-            rewrite_response_id(
-                &mut response,
-                scenario.custom_llm_provider.as_deref(),
-                &metadata,
-            )
-        });
-        if let Err(error) = result {
-            return Err(Box::new(HelperError {
-                class: "TraversalError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            }));
-        }
-        results.push(json!({
-            "response": to_value(&response)?,
-            "diagnostic": diagnostic,
+    scenarios
+        .iter()
+        .map(rewrite_scenario)
+        .collect::<Result<Vec<_>, _>>()
+}
+
+fn rewrite_scenario(scenario: &RewriteScenario) -> Result<Value, Box<HelperError>> {
+    let mut response = scenario.response.clone();
+    let metadata = scenario.litellm_metadata.clone().unwrap_or_default();
+    let (result, diagnostic) = observed(|| {
+        rewrite_response_id(
+            &mut response,
+            scenario.custom_llm_provider.as_deref(),
+            &metadata,
+        )
+    });
+    if let Err(error) = result {
+        return Err(Box::new(HelperError {
+            class: "TraversalError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
         }));
     }
-    Ok(results)
+    Ok(json!({
+        "response": to_value(&response)?,
+        "diagnostic": diagnostic,
+    }))
 }
 
 fn restore_inputs(inputs: &[Record]) -> Result<Vec<Value>, Box<HelperError>> {
@@ -154,7 +157,8 @@ fn strip_scenarios(scenarios: &[StripScenario]) -> Result<Vec<Value>, Box<Helper
             .map(|ids| ids.iter().map(String::as_str).collect())
             .unwrap_or_default();
         let predicate = |item: &Record| {
-            item.text_field("id")
+            item.field("id")
+                .and_then(Record::as_text)
                 .is_some_and(|id| selected.contains(id))
         };
         let should_strip: Option<&dyn Fn(&Record) -> bool> =

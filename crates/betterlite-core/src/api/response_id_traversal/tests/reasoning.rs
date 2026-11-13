@@ -5,7 +5,7 @@ use rstest::rstest;
 use crate::api::response_id_traversal::reasoning::strip_encrypted_reasoning;
 use crate::api::response_id_traversal::record::Record;
 
-use super::fixtures::{dict, list, number, object, text};
+use super::fixtures::{dict, list, null, number, object, text};
 
 fn reasoning(summary: Record) -> Record {
     dict(vec![
@@ -40,12 +40,12 @@ fn keeps_a_readable_content_string() {
     ]);
     let mut input = list(vec![item.clone()]);
     strip_encrypted_reasoning(&mut input, None);
-    let Record::Dict(mut kept_fields) = item else {
+    let Record::Dict(mut kept) = item else {
         panic!("the item should be a mapping");
     };
-    kept_fields.shift_remove("id");
-    kept_fields.shift_remove("encrypted_content");
-    assert_eq!(input, list(vec![Record::Dict(kept_fields)]));
+    kept.values.shift_remove("id");
+    kept.values.shift_remove("encrypted_content");
+    assert_eq!(input, list(vec![Record::Dict(kept)]));
 }
 
 #[rstest]
@@ -75,7 +75,7 @@ fn summary_readability(#[case] summary: Record, #[case] readable: bool) {
 #[case::non_reasoning_type(dict(vec![("type", text("message")), ("encrypted_content", text("cipher"))]))]
 #[case::missing_type(dict(vec![("encrypted_content", text("cipher"))]))]
 #[case::empty_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", text(""))]))]
-#[case::null_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", Record::Null)]))]
+#[case::null_cipher(dict(vec![("type", text("reasoning")), ("encrypted_content", null())]))]
 #[case::missing_cipher(dict(vec![("type", text("reasoning"))]))]
 fn keeps_items_that_are_not_encrypted_reasoning(#[case] item: Record) {
     let mut input = list(vec![item.clone()]);
@@ -98,7 +98,7 @@ fn a_predicate_selects_items_only_when_it_is_given() {
         ("summary", text("source")),
     ]);
     let mut input = list(vec![selected, other.clone()]);
-    let predicate = |item: &Record| item.text_field("id") == Some("r");
+    let predicate = |item: &Record| item.field("id").and_then(Record::as_text) == Some("r");
     strip_encrypted_reasoning(&mut input, Some(&predicate));
     assert_eq!(
         input,
@@ -111,7 +111,7 @@ fn a_predicate_never_sees_non_dictionary_items() {
     let calls = AtomicUsize::new(0);
     let predicate = |item: &Record| {
         calls.fetch_add(1, Ordering::Relaxed);
-        item.text_field("id") == Some("r")
+        item.field("id").and_then(Record::as_text) == Some("r")
     };
     let object_item = object(
         vec![
@@ -129,11 +129,7 @@ fn a_predicate_never_sees_non_dictionary_items() {
 
 #[test]
 fn drops_null_items() {
-    let mut input = list(vec![
-        Record::Null,
-        dict(vec![("type", text("message"))]),
-        Record::Null,
-    ]);
+    let mut input = list(vec![null(), dict(vec![("type", text("message"))]), null()]);
     strip_encrypted_reasoning(&mut input, None);
     assert_eq!(input, list(vec![dict(vec![("type", text("message"))])]));
 }
@@ -158,7 +154,7 @@ fn keeps_the_surviving_order() {
 #[rstest]
 #[case::mapping(dict(vec![("type", text("reasoning"))]))]
 #[case::text(text("reasoning"))]
-#[case::null(Record::Null)]
+#[case::null(null())]
 fn leaves_a_non_list_input_alone(#[case] mut input: Record) {
     let original = input.clone();
     strip_encrypted_reasoning(&mut input, None);

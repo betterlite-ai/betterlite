@@ -4,17 +4,12 @@ use crate::api::response_id_codecs::encrypted::{build_encrypted_item_id, wrap_en
 use crate::api::response_id_traversal::record::Record;
 use crate::api::response_id_traversal::restore::restore_encrypted_item_ids;
 
-use super::fixtures::{dict, list, number, object, text};
+use super::fixtures::{dict, list, null, number, object, text, text_field};
 
 fn first_item(input: &Record) -> Option<&Record> {
     match input {
         Record::List(items) => items.first(),
-        Record::Null
-        | Record::Bool(_)
-        | Record::Number(_)
-        | Record::Text(_)
-        | Record::Dict(_)
-        | Record::Object { .. } => None,
+        Record::Dict(_) | Record::Object { .. } | Record::Scalar(_) => None,
     }
 }
 
@@ -31,8 +26,11 @@ fn restores_ids_and_contents() {
     let Some(item) = first_item(&input) else {
         panic!("the item should stay");
     };
-    assert_eq!(item.text_field("id"), Some("rs_a"));
-    assert_eq!(item.text_field("encrypted_content"), Some("cipher"));
+    assert_eq!(text_field(item, "id"), Some("rs_a".to_owned()));
+    assert_eq!(
+        text_field(item, "encrypted_content"),
+        Some("cipher".to_owned())
+    );
 }
 
 #[test]
@@ -59,7 +57,7 @@ fn visits_dictionary_items_only() {
 #[rstest]
 #[case::mapping(dict(vec![("id", text("encitem_bm9wZQ=="))]))]
 #[case::text(text("encitem_bm9wZQ=="))]
-#[case::null(Record::Null)]
+#[case::null(null())]
 fn leaves_a_non_list_input_alone(#[case] mut input: Record) {
     let original = input.clone();
     restore_encrypted_item_ids(&mut input);
@@ -75,7 +73,7 @@ fn unwraps_one_layer_only() {
     let Some(item) = first_item(&input) else {
         panic!("the item should stay");
     };
-    assert_eq!(item.text_field("encrypted_content"), Some(inner.as_str()));
+    assert_eq!(text_field(item, "encrypted_content"), Some(inner));
 }
 
 #[test]
