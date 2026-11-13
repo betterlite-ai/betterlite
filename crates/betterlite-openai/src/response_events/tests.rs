@@ -25,6 +25,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use tokio::runtime::Builder;
+use tracing::Level;
 use tracing::subscriber::with_default;
 
 use super::created_at::convert_created_at;
@@ -147,6 +148,7 @@ where
     let subscriber = tracing_subscriber::fmt()
         .without_time()
         .with_ansi(false)
+        .with_max_level(Level::DEBUG)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     let result = with_default(subscriber, run);
@@ -556,12 +558,12 @@ fn known_search_and_mcp_events() {
             r#"{{"type":"{event_type}","sequence_number":1,"item_id":"i","output_index":0}}"#
         ));
     }
-    for event_type in [
-        "response.mcp_call_arguments.delta",
-        "response.mcp_call_arguments.done",
+    for (event_type, field) in [
+        ("response.mcp_call_arguments.delta", "delta"),
+        ("response.mcp_call_arguments.done", "arguments"),
     ] {
         assert_known_event(&format!(
-            r#"{{"type":"{event_type}","sequence_number":1,"item_id":"i","output_index":0,"delta":"{{"}}"#
+            r#"{{"type":"{event_type}","sequence_number":1,"item_id":"i","output_index":0,"{field}":"{{"}}"#
         ));
     }
 }
