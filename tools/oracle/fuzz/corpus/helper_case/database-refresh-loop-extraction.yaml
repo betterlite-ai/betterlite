@@ -1,0 +1,14 @@
+kind: helper
+name: database-refresh-loop-extraction-seed
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: extract_password
+        url: "postgresql://u:pa%3Fss%26more%3D1@h/d"
+      - function: extract_password
+        url: "postgresql://u:@h/d"
+      - function: extract_password
+        url: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: openai-response-input-gpt5-keeps-combinators
+call:
+  openai_response_input:
+    probes:
+    - {model: gpt-5, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+    - {model: 'ft:gpt-5:org::abc', input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+    - {model: 'ft:', input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+    - {model: gpt-4o, provider: hosted_vllm, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+    - {model: my-deployment, provider: azure, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}}
+env: {}
+compare: {ignore: []}
