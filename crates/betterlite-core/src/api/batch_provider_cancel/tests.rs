@@ -560,14 +560,32 @@ fn batch_cancel_preserves_the_provider_status(#[case] status: BatchStatus) {
     assert_eq!(result.batch.status, status);
 }
 
-#[test]
-fn batch_cancel_bounds_the_extra_bytes() {
+#[rstest]
+#[case::at_the_limit(Some(("a", "bc")), None, false)]
+#[case::headers_over_the_limit(Some(("ab", "cd")), None, true)]
+#[case::body_over_the_limit(None, Some(("ab", "cd")), true)]
+#[case::both_over_the_limit(Some(("a", "bc")), Some(("d", "e")), true)]
+fn batch_cancel_bounds_the_extra_bytes(
+    #[case] header: Option<(&str, &str)>,
+    #[case] body: Option<(&str, &str)>,
+    #[case] rejected: bool,
+) {
     let defaults = ApiLimits::default();
     let limits = ApiLimits {
-        max_json_bytes: 4,
+        max_json_bytes: 10,
         max_event_bytes: defaults.max_event_bytes,
         max_items: defaults.max_items,
     };
+    let entry = |pair: (&str, &str)| BTreeMap::from([(pair.0.to_owned(), pair.1.to_owned())]);
+    let input = BatchProviderCancelInput::Cancel(Box::new(CancelBatchCall {
+        batch_id: "batch_1".to_owned(),
+        model: None,
+        provider: CancelProvider::Openai,
+        extra_headers: header.map(entry),
+        extra_body: body.map(entry),
+        params: base_params(),
+        call: CancelCall::Sync,
+    }));
     let (dispatch, calls) = scripted(BatchStatus::Cancelling);
     let service = BatchProviderCancel {
         clock: Arc::new(|| SECOND),
@@ -575,13 +593,12 @@ fn batch_cancel_bounds_the_extra_bytes() {
         limits,
         settings: base_settings(),
     };
-    let error = drive(
-        &service,
-        &request("openai", base_params(), CancelCall::Sync),
-    )
-    .expect_err("the request exceeds the byte limit");
-    assert!(matches!(error, BatchProviderCancelError::Limits(_)));
-    assert!(recorded(&calls).is_empty());
+    let outcome = drive(&service, &input);
+    assert_eq!(
+        matches!(outcome, Err(BatchProviderCancelError::Limits(_))),
+        rejected
+    );
+    assert_eq!(recorded(&calls).is_empty(), rejected);
 }
 
 #[test]
