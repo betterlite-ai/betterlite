@@ -38,28 +38,13 @@ fn python_ascii_patterns_are_retained(#[case] source: &str, #[case] text: &str) 
 #[case::dot(r"(?a)danger.*zone", "DANGER middle ZONE", "danger\nzone")]
 #[case::negated_space(r"(?a)\S+", "abc", " \t ")]
 #[case::negated_class(r"(?a)[^x]", "a", "x")]
-fn python_flags_preserve_character_and_case_semantics(
-    #[case] source: &str,
-    #[case] matching: &str,
-    #[case] excluded: &str,
-) {
-    let mut data: CategoryFileData = serde_saphyr::from_str("keywords: []").unwrap();
-    data.phrase_patterns.push(source.to_owned());
-    let category = super::model::CategoryConfig::from_data(data).unwrap();
-    assert_eq!(category.phrase_patterns.len(), 1, "must retain {source}");
-    let pattern = &category.phrase_patterns[0];
-    assert!(pattern.regex.is_match(matching).unwrap(), "{source}");
-    assert!(!pattern.regex.is_match(excluded).unwrap(), "{source}");
-}
-
-#[rstest]
 #[case::end_of_text(r"foo$", "foo", "foo\nbar")]
 #[case::before_final_newline(r"foo$", "foo\n", "foo\nbar")]
 #[case::absolute_end(r"foo\Z", "foo", "foo\n")]
 #[case::dollar_in_class(r"[$]", "$", "x")]
 #[case::class_then_end(r"[x]foo$", "xfoo\n", "xfoo\nbar")]
 #[case::escaped_dollar(r"\$", "$", "x")]
-fn python_anchors_match_re_semantics(
+fn python_syntax_matches_re_semantics(
     #[case] source: &str,
     #[case] matching: &str,
     #[case] excluded: &str,
