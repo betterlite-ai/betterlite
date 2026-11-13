@@ -80,7 +80,6 @@ fn search_outcome(scenario: &SearchScenario) -> Value {
             "status": Value::Null,
             "url": Value::Null,
             "body": Value::Null,
-            "logging": logging,
             "calls": calls,
             "extra_body": extra_body,
         }),
