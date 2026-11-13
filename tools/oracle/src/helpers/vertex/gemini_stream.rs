@@ -57,10 +57,9 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<Helpe
     Ok(map)
 }
 fn stream_error(error: StreamError) -> Box<HelperError> {
-    let status = if let StreamError::Embedded { status, .. } = &error {
-        Some(*status)
-    } else {
-        None
+    let (status, message) = match &error {
+        StreamError::Embedded { status, message } => (Some(*status), message.clone()),
+        other => (None, other.to_string()),
     };
     Box::new(HelperError {
         class: "VertexAIError".to_owned(),
@@ -68,7 +67,7 @@ fn stream_error(error: StreamError) -> Box<HelperError> {
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }
 fn state(chunk: &StreamChunk) -> Value {

@@ -42,4 +42,5 @@ fn an_embedded_error_reports_its_status() {
     .unwrap();
     let failure = super::Op::run(&input).unwrap_err();
     assert_eq!(failure.status, Some(429));
+    assert_eq!(failure.message, "RESOURCE_EXHAUSTED - Unknown error");
 }

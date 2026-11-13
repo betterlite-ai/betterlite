@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 use uuid::Uuid;
 
 use super::adapters::{
@@ -248,8 +250,56 @@ fn chunks_service_tier_follows_the_response_header(
     #[case] tier: Option<&str>,
 ) {
     let mut decoder = decoder_with(&[("x-gemini-service-tier", value)], CallMode::Tools);
-    let chunk = decoder.push(br#"{"responseId":"r1"}"#).unwrap().unwrap();
+    let chunk = decoder
+        .push(br#"{"responseId":"r1","usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}"#)
+        .unwrap()
+        .unwrap();
     assert_eq!(chunk.service_tier.as_deref(), tier);
+}
+
+#[test]
+fn chunks_service_tier_rides_only_the_chunks_with_usage() {
+    let mut decoder = decoder_with(&[("x-gemini-service-tier", "flex")], CallMode::Tools);
+    let plain = decoder.push(br#"{"responseId":"r1"}"#).unwrap().unwrap();
+    assert!(plain.service_tier.is_none());
+}
+
+#[test]
+fn chunks_blocked_prompt_with_skipped_candidates_adds_no_empty_delta() {
+    let mut decoder = decoder();
+    let chunk = decoder
+        .push(br#"{"responseId":"b1","promptFeedback":{"blockReason":"SAFETY"},"candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}}]}"#)
+        .unwrap()
+        .unwrap();
+    assert_eq!(chunk.choices.len(), 1);
+    assert_eq!(finish_reason(&chunk), Some("content_filter"));
+}
+
+#[rstest]
+#[case::full(
+    br#"{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","message":"quota exceeded"}}"#,
+    "RESOURCE_EXHAUSTED - quota exceeded"
+)]
+#[case::defaults(br#"{"error":{"code":503}}"#, "UNKNOWN - Unknown error")]
+#[case::null_fields(
+    br#"{"error":{"status":null,"message":null}}"#,
+    "UNKNOWN - Unknown error"
+)]
+fn chunks_embedded_errors_carry_status_and_message(#[case] fragment: &[u8], #[case] message: &str) {
+    let error = decoder().push(fragment).unwrap_err();
+    let StreamError::Embedded { message: found, .. } = error else {
+        panic!("an embedded error is reported as an embedded stream error");
+    };
+    assert_eq!(found, message);
+}
+
+#[test]
+fn chunks_a_non_object_error_names_the_value() {
+    let error = decoder().push(br#"{"error":"boom"}"#).unwrap_err();
+    let StreamError::Embedded { message, .. } = error else {
+        panic!("an embedded error is reported as an embedded stream error");
+    };
+    assert_eq!(message, "Unexpected error format in mid-stream chunk: boom");
 }
 
 #[test]
@@ -310,10 +360,7 @@ fn chunks_draw_the_chunk_id_before_the_tool_call_id() {
 fn chunks_empty_fragment_keeps_the_valid_json_mode() {
     let mut decoder = decoder();
     assert!(decoder.push(b"").unwrap().is_none());
-    assert!(matches!(
-        decoder.push(b"7").unwrap(),
-        Err(StreamError::NotAnObject)
-    ));
+    assert!(matches!(decoder.push(b"7"), Err(StreamError::NotAnObject)));
 }
 
 #[test]
@@ -331,7 +378,7 @@ fn chunks_whitespace_only_fragment_switches_to_accumulated_mode() {
 fn chunks_valid_mode_rejects_a_non_object_value(#[case] fragment: &[u8]) {
     let mut decoder = decoder();
     assert!(matches!(
-        decoder.push(fragment).unwrap(),
+        decoder.push(fragment),
         Err(StreamError::NotAnObject)
     ));
 }
@@ -374,6 +421,24 @@ fn chunks_embedded_errors_use_their_coercible_status(#[case] fragment: &[u8], #[
         panic!("an embedded error is reported as an embedded stream error");
     };
     assert_eq!(found, status);
+}
+
+#[test]
+fn ownership_the_retained_buffer_accepts_exactly_the_limit() {
+    let mut decoder = decoder();
+    let exact = "x".repeat(MAX_RETAINED_BYTES);
+    assert!(decoder.push(exact.as_bytes()).unwrap().is_none());
+}
+
+#[test]
+fn ownership_the_retained_buffer_counts_the_unparsed_fragments() {
+    let mut decoder = decoder();
+    let half = "x".repeat(MAX_RETAINED_BYTES / 2 + 1);
+    assert!(decoder.push(half.as_bytes()).unwrap().is_none());
+    assert!(matches!(
+        decoder.push(half.as_bytes()),
+        Err(StreamError::TooLarge { .. })
+    ));
 }
 
 #[test]
@@ -539,6 +604,34 @@ fn ownership_a_failed_close_is_diagnostic_only() {
 }
 
 #[test]
+fn ownership_a_failed_close_is_logged_for_each_owner() {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let mut stream = counting_stream(&[], true, true).stream;
+    with_default(subscriber, || stream.close());
+    let logged = fs::read_to_string(log.path()).unwrap();
+    assert!(logged.contains("owner=\"reader\""));
+    assert!(logged.contains("owner=\"response\""));
+}
+
+#[test]
+fn ownership_a_clean_close_logs_nothing() {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let mut stream = counting_stream(&[], false, false).stream;
+    with_default(subscriber, || stream.close());
+    assert!(fs::read_to_string(log.path()).unwrap().is_empty());
+}
+
+#[test]
 fn ownership_the_adapter_ends_after_a_stream_error() {
     let fixture = counting_stream(&[r#"{"error":{"code":429}}"#], false, false);
     let mut stream = fixture.stream;
@@ -625,12 +718,6 @@ fn ownership_invalid_utf8_is_an_error() {
         decoder.push(&[0x7b, 0x22, 0xff, 0x22, 0x7d]),
         Err(StreamError::Utf8 { .. })
     ));
-}
-
-#[test]
-fn ownership_a_random_id_source_produces_distinct_ids() {
-    let mut source = || Uuid::new_v4();
-    assert_ne!(source(), source());
 }
 
 #[rstest]

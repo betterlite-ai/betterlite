@@ -23,20 +23,22 @@ impl GeminiStreamDecoder {
         check_embedded_error(value)?;
         let decoded = decode_generate_content(value)?;
         // LiteLLM builds the stream response before it reads the chunk, so the chunk id is drawn first
-        let id = match decoded.response_id {
+        let id = match decoded.response_id.clone() {
             Some(response_id) => response_id,
-            None => format!("{CHAT_COMPLETION_ID_PREFIX}{}", self.ids()),
+            None => format!("{CHAT_COMPLETION_ID_PREFIX}{}", (self.ids)()),
         };
         let model = served_model_name(decoded.model_version.as_ref()).map(str::to_owned);
         let (choices, metadata) = self.project_choices(&decoded)?;
         let usage = chunk_usage(&decoded, &metadata)?;
+        // LiteLLM sets the service tier while it counts usage, so only a chunk with usageMetadata carries it
+        let service_tier = usage.as_ref().and_then(|_| self.service_tier.clone());
         Ok(StreamChunk {
             id,
             created: self.options.now,
             model,
             choices,
             usage,
-            service_tier: self.service_tier.clone(),
+            service_tier,
             metadata,
             traffic_type: decoded.traffic_type,
             is_finished: false,
@@ -55,7 +57,7 @@ impl GeminiStreamDecoder {
             return Ok((choices, MetadataExtension::default()));
         }
         let (projected, metadata) = self.streamed_choices(candidates)?;
-        let skipped = projected.is_empty();
+        let skipped = choices.is_empty() && projected.is_empty();
         choices.extend(projected);
         if skipped {
             // every candidate here was skipped for lacking finishReason, so its empty delta carries no reason

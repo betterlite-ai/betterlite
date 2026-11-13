@@ -10,10 +10,13 @@ pub(super) fn check_embedded_error(value: &[u8]) -> Result<(), StreamError> {
     }
 }
 fn embedded(error: Json) -> StreamError {
-    let Json::Object(fields) = error else {
+    let Json::Object(fields) = &error else {
         return StreamError::Embedded {
             status: 500,
-            message: "Unexpected error format in mid-stream chunk".to_owned(),
+            message: format!(
+                "Unexpected error format in mid-stream chunk: {}",
+                text_field(Some(&error), "null")
+            ),
         };
     };
     let status = fields.get("code").map_or(500, coercible_status);

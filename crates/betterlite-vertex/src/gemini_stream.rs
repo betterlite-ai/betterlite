@@ -51,9 +51,7 @@ impl GeminiStreamDecoder {
         self.parse_fragment(text)
     }
     pub fn finish(&mut self) -> Result<Option<StreamChunk>, StreamError> {
-        let waiting =
-            !self.buffer.fragments.is_empty() || self.buffer.offset < self.buffer.text.len();
-        if !self.accumulated || !waiting {
+        if !self.accumulated {
             return Ok(None);
         }
         self.accumulated_chunk("", true)

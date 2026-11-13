@@ -12,6 +12,10 @@ pub(super) struct FragmentBuffer {
 }
 impl FragmentBuffer {
     pub(super) fn append(&mut self, fragment: &str) -> Result<(), StreamError> {
+        // an empty fragment would make the next pop rebuild the unconsumed tail for nothing
+        if fragment.is_empty() {
+            return Ok(());
+        }
         let retained = self.fragments.iter().fold(
             self.text.len().saturating_sub(self.offset) + fragment.len(),
             |total, pending| total.saturating_add(pending.len()),
