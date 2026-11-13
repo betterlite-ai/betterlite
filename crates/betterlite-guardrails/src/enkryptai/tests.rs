@@ -578,6 +578,22 @@ async fn enkryptai_guardrail_bounds_the_response_size() {
 }
 
 #[tokio::test]
+async fn enkryptai_guardrail_accepts_a_response_at_the_size_limit() {
+    let body = format!(r#"{{"summary":{{}}}}{}"#, " ".repeat(1024 * 1024 - 14));
+    let (base, _state, mut server) = serve(vec![Reply {
+        status: StatusCode::OK,
+        body,
+    }])
+    .await;
+    let mut request_data = BTreeMap::new();
+    guardrail(&base)
+        .apply(inputs(&["hello"]), &mut request_data, None)
+        .await
+        .expect("at-limit response");
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn enkryptai_guardrail_rejects_an_invalid_policy_header() {
     let (base, state, mut server) = serve(vec![]).await;
     let mut settings = settings_for(&base);
