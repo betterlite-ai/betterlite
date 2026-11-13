@@ -6,11 +6,11 @@ deviations:
     why: >-
       LiteLLM answers this input with a 500 from an unhandled AttributeError, so no working setup can
       depend on it; betterlite carries the provider fields the event declares.
-    litellm: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1461-L1466
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1461-L1466
   - what: >-
       An event whose response member is null completes with no output and no usage, instead of the
       AttributeError LiteLLM raises when it reads usage from the null payload.
     why: >-
       The absent-or-null rule in docs/compatibility.md takes the default for a declared field, so a null
       response is the empty one; LiteLLM's crash is Python duck typing no working setup relies on.
-    litellm: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1591-L1592
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1591-L1592
