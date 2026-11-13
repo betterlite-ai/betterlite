@@ -10,7 +10,7 @@ use crate::types::gcs_storage_auth::type_definitions::GcsLoggingPayload;
 
 use super::bucket_folder_behaviors::handle_folders_in_bucket_name;
 use super::error::GcsClientError;
-use super::header_construction_behaviors::to_header_map;
+use super::token_request_behaviors::to_header_map;
 use super::{GcsBucketBase, RequestHeaders, STORAGE_ENDPOINT};
 
 pub async fn log_json_data_on_gcs<Auth, Http>(

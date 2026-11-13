@@ -12,7 +12,8 @@ use crate::types::gcs_storage_auth::type_definitions::{GcsLoggingConfig, GcsLogg
 use super::bucket_folder_behaviors::handle_folders_in_bucket_name;
 use super::config_resolution_behaviors::logging_config;
 use super::error::GcsClientError;
-use super::header_construction_behaviors::{construct_request_headers, to_header_map};
+use super::header_construction_behaviors::construct_request_headers;
+use super::token_request_behaviors::to_header_map;
 use super::{GcsBucketBase, STORAGE_ENDPOINT};
 
 pub async fn download_gcs_object<Auth, Http>(

@@ -5,11 +5,13 @@ use std::sync::atomic::Ordering;
 
 use secrecy::SecretString;
 
-use super::{construct_request_headers, sync_construct_request_headers, to_header_map};
+use super::construct_request_headers;
 use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
+use crate::gcs_client::gcs_storage_auth::sync_header_behaviors::sync_construct_request_headers;
 use crate::gcs_client::gcs_storage_auth::tests::support::{
     FakeAuth, FakeEnvironment, Harness, PROJECT, RecordingClient, TOKEN, headers,
 };
+use crate::gcs_client::gcs_storage_auth::token_request_behaviors::to_header_map;
 use crate::gcs_client::gcs_storage_auth::{PROJECT_ID_ENV, RequestHeaders, TOKEN_MODEL};
 use crate::gcs_mock::auth::{GcsMockAuth, VertexAuthProvider};
 

@@ -17,6 +17,8 @@ pub mod environment_source;
 pub mod error;
 pub mod header_construction_behaviors;
 pub mod initialization_behaviors;
+pub mod sync_header_behaviors;
+pub mod token_request_behaviors;
 pub mod upload_behaviors;
 pub mod vertex_caching_behaviors;
 
