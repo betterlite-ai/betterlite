@@ -1,0 +1,14 @@
+task: B3790
+deviations:
+  - what: A Pillar API response body larger than 1 MiB is an API error and takes the fallback_on_error action, where LiteLLM reads the body without a limit.
+    why: Rule bounded-inputs caps every response betterlite reads from an outside service; a Pillar answer that large is not one a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L722-L748
+  - what: The 503 fallback body's original_error carries betterlite's error text, not Python's str(exception).
+    why: Rule errors-match-litellm keeps messages betterlite's own, and docs/compatibility.md keeps Python's str text out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L502-L531
+  - what: Transient error logging uses the framework's logger, not LiteLLM's verbose_proxy_logger
+    why: betterlite logging is centralized through B189 callback registration
+    link: ""
+  - what: User context headers (X-LiteLLM-*) omit values from user_api_key_dict.litellm_params_metadata to match Pillar's security model without exposing extra metadata
+    why: LiteLLM's implementation checks "metadata excluded for security"; betterlite matches that behavior
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L562

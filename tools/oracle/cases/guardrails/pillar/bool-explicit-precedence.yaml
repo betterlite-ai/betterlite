@@ -1,0 +1,10 @@
+kind: helper
+name: bool-explicit-precedence
+call:
+  b3790:
+    function: resolve_bool
+    setting: async_mode
+    provided: false
+    environment: {PILLAR_ASYNC: 'true'}
+env: {PILLAR_ASYNC: 'true'}
+compare: {ignore: []}
