@@ -81,8 +81,13 @@ fn map_param(
         "tool_choice" | "parallel_tool_calls" | "web_search_options"
     ) {
         tools::map(param, value, optional, context)?;
-    } else if matches!(param, "audio" | "response_format") {
-        map_media_param(param, value, optional, context)?;
+    } else if param == "response_format" {
+        let format: Object = decode(value, param)?;
+        apply_response_format(&format, context.model, optional, context.schema)?;
+    } else if param == "audio" {
+        let audio: AudioParam = decode(value, param)?;
+        let speech = map_audio_params(&audio)?;
+        optional.insert("speechConfig".to_owned(), Json::Object(speech));
     } else if matches!(param, "reasoning_effort" | "thinking") {
         thinking::map(param, value, optional, context)?;
     } else if param == "include_server_side_tool_invocations" {
@@ -93,26 +98,6 @@ fn map_param(
         map_scalar(param, value, optional, context.model, warned)?;
     }
     Ok(0)
-}
-
-fn map_media_param(
-    param: &str,
-    value: &Json,
-    optional: &mut Object,
-    context: &OptionsContext<'_>,
-) -> Result<(), GeminiOptionsError> {
-    match param {
-        "response_format" => {
-            let format: Object = decode(value, param)?;
-            apply_response_format(&format, context.model, optional, context.schema)?;
-        }
-        _ => {
-            let audio: AudioParam = decode(value, param)?;
-            let speech = map_audio_params(&audio)?;
-            optional.insert("speechConfig".to_owned(), Json::Object(speech));
-        }
-    }
-    Ok(())
 }
 
 fn map_scalar(
