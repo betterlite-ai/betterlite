@@ -8,7 +8,9 @@ use betterlite_openai::batches::records::BatchObject;
 use betterlite_vertex::gemini_usage::usage::calculate_usage;
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
 use betterlite_vertex::vertex_batch_records::create::to_batch_job;
-use betterlite_vertex::vertex_batch_records::response::{BatchList, to_batch_list, to_batch_object};
+use betterlite_vertex::vertex_batch_records::response::{
+    BatchList, to_batch_list, to_batch_object,
+};
 use betterlite_vertex::vertex_batch_records::rows::{
     NativeVertexBatchRowStats, RowCostCalculator, VERTEX_AI_PROVIDER, native_vertex_batch_row_stats,
 };
@@ -95,7 +97,10 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
         }
         Input::List { zone, calls } => {
             let local = local_zone(zone)?;
-            let outcomes: Vec<Value> = calls.iter().map(|page| list_outcome(page, &local)).collect();
+            let outcomes: Vec<Value> = calls
+                .iter()
+                .map(|page| list_outcome(page, &local))
+                .collect();
             Ok(json!({"calls": outcomes}))
         }
         Input::Row { calls } => Ok(json!({
@@ -123,7 +128,8 @@ fn invalid_input(message: String) -> Box<HelperError> {
 }
 
 fn create_outcome(call: &CreateCall) -> Result<Value, Box<HelperError>> {
-    let request = serde_json::from_value::<CreateBatchRequest>(call.data.clone()).or_value_error()?;
+    let request =
+        serde_json::from_value::<CreateBatchRequest>(call.data.clone()).or_value_error()?;
     let job = to_batch_job(
         &request,
         call.vertex_project.as_deref(),
@@ -148,8 +154,8 @@ fn job_outcome(response: &Value, local: &LocalTimeContext) -> Value {
 
 // a payload that is not a batch response has no provider status, and a projection error keeps its own
 fn batch_of(response: &Value, local: &LocalTimeContext) -> Result<BatchObject, Option<u16>> {
-    let job =
-        serde_json::from_value::<VertexBatchPredictionResponse>(response.clone()).map_err(|_| None)?;
+    let job = serde_json::from_value::<VertexBatchPredictionResponse>(response.clone())
+        .map_err(|_| None)?;
     to_batch_object(&job, local).map_err(|error| error.status_code())
 }
 

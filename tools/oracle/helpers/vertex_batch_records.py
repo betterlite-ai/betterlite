@@ -78,17 +78,16 @@ def calculated_usage(body: GenerateContentResponseBody) -> Usage:
 
 
 def job_state(batch: LiteLLMBatch) -> Json:
-    state: Json = {
-        "id": batch.id,
-        "completion_window": batch.completion_window,
-        "created_at": batch.created_at,
-        "endpoint": batch.endpoint,
-        "input_file_id": batch.input_file_id,
-        "object": batch.object,
-        "status": batch.status,
-        "error_file_id": batch.error_file_id,
-        "output_file_id": batch.output_file_id,
-    }
+    state: Object = {}
+    state["id"] = batch.id
+    state["completion_window"] = batch.completion_window
+    state["created_at"] = batch.created_at
+    state["endpoint"] = batch.endpoint
+    state["input_file_id"] = batch.input_file_id
+    state["object"] = batch.object
+    state["status"] = batch.status
+    state["error_file_id"] = batch.error_file_id
+    state["output_file_id"] = batch.output_file_id
     return state
 
 
@@ -133,14 +132,13 @@ def list_outcome(response: Object) -> Json:
     page = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L196
         ListPage, listed
     )
-    state: Json = {
-        "object": page["object"],
-        "data": [job_state(batch) for batch in page["data"]],
-        "first_id": page["first_id"],
-        "last_id": page["last_id"],
-        "has_more": page["has_more"],
-        "next_page_token": page["next_page_token"],
-    }
+    state: Object = {}
+    state["object"] = page["object"]
+    state["data"] = [job_state(batch) for batch in page["data"]]
+    state["first_id"] = page["first_id"]
+    state["last_id"] = page["last_id"]
+    state["has_more"] = page["has_more"]
+    state["next_page_token"] = page["next_page_token"]
     return {"ok": True, "page": state}
 
 
