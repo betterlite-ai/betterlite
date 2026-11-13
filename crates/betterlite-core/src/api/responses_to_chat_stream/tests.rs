@@ -208,6 +208,13 @@ fn stateless_translation_rejects_empty_and_non_object_chunks() {
     ));
 }
 
+#[test]
+fn a_typeless_payload_without_choices_is_not_a_chat_chunk() {
+    let chunk = translated(&json!({"model": "m"})).unwrap();
+    assert_eq!(chunk["id"], json!(GENERATED_ID));
+    assert!(chunk.get("model").is_none());
+}
+
 #[rstest::rstest]
 #[case::integer("5", "int")]
 #[case::float("1.5", "float")]
