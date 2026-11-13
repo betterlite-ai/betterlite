@@ -1,0 +1,6 @@
+kind: helper
+name: intervention-plain-error
+call:
+  b5471: {"function": "intervention", "kind": "other", "status": 400}
+env: {}
+compare: {ignore: []}

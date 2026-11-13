@@ -1,0 +1,6 @@
+kind: helper
+name: pre-call-rejection-400-status
+call:
+  b3663: {"function": "pre_call", "fastapi": "absent", "message": "no secrets", "guardrail_name": null}
+env: {}
+compare: {ignore: []}

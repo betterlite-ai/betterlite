@@ -95,7 +95,7 @@ base:
     - id: diff-budget
       why: the change must fit the task's changed-line budget
     - id: expect-budget
-      why: "new #[expect(...)] attributes must fit the task's budget"
+      why: "new #[expect(...)] attributes and new Python lines with a cast, type: ignore, pyright: ignore or noqa must fit the task's budget together"
     - id: file-size
       why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
