@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-batch-records-last-tuned-endpoint
+call:
+  vertex_batch_records:
+    operation: create
+    calls:
+      - data:
+          input_file_id: "gs://bucket/endpoints/111/endpoints/222/file.jsonl"
+        vertex_project: proj
+        vertex_location: europe-west4
+      - data:
+          input_file_id: "gs://bucket/endpoints/222/file.jsonl"
+        vertex_project: null
+        vertex_location: europe-west4
+      - data:
+          input_file_id: "gs://bucket/endpoints/333/file.jsonl"
+        vertex_project: proj
+        vertex_location: ""
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/calls/0/job/displayName, why: "the display name carries a fresh uuid"}
+    - {pointer: /value/calls/2/job/displayName, why: "the display name carries a fresh uuid"}
