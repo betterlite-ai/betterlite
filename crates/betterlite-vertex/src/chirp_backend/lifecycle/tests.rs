@@ -414,7 +414,7 @@ async fn rotation_waits_for_silence() {
 }
 
 #[tokio::test]
-async fn hard_deadline_rotation_ignores_speech() {
+async fn hard_deadline_rotation() {
     let (first, first_responses) = scripted(4);
     let (second, _second_responses) = scripted(4);
     let mut harness = harness(vec![first, second]);
@@ -455,7 +455,7 @@ async fn an_inactive_stream_rotates_at_the_soft_threshold() {
 }
 
 #[tokio::test]
-async fn finish_queues_the_turn_finished_event_behind_the_stream() {
+async fn finish_fifo() {
     let (first, responses) = scripted(4);
     let mut harness = harness(vec![first]);
     harness.send_text(CONFIGURE).await;
@@ -489,7 +489,7 @@ async fn finish_queues_the_turn_finished_event_behind_the_stream() {
 }
 
 #[tokio::test]
-async fn discard_suppresses_the_turns_pending_results() {
+async fn discard_suppresses_old_events() {
     let (first, responses) = scripted(4);
     let mut harness = harness(vec![first]);
     harness.send_text(CONFIGURE).await;
