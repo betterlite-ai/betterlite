@@ -3,6 +3,7 @@ pub mod metadata;
 pub mod observation;
 pub mod trace_ids;
 pub mod trace_params;
+pub mod usage;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;

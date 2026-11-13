@@ -1,20 +1,11 @@
-use std::str::FromStr as _;
-
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
-use serde_json::Number;
 
 use crate::fields::payload::StandardLoggingPayload;
-use crate::fields::timestamps::with_fraction;
-use crate::fields::usage::Usage;
-use crate::fields::usage::parse::usage_from_mapping;
 use crate::langfuse_child_observations::prompts::{
     GenerationPrompt, PromptManagementMetadata, attach_generation_prompt,
 };
 use crate::langfuse_observations::identity::Timestamp;
-use crate::langfuse_projections::cache_usage::cache_read_tokens;
 use crate::langfuse_projections::ids::{logging_id, lookup_ids};
 use crate::langfuse_projections::requester_metadata::log_requester_metadata;
 use crate::langfuse_projections::text::optional_str;
@@ -22,7 +13,7 @@ use crate::langfuse_rest::client::LangfuseApiClient;
 use crate::logging_privacy::snapshot::redact_user_api_key_info;
 
 use super::metadata::{Masked, Steering};
-use super::{AssemblyError, AssemblyInput, GenerationTrace, REDACTED_BY_LITELLM};
+use super::{AssemblyError, AssemblyInput, GenerationTrace, REDACTED_BY_LITELLM, usage};
 
 #[derive(Debug)]
 pub struct GenerationParams {
@@ -49,7 +40,7 @@ pub async fn build(
     fields: &mut IndexMap<String, Json>,
     prompt_client: &LangfuseApiClient,
 ) -> Result<GenerationParams, AssemblyError> {
-    let usage = response_usage(input.trace.response)?;
+    let response_usage = usage::from_response(input.trace.response)?;
     let enrichments = enrichments(input.trace)?;
     let metadata = generation_metadata(input, &enrichments)?;
     let prompt_metadata = prompt_metadata(input.trace.payload)?;
@@ -60,31 +51,16 @@ pub async fn build(
         id: generation_id(input.trace, fields),
         input: masked_value(masked.input.as_ref(), steering.mask_input),
         output: masked_value(masked.output.as_ref(), steering.mask_output),
-        cost_details: cost_details(usage.as_ref(), input.trace.response_cost),
+        cost_details: usage::cost_details(response_usage.as_ref(), input.trace.response_cost),
         metadata: Json::Object(metadata),
         version: optional_str(fields.shift_remove("version").as_ref()),
         prompt,
         status_message: status_message(input.trace.level, masked.output.as_ref()),
-        usage_details: usage.as_ref().map(usage_details),
+        usage_details: response_usage.as_ref().map(usage::details),
         enrichments,
         model: model_name(input.trace),
         model_parameters,
     })
-}
-
-fn response_usage(response: Option<&Json>) -> Result<Option<Usage>, AssemblyError> {
-    let Some(Json::Object(fields)) = response else {
-        return Ok(None);
-    };
-    let Some(Json::Object(usage)) = fields.get("usage") else {
-        return Ok(None);
-    };
-    if usage.is_empty() {
-        return Ok(None);
-    }
-    usage_from_mapping(usage)
-        .map(Some)
-        .map_err(AssemblyError::Usage)
 }
 
 fn generation_id(
@@ -168,7 +144,7 @@ fn enrichments(trace: &GenerationTrace<'_>) -> Result<IndexMap<String, Json>, As
     let mut enrichments = IndexMap::new();
     enrichments.insert(
         "litellm_response_cost".to_owned(),
-        trace.response_cost.map_or(Json::Null, cost_value),
+        trace.response_cost.map_or(Json::Null, usage::cost_value),
     );
     if let Some(payload) = trace.payload {
         let hidden = serde_json::to_value(&payload.hidden_params)
@@ -263,59 +239,4 @@ fn status_message(level: &str, output: Option<&Json>) -> Option<String> {
         return None;
     };
     (level == "ERROR").then(|| text.clone())
-}
-
-fn cost_details(usage: Option<&Usage>, cost: Option<Decimal>) -> Option<Json> {
-    match (usage, cost) {
-        (Some(_usage), Some(cost)) => {
-            let mut record = IndexMap::new();
-            record.insert("total".to_owned(), cost_value(cost));
-            Some(Json::Object(record))
-        }
-        (None, _) | (Some(_), None) => None,
-    }
-}
-
-fn usage_details(usage: &Usage) -> Json {
-    let cache_read = cache_read_tokens(usage);
-    let cache_creation = cache_creation_tokens(usage);
-    let mut record = IndexMap::new();
-    record.insert(
-        "input".to_owned(),
-        Json::Number(Number::from(usage.prompt_tokens.saturating_sub(cache_read))),
-    );
-    record.insert(
-        "output".to_owned(),
-        Json::Number(Number::from(usage.completion_tokens)),
-    );
-    record.insert(
-        "total".to_owned(),
-        Json::Number(Number::from(usage.total_tokens)),
-    );
-    record.insert(
-        "cache_creation_input_tokens".to_owned(),
-        Json::Number(Number::from(cache_creation)),
-    );
-    record.insert(
-        "cache_read_input_tokens".to_owned(),
-        Json::Number(Number::from(cache_read)),
-    );
-    Json::Object(record)
-}
-
-fn cache_creation_tokens(usage: &Usage) -> i64 {
-    let Some(Json::Number(number)) = usage.extras.get("cache_creation_input_tokens") else {
-        return 0;
-    };
-    let Ok(amount) = Decimal::from_str(&number.to_string()) else {
-        return 0;
-    };
-    amount.to_i64().unwrap_or(0)
-}
-
-fn cost_value(cost: Decimal) -> Json {
-    match Number::from_str(&with_fraction(cost).to_string()) {
-        Ok(number) => Json::Number(number),
-        Err(_error) => Json::Null,
-    }
 }
