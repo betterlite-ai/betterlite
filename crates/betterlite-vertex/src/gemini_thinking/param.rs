@@ -17,9 +17,8 @@ pub enum ThinkingType {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ThinkingParam {
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub kind: Option<ThinkingType>,
-    #[serde(default)]
     pub budget_tokens: Option<i64>,
 }
 

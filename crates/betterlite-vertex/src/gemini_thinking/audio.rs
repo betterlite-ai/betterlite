@@ -5,11 +5,8 @@ use super::error::GeminiThinkingError;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct AudioParam {
-    #[serde(default)]
     pub format: Option<String>,
-    #[serde(default)]
     pub voice: Option<String>,
-    #[serde(default)]
     pub language_code: Option<String>,
 }
 

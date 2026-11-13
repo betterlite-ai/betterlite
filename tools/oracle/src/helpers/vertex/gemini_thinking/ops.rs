@@ -39,11 +39,8 @@ enum Operation {
 #[serde(deny_unknown_fields)]
 struct Step {
     op: Operation,
-    #[serde(default)]
     effort: Option<String>,
-    #[serde(default)]
     thinking: Option<ThinkingParam>,
-    #[serde(default)]
     model: Option<String>,
     #[serde(default)]
     optional_params: Object,
@@ -51,7 +48,6 @@ struct Step {
     response_format: Object,
     #[serde(default)]
     modalities: Vec<String>,
-    #[serde(default)]
     audio: Option<AudioParam>,
     #[serde(default)]
     non_default_params: Object,
