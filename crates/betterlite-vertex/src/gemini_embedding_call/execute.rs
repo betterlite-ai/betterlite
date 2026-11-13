@@ -168,8 +168,7 @@ where
     decode_embedding_http(&reply.body)
 }
 
-// Vertex always uses embedContent and Studio always batchEmbedContents. Both share one flow:
-// authenticate, pick the target, resolve native files, post, then project the reply.
+// Vertex uses embedContent and Studio batchEmbedContents; both authenticate, pick a target, resolve files, post and project
 pub async fn gemini_embedding_call<Transport>(
     call: &EmbeddingCall<'_>,
     dependencies: &Dependencies<'_, Transport>,

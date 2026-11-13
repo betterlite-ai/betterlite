@@ -38,11 +38,11 @@ impl EmbeddingTransport for ProxiedClient {
 
 fn header_failure<Source>(name: &str, source: Source) -> GeminiEmbeddingCallError
 where
-    Source: Into<http::Error>,
+    http::Error: From<Source>,
 {
     GeminiEmbeddingCallError::Header {
         name: name.to_owned(),
-        source: source.into(),
+        source: http::Error::from(source),
     }
 }
 

@@ -79,9 +79,7 @@ fn file_references(call: &EmbeddingCall<'_>) -> Result<Vec<String>, GeminiEmbedd
         .collect())
 }
 
-// A supplied sync client keeps its own timeouts. Every other path builds one with the call's timeout,
-// and None falls back to 600 seconds to read and 5 to connect. The async source computes that fallback
-// and then hands the original timeout to its pooled client, which lands on the same values.
+// None falls back to 600 seconds to read and 5 to connect, and the async source's pooled client lands on the same values
 fn timeouts_for(timeout: Option<Duration>) -> Timeouts {
     timeout.map_or(
         Timeouts {

@@ -9,8 +9,7 @@ pub(crate) struct Input {
     inputs: Vec<Value>,
 }
 
-// LiteLLM's input type also admits token ids; betterlite's input type holds text only, so the
-// helper drops every non-string element the way the source's flatten does before it calls it.
+// betterlite's input holds text only, so the helper drops the token ids LiteLLM's flatten ignores
 fn declared(value: &Value) -> EmbeddingInput {
     match value {
         Value::String(text) => EmbeddingInput::Text(text.clone()),
