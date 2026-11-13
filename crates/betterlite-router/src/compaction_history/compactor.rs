@@ -4,10 +4,15 @@ use betterlite_openai::chat::{ChatMessage, Tool};
 
 use super::budget::{COMPACTOR_BUDGET_RATIO, budget};
 use super::contracts::{
-    Candidate, CompactorConfig, History, NativePrefix, OutputAllowance, ParentPayload,
-    ResponsesPayload, Selection, SummaryRequest,
+    Candidate, History, NativePrefix, OutputAllowance, ParentPayload, ResponsesPayload, Selection,
+    SummaryRequest,
 };
 use super::error::{CompactionError, ErrorKind};
+
+pub struct CompactorConfig<'a> {
+    pub model: Option<&'a str>,
+    pub max_tokens: i64,
+}
 
 #[async_trait]
 pub trait CompactionCounter: Send + Sync {
@@ -21,6 +26,7 @@ pub trait ResponsesPrefix {
     fn tools(&self, tools: &[Json]) -> Result<Vec<Tool>, CompactionError>;
 }
 
+#[must_use]
 pub fn compactor_input(
     payload: &ParentPayload<'_>,
     history: &History,
@@ -34,7 +40,7 @@ pub fn compactor_input(
         model: payload.model.to_owned(),
         messages: older.to_vec(),
         max_tokens: output,
-        tools: payload.tools.map(|tools| tools.to_vec()),
+        tools: payload.tools.map(<[Tool]>::to_vec),
         system: payload.system.cloned(),
         user: payload.user.cloned(),
     }
@@ -88,14 +94,14 @@ pub async fn compactor_model(
             .transpose()?
             .flatten(),
         None => {
-            let mut found = None;
+            let mut chosen = None;
             for candidate in candidates {
-                found = eligible(candidate, request, needed)?;
-                if found.is_some() {
+                chosen = eligible(candidate, request, needed)?;
+                if chosen.is_some() {
                     break;
                 }
             }
-            found
+            chosen
         }
     };
     match found {

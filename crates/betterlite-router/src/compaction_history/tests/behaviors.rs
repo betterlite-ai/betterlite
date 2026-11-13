@@ -42,6 +42,9 @@ pub(super) fn run(name: &str) {
         }
         "treats_non_function_tools_as_unavailable" => treats_non_function_tools_as_unavailable(),
         "treats_thinking_blocks_as_unavailable" => treats_thinking_blocks_as_unavailable(),
+        "treats_chat_thinking_blocks_as_unavailable" => {
+            treats_chat_thinking_blocks_as_unavailable();
+        }
         "keeps_empty_thinking_blocks" => keeps_empty_thinking_blocks(),
         "treats_missing_responses_type_as_message" => treats_missing_responses_type_as_message(),
         "budget_prefers_max_completion_tokens" => budget_case(
@@ -416,6 +419,26 @@ fn treats_thinking_blocks_as_unavailable() {
         "parent-model",
     )
     .unwrap_err();
+    assert_eq!(
+        error.reason,
+        "Native reasoning or compaction blocks require client-managed native compaction"
+    );
+}
+
+fn treats_chat_thinking_blocks_as_unavailable() {
+    let conversation = messages(
+        r#"[
+            {"role":"user","content":"first"},
+            {"role":"assistant","content":[{"type":"thinking","thinking":"hm","signature":"sig"}]},
+            {"role":"user","content":"latest"}
+        ]"#,
+    );
+    let error = portable_history(
+        &Conversation::Messages(conversation.as_slice()),
+        "parent-model",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Unavailable);
     assert_eq!(
         error.reason,
         "Native reasoning or compaction blocks require client-managed native compaction"

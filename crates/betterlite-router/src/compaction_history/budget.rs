@@ -24,10 +24,10 @@ pub fn budget(
         });
     }
     let available = match (limits.max_input_tokens, output) {
-        (Some(window), Some(output)) => {
+        (Some(window), Some(reserved)) => {
             let scaled = window.to_f64().unwrap_or_default();
             let truncated = scaled.mul_add(ratio, 0.0).to_i64().unwrap_or(i64::MAX);
-            Some(truncated.saturating_sub(output))
+            Some(truncated.saturating_sub(reserved))
         }
         (Some(_), None) | (None, Some(_)) | (None, None) => None,
     };

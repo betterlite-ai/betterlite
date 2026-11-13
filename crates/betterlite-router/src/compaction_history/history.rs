@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 
@@ -6,7 +8,6 @@ use super::contracts::{Conversation, History};
 use super::error::{CompactionError, ErrorKind};
 use super::items::{json_item, tool_ids_of};
 
-#[must_use]
 pub fn tool_ids(
     messages: &[ChatMessage],
     model: &str,
@@ -17,6 +18,16 @@ pub fn tool_ids(
         .map(|message| message_json(message, model))
         .collect::<Result<Vec<Json>, CompactionError>>()?;
     Ok(tool_ids_of(&items, results))
+}
+
+fn message_json(message: &ChatMessage, model: &str) -> Result<Json, CompactionError> {
+    serde_json::to_value(message)
+        .and_then(serde_json::from_value)
+        .map_err(|source| CompactionError {
+            kind: ErrorKind::Rejected,
+            model: model.to_owned(),
+            reason: format!("the chat message cannot be read as history: {source}"),
+        })
 }
 
 fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
@@ -55,7 +66,7 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
     sorted_calls.sort();
     let mut sorted_results = results.clone();
     sorted_results.sort();
-    let duplicated = sorted_calls.windows(2).any(|pair| pair[0] == pair[1]);
+    let duplicated = calls.iter().collect::<BTreeSet<_>>().len() != calls.len();
     if prefix.is_empty()
         || calls.iter().any(String::is_empty)
         || results.iter().any(String::is_empty)
@@ -95,8 +106,8 @@ fn text_blocks_only(item: &Json) -> bool {
     blocks.iter().all(|block| {
         matches!(
             block,
-            Json::Object(fields)
-                if matches!(field_text(fields, "type"), Some("input_text" | "output_text" | "text"))
+            Json::Object(block_fields)
+                if matches!(field_text(block_fields, "type"), Some("input_text" | "output_text" | "text"))
         )
     })
 }
@@ -123,20 +134,16 @@ fn reasoning_present(item: &Json) -> bool {
     blocks.iter().any(|block| {
         matches!(
             block,
-            Json::Object(fields)
+            Json::Object(block_fields)
                 if matches!(
-                    field_text(fields, "type"),
+                    field_text(block_fields, "type"),
                     Some("thinking" | "redacted_thinking" | "compaction")
                 )
         )
     })
 }
 
-fn responses_partition(
-    items: &[Json],
-    tools: &[Json],
-    model: &str,
-) -> Result<History, CompactionError> {
+fn responses_checks(items: &[Json], tools: &[Json], model: &str) -> Result<(), CompactionError> {
     if items.iter().any(|item| {
         !matches!(
             item_kind(item),
@@ -158,6 +165,32 @@ fn responses_partition(
                 .to_owned(),
         });
     }
+    Ok(())
+}
+
+pub fn portable_history(
+    conversation: &Conversation<'_>,
+    model: &str,
+) -> Result<History, CompactionError> {
+    let items: Vec<Json> = match conversation {
+        Conversation::Text(_) => {
+            return Err(CompactionError {
+                kind: ErrorKind::Unavailable,
+                model: model.to_owned(),
+                reason:
+                    "A single user input cannot be compacted without changing the latest request"
+                        .to_owned(),
+            });
+        }
+        Conversation::Messages(messages) => messages
+            .iter()
+            .map(|message| message_json(message, model))
+            .collect::<Result<Vec<Json>, CompactionError>>()?,
+        Conversation::Responses { items, tools } => {
+            responses_checks(items, tools, model)?;
+            items.to_vec()
+        }
+    };
     if items.iter().any(reasoning_present) {
         return Err(CompactionError {
             kind: ErrorKind::Unavailable,
@@ -167,28 +200,5 @@ fn responses_partition(
                     .to_owned(),
         });
     }
-    partition(items, model)
-}
-
-#[must_use]
-pub fn portable_history(
-    conversation: &Conversation<'_>,
-    model: &str,
-) -> Result<History, CompactionError> {
-    match conversation {
-        Conversation::Text(_) => Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason: "A single user input cannot be compacted without changing the latest request"
-                .to_owned(),
-        }),
-        Conversation::Messages(messages) => {
-            let items: Vec<Json> = messages
-                .iter()
-                .map(|message| message_json(message, model))
-                .collect::<Result<Vec<Json>, CompactionError>>()?;
-            partition(&items, model)
-        }
-        Conversation::Responses { items, tools } => responses_partition(items, tools, model),
-    }
+    partition(&items, model)
 }

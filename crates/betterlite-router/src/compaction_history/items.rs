@@ -15,25 +15,11 @@ pub(crate) struct Item<'a> {
     pub(crate) tool_calls: Vec<Option<&'a str>>,
     pub(crate) tool_call_id: Option<&'a str>,
     pub(crate) call_id: Option<&'a str>,
-    pub(crate) thinking_blocks: Option<&'a Json>,
 }
 
-fn message_json(message: &ChatMessage, model: &str) -> Result<Json, CompactionError> {
-    let value = serde_json::to_value(message).map_err(|source| CompactionError {
-        kind: ErrorKind::Rejected,
-        model: model.to_owned(),
-        reason: format!("the chat message cannot be read as history: {source}"),
-    })?;
-    serde_json::from_value(value).map_err(|source| CompactionError {
-        kind: ErrorKind::Rejected,
-        model: model.to_owned(),
-        reason: format!("the chat message cannot be read as history: {source}"),
-    })
-}
-
-fn item_blocks<'a>(fields: &'a Json) -> Vec<Block<'a>> {
+fn item_blocks(item: &Json) -> Vec<Block<'_>> {
     let mut blocks = Vec::new();
-    let Json::Object(fields) = fields else {
+    let Json::Object(fields) = item else {
         return blocks;
     };
     let Some(Json::List(entries)) = fields.get("content") else {
@@ -58,8 +44,8 @@ fn item_blocks<'a>(fields: &'a Json) -> Vec<Block<'a>> {
     blocks
 }
 
-fn tool_call_ids<'a>(fields: &'a Json) -> Vec<Option<&'a str>> {
-    let Json::Object(fields) = fields else {
+fn tool_call_ids(item: &Json) -> Vec<Option<&str>> {
+    let Json::Object(fields) = item else {
         return Vec::new();
     };
     let Some(Json::List(calls)) = fields.get("tool_calls") else {
@@ -68,7 +54,7 @@ fn tool_call_ids<'a>(fields: &'a Json) -> Vec<Option<&'a str>> {
     calls
         .iter()
         .map(|call| match call {
-            Json::Object(fields) => field_text(fields, "id"),
+            Json::Object(call_fields) => field_text(call_fields, "id"),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         })
         .collect()
@@ -80,32 +66,31 @@ pub(crate) fn json_item(item: &Json) -> Item<'_> {
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     };
     Item {
-        role: fields.and_then(|fields| field_text(fields, "role")),
-        kind: fields.and_then(|fields| field_text(fields, "type")),
+        role: fields.and_then(|object| field_text(object, "role")),
+        kind: fields.and_then(|object| field_text(object, "type")),
         blocks: item_blocks(item),
         tool_calls: tool_call_ids(item),
-        tool_call_id: fields.and_then(|fields| field_text(fields, "tool_call_id")),
-        call_id: fields.and_then(|fields| field_text(fields, "call_id")),
-        thinking_blocks: fields.and_then(|fields| fields.get("thinking_blocks")),
+        tool_call_id: fields.and_then(|object| field_text(object, "tool_call_id")),
+        call_id: fields.and_then(|object| field_text(object, "call_id")),
     }
 }
 
 pub(crate) fn tool_ids_of(items: &[Json], results: bool) -> Vec<String> {
+    let function_kind = if results {
+        "function_call_output"
+    } else {
+        "function_call"
+    };
+    let block_kind = if results { "tool_result" } else { "tool_use" };
     let mut ids = Vec::new();
-    for item in items {
-        let item = json_item(item);
+    for raw in items {
+        let item = json_item(raw);
         if results && item.role == Some("tool") {
             ids.push(item.tool_call_id.unwrap_or_default().to_owned());
         }
-        let function_kind = if results {
-            "function_call_output"
-        } else {
-            "function_call"
-        };
         if item.kind == Some(function_kind) {
             ids.push(item.call_id.unwrap_or_default().to_owned());
         }
-        let block_kind = if results { "tool_result" } else { "tool_use" };
         for block in &item.blocks {
             if block.kind == Some(block_kind) {
                 let id = if results { block.tool_use_id } else { block.id };

@@ -82,11 +82,6 @@ pub struct NativePrefix {
     pub tools: Vec<Tool>,
 }
 
-pub struct CompactorConfig<'a> {
-    pub model: Option<&'a str>,
-    pub max_tokens: i64,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeSupport {
     pub provider: bool,

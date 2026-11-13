@@ -34,6 +34,7 @@ fn runtime() -> Runtime {
 )]
 #[case::treats_non_function_tools_as_unavailable("treats_non_function_tools_as_unavailable")]
 #[case::treats_thinking_blocks_as_unavailable("treats_thinking_blocks_as_unavailable")]
+#[case::treats_chat_thinking_blocks_as_unavailable("treats_chat_thinking_blocks_as_unavailable")]
 #[case::keeps_empty_thinking_blocks("keeps_empty_thinking_blocks")]
 #[case::treats_missing_responses_type_as_message("treats_missing_responses_type_as_message")]
 #[case::budget_prefers_max_completion_tokens("budget_prefers_max_completion_tokens")]

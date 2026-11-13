@@ -106,17 +106,17 @@ fn history_output(input: &Input) -> Result<Output, OperationError> {
         .ok_or_else(|| OperationError::InvalidRequest {
             message: "history needs a surface".to_owned(),
         })?;
-    let conversation = match surface {
+    let history_input = match surface {
         Surface::Chat | Surface::Messages => Conversation::Messages(input.messages.as_slice()),
         Surface::Responses => Conversation::Responses {
             items: input.items.as_slice(),
             tools: input.tools.as_slice(),
         },
     };
-    let conversation = match input.text.as_deref() {
-        Some(text) => Conversation::Text(text),
-        None => conversation,
-    };
+    let conversation = input
+        .text
+        .as_deref()
+        .map_or(history_input, Conversation::Text);
     match portable_history(&conversation, &model) {
         Ok(history) => Ok(Output::History {
             outcome: Outcome::Ok,
@@ -165,11 +165,11 @@ async fn compactor_output(input: &Input) -> Output {
         user: None,
     };
     let request = compactor_input(&payload, &history, config.max_tokens);
-    let candidates = candidates(input).await;
+    let groups = candidates(input).await;
     let counter = CaseCounter {
         value: input.count.unwrap_or_default(),
     };
-    match compactor_model(&config, &candidates, &request, &counter).await {
+    match compactor_model(&config, &groups, &request, &counter).await {
         Ok(selection) => Output::Compactor {
             outcome: Outcome::Ok,
             model: Some(selection.model),
