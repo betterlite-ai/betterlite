@@ -113,10 +113,7 @@ pub(crate) fn file_ids(state: &mut Preparation<'_>) -> RequestResult<()> {
     update_messages_with_file_ids(&mut state.call.messages, model_id, &mapping)?;
     Ok(())
 }
-pub(crate) fn developer_role(state: &mut Preparation<'_>) {
-    let Some(provider) = state.call.custom_llm_provider.as_deref() else {
-        return;
-    };
+pub(crate) fn developer_role(state: &mut Preparation<'_>, provider: &str) {
     let policy = state.ports.model_metadata.chat_policy(
         &state.call.model,
         provider,

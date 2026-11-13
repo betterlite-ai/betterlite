@@ -79,7 +79,7 @@ async fn run(state: &mut Preparation<'_>) -> RequestResult<PreparedCompletion> {
     steps::provider::pricing(state, &provider).await?;
     steps::provider::custom_prompt(state);
     steps::messages::file_ids(state)?;
-    steps::messages::developer_role(state);
+    steps::messages::developer_role(state, &provider);
     steps::messages::system_messages(state)?;
     steps::assemble::assemble(state, &provider)?;
     steps::finish::litellm_params(state)?;
