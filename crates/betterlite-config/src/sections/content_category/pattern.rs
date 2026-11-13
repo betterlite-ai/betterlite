@@ -22,7 +22,7 @@ impl Pattern {
         {
             return Ok(Self::Backtracking(regex));
         }
-        let translated = translate_python_flags(source)?;
+        let translated = translate_flag_syntax(source)?;
         let regex = regex::RegexBuilder::new(&translated)
             .case_insensitive(true)
             .build()?;
@@ -38,7 +38,7 @@ impl Pattern {
 }
 
 // Python's (?a) is Rust's (?-u): ASCII classes, ASCII boundaries and ASCII-only case folding
-fn translate_python_flags(source: &str) -> Result<String, PatternError> {
+fn translate_flag_syntax(source: &str) -> Result<String, PatternError> {
     if source.contains("(?-a") || source.contains("(?-u") {
         return Err(PatternError::UnsupportedFlags);
     }
