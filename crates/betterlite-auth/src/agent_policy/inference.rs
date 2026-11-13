@@ -11,106 +11,59 @@ use crate::route_match::templates::check_route_access;
 pub const MANAGED_MODEL_REQUIRED: &str =
     "Managed inference requires an explicit or configured model";
 
-const MODEL_ROUTE_KINDS: &[(&str, InferenceModelKind)] = &[
-    ("/images/generations", InferenceModelKind::ImageGeneration),
-    ("/images/edits", InferenceModelKind::ImageEdit),
-    ("/moderations", InferenceModelKind::Moderation),
-    ("/audio/transcriptions", InferenceModelKind::Moderation),
-    ("/audio/speech", InferenceModelKind::Speech),
-    ("/rerank", InferenceModelKind::Body),
-    ("/decisions", InferenceModelKind::Body),
-    ("/systemone", InferenceModelKind::Body),
-    ("/messages/count_tokens", InferenceModelKind::Body),
-    (":countTokens", InferenceModelKind::Path),
+const COMPLETION_KIND: &str = "completion";
+
+// the kind names are LiteLLM's Literal values, matched by route suffix in _MODEL_ROUTE_KINDS
+const MODEL_ROUTE_KINDS: &[(&str, &str)] = &[
+    ("/images/generations", "image_generation"),
+    ("/images/edits", "image_edit"),
+    ("/moderations", "moderation"),
+    ("/audio/transcriptions", "moderation"),
+    ("/audio/speech", "speech"),
+    ("/rerank", "body"),
+    ("/decisions", "body"),
+    ("/systemone", "body"),
+    ("/messages/count_tokens", "body"),
+    (":countTokens", "path"),
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InferenceModelKind {
-    Completion,
-    ImageGeneration,
-    ImageEdit,
-    Moderation,
-    Speech,
-    Body,
-    Path,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct InferenceModelSettings {
-    pub completion_model: Option<String>,
-    pub image_generation_model: Option<String>,
-    pub moderation_model: Option<String>,
-}
+// betterlite-core owns resolve_inference_model, so its single copy is handed in at the call site
+pub type ModelResolver<'resolver> =
+    dyn Fn(Option<&str>, Option<&str>, Option<&str>, &str) -> Option<String> + 'resolver;
 
 pub struct ManagedInferenceRequest<'request> {
     pub route: &'request str,
     pub body: &'request IndexMap<String, Json>,
-    pub settings: &'request InferenceModelSettings,
     pub cli_model: Option<&'request str>,
     pub path_model: Option<&'request str>,
     pub query_model: Option<&'request str>,
 }
 
-#[must_use]
-pub fn resolve_inference_model<'model>(
-    body_model: Option<&'model str>,
-    settings: &'model InferenceModelSettings,
-    cli_model: Option<&'model str>,
-    endpoint_model: Option<&'model str>,
-    kind: InferenceModelKind,
-) -> Option<&'model str> {
-    match kind {
-        InferenceModelKind::ImageGeneration => cli_model
-            .or(endpoint_model)
-            .or(settings.image_generation_model.as_deref())
-            .or(body_model),
-        InferenceModelKind::ImageEdit => settings
-            .completion_model
-            .as_deref()
-            .or(cli_model)
-            .or(endpoint_model)
-            .or(settings.image_generation_model.as_deref())
-            .or(body_model),
-        InferenceModelKind::Moderation => cli_model
-            .or(settings.moderation_model.as_deref())
-            .or(body_model),
-        InferenceModelKind::Speech => cli_model.or(body_model),
-        InferenceModelKind::Body => body_model,
-        InferenceModelKind::Path => endpoint_model,
-        InferenceModelKind::Completion => settings
-            .completion_model
-            .as_deref()
-            .or(cli_model)
-            .or(endpoint_model)
-            .or(body_model),
-    }
-}
-
 pub fn managed_inference_request(
     request: &ManagedInferenceRequest<'_>,
+    resolve_model: &ModelResolver<'_>,
 ) -> Result<IndexMap<String, Json>, AgentIdentityError> {
     let model = if MANAGED_REALTIME_ROUTES.contains(&request.route) {
         request
             .query_model
             .or_else(|| body_text(request.body, "model"))
-    } else {
-        let model_route = MANAGED_MODEL_ROUTES.contains(&request.route)
-            || check_route_access(request.route, MANAGED_MODEL_PATHS);
-        if !model_route {
-            return Ok(request.body.clone());
-        }
+            .map(str::to_owned)
+    } else if MANAGED_MODEL_ROUTES.contains(&request.route)
+        || check_route_access(request.route, MANAGED_MODEL_PATHS)
+    {
         let endpoint_model = request
             .path_model
             .or_else(|| query_model_fallback(request.route, request.query_model));
-        resolve_inference_model(
+        resolve_model(
             body_text(request.body, "model"),
-            request.settings,
             request.cli_model,
             endpoint_model,
             route_kind(request.route),
         )
+    } else {
+        return Ok(request.body.clone());
     };
-    resolved_body(request.body, model)
+    resolved_body(request.body, model.as_deref())
 }
 
 fn resolved_body(
@@ -126,16 +79,18 @@ fn resolved_body(
             IDENTITY_DENIED_STATUS,
         ));
     };
-    Ok(augmented_body(body, selected_model))
+    let mut augmented = body.clone();
+    augmented.insert(String::from("model"), Json::Text(selected_model.to_owned()));
+    Ok(augmented)
 }
 
-fn route_kind(route: &str) -> InferenceModelKind {
+fn route_kind(route: &str) -> &'static str {
     match MODEL_ROUTE_KINDS
         .iter()
         .find(|(suffix, _)| route.ends_with(suffix))
     {
-        Some((_, kind)) => *kind,
-        None => InferenceModelKind::Completion,
+        Some((_, kind)) => kind,
+        None => COMPLETION_KIND,
     }
 }
 
@@ -156,10 +111,4 @@ fn body_text<'body>(body: &'body IndexMap<String, Json>, key: &str) -> Option<&'
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
-}
-
-fn augmented_body(body: &IndexMap<String, Json>, model: &str) -> IndexMap<String, Json> {
-    let mut augmented = body.clone();
-    augmented.insert(String::from("model"), Json::Text(model.to_owned()));
-    augmented
 }

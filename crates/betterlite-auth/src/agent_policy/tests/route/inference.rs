@@ -3,10 +3,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::agent_identity::error::AgentIdentityError;
-use crate::agent_policy::inference::{
-    InferenceModelKind, InferenceModelSettings, ManagedInferenceRequest, managed_inference_request,
-    resolve_inference_model,
-};
+use crate::agent_policy::inference::{ManagedInferenceRequest, managed_inference_request};
 
 const MODEL_REQUIRED: &str = "Managed inference requires an explicit or configured model";
 
@@ -16,18 +13,6 @@ fn object(text: &str) -> IndexMap<String, Json> {
         other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             panic!("fixture must be an object, got {other:?}");
         }
-    }
-}
-
-fn settings(
-    completion: Option<&str>,
-    image_generation: Option<&str>,
-    moderation: Option<&str>,
-) -> InferenceModelSettings {
-    InferenceModelSettings {
-        completion_model: completion.map(str::to_owned),
-        image_generation_model: image_generation.map(str::to_owned),
-        moderation_model: moderation.map(str::to_owned),
     }
 }
 
@@ -48,33 +33,38 @@ fn failure_of(result: Result<IndexMap<String, Json>, AgentIdentityError>) -> Age
 fn request<'request>(
     route: &'request str,
     body: &'request IndexMap<String, Json>,
-    settings: &'request InferenceModelSettings,
 ) -> ManagedInferenceRequest<'request> {
     ManagedInferenceRequest {
         route,
         body,
-        settings,
         cli_model: None,
         path_model: None,
         query_model: None,
     }
 }
 
+// the probe echoes its arguments so every one the call passes is asserted
+fn resolved(
+    input: &ManagedInferenceRequest<'_>,
+) -> Result<IndexMap<String, Json>, AgentIdentityError> {
+    managed_inference_request(input, &|body, cli, endpoint, kind| {
+        Some(format!("{kind}|{body:?}|{cli:?}|{endpoint:?}"))
+    })
+}
+
 #[test]
 fn route_inference_non_model_route_is_unchanged() {
     let body = object(r#"{"model":"body-model","messages":[]}"#);
-    let defaults = settings(None, None, None);
-    let result = managed_inference_request(&request("/v1/agents", &body, &defaults)).unwrap();
+    let result = resolved(&request("/v1/agents", &body)).unwrap();
     assert_eq!(result, body);
 }
 
 #[test]
 fn route_inference_realtime_prefers_query_model() {
     let body = object(r#"{"model":"body-model","stream":true}"#);
-    let defaults = settings(None, None, None);
-    let mut input = request("/realtime", &body, &defaults);
+    let mut input = request("/realtime", &body);
     input.query_model = Some("query-model");
-    let result = managed_inference_request(&input).unwrap();
+    let result = resolved(&input).unwrap();
     assert_eq!(model_of(&result), "query-model");
     assert_eq!(result.get("stream"), Some(&Json::Bool(true)));
     assert_eq!(model_of(&body), "body-model");
@@ -83,8 +73,7 @@ fn route_inference_realtime_prefers_query_model() {
 #[test]
 fn route_inference_realtime_uses_body_model() {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(None, None, None);
-    let result = managed_inference_request(&request("/v1/realtime", &body, &defaults)).unwrap();
+    let result = resolved(&request("/v1/realtime", &body)).unwrap();
     assert_eq!(model_of(&result), "body-model");
 }
 
@@ -93,176 +82,158 @@ fn route_inference_realtime_uses_body_model() {
 #[case::realtime_empty("/realtime", r#"{"model":""}"#)]
 #[case::realtime_non_text("/realtime", r#"{"model":5}"#)]
 #[case::realtime_null("/realtime", r#"{"model":null}"#)]
-#[case::completions_missing("/v1/chat/completions", "{}")]
-#[case::completions_empty("/v1/chat/completions", r#"{"model":""}"#)]
-#[case::completions_non_text("/v1/chat/completions", r#"{"model":5}"#)]
-fn route_inference_requires_model(#[case] route: &str, #[case] input: &str) {
+fn route_inference_realtime_requires_model(#[case] route: &str, #[case] input: &str) {
     let body = object(input);
-    let defaults = settings(None, None, None);
-    let failure = failure_of(managed_inference_request(&request(route, &body, &defaults)));
+    let failure = failure_of(resolved(&request(route, &body)));
+    assert_eq!(failure.status, 403);
+    assert_eq!(failure.message, MODEL_REQUIRED);
+}
+
+// the resolver reports no configured model for a missing, non-text or empty body model
+#[rstest]
+#[case::missing("{}")]
+#[case::non_text(r#"{"model":5}"#)]
+fn route_inference_model_route_requires_model(#[case] input: &str) {
+    let body = object(input);
+    let failure = failure_of(managed_inference_request(
+        &request("/v1/chat/completions", &body),
+        &|_, _, _, _| None,
+    ));
     assert_eq!(failure.status, 403);
     assert_eq!(failure.message, MODEL_REQUIRED);
 }
 
 #[test]
-fn route_inference_completion_prefers_settings() {
-    let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("configured-model"), None, None);
-    let result =
-        managed_inference_request(&request("/v1/chat/completions", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "configured-model");
+fn route_inference_empty_model_is_required_model() {
+    let body = object(r#"{"model":""}"#);
+    let failure = failure_of(managed_inference_request(
+        &request("/v1/chat/completions", &body),
+        &|body_model, _, _, _| body_model.map(str::to_owned),
+    ));
+    assert_eq!(failure.status, 403);
+    assert_eq!(failure.message, MODEL_REQUIRED);
 }
 
 #[test]
-fn route_inference_completion_uses_body_model() {
+fn route_inference_completion_passes_body_model_and_kind() {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(None, None, None);
-    let result =
-        managed_inference_request(&request("/chat/completions", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "body-model");
+    let result = resolved(&request("/v1/chat/completions", &body)).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"completion|Some("body-model")|None|None"#
+    );
 }
 
 #[test]
-fn route_inference_image_generation_prefers_cli_model() {
+fn route_inference_passes_cli_model() {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("completion-model"), Some("image-model"), None);
-    let mut input = request("/v1/images/generations", &body, &defaults);
+    let mut input = request("/chat/completions", &body);
     input.cli_model = Some("cli-model");
-    let result = managed_inference_request(&input).unwrap();
-    assert_eq!(model_of(&result), "cli-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"completion|Some("body-model")|Some("cli-model")|None"#
+    );
 }
 
 #[test]
 fn route_inference_image_generation_uses_query_model() {
     let body = object("{}");
-    let defaults = settings(None, Some("image-model"), None);
-    let mut input = request("/v1/images/generations", &body, &defaults);
+    let mut input = request("/v1/images/generations", &body);
     input.query_model = Some("query-model");
-    let result = managed_inference_request(&input).unwrap();
-    assert_eq!(model_of(&result), "query-model");
-}
-
-#[test]
-fn route_inference_image_edit_prefers_completion_model() {
-    let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("completion-model"), Some("image-model"), None);
-    let result = managed_inference_request(&request("/images/edits", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "completion-model");
-}
-
-#[test]
-fn route_inference_moderation_uses_moderation_model() {
-    let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("completion-model"), None, Some("moderation-model"));
-    let result = managed_inference_request(&request("/v1/moderations", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "moderation-model");
-    let transcription =
-        managed_inference_request(&request("/v1/audio/transcriptions", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&transcription), "moderation-model");
-}
-
-#[test]
-fn route_inference_speech_uses_body_model() {
-    let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("completion-model"), None, Some("moderation-model"));
-    let result = managed_inference_request(&request("/v1/audio/speech", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "body-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"image_generation|None|None|Some("query-model")"#
+    );
 }
 
 #[rstest]
-#[case::rerank("/v1/rerank")]
-#[case::decisions("/v1/decisions")]
-#[case::systemone("/v1/systemone")]
-#[case::messages_count_tokens("/v1/messages/count_tokens")]
-fn route_inference_body_kind_uses_body_model(#[case] route: &str) {
+#[case::image_edit("/images/edits", "image_edit")]
+#[case::moderations("/v1/moderations", "moderation")]
+#[case::transcriptions("/v1/audio/transcriptions", "moderation")]
+#[case::speech("/v1/audio/speech", "speech")]
+#[case::rerank("/v1/rerank", "body")]
+#[case::decisions("/v1/decisions", "body")]
+#[case::systemone("/v1/systemone", "body")]
+#[case::messages_count_tokens("/v1/messages/count_tokens", "body")]
+#[case::messages("/v1/messages", "completion")]
+#[case::responses("/v1/responses", "completion")]
+fn route_inference_kind_per_route(#[case] route: &str, #[case] kind: &str) {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("completion-model"), None, None);
-    let result = managed_inference_request(&request(route, &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "body-model");
+    let result = resolved(&request(route, &body)).unwrap();
+    assert_eq!(
+        model_of(&result),
+        format!(r#"{kind}|Some("body-model")|None|None"#)
+    );
 }
 
 #[test]
-fn route_inference_count_tokens_uses_path_model() {
+fn route_inference_count_tokens_uses_path_kind() {
     let body = object("{}");
-    let defaults = settings(Some("completion-model"), None, None);
-    let mut input = request("/v1beta/models/gemini-pro:countTokens", &body, &defaults);
+    let mut input = request("/v1beta/models/gemini-pro:countTokens", &body);
     input.path_model = Some("gemini-pro");
-    let result = managed_inference_request(&input).unwrap();
-    assert_eq!(model_of(&result), "gemini-pro");
+    let result = resolved(&input).unwrap();
+    assert_eq!(model_of(&result), r#"path|None|None|Some("gemini-pro")"#);
 }
 
 #[test]
 fn route_inference_path_model_wins_over_query_model() {
     let body = object("{}");
-    let defaults = settings(None, None, None);
-    let mut input = request("/engines/my-deployment/chat/completions", &body, &defaults);
+    let mut input = request("/engines/my-deployment/chat/completions", &body);
     input.path_model = Some("deployment-model");
     input.query_model = Some("query-model");
-    let result = managed_inference_request(&input).unwrap();
-    assert_eq!(model_of(&result), "deployment-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"completion|None|None|Some("deployment-model")"#
+    );
 }
 
 #[test]
 fn route_inference_query_model_fills_endpoint_model() {
     let body = object("{}");
-    let defaults = settings(None, None, None);
-    let mut input = request("/v1/completions", &body, &defaults);
+    let mut input = request("/v1/completions", &body);
     input.query_model = Some("query-model");
-    let result = managed_inference_request(&input).unwrap();
-    assert_eq!(model_of(&result), "query-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"completion|None|None|Some("query-model")"#
+    );
 }
 
 #[test]
-fn route_inference_templated_model_path_uses_body_settings() {
+fn route_inference_query_model_ignored_where_litellm_ignores_it() {
+    let body = object("{}");
+    let mut input = request("/v1/responses", &body);
+    input.query_model = Some("query-model");
+    input.path_model = None;
+    let result = resolved(&input).unwrap();
+    assert_eq!(model_of(&result), "completion|None|None|None");
+}
+
+#[test]
+fn route_inference_templated_path_uses_suffix_kind() {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("configured-model"), None, None);
-    let result = managed_inference_request(&request(
-        "/openai/deployments/my-deployment/embeddings",
+    let mut input = request(
+        "/openai/deployments/my-deployment/images/generations",
         &body,
-        &defaults,
-    ))
-    .unwrap();
-    assert_eq!(model_of(&result), "configured-model");
+    );
+    input.query_model = Some("query-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"image_generation|Some("body-model")|None|Some("query-model")"#
+    );
 }
 
 #[test]
 fn route_inference_does_not_mutate_input() {
     let body = object(r#"{"model":"body-model"}"#);
-    let defaults = settings(Some("configured-model"), None, None);
-    let result =
-        managed_inference_request(&request("/v1/chat/completions", &body, &defaults)).unwrap();
-    assert_eq!(model_of(&result), "configured-model");
-    assert_eq!(model_of(&body), "body-model");
-}
-
-#[rstest]
-#[case::image_generation(InferenceModelKind::ImageGeneration, "cli", "endpoint", "body", "cli")]
-#[case::image_edit(InferenceModelKind::ImageEdit, "cli", "endpoint", "body", "completion")]
-#[case::moderation(InferenceModelKind::Moderation, "cli", "endpoint", "body", "cli")]
-#[case::speech(InferenceModelKind::Speech, "cli", "endpoint", "body", "cli")]
-#[case::body(InferenceModelKind::Body, "cli", "endpoint", "body", "body")]
-#[case::path(InferenceModelKind::Path, "cli", "endpoint", "body", "endpoint")]
-fn resolve_inference_model_kind_order(
-    #[case] kind: InferenceModelKind,
-    #[case] cli: &str,
-    #[case] endpoint: &str,
-    #[case] body: &str,
-    #[case] expected: &str,
-) {
-    let defaults = settings(Some("completion"), Some("image"), Some("moderation"));
-    let resolved = resolve_inference_model(Some(body), &defaults, Some(cli), Some(endpoint), kind);
-    assert_eq!(resolved, Some(expected));
-}
-
-#[test]
-fn resolve_inference_model_body_falls_back() {
-    let defaults = settings(None, None, None);
-    let resolved = resolve_inference_model(
-        Some("body"),
-        &defaults,
-        None,
-        None,
-        InferenceModelKind::Completion,
+    let result = resolved(&request("/v1/chat/completions", &body)).unwrap();
+    assert_eq!(
+        model_of(&result),
+        r#"completion|Some("body-model")|None|None"#
     );
-    assert_eq!(resolved, Some("body"));
+    assert_eq!(model_of(&body), "body-model");
 }
