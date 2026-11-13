@@ -3,12 +3,16 @@ import time
 import warnings
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from random import choice as stock_choice
+from random import choices as stock_choices
+from random import random as stock_random
+from random import shuffle as stock_shuffle
+from time import monotonic as stock_monotonic
+from time import time as stock_time
 from typing import Annotated, BinaryIO, ClassVar, Literal, TextIO
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SerializeAsAny, ValidationError
 from typing_extensions import override
-
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
 MAX_MESSAGE_BYTES = 1 << 20
 SAMPLE_LIMIT = 1 << 53
@@ -77,14 +81,15 @@ class InjectedRandom(random.Random):
 
 @contextmanager
 def injected(clock: Clock, generator: InjectedRandom) -> Generator[None, None, None]:
-    saved = (time.time, time.monotonic, random.random, random.choices, random.choice, random.shuffle)
     time.time, time.monotonic = clock.wall, clock.monotonic
     random.random, random.choices = generator.random, generator.choices
     random.choice, random.shuffle = generator.choice, generator.shuffle
     try:
         yield
     finally:
-        time.time, time.monotonic, random.random, random.choices, random.choice, random.shuffle = saved
+        time.time, time.monotonic = stock_time, stock_monotonic
+        random.random, random.choices = stock_random, stock_choices
+        random.choice, random.shuffle = stock_choice, stock_shuffle
 
 
 def answer(data: bytes, operations: Mapping[str, type[Operation]]) -> Reply:

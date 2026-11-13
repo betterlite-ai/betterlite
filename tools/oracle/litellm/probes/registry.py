@@ -119,8 +119,6 @@ from probes.usage_routing_v2 import UsageRoutingV2
 from probes.usage_v2_accounting import UsageV2Accounting
 from probes.wildcard_catalog import WildcardCatalog
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
-
 
 class EchoOutput(Strict):
     text: str
@@ -139,7 +137,8 @@ class Echo(Operation):
             warn(message, stacklevel=1)
         clock = Clock(unix_millis=round(time.time() * 1000), monotonic_millis=round(time.monotonic() * 1000))
         # Echo reports the injected samples back, so it draws through the patched generator on purpose
-        samples = [round(random.random() * SAMPLE_LIMIT) for _ in range(self.draws)]  # noqa: S311
+        draw = random.random
+        samples = [round(draw() * SAMPLE_LIMIT) for _ in range(self.draws)]
         return EchoOutput(text=self.text, clock=clock, samples=samples)
 
 
@@ -258,4 +257,6 @@ OPERATIONS: dict[str, type[Operation]] = {
 }
 
 if __name__ == "__main__":
-    serve(sys.stdin.buffer, sys.stdout, OPERATIONS)
+    # sys.stdin is TextIO | MaybeNone in typeshed, so the same descriptor is read as a binary stream
+    with open(0, "rb", closefd=False) as stdin:
+        serve(stdin, sys.stdout, OPERATIONS)

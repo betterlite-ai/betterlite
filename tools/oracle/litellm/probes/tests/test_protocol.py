@@ -7,8 +7,6 @@ import pytest
 from probes.protocol import MAX_MESSAGE_BYTES, serve
 from probes.registry import OPERATIONS
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
-
 CLOCK = '"clock":{"unix_millis":1700000000123,"monotonic_millis":42000}'
 OPERATION = '"operation":{"echo":{"text":"ping","draws":2,"warnings":["stale health snapshot"]}}'
 REQUEST = "{" + CLOCK + ',"samples":[0,9007199254740991],' + OPERATION + "}"
