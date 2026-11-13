@@ -246,55 +246,62 @@ fn route(patterns: &PatternCatalog) -> String {
     ids.join("+")
 }
 
+fn joined<I>(items: I) -> String
+where
+    I: IntoIterator,
+    I::Item: Display,
+{
+    let texts: Vec<String> = items.into_iter().map(|item| item.to_string()).collect();
+    texts.join(",")
+}
+
 fn render_models(catalog: &DeploymentCatalog) -> String {
-    let models: Vec<String> = catalog
-        .models
-        .iter()
-        .map(|spec| format!("{}:{}", spec.model_name, spec.id().unwrap_or_default()))
-        .collect();
-    let ids: Vec<String> = catalog
-        .id_index
-        .iter()
-        .map(|(id, index)| format!("{id}:{index}"))
-        .collect();
-    let names: Vec<&str> = catalog.model_names.iter().map(String::as_str).collect();
     format!(
         "models=[{}] ids({}) names({}) set=[{}]",
-        models.join(","),
-        ids.join(","),
+        joined(catalog.models.iter().map(|spec| format!(
+            "{}:{}",
+            spec.model_name,
+            spec.id().unwrap_or_default()
+        ))),
+        joined(
+            catalog
+                .id_index
+                .iter()
+                .map(|(id, index)| format!("{id}:{index}"))
+        ),
         indices(&catalog.name_index),
-        names.join(",")
+        joined(&catalog.model_names)
     )
 }
 
 fn render_patterns(catalog: &DeploymentCatalog) -> String {
-    let teams: Vec<String> = catalog
+    let teams = catalog
         .team_pattern_routers
         .iter()
-        .map(|(team, patterns)| format!("{team}:{}", route(&patterns.router)))
-        .collect();
-    let unresolved: Vec<&str> = catalog
+        .map(|(team, patterns)| format!("{team}:{}", route(&patterns.router)));
+    let unresolved = catalog
         .provider_unresolved
         .iter()
-        .map(|input| input.model_name.as_str())
-        .collect();
+        .map(|input| &input.model_name);
     format!(
         "defaults=[{}] route=[{}] teams=[{}] unresolved=[{}]",
-        catalog.provider_default_ids.join(","),
+        joined(&catalog.provider_default_ids),
         route(&catalog.pattern_router),
-        teams.join(","),
-        unresolved.join(",")
+        joined(teams),
+        joined(unresolved)
     )
 }
 
 fn render_teams(catalog: &DeploymentCatalog) -> String {
-    let keys: Vec<String> = catalog
+    let keys = catalog
         .team_index
         .iter()
-        .map(|((team, name), found)| format!("{team}/{name}:{found:?}"))
-        .collect();
-    let public: Vec<&str> = catalog.team_public_model_names().into_iter().collect();
-    format!("teams=[{}] public=[{}]", keys.join(","), public.join(","))
+        .map(|((team, name), found)| format!("{team}/{name}:{found:?}"));
+    format!(
+        "teams=[{}] public=[{}]",
+        joined(keys),
+        joined(catalog.team_public_model_names())
+    )
 }
 
 fn render(catalog: &DeploymentCatalog, show: Show) -> String {
