@@ -338,8 +338,13 @@ async fn an_undispatchable_embedding_answers_internal_server_error(
     assert_eq!(reply.error.message, message);
 }
 
+#[rstest]
+#[case::short_id("caller-call-1", true)]
+#[case::longest_id(&"a".repeat(256), true)]
+#[case::too_long_id(&"a".repeat(257), false)]
+#[case::empty_id("", false)]
 #[tokio::test]
-async fn an_embedding_answer_echoes_the_callers_call_id() {
+async fn an_embedding_answer_echoes_the_callers_call_id(#[case] sent: &str, #[case] echoed: bool) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -351,7 +356,7 @@ async fn an_embedding_answer_echoes_the_callers_call_id() {
         chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
     let request = Request::post("/embeddings")
         .header("content-type", "application/json")
-        .header("x-litellm-call-id", "caller-call-1")
+        .header("x-litellm-call-id", sent)
         .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
         .expect("request");
     let response = embedding_routes(Arc::new(executor))
@@ -359,10 +364,12 @@ async fn an_embedding_answer_echoes_the_callers_call_id() {
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get("x-litellm-call-id").unwrap(),
-        "caller-call-1"
-    );
+    let answered = response.headers().get("x-litellm-call-id").unwrap();
+    if echoed {
+        assert_eq!(answered, sent);
+    } else {
+        assert_eq!(answered.len(), 36);
+    }
 }
 
 const EMBEDDING_ANSWER: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"embed","usage":{"prompt_tokens":1,"total_tokens":1}}"#;

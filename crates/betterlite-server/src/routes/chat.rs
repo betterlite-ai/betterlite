@@ -35,7 +35,7 @@ use crate::server::{failure, plain_failure};
 use headers::success_headers;
 
 // LiteLLM's MAX_LITELLM_CALL_ID_LENGTH
-const MAX_CALL_ID_LENGTH: usize = 256;
+pub(super) const MAX_CALL_ID_LENGTH: usize = 256;
 
 pub(crate) fn chat_routes_with_call_id(
     executor: Arc<ChatExecutor>,

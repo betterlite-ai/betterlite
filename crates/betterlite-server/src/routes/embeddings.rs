@@ -32,6 +32,7 @@ use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::CallError;
 use crate::server::chat_setup::provider_call::embedding::provider_embedding;
 
+use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::{failure_headers, success_headers};
 
 mod tests;
@@ -116,6 +117,7 @@ fn routed_call_id(headers: &HeaderMap) -> String {
     headers
         .get("x-litellm-call-id")
         .and_then(|value| value.to_str().ok())
+        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
         .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned)
 }
 
