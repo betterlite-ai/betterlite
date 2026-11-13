@@ -761,6 +761,13 @@ async fn an_existing_response_format_wins_over_guided_params() {
         extra_body(&mut capabilities, "m", &in_body).await,
         object(r#"{"extra_body":{"response_format":{"type":"text"}}}"#)
     );
+    let both = object(
+        r#"{"response_format":{"type":"text"},"extra_body":{"response_format":{"type":"other"}}}"#,
+    );
+    assert_eq!(
+        extra_body(&mut capabilities, "m", &both).await,
+        object(r#"{"response_format":{"type":"text"}}"#)
+    );
 }
 
 #[tokio::test]
