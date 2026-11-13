@@ -52,13 +52,6 @@ fn translate_flag_group(captures: &regex::Captures<'_>) -> String {
     let enabled = &captures[1];
     let disabled = captures.get(2).map_or("", |matched| matched.as_str());
     let terminator = &captures[3];
-    let exclusive = enabled
-        .chars()
-        .filter(|character| matches!(character, 'a' | 'u' | 'L'))
-        .count();
-    if exclusive > 1 {
-        return captures[0].to_owned();
-    }
     let mut translated = String::new();
     let mut ascii = false;
     for character in enabled.chars() {
