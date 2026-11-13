@@ -1,0 +1,41 @@
+kind: helper
+name: flatten-and-boolean-form
+call:
+  xai_stt:
+    env: {}
+    xai_key: null
+    steps:
+      - step: params
+        optional: {response_format: json, language: fr}
+        non_default: {language: en, prompt: direct}
+      - {step: url, api_base: null}
+      - {step: url, api_base: "https://proxy.example/v1/"}
+      - {step: url, api_base: "https://proxy.example/v2"}
+      - {step: auth, api_key: sk-key}
+      - {step: auth, api_key: null}
+      - step: form
+        model: grok-stt
+        filename: clip.wav
+        content: audio
+        extra_body:
+          language: fr
+          diarize: true
+          custom: x
+          temperature: 0.25
+          OPENAI_TRANSCRIPTION_PARAMS: nested
+          extra_body: nested
+        options:
+          language: en
+          temperature: 0.5
+          prompt: hi
+          response_format: null
+          timestamp_granularities: [word, segment]
+      - step: form
+        model: m
+        filename: null
+        content: raw
+        extra_body: {flag: false, n: 3, f: 1.5, items: [true, false, 1], prompt: dropped}
+        options: {prompt: null}
+      - {step: form, model: m, filename: sound.flac, content: abc, extra_body: {}, options: {}}
+env: {}
+compare: {ignore: []}
