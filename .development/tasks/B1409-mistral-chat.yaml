@@ -95,5 +95,5 @@ pitfalls:
   - A single file part changes cleanup for every message in the conversation.
   - Nonstreaming response text blocks overwrite one another instead of concatenating.
   - Stream fallback receives partially modified choices rather than an untouched copy.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1200, max_new_expects: 1}
 review_level: standard
