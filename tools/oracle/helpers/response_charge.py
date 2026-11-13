@@ -103,7 +103,7 @@ def run(input_value: Input) -> Output:
         )
     )
     if input_value["function"] == "completion_cost":
-        cost = cost_calculator.completion_cost(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332
+        cost = litellm.completion_cost(
             completion_response=response,
             model=input_value["model"],
             custom_llm_provider=input_value["custom_llm_provider"],

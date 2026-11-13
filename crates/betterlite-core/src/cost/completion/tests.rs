@@ -19,6 +19,7 @@ use crate::cost::prepare::error::PrepareError;
 use crate::cost::realtime::RealtimeBilling;
 use crate::routes::CallType;
 
+mod lookup;
 pub(crate) mod rig;
 
 const GPT: &[(&str, &str)] = &[
