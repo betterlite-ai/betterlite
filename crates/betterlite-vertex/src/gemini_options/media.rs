@@ -1,53 +1,14 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
-use crate::gemini_thinking::audio::{
-    AudioParam, ResponseModality, map_audio_params, map_response_modalities,
-};
+use crate::gemini_thinking::audio::{AudioParam, ResponseModality, map_audio_params};
 
 use super::convert;
 use super::error::GeminiOptionsError;
 
 pub fn map_audio(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Object(_) => {}
-        Json::Null => return Ok(()),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            return Err(GeminiOptionsError::FieldType {
-                param: "audio".to_owned(),
-                expected: "an object",
-            });
-        }
-    }
     let audio: AudioParam = convert::decode(value, "audio")?;
-    optional.insert(
-        "speechConfig".to_owned(),
-        Json::Object(map_audio_params(&audio)?),
-    );
-    Ok(())
-}
-
-pub fn map_modalities(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    let Json::List(items) = value else {
-        return Err(GeminiOptionsError::FieldType {
-            param: "modalities".to_owned(),
-            expected: "a list of strings",
-        });
-    };
-    let mut requested = Vec::with_capacity(items.len());
-    for item in items {
-        let Json::Text(text) = item else {
-            return Err(GeminiOptionsError::FieldType {
-                param: "modalities".to_owned(),
-                expected: "a list of strings",
-            });
-        };
-        requested.push(text.clone());
-    }
-    let modalities = map_response_modalities(&requested);
-    optional.insert(
-        "responseModalities".to_owned(),
-        convert::encode(modalities)?,
-    );
+    let speech = map_audio_params(&audio)?;
+    optional.insert("speechConfig".to_owned(), Json::Object(speech));
     Ok(())
 }
 
@@ -56,11 +17,9 @@ pub fn ensure_audio_modality(optional: &mut Object) -> Result<(), GeminiOptionsE
     if !optional.contains_key("speechConfig") {
         return Ok(());
     }
+    let audio = convert::encode(ResponseModality::Audio)?;
     if !optional.contains_key("responseModalities") {
-        optional.insert(
-            "responseModalities".to_owned(),
-            convert::encode([ResponseModality::Audio])?,
-        );
+        optional.insert("responseModalities".to_owned(), Json::List(vec![audio]));
         return Ok(());
     }
     let Some(Json::List(modalities)) = optional.get_mut("responseModalities") else {
@@ -68,7 +27,6 @@ pub fn ensure_audio_modality(optional: &mut Object) -> Result<(), GeminiOptionsE
             param: "responseModalities".to_owned(),
         });
     };
-    let audio = convert::encode(ResponseModality::Audio)?;
     if !modalities.contains(&audio) {
         modalities.push(audio);
     }

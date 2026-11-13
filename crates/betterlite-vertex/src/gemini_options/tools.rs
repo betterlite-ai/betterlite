@@ -26,45 +26,25 @@ pub fn append(
     optional: &mut Object,
     schema: &SchemaSettings,
 ) -> Result<usize, GeminiOptionsError> {
-    let tools = match value {
-        Json::Null => return Ok(0),
-        Json::List(items) if items.is_empty() => return Ok(0),
-        Json::List(items) => tool_objects(items)?,
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            return Err(GeminiOptionsError::FieldType {
-                param: "tools".to_owned(),
-                expected: "a list of objects",
-            });
-        }
-    };
+    let tools: Vec<Object> = convert::decode(value, "tools")?;
+    if tools.is_empty() {
+        return Ok(0);
+    }
     let include_server_side = matches!(
         optional.get("include_server_side_tool_invocations"),
         Some(Json::Bool(true))
     );
     let mapped = map_tools(&tools, include_server_side, tool_config(optional)?, schema)?;
-    let mut encoded = Vec::with_capacity(mapped.tools.len());
-    for tool in mapped.tools {
-        encoded.push(convert::encode(tool)?);
-    }
+    let encoded = mapped
+        .tools
+        .into_iter()
+        .map(convert::encode)
+        .collect::<Result<Vec<Json>, GeminiOptionsError>>()?;
     append_tools(optional, encoded)?;
     if let Some(config) = mapped.tool_config {
         optional.insert("toolConfig".to_owned(), convert::encode(config)?);
     }
     Ok(mapped.warnings)
-}
-
-fn tool_objects(items: &[Json]) -> Result<Vec<Object>, GeminiOptionsError> {
-    let mut tools = Vec::with_capacity(items.len());
-    for item in items {
-        let Json::Object(tool) = item else {
-            return Err(GeminiOptionsError::FieldType {
-                param: "tools".to_owned(),
-                expected: "a list of objects",
-            });
-        };
-        tools.push(tool.clone());
-    }
-    Ok(tools)
 }
 
 fn append_tools(optional: &mut Object, mapped: Vec<Json>) -> Result<(), GeminiOptionsError> {
@@ -90,18 +70,9 @@ fn tool_config(optional: &Object) -> Result<Option<ToolConfig>, GeminiOptionsErr
 }
 
 pub fn map_choice(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Null => Ok(()),
-        Json::Text(_) | Json::Object(_) => {
-            let config = map_tool_choice(value)?;
-            optional.insert("tool_choice".to_owned(), convert::encode(config)?);
-            Ok(())
-        }
-        Json::Bool(_) | Json::Number(_) | Json::List(_) => Err(GeminiOptionsError::FieldType {
-            param: "tool_choice".to_owned(),
-            expected: "a string or an object",
-        }),
-    }
+    let config = map_tool_choice(value)?;
+    optional.insert("tool_choice".to_owned(), convert::encode(config)?);
+    Ok(())
 }
 
 // Gemini rejects parallel_tool_calls=false with several tools, so LiteLLM drops it instead
@@ -110,12 +81,7 @@ pub fn map_parallel(
     non_default: &Object,
     optional: &mut Object,
 ) -> Result<(), GeminiOptionsError> {
-    let Json::Bool(enabled) = value else {
-        return Err(GeminiOptionsError::FieldType {
-            param: "parallel_tool_calls".to_owned(),
-            expected: "a boolean",
-        });
-    };
+    let enabled: bool = convert::decode(value, "parallel_tool_calls")?;
     let count = match non_default
         .get("tools")
         .or_else(|| non_default.get("functions"))
@@ -123,27 +89,17 @@ pub fn map_parallel(
         Some(Json::List(tools)) => tools.len(),
         _ => 0,
     };
-    if *enabled || count <= 1 {
-        optional.insert("parallel_tool_calls".to_owned(), Json::Bool(*enabled));
+    if enabled || count <= 1 {
+        optional.insert("parallel_tool_calls".to_owned(), Json::Bool(enabled));
     }
     Ok(())
 }
 
 pub fn map_web_search(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Object(options) => {
-            let tool = map_web_search_options(options);
-            append_tools(optional, vec![convert::encode(tool)?])?;
-            Ok(())
-        }
-        Json::Null => Ok(()),
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(GeminiOptionsError::FieldType {
-                param: "web_search_options".to_owned(),
-                expected: "an object",
-            })
-        }
-    }
+    let options: Object = convert::decode(value, "web_search_options")?;
+    let tool = map_web_search_options(&options);
+    append_tools(optional, vec![convert::encode(tool)?])?;
+    Ok(())
 }
 
 // The last pass over the merged list, because tools and web_search_options may be mapped apart

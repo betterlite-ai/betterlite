@@ -8,9 +8,11 @@ pub fn encode<T>(value: T) -> Result<Json, GeminiOptionsError>
 where
     T: Serialize,
 {
-    serde_json::to_value(value)
-        .map_err(GeminiOptionsError::Encode)
-        .and_then(|encoded| serde_json::from_value(encoded).map_err(GeminiOptionsError::Encode))
+    let encoded = serde_json::to_value(value).map_err(GeminiOptionsError::Encode)?;
+    match serde_json::from_value(encoded) {
+        Ok(encoded) => Ok(encoded),
+        Err(source) => Err(GeminiOptionsError::Encode(source)),
+    }
 }
 
 pub fn decode<T>(value: &Json, param: &str) -> Result<T, GeminiOptionsError>

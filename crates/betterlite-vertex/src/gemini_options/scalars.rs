@@ -1,10 +1,22 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
+use crate::gemini_thinking::audio::map_response_modalities;
 use crate::gemini_tools::options::map_service_tier;
 
+use super::convert;
 use super::error::GeminiOptionsError;
 use super::generation;
 use super::params::supports_penalty_parameters;
+
+// LiteLLM accepts a single string or a list for stop
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Stop {
+    Single(String),
+    Many(Vec<String>),
+}
 
 pub fn map(
     param: &str,
@@ -18,117 +30,68 @@ pub fn map(
             generation::check_sampling(model, param, value, warned)?;
             optional.insert(param.to_owned(), value.clone());
         }
-        "n" | "max_tokens" | "max_completion_tokens" | "seed" | "logprobs" | "top_logprobs" => {
-            map_integer_like(param, value, optional)?;
+        "n" => insert::<i64>(optional, "candidate_count", param, value)?,
+        "max_tokens" | "max_completion_tokens" => {
+            insert::<i64>(optional, "max_output_tokens", param, value)?;
         }
-        "stop" => map_stop(value, optional)?,
-        "frequency_penalty" | "presence_penalty" => map_penalty(param, value, optional, model)?,
-        "service_tier" => map_service_tier_value(value, optional)?,
+        "seed" => insert::<i64>(optional, "seed", param, value)?,
+        "top_logprobs" => insert::<i64>(optional, "logprobs", param, value)?,
+        "logprobs" => insert::<bool>(optional, "responseLogprobs", param, value)?,
         "stream" => map_stream(value, optional)?,
+        "stop" => map_stop(value, optional)?,
+        "modalities" => {
+            let requested: Vec<String> = convert::decode(value, param)?;
+            let modalities = map_response_modalities(&requested);
+            optional.insert(
+                "responseModalities".to_owned(),
+                convert::encode(modalities)?,
+            );
+        }
+        "service_tier" => {
+            let tier: String = convert::decode(value, param)?;
+            optional.insert(
+                "service_tier".to_owned(),
+                Json::Text(map_service_tier(&tier)),
+            );
+        }
+        "frequency_penalty" | "presence_penalty" => {
+            convert::decode::<f64>(value, param)?;
+            if supports_penalty_parameters(model) {
+                optional.insert(param.to_owned(), value.clone());
+            }
+        }
         _ => {}
     }
     Ok(())
 }
 
-fn map_integer_like(
+fn insert<T>(
+    optional: &mut Object,
+    target: &str,
     param: &str,
     value: &Json,
-    optional: &mut Object,
-) -> Result<(), GeminiOptionsError> {
-    let (target, expected) = match param {
-        "n" => ("candidate_count", "an integer"),
-        "max_tokens" | "max_completion_tokens" => ("max_output_tokens", "an integer"),
-        "logprobs" => ("responseLogprobs", "a boolean"),
-        "top_logprobs" => ("logprobs", "an integer"),
-        "seed" => ("seed", "an integer"),
-        _ => return Ok(()),
-    };
-    let matched = if param == "logprobs" {
-        matches!(value, Json::Bool(_))
-    } else {
-        matches!(value, Json::Number(number) if number.as_i64().is_some())
-    };
-    if !matched {
-        return Err(GeminiOptionsError::FieldType {
-            param: param.to_owned(),
-            expected,
-        });
-    }
+) -> Result<(), GeminiOptionsError>
+where
+    T: DeserializeOwned,
+{
+    convert::decode::<T>(value, param)?;
     optional.insert(target.to_owned(), value.clone());
     Ok(())
 }
 
-fn map_stop(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Text(text) => {
-            optional.insert(
-                "stop_sequences".to_owned(),
-                Json::List(vec![Json::Text(text.clone())]),
-            );
-        }
-        Json::List(items) if items.iter().all(|item| matches!(item, Json::Text(_))) => {
-            optional.insert("stop_sequences".to_owned(), value.clone());
-        }
-        Json::Null => {}
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            return Err(GeminiOptionsError::FieldType {
-                param: "stop".to_owned(),
-                expected: "a string or a list of strings",
-            });
-        }
-    }
-    Ok(())
-}
-
-fn map_penalty(
-    param: &str,
-    value: &Json,
-    optional: &mut Object,
-    model: &str,
-) -> Result<(), GeminiOptionsError> {
-    if !matches!(value, Json::Number(_)) {
-        return Err(GeminiOptionsError::FieldType {
-            param: param.to_owned(),
-            expected: "a number",
-        });
-    }
-    if supports_penalty_parameters(model) {
-        optional.insert(param.to_owned(), value.clone());
-    }
-    Ok(())
-}
-
-fn map_service_tier_value(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Text(text) => {
-            optional.insert(
-                "service_tier".to_owned(),
-                Json::Text(map_service_tier(text)),
-            );
-            Ok(())
-        }
-        Json::Null => Ok(()),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(GeminiOptionsError::FieldType {
-                param: "service_tier".to_owned(),
-                expected: "a string",
-            })
-        }
-    }
-}
-
 fn map_stream(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match value {
-        Json::Bool(true) => {
-            optional.insert("stream".to_owned(), Json::Bool(true));
-            Ok(())
-        }
-        Json::Bool(false) | Json::Null => Ok(()),
-        Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(GeminiOptionsError::FieldType {
-                param: "stream".to_owned(),
-                expected: "a boolean",
-            })
-        }
+    if convert::decode::<bool>(value, "stream")? {
+        optional.insert("stream".to_owned(), Json::Bool(true));
     }
+    Ok(())
+}
+
+// LiteLLM never sends stream=false and always wraps a string stop in a list
+fn map_stop(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    let sequences = match convert::decode::<Stop>(value, "stop")? {
+        Stop::Single(text) => vec![Json::Text(text)],
+        Stop::Many(items) => items.into_iter().map(Json::Text).collect(),
+    };
+    optional.insert("stop_sequences".to_owned(), Json::List(sequences));
+    Ok(())
 }
