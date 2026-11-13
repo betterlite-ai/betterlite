@@ -1,0 +1,3 @@
+general_settings:
+  prisma_reconnect_policy:
+    cooldown_seconds: 5
