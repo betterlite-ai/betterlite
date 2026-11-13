@@ -147,18 +147,6 @@ fn manual_call(input: Input, function_arguments: Input) -> Call {
     }
 }
 
-fn function_call_record(call_id: Option<&str>, arguments: Option<&str>) -> Call {
-    Call {
-        id: None,
-        kind: CallKind::FunctionCall,
-        name: "litellm_web_search".to_owned(),
-        input: Input::default(),
-        function: None,
-        arguments: arguments.map(str::to_owned),
-        call_id: call_id.map(|id| Some(id.to_owned())),
-    }
-}
-
 fn messages_value(messages: &[FollowupMessage]) -> Value {
     serde_json::to_value(messages).unwrap()
 }
@@ -675,7 +663,15 @@ async fn responses_patch_missing_call_id_and_arguments_are_null_and_empty() {
             response: None,
         },
     ]));
-    let calls = vec![function_call_record(None, None)];
+    let calls = vec![Call {
+        id: None,
+        kind: CallKind::FunctionCall,
+        name: "litellm_web_search".to_owned(),
+        input: Input::default(),
+        function: None,
+        arguments: None,
+        call_id: None,
+    }];
     let optional_params = map(json!({}));
     let kwargs = map(json!({}));
     let input = ResponsesInput::Items(Vec::new());

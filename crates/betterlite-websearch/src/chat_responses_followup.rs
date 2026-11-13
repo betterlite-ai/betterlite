@@ -40,9 +40,10 @@ impl ChatResponsesFollowup {
         tool_calls: &[Call],
         request: &ResponsesRequest<'_>,
     ) -> Result<AgenticLoopPlan, FollowupError> {
-        let request_patch =
-            responses::build_responses_patch(self.search.as_ref(), tool_calls, request).await?;
-        websearch_plan(request_patch, "responses")
+        websearch_plan(
+            responses::build_responses_patch(self.search.as_ref(), tool_calls, request).await?,
+            "responses",
+        )
     }
 
     pub async fn build_chat_rerun(
