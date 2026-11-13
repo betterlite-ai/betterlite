@@ -111,6 +111,30 @@ fn data_line_extraction(#[case] input: &[u8], #[case] event: &str, #[case] expec
     assert_eq!(found.as_deref(), expected, "event {event}");
 }
 
+// json.loads keeps a lone surrogate, so LiteLLM ends the stream on this error frame; Rust strings cannot hold one
+#[test]
+fn data_line_with_a_lone_surrogate_escape_is_dropped() {
+    let decoded = classified(
+        b"event: error\ndata: {\"type\": \"error\", \"error\": {}, \"x\": \"\\ud800\"}\n\n",
+    );
+    assert!(decoded.payload("error").is_none());
+    assert!(!decoded.flags.contains(&ChunkFlag::ProviderError));
+    assert!(!decoded.flags.contains(&ChunkFlag::Terminal));
+}
+
+// json.loads parses nesting up to its own recursion limit; serde_json stops at 128 levels
+#[test]
+fn data_line_nested_past_the_serde_limit_is_dropped() {
+    let nested = format!(
+        "event: error\ndata: {{\"type\": \"error\", \"error\": {{}}, \"x\": {}{}}}\n\n",
+        "[".repeat(300),
+        "]".repeat(300)
+    );
+    let decoded = classified(nested.as_bytes());
+    assert!(decoded.payload("error").is_none());
+    assert!(!decoded.flags.contains(&ChunkFlag::Terminal));
+}
+
 #[rstest]
 #[case::surrounding_bytes(b"data:   \t{\"type\": \"stop\"} \x0b\x0c\r\n".as_slice(), Some("{\"type\":\"stop\"}"))]
 #[case::utf8_bom(b"data: \xef\xbb\xbf{\"type\": \"stop\"}\n".as_slice(), Some("{\"type\":\"stop\"}"))]
