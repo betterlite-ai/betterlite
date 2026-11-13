@@ -26,6 +26,7 @@ betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-streaming = { path = "../../../../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
 chrono.workspace = true

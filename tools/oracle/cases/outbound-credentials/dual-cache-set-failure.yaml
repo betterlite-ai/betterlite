@@ -1,0 +1,38 @@
+{
+  "kind": "helper",
+  "name": "dual-cache-set-failure",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "dual",
+      "cache_get": "stored",
+      "set_error": true,
+      "operations": [
+        {
+          "op": "set",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 0,
+          "ttl_ms": 60000,
+          "token": {
+            "access_token": "access-secret",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 0
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
