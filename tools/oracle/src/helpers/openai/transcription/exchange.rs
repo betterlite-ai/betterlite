@@ -96,11 +96,8 @@ impl TranscriptionLogger for Recorder {
     }
 
     fn post_call(&mut self, record: TranscriptionPostCall<'_>) {
-        let mut original = json!(record.original_response);
+        let original = json!(record.original_response);
         let error_text = original.is_string();
-        if let Value::Object(fields) = &mut original {
-            fields.retain(|_name, value| !value.is_null());
-        }
         self.post_call = json!({
             "input_names_file": (!error_text).then(|| record.input.contains(FILE_NAME)),
             "data": record.data,

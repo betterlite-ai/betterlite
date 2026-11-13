@@ -7,7 +7,7 @@ fuzz_target!(|bytes: &[u8]| {
     drop(decode_transcription_reply(
         bytes,
         Some("application/json"),
-        ReplyFormat::Json,
+        ReplyFormat::Transcription,
     ));
     drop(decode_transcription_reply(
         bytes,

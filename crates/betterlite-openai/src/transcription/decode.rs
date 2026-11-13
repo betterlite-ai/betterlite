@@ -7,11 +7,123 @@ use super::error::TranscriptionError;
 use crate::api::transcription_contract::TranscriptionResponse;
 use crate::openai_base_config::Object;
 
-// The OpenAI SDK derives the reply kind from the request's response_format; json is every other value.
+// The OpenAI SDK model the reply is parsed into, picked by the request's response_format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplyFormat {
-    Json,
+    Transcription,
+    Verbose,
+    Diarized,
     Text,
+}
+
+// How the SDK builds a declared field's value; anything not of that shape is kept as sent.
+#[derive(Debug, Clone, Copy)]
+enum Shape {
+    Plain,
+    Item(Model),
+    Items(Model),
+    // the tokens or duration usage union; any type other than duration builds the tokens variant
+    Usage,
+}
+
+type Model = &'static [(&'static str, Shape)];
+
+const LANGUAGE: Model = &[("code", Shape::Plain)];
+const LOGPROB: Model = &[
+    ("token", Shape::Plain),
+    ("bytes", Shape::Plain),
+    ("logprob", Shape::Plain),
+];
+const TOKEN_DETAILS: Model = &[
+    ("audio_tokens", Shape::Plain),
+    ("text_tokens", Shape::Plain),
+];
+const TOKENS: Model = &[
+    ("input_tokens", Shape::Plain),
+    ("output_tokens", Shape::Plain),
+    ("total_tokens", Shape::Plain),
+    ("type", Shape::Plain),
+    ("input_token_details", Shape::Item(TOKEN_DETAILS)),
+];
+const DURATION: Model = &[("seconds", Shape::Plain), ("type", Shape::Plain)];
+const TRANSCRIPTION: Model = &[
+    ("text", Shape::Plain),
+    ("languages", Shape::Items(LANGUAGE)),
+    ("logprobs", Shape::Items(LOGPROB)),
+    ("usage", Shape::Usage),
+];
+const SEGMENT: Model = &[
+    ("id", Shape::Plain),
+    ("avg_logprob", Shape::Plain),
+    ("compression_ratio", Shape::Plain),
+    ("end", Shape::Plain),
+    ("no_speech_prob", Shape::Plain),
+    ("seek", Shape::Plain),
+    ("start", Shape::Plain),
+    ("temperature", Shape::Plain),
+    ("text", Shape::Plain),
+    ("tokens", Shape::Plain),
+];
+const WORD: Model = &[
+    ("end", Shape::Plain),
+    ("start", Shape::Plain),
+    ("word", Shape::Plain),
+];
+const VERBOSE: Model = &[
+    ("duration", Shape::Plain),
+    ("language", Shape::Plain),
+    ("text", Shape::Plain),
+    ("segments", Shape::Items(SEGMENT)),
+    ("usage", Shape::Item(DURATION)),
+    ("words", Shape::Items(WORD)),
+];
+const DIARIZED_SEGMENT: Model = &[
+    ("id", Shape::Plain),
+    ("end", Shape::Plain),
+    ("speaker", Shape::Plain),
+    ("start", Shape::Plain),
+    ("text", Shape::Plain),
+    ("type", Shape::Plain),
+];
+const DIARIZED: Model = &[
+    ("duration", Shape::Plain),
+    ("segments", Shape::Items(DIARIZED_SEGMENT)),
+    ("task", Shape::Plain),
+    ("text", Shape::Plain),
+    ("usage", Shape::Usage),
+];
+
+// The SDK's model_dump: every declared field in order, null when the body has none, then the extra keys.
+fn sdk_dump(model: Model, fields: &IndexMap<String, Json>) -> IndexMap<String, Json> {
+    let mut dumped = IndexMap::new();
+    for (name, shape) in model {
+        let value = fields
+            .get(*name)
+            .map_or(Json::Null, |value| shaped(*shape, value));
+        dumped.insert((*name).to_owned(), value);
+    }
+    for (name, value) in fields {
+        dumped.entry(name.clone()).or_insert_with(|| value.clone());
+    }
+    dumped
+}
+
+fn shaped(shape: Shape, value: &Json) -> Json {
+    match (shape, value) {
+        (Shape::Item(model), Json::Object(fields)) => Json::Object(sdk_dump(model, fields)),
+        (Shape::Items(model), Json::List(items)) => Json::List(
+            items
+                .iter()
+                .map(|item| shaped(Shape::Item(model), item))
+                .collect(),
+        ),
+        (Shape::Usage, Json::Object(fields)) => {
+            let duration =
+                matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "duration");
+            Json::Object(sdk_dump(if duration { DURATION } else { TOKENS }, fields))
+        }
+        _ => value.clone(),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +137,9 @@ pub struct DecodedReply {
 pub fn reply_format(options: &IndexMap<String, Json>) -> Result<ReplyFormat, TranscriptionError> {
     Ok(match string_field(options, "response_format")? {
         Some("text" | "srt" | "vtt") => ReplyFormat::Text,
-        Some(_) | None => ReplyFormat::Json,
+        Some("verbose_json") => ReplyFormat::Verbose,
+        Some("diarized_json") => ReplyFormat::Diarized,
+        Some(_) | None => ReplyFormat::Transcription,
     })
 }
 
@@ -35,12 +149,19 @@ pub fn decode_transcription_reply(
     content_type: Option<&str>,
     format: ReplyFormat,
 ) -> Result<DecodedReply, TranscriptionError> {
-    if format == ReplyFormat::Json {
+    let sdk_model = match format {
+        ReplyFormat::Transcription => Some(TRANSCRIPTION),
+        ReplyFormat::Verbose => Some(VERBOSE),
+        ReplyFormat::Diarized => Some(DIARIZED),
+        ReplyFormat::Text => None,
+    };
+    if let Some(model) = sdk_model {
         match serde_json::from_slice::<Json>(body) {
             Ok(Json::Object(fields)) => {
+                let dumped = sdk_dump(model, &fields);
                 return Ok(DecodedReply {
-                    response: response_from_object(&fields)?,
-                    original_response: Json::Object(fields),
+                    response: response_from_object(&dumped)?,
+                    original_response: Json::Object(dumped),
                     textual: false,
                 });
             }

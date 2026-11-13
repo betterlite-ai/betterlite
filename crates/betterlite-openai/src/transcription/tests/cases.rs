@@ -448,8 +448,13 @@ async fn verbose_json_segments() {
             (String::from("seconds"), number("1.5")),
         ]))))
     );
-    let original = serde_json::from_str::<Json>(body).expect("the fixture body is JSON");
+    // the SDK's model_dump lists every declared segment field, null when the body has none
+    let dumped = r#"{"duration":1.5,"language":"en","text":"hi","segments":[{"id":0,"avg_logprob":null,"compression_ratio":null,"end":1.5,"no_speech_prob":null,"seek":null,"start":0.0,"temperature":null,"text":"hi","tokens":null}],"usage":{"seconds":1.5,"type":"duration"},"words":[{"end":1.0,"start":0.0,"word":"hi"}],"task":"transcribe"}"#;
+    let original = serde_json::from_str::<Json>(dumped).expect("the dump is JSON");
     assert_eq!(reply.original_response, original);
+    // LiteLLM builds the response from the same dump, so its segments carry the nulls too
+    let segments = value(original.clone())["segments"].clone();
+    assert_eq!(reply.response.extra.get("segments"), Some(&segments));
     assert_eq!(run.recorder.post_calls[0].original_response, original);
 }
 

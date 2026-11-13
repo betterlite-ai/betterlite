@@ -86,9 +86,7 @@ class Recorder(LiteLLMLoggingObj):
                 self.post = {
                     "input_names_file": FILE[0] in str(input),
                     "data": data_view(additional_args),
-                    "original_response": {
-                        name: value for name, value in fields.items() if value is not None
-                    },
+                    "original_response": fields,
                     "error_text": False,
                 }
             case None | bool() | int() | float() | str() | list():
