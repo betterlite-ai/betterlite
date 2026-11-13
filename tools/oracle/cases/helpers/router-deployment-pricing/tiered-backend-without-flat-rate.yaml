@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-tiered-backend-without-flat-rate
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "dashscope/qwen-flash", "tiered_pricing": [{"range": [0, 1000], "input_cost_per_token": 0.000001}]}, "model_info": {"id": "dep-15"}}
+    shared_before: null
+compare: {ignore: []}
+env: {}

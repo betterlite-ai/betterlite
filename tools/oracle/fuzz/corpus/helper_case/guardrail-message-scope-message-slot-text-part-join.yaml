@@ -1,0 +1,6 @@
+kind: helper
+name: message-slot-text-part-join
+call:
+  b3663: {"function": "slots", "message": {"role": "user", "content": [{"type": "text", "text": "one"}, {"type": "image_url", "image_url": {"url": "u"}}, {"type": "text", "text": "two"}]}, "texts": ["ONE", "TWO"]}
+env: {}
+compare: {ignore: []}

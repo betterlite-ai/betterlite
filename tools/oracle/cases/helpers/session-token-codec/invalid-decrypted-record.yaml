@@ -1,0 +1,20 @@
+kind: helper
+name: session-token-codec-invalid-decrypted-record
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLqBrNYnJcvgZXVybnU9CmMkSsSMQHDMdLzQRVuPNFaCE"
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLqBrLYXJAhVYCG2GkC5OmISkXlYpEKc2M-VN93zDAet98WarDAHc1LG6r2A"
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLqEWdzAMaTRY4I55QfQgwWU9Y"
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLiGVqtsppstmM1NA_vVXh5KUF"
+env: {}
+compare: {ignore: []}

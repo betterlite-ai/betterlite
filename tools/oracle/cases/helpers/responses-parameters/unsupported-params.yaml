@@ -1,0 +1,16 @@
+kind: helper
+name: responses-parameters-unsupported-params
+call:
+  responses_parameters:
+    action: optional
+    steps:
+      - {model: m, supported: [store], allowed: [], global_drop: false, call_drop: null, params: {foo: 1}, mapped: null}
+      - {model: m, supported: [store], allowed: [], global_drop: true, call_drop: null, params: {foo: 1}, mapped: null}
+      - {model: m, supported: [store], allowed: [], global_drop: false, call_drop: true, params: {foo: 1}, mapped: null}
+      - {model: m, supported: [store], allowed: [], global_drop: false, call_drop: false, params: {foo: 1}, mapped: null}
+      - {model: m, supported: [store], allowed: [], global_drop: true, call_drop: false, params: {foo: 1}, mapped: null}
+      - {model: m, supported: [store], allowed: [foo], global_drop: false, call_drop: null, params: {foo: 1}, mapped: {}}
+      - {model: m, supported: [store], allowed: [foo], global_drop: false, call_drop: null, params: {foo: 1}, mapped: {foo: 2}}
+      - {model: m, supported: [store, foo], allowed: [foo], global_drop: false, call_drop: null, params: {store: true}, mapped: {}}
+env: {}
+compare: {ignore: []}

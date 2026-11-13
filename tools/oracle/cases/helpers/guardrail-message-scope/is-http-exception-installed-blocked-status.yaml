@@ -1,0 +1,6 @@
+kind: helper
+name: is-http-exception-installed-blocked-status
+call:
+  b3663: {"function": "is_http_exception", "fastapi": "installed", "raised": "http", "status_code": 400, "block_status_codes": [400, 403]}
+env: {}
+compare: {ignore: []}
