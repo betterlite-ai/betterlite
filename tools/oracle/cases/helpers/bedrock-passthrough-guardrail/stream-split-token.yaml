@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-passthrough-stream-split-token
+call:
+  b3678:
+    function: stream
+    frames:
+      - event_type: messageStart
+        payload: {role: assistant}
+      - event_type: contentBlockDelta
+        payload: {delta: {text: Hel}}
+      - event_type: contentBlockDelta
+        payload: {delta: {text: lo}}
+      - event_type: messageStop
+        payload: {stopReason: end_turn}
+    replace: {Hello: "HELLO!"}
+    trailing_hex: ""
+env: {}
+compare: {ignore: []}
