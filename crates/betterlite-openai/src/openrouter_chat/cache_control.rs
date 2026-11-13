@@ -34,14 +34,14 @@ fn moved_message(message: &ChatMessage) -> ChatMessage {
         return message;
     }
     match message.content.as_ref() {
-        Some(MessageContent::Parts(blocks)) if !blocks.is_empty() => {
+        // an empty block list has no last block, so it stays empty
+        Some(MessageContent::Parts(blocks)) => {
             let mut blocks = blocks.clone();
             if let Some(last) = blocks.last_mut() {
                 last.fields.insert(CACHE_CONTROL.to_owned(), cache_control);
             }
             message.content = Some(MessageContent::Parts(blocks));
         }
-        Some(MessageContent::Parts(_)) => {}
         Some(MessageContent::Text(text)) => {
             message.content = Some(MessageContent::Parts(vec![text_block(
                 Json::Text(text.clone()),
